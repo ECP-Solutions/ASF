@@ -160,8 +160,8 @@ Public Function items() As Collection
     Set items = out
 End Function
 ' Count property
-Public Property Get Count() As Long
-    Count = pKeys.index + 1
+Public Property Get count() As Long
+    count = pKeys.index + 1
 End Property
 ' Clear
 Public Sub Clear()

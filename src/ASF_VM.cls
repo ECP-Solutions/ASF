@@ -27,10 +27,10 @@ End Sub
 Public Property Get OUTPUT_() As Variant
     vAssignment OUTPUT_, OUTPUT__
 End Property
-Public Property Get Verbose() As Boolean
-    Verbose = VERBOSE_
+Public Property Get verbose() As Boolean
+    verbose = VERBOSE_
 End Property
-Public Property Let Verbose(aValue As Boolean)
+Public Property Let verbose(aValue As Boolean)
     VERBOSE_ = aValue
 End Property
 
@@ -43,7 +43,7 @@ End Function
 
 Public Sub RunProgramByIndex(idx As Long)
     GLOBALS_.ASF_InitGlobals
-    If idx < 1 Or idx > GLOBALS_.gPrograms.Count Then Exit Sub
+    If idx < 1 Or idx > GLOBALS_.gPrograms.count Then Exit Sub
     Dim p As Variant: p = GLOBALS_.gPrograms(idx)
     Dim progName As String: progName = p(0)
     Dim stmts As Collection: Set stmts = p(1)
@@ -55,7 +55,7 @@ Public Sub RunProgramByIndex(idx As Long)
     progScope.Push
     If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "RUN Program: " & progName
     Dim i As Long
-    For i = 1 To stmts.Count
+    For i = 1 To stmts.count
         Dim ctrl As String
         ctrl = ExecuteStmtNode(stmts(i), progScope)
         If ctrl = "RETURN" Then
@@ -77,12 +77,12 @@ Private Function ExecuteStmtNode(node As ASF_Map, progScope As ASF_ScopeStack) A
         Case "Print"
             Dim args As Collection: Set args = node.GetValue("args")
             Dim outParts As New Collection
-            For i = 1 To args.Count
+            For i = 1 To args.count
                 Dim v As Variant: vAssignment v, EvalExprNode(args(i), progScope)
                 outParts.Add ValueToStringForPrint(v)
             Next i
             Dim sb As String: sb = ""
-            For i = 1 To outParts.Count
+            For i = 1 To outParts.count
                 If i > 1 Then sb = sb & ", "
                 sb = sb & outParts(i)
             Next i
@@ -193,7 +193,7 @@ Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As
     Dim prop As String: prop = node.GetValue(propKey)
     Dim baseVal As Variant
     vAssignment baseVal, EvalExprNode(node.GetValue("base"), progScope)
-    If TypeName(baseVal) <> "Map" Then err.Raise vbObjectError + 5007, "VM.EvalMemberNode", "Cannot access property on non-map"
+    If TypeName(baseVal) <> "ASF_Map" Then err.Raise vbObjectError + 5007, "VM.EvalMemberNode", "Cannot access property on non-map"
     vAssignment EvalMemberNode, baseVal.GetValue(prop)
 End Function
 
@@ -211,7 +211,7 @@ Private Function EvalIndexNode(node As ASF_Map, progScope As ASF_ScopeStack) As 
         Dim adjustedPos As Long: adjustedPos = lb + (pos - optionBase)
         If adjustedPos > ub Then err.Raise vbObjectError + 5005, "VM.EvalIndexNode", "Index out of bounds"
         vAssignment EvalIndexNode, baseVal(adjustedPos)
-    ElseIf TypeName(baseVal) = "Map" Then
+    ElseIf TypeName(baseVal) = "ASF_Map" Then
         vAssignment EvalIndexNode, baseVal.GetValue(pos)
     Else
         err.Raise vbObjectError + 5006, "VM.EvalIndexNode", "Cannot index non-array/non-map"
@@ -222,12 +222,12 @@ Private Function EvalArrayNode(node As ASF_Map, progScope As ASF_ScopeStack) As 
     Dim items As Collection: Set items = node.GetValue("items")
     Dim arr As Variant
     Dim optionBase As Long: optionBase = progScope.GetValue("__option_base")
-    If items Is Nothing Or items.Count = 0 Then
+    If items Is Nothing Or items.count = 0 Then
         ReDim arr(optionBase To optionBase)
     Else
-        ReDim arr(optionBase To optionBase + items.Count - 1)
+        ReDim arr(optionBase To optionBase + items.count - 1)
         Dim ii As Long
-        For ii = 1 To items.Count
+        For ii = 1 To items.count
             vAssignment arr(optionBase + ii - 1), EvalExprNode(items(ii), progScope)
         Next ii
     End If
@@ -278,14 +278,14 @@ Private Function ResolvePath(node As ASF_Map, progScope As ASF_ScopeStack, Optio
             Dim current As Variant
             vAssignment current, progScope.GetValue(CStr(parts(1)))
             Dim ii As Long
-            For ii = 2 To parts.Count - IIf(forAssign, 1, 0)
+            For ii = 2 To parts.count - IIf(forAssign, 1, 0)
                 Dim part As String: part = parts(ii)
                 If left(part, 1) = "[" Then
                     Dim indexStr As String: indexStr = Mid(part, 2, Len(part) - 2)
                     Dim indexV As Variant: indexV = EvalVBExpressionWithScope(indexStr, progScope) ' Twist: use VBEXPR for fallback computed
                     current = GetIndexedValue(current, indexV, progScope)
                 Else
-                    If TypeName(current) = "Map" Then
+                    If TypeName(current) = "ASF_Map" Then
                         vAssignment current, current.GetValue(part)
                     Else
                         err.Raise vbObjectError + 5007, "VM.ResolvePath", "Cannot access property on non-map"
@@ -294,8 +294,8 @@ Private Function ResolvePath(node As ASF_Map, progScope As ASF_ScopeStack, Optio
             Next ii
             If forAssign Then
                 res.SetValue "container", current
-                res.SetValue "key", parts(parts.Count)
-                res.SetValue "kind", IIf(left(parts(parts.Count), 1) = "[", "index", "prop")
+                res.SetValue "key", parts(parts.count)
+                res.SetValue "kind", IIf(left(parts(parts.count), 1) = "[", "index", "prop")
             Else
                 res.SetValue "value", current
             End If
@@ -361,7 +361,7 @@ Private Function GetIndexedValue(baseVal As Variant, idxV As Variant, progScope 
         Dim adjustedPos As Long: adjustedPos = lb + (pos - optionBase)
         If adjustedPos > UBound(baseVal) Then err.Raise vbObjectError + 5005, "VM.GetIndexedValue", "Index out of bounds"
         vAssignment GetIndexedValue, baseVal(adjustedPos)
-    ElseIf TypeName(baseVal) = "Map" Then
+    ElseIf TypeName(baseVal) = "ASF_Map" Then
         vAssignment GetIndexedValue, baseVal.GetValue(pos)
     Else
         err.Raise vbObjectError + 5006, "VM.GetIndexedValue", "Cannot index non-array/non-map"
@@ -385,7 +385,7 @@ Private Function ExecIfNode(node As ASF_Map, progScope As ASF_ScopeStack) As Str
     If IsTruthy(EvalExprNode(condNode, progScope)) Then
         Dim thenStmts As Collection: Set thenStmts = node.GetValue("then")
         Dim si As Long
-        For si = 1 To thenStmts.Count
+        For si = 1 To thenStmts.count
             Dim ctrl As String: ctrl = ExecuteStmtNode(thenStmts(si), progScope)
             If ctrl <> "" Then ExecIfNode = ctrl: Exit Function
         Next si
@@ -395,11 +395,11 @@ Private Function ExecIfNode(node As ASF_Map, progScope As ASF_ScopeStack) As Str
     Dim elseifConds As Collection: Set elseifConds = node.GetValue("elseif_conds")
     Dim elseifBlocks As Collection: Set elseifBlocks = node.GetValue("elseif_blocks")
     Dim idx As Long
-    For idx = 1 To elseifConds.Count
+    For idx = 1 To elseifConds.count
         If IsTruthy(EvalExprNode(elseifConds(idx), progScope)) Then
             Dim bl As Collection: Set bl = elseifBlocks(idx)
             Dim si2 As Long
-            For si2 = 1 To bl.Count
+            For si2 = 1 To bl.count
                 Dim ctrl2 As String: ctrl2 = ExecuteStmtNode(bl(si2), progScope)
                 If ctrl2 <> "" Then ExecIfNode = ctrl2: Exit Function
             Next si2
@@ -410,7 +410,7 @@ Private Function ExecIfNode(node As ASF_Map, progScope As ASF_ScopeStack) As Str
     If node.GetValue("hasElse") Then
         Dim els As Collection: Set els = node.GetValue("else")
         Dim ee As Long
-        For ee = 1 To els.Count
+        For ee = 1 To els.count
             Dim ctrl3 As String: ctrl3 = ExecuteStmtNode(els(ee), progScope)
             If ctrl3 <> "" Then ExecIfNode = ctrl3: Exit Function
         Next ee
@@ -449,7 +449,7 @@ ForStart:
     If Not condOk Then GoTo ForEnd
 
     Dim s As Long
-    For s = 1 To body.Count
+    For s = 1 To body.count
         Dim ctrl As String: ctrl = ExecuteStmtNode(body(s), progScope)
         If ctrl = "BREAK" Then GoTo ForEnd
         If ctrl = "CONTINUE" Then Exit For
@@ -489,7 +489,7 @@ Private Function ExecWhileNode(node As ASF_Map, progScope As ASF_ScopeStack) As 
 WhileStart:
     If Not IsTruthy(EvalExprNode(condNode, progScope)) Then GoTo WhileEnd
     Dim i As Long
-    For i = 1 To body.Count
+    For i = 1 To body.count
         Dim ctrl As String: ctrl = ExecuteStmtNode(body(i), progScope)
         If ctrl = "BREAK" Then GoTo WhileEnd
         If ctrl = "CONTINUE" Then Exit For
@@ -508,7 +508,7 @@ Private Function ExecTryCatchNode(node As ASF_Map, progScope As ASF_ScopeStack) 
     On Error GoTo TryErr
     Dim tryStmts As Collection: Set tryStmts = node.GetValue("try")
     Dim i As Long
-    For i = 1 To tryStmts.Count
+    For i = 1 To tryStmts.count
         Dim ctrl As String: ctrl = ExecuteStmtNode(tryStmts(i), progScope)
         If ctrl = "RETURN" Or ctrl = "ERR" Then
             ExecTryCatchNode = ctrl
@@ -524,7 +524,7 @@ TryErr:
     Dim catchStmts As Collection: Set catchStmts = node.GetValue("catch")
     If Not catchStmts Is Nothing Then
         Dim j As Long
-        For j = 1 To catchStmts.Count
+        For j = 1 To catchStmts.count
             Dim cctrl As String: cctrl = ExecuteStmtNode(catchStmts(j), progScope)
             If cctrl = "RETURN" Or cctrl = "ERR" Then ExecTryCatchNode = cctrl: Exit Function
         Next j
@@ -540,14 +540,14 @@ Private Function ExecSwitchNode(node As ASF_Map, progScope As ASF_ScopeStack) As
     Dim cases As Collection: Set cases = node.GetValue("cases")
     Dim i As Long
     Dim match As Boolean
-    For i = 1 To cases.Count
+    For i = 1 To cases.count
         Dim pair As Collection: Set pair = cases(i)
         Dim caseExpr As ASF_Map: Set caseExpr = pair(1)
         Dim blockStmts As Collection: Set blockStmts = pair(2)
         match = (EvalExprNode(caseExpr, progScope) = switchVal)
         If match Then
             Dim s As Long
-            For s = 1 To blockStmts.Count
+            For s = 1 To blockStmts.count
                 Dim ctrl As String: ctrl = ExecuteStmtNode(blockStmts(s), progScope)
                 If ctrl = "BREAK" Then ExecSwitchNode = "": Exit Function
                 If ctrl = "RETURN" Or ctrl = "ERR" Then ExecSwitchNode = ctrl: Exit Function
@@ -558,7 +558,7 @@ Private Function ExecSwitchNode(node As ASF_Map, progScope As ASF_ScopeStack) As
         Dim defBlk As Collection: Set defBlk = node.GetValue("default")
         If Not defBlk Is Nothing Then
             Dim d As Long
-            For d = 1 To defBlk.Count
+            For d = 1 To defBlk.count
                 Dim ctrl2 As String: ctrl2 = ExecuteStmtNode(defBlk(d), progScope)
                 If ctrl2 = "BREAK" Then ExecSwitchNode = "": Exit Function
                 If ctrl2 = "RETURN" Or ctrl2 = "ERR" Then ExecSwitchNode = ctrl2: Exit Function
@@ -616,7 +616,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
             Dim valNode As ASF_Map
             Dim pair As Collection
             Dim key As String
-            For pi = 1 To items.Count
+            For pi = 1 To items.count
                 Set pair = items(pi)
                 key = CStr(pair(1))
                 Set valNode = pair(2)
@@ -651,7 +651,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
             If Not IsEmpty(vVal) Then
                 ' If it's a Map and looks like a function node, return as callable
                 On Error Resume Next
-                If TypeName(vVal) = "Map" Then
+                If TypeName(vVal) = "ASF_Map" Then
                     Dim maybeType As Variant
                     maybeType = Empty
                     On Error Resume Next
@@ -784,7 +784,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
             Dim evaluated As Collection
             Set evaluated = New Collection
             Dim k As Long
-            For k = 1 To argsColl.Count
+            For k = 1 To argsColl.count
                 evaluated.Add EvalExprNode(argsColl(k), progScope)
             Next k
 
@@ -809,7 +809,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                     End If
                 End If
                 vAssignment calleeVal, EvalExprNode(calleeExpr, progScope)
-                If TypeName(calleeVal) = "Map" Then
+                If TypeName(calleeVal) = "ASF_Map" Then
                     Dim cM As ASF_Map: Set cM = calleeVal
                     If cM.GetValue("type") = "Closure" Then
                         If hasThisVal Then
@@ -917,7 +917,7 @@ Private Function CallFuncByIndex_AST(funcIdx As Long, args As Collection) As Var
     If GLOBALS_.gFuncParams.Exists(fname) Then
         Dim pa As Variant: pa = GLOBALS_.gFuncParams.GetValue(fname)
         For i = LBound(pa) To UBound(pa)
-            If i - LBound(pa) + 1 <= args.Count Then
+            If i - LBound(pa) + 1 <= args.count Then
                 callScope.SetLocalValue CStr(pa(i)), args(i - LBound(pa) + 1)
             Else
                 callScope.SetLocalValue CStr(pa(i)), Empty
@@ -926,7 +926,7 @@ Private Function CallFuncByIndex_AST(funcIdx As Long, args As Collection) As Var
     End If
 
     Dim stmts As Collection: Set stmts = p(1)
-    For i = 1 To stmts.Count
+    For i = 1 To stmts.count
         Dim ctrl As String: ctrl = ExecuteStmtNode(stmts(i), callScope)
         If ctrl = "RETURN" Then
             CallFuncByIndex_AST = callScope.GetValue("__return")
@@ -1030,30 +1030,30 @@ Private Function ValueToStringWithCtx(v As Variant, visited As Collection, depth
     If IsObject(v) Then
         Dim tn As String: tn = TypeName(v)
         Select Case tn
-            Case "Map"
+            Case "ASF_Map"
                 ' cycle detection by object identity
                 Dim i As Long
-                For i = 1 To visited.Count
+                For i = 1 To visited.count
                     If visited(i) Is v Then
                         ValueToStringWithCtx = "[Circular]": Exit Function
                     End If
                 Next i
                 visited.Add v
                 ValueToStringWithCtx = MapToString(v, visited, depth + 1)
-                visited.Remove visited.Count
+                visited.Remove visited.count
                 Exit Function
 
             Case "Collection"
                 ' cycle detection
                 Dim j As Long
-                For j = 1 To visited.Count
+                For j = 1 To visited.count
                     If visited(j) Is v Then
                         ValueToStringWithCtx = "[Circular]": Exit Function
                     End If
                 Next j
                 visited.Add v
                 ValueToStringWithCtx = CollectionToString(v, visited, depth + 1)
-                visited.Remove visited.Count
+                visited.Remove visited.count
                 Exit Function
 
             Case Else
@@ -1078,7 +1078,7 @@ End Function
 Private Function MapToString(M As Variant, visited As Collection, depth As Long) As String
     On Error GoTo ErrHandler
     Dim keys As Collection: Set keys = M.keys
-    Dim kcnt As Long: kcnt = keys.Count
+    Dim kcnt As Long: kcnt = keys.count
 
     If kcnt = 0 Then
         MapToString = "{}": Exit Function
@@ -1122,7 +1122,7 @@ End Function
 ' Convert Collection -> string (treat as list)
 Private Function CollectionToString(col As Variant, visited As Collection, depth As Long) As String
     On Error GoTo ErrHandler
-    Dim n As Long: n = col.Count
+    Dim n As Long: n = col.count
     If n = 0 Then CollectionToString = "[]": Exit Function
     If n <= VTP_MAX_ITEMS_INLINE And depth <= 2 Then
         Dim tmp() As String: ReDim tmp(1 To n)
@@ -1198,14 +1198,14 @@ Private Function ObjectToString(obj As Variant, visited As Collection, depth As 
     Set tryKeys = obj.keys
     ' if successful, treat As ASF_Map
     Dim i As Long
-    For i = 1 To visited.Count
+    For i = 1 To visited.count
         If visited(i) Is obj Then
             ObjectToString = "[Circular]": Exit Function
         End If
     Next i
     visited.Add obj
     ObjectToString = MapToString(obj, visited, depth)
-    visited.Remove visited.Count
+    visited.Remove visited.count
     Exit Function
 
 Fallback2:
@@ -1291,7 +1291,7 @@ End Function
      If fc Then
          For Each elm In pa
              i = i + 1
-             If i <= evaluatedArgs.Count Then
+             If i <= evaluatedArgs.count Then
                  env.SetLocalValue CStr(elm), evaluatedArgs(i)
              Else
                  env.SetLocalValue CStr(elm), Empty
@@ -1308,7 +1308,7 @@ End Function
      Dim stmts As Collection: Set stmts = closureMap.GetValue("body")
      Dim ctrl As String
      Dim stmtIdx As Long
-     For stmtIdx = 1 To stmts.Count
+     For stmtIdx = 1 To stmts.count
          ctrl = ExecuteStmtNode(stmts(stmtIdx), env)
          If ctrl = "RETURN" Then
              vAssignment CallClosure, env.GetValue("__return")
@@ -1339,7 +1339,7 @@ Private Sub HandleAssignment(left As ASF_Map, ByVal rval As Variant, progScope A
         Case "scopeVar"
             progScope.SetValue CStr(key), rval
         Case "prop"
-            If TypeName(container) <> "Map" Then
+            If TypeName(container) <> "ASF_Map" Then
                 Dim tValue As Variant
                 vAssignment tValue, ResolveIndexProp(lval)
                 tValue.SetValue CStr(key), rval
@@ -1358,9 +1358,9 @@ Private Sub HandleAssignment(left As ASF_Map, ByVal rval As Variant, progScope A
             If Not IsEmpty(parentKey) Then
                 ' parent container holds the array under parentKey (could be progScope or Map)
                 Dim arrVal As Variant
-                If TypeName(container) = "Map" Then
+                If TypeName(container) = "ASF_Map" Then
                     vAssignment arrVal, container.GetValue(CStr(parentKey))
-                ElseIf TypeName(container) = "ScopeStack" Then
+                ElseIf TypeName(container) = "ASF_ScopeStack" Then
                     vAssignment arrVal, container.GetValue(CStr(parentKey))
                 Else
                     ' fallback: maybe container itself is the array
@@ -1371,9 +1371,9 @@ Private Sub HandleAssignment(left As ASF_Map, ByVal rval As Variant, progScope A
                 Call AssignToArrayValueInPlace(arrVal, pos, rval)
         
                 ' Write the updated array back into the parent container
-                If TypeName(container) = "Map" Then
+                If TypeName(container) = "ASF_Map" Then
                     container.SetValue CStr(parentKey), arrVal
-                ElseIf TypeName(container) = "ScopeStack" Then
+                ElseIf TypeName(container) = "ASF_ScopeStack" Then
                     container.SetValue CStr(parentKey), arrVal
                 Else
                     ' if container itself was an array variable (rare), try to overwrite it:
@@ -1389,7 +1389,7 @@ Private Sub HandleAssignment(left As ASF_Map, ByVal rval As Variant, progScope A
             End If
         Case "Member"
             Dim baseVal As Variant: vAssignment baseVal, EvalExprNode(left.GetValue("base"), progScope)
-            If TypeName(baseVal) <> "Map" Then err.Raise vbObjectError + 5007, "VM.HandleAssignment", "Cannot set property on non-map"
+            If TypeName(baseVal) <> "ASF_Map" Then err.Raise vbObjectError + 5007, "VM.HandleAssignment", "Cannot set property on non-map"
             Dim propKey As String: propKey = IIf(left.Exists("prop"), "prop", "property")
             baseVal.SetValue left.GetValue(propKey), rval
     End Select
@@ -1410,7 +1410,7 @@ Private Function ResolveIndexProp(ByRef lval) As Variant
     baseVariable = pObject("key")
     Dim container As Variant: vAssignment container, lval("container")
     vAssignment pObject, container.GetValue(baseVariable)
-    For i = keys.Count To 2 Step -1
+    For i = keys.count To 2 Step -1
         vAssignment pObject, pObject.GetValue(keys(i))
     Next
     vAssignment ResolveIndexProp, pObject(keys(1))
@@ -1476,12 +1476,12 @@ Function GetElementMapFromIndexNode(indexNode As ASF_Map, progScope As ASF_Scope
         End If
         Dim elem As Variant: elem = arrVal(pos)
         If IsEmpty(elem) Then
-            Dim nm As ASF_Map: Set nm = MakeNode("Map")
+            Dim nm As ASF_Map: Set nm = MakeNode("ASF_Map")
             arrVal(pos) = nm
             progScope.SetValue arrName, arrVal
             Set GetElementMapFromIndexNode = nm
             Exit Function
-        ElseIf TypeName(elem) = "Map" Then
+        ElseIf TypeName(elem) = "ASF_Map" Then
             Set GetElementMapFromIndexNode = elem
             Exit Function
         Else
@@ -1506,12 +1506,12 @@ Function GetElementMapFromIndexNode(indexNode As ASF_Map, progScope As ASF_Scope
         End If
         Dim elem2 As Variant: elem2 = arrVal2(pos2)
         If IsEmpty(elem2) Then
-            Dim nm2 As ASF_Map: Set nm2 = MakeNode("Map")
+            Dim nm2 As ASF_Map: Set nm2 = MakeNode("ASF_Map")
             arrVal2(pos2) = nm2
             mapObj.SetValue propName, arrVal2
             Set GetElementMapFromIndexNode = nm2
             Exit Function
-        ElseIf TypeName(elem2) = "Map" Then
+        ElseIf TypeName(elem2) = "ASF_Map" Then
             Set GetElementMapFromIndexNode = elem2
             Exit Function
         Else

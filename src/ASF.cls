@@ -36,7 +36,7 @@ Private Sub INIT_()
     GLOBALS_.ASF_InitGlobals
     Set Compiler_ = New ASF_Compiler
     Set VM_ = New ASF_VM
-    VM_.Verbose = False
+    VM_.verbose = False
 End Sub
 Public Property Get OUTPUT_() As Variant
     vAssignment OUTPUT_, OUTPUT__
@@ -47,7 +47,7 @@ Public Sub Run(idx As Long)
             .SetGlobals GLOBALS_
             .RunProgramByIndex idx
             vAssignment OUTPUT__, .OUTPUT_
-                If .Verbose Then
+                If .verbose Then
                     Debug.Print "=== Runtime Log ==="
                     Dim elm As Variant
                     For Each elm In GLOBALS_.gRuntimeLog
@@ -64,9 +64,9 @@ Private Sub vAssignment(ByRef var As Variant, ByRef vValue As Variant)
         var = vValue
     End If
 End Sub
-Public Property Get Verbose() As Boolean
-    Verbose = VM_.Verbose
+Public Property Get verbose() As Boolean
+    verbose = VM_.verbose
 End Property
-Public Property Let Verbose(aValue As Boolean)
-    VM_.Verbose = aValue
+Public Property Let verbose(aValue As Boolean)
+    VM_.verbose = aValue
 End Property
