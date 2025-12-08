@@ -77,8 +77,8 @@ Explore `examples/` (suggested) with scripts converting rules, workflows, or aut
 
 ## Running the Test Suite
 
-1. Import `tests/` Rubberduck test module(s).
-2. Ensure `Rubberduck.AssertClass` is available.
+1. Import `tests/TestRunner.bas` Rubberduck test module, or open the `ASF v0.0.1.xlsm` workbook.
+2. Ensure [`Rubberduck`](https://rubberduckvba.com/) add-in is available.
 3. Run the test module — all canonical tests should pass.
 
 ---
