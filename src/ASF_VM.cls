@@ -36,9 +36,9 @@ End Property
 
 ' Node helpers (Map-based)
 Private Function MakeNode(nodeType As String) As ASF_Map
-    Dim M As New ASF_Map
-    M.Add "type", nodeType
-    Set MakeNode = M
+    Dim m As New ASF_Map
+    m.Add "type", nodeType
+    Set MakeNode = m
 End Function
 
 Public Sub RunProgramByIndex(idx As Long)
@@ -187,16 +187,62 @@ Private Sub AssignToArray(arrName As String, idxV As Variant, val As Variant, pr
     progScope.SetValue arrName, arr
 End Sub
 
+'Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As Variant
+'    If Not node.Exists("prop") And Not node.Exists("property") Then err.Raise vbObjectError + 5010, "VM.EvalMemberNode", "Missing prop/property in Member node"
+'    Dim propKey As String: propKey = IIf(node.Exists("prop"), "prop", "property")  ' Twist: auto-detect
+'    Dim prop As String: prop = node.GetValue(propKey)
+'    Dim baseVal As Variant
+'    vAssignment baseVal, EvalExprNode(node.GetValue("base"), progScope)
+'    If TypeName(baseVal) <> "ASF_Map" Then err.Raise vbObjectError + 5007, "VM.EvalMemberNode", "Cannot access property on non-map"
+'    vAssignment EvalMemberNode, baseVal.GetValue(prop)
+'End Function
 Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As Variant
-    If Not node.Exists("prop") And Not node.Exists("property") Then err.Raise vbObjectError + 5010, "VM.EvalMemberNode", "Missing prop/property in Member node"
-    Dim propKey As String: propKey = IIf(node.Exists("prop"), "prop", "property")  ' Twist: auto-detect
-    Dim prop As String: prop = node.GetValue(propKey)
+    If Not node.Exists("prop") And Not node.Exists("property") Then _
+        err.Raise vbObjectError + 5010, "VM.EvalMemberNode", "Missing prop/property in Member node"
+    
+    On Error GoTo ErrHandler
+    Dim propKey As String: propKey = IIf(node.Exists("prop"), "prop", "property")
+    Dim prop As String: prop = CStr(node.GetValue(propKey))
+
     Dim baseVal As Variant
     vAssignment baseVal, EvalExprNode(node.GetValue("base"), progScope)
-    If TypeName(baseVal) <> "ASF_Map" Then err.Raise vbObjectError + 5007, "VM.EvalMemberNode", "Cannot access property on non-map"
-    vAssignment EvalMemberNode, baseVal.GetValue(prop)
-End Function
 
+    ' If base is a Map (object) -> return property value as before
+    If TypeName(baseVal) = "ASF_Map" Then
+        vAssignment EvalMemberNode, baseVal.GetValue(prop)
+        Exit Function
+    End If
+
+    ' If base is an array -> avoid hard errors in other cases.
+    If IsArray(baseVal) Then
+        ' Not a recognized array property -> return Empty (do not raise).
+        vAssignment EvalMemberNode, Empty
+        Exit Function
+    End If
+
+    ' If base is an ASF_ScopeStack, try to read property if present
+    If TypeName(baseVal) = "ASF_ScopeStack" Then
+        If baseVal.Exists(CStr(prop)) Then
+            vAssignment EvalMemberNode, baseVal.GetValue(CStr(prop))
+        Else
+            vAssignment EvalMemberNode, Empty
+        End If
+        Exit Function
+    End If
+
+    ' For any other base type, return Empty (safe fallback).
+    vAssignment EvalMemberNode, Empty
+    Exit Function
+
+ErrHandler:
+    ' Preserve existing explicit map-access errors; convert other unexpected errors to Empty.
+    If err.Number = (vbObjectError + 5007) Then
+        err.Raise err.Number, err.Source, err.Description
+    Else
+        err.Clear
+        vAssignment EvalMemberNode, Empty
+    End If
+End Function
 Private Function EvalIndexNode(node As ASF_Map, progScope As ASF_ScopeStack) As Variant
     If Not node.Exists("index") Then err.Raise vbObjectError + 5011, "VM.EvalIndexNode", "Missing index in Index node"
     Dim baseVal As Variant
@@ -474,9 +520,9 @@ End Function
 
 ' Helper to wrap an expression node into an ExprStmt node
 Private Function MakeNodeExprStmt(expr As ASF_Map) As ASF_Map
-    Dim M As ASF_Map: Set M = MakeNode("ExprStmt")
-    M.SetValue "expr", expr
-    Set MakeNodeExprStmt = M
+    Dim m As ASF_Map: Set m = MakeNode("ExprStmt")
+    m.SetValue "expr", expr
+    Set MakeNodeExprStmt = m
 End Function
 
 ' ---------------------
@@ -586,6 +632,9 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
     Dim pi As Long
     Dim funcIdx As Long
     Dim baseExpr As ASF_Map
+    Dim tmpMapObj As ASF_Map
+    Dim calleeExpr As ASF_Map
+    Dim fname As String
     
     Select Case tp
         Case "FuncLiteral", "AnonFunc"
@@ -751,7 +800,6 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
             '  - Call with "callee" (an expression node) and args
             '       (new: allows variable holding closures)
 
-            Dim fname As String
             Dim hasCalleeExpr As Boolean
             If node.Exists("name") Then
                 fname = CStr(node.GetValue("name"))
@@ -760,7 +808,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                 ' try to derive name from callee expression when callee is a simple Variable node
                 If node.Exists("callee") Then
                     hasCalleeExpr = True
-                    Dim calleeExpr As ASF_Map: Set calleeExpr = node.GetValue("callee")
+                    Set calleeExpr = node.GetValue("callee")
                     If Not calleeExpr Is Nothing Then
                         If calleeExpr.GetValue("type") = "Variable" Then
                             fname = CStr(calleeExpr.GetValue("name"))
@@ -787,9 +835,349 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
             For k = 1 To argsColl.count
                 evaluated.Add EvalExprNode(argsColl(k), progScope)
             Next k
-
+            
             If Not hasCalleeExpr Then
-                ' named call (existing behavior + fallback to VBAexpressions)
+                If node.Exists("callee") Then
+                    Set calleeExpr = node.GetValue("callee")
+                Else
+                    Set calleeExpr = Nothing
+                End If
+            End If
+            ' If callee is a Member node -> method-builtins (map/filter/reduce/...)
+            If Not calleeExpr Is Nothing Then
+                If calleeExpr.Exists("type") And CStr(calleeExpr.GetValue("type")) = "Member" Then
+                    ' --- method builtins on Member callee (map/filter/reduce/slice/push/pop) ---
+                    Dim propN As String: propN = LCase$(CStr(calleeExpr.GetValue("prop")))
+                    Dim baseValLocal As Variant
+                    vAssignment baseValLocal, EvalExprNode(calleeExpr.GetValue("base"), progScope)
+                    Select Case propN
+                        Case "map"
+                            ' map(fn) -> return new array with fn applied to each element (recursively tolerates nested arrays)
+                            If evaluated.count < 1 Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim mapper As Variant: vAssignment mapper, evaluated(1)
+                            If TypeName(mapper) <> "ASF_Map" Or mapper.GetValue("type") <> "Closure" Then
+                                vAssignment tmpResult, Empty: GoTo exitfun
+                            End If
+                        
+                            If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim baseLB As Long, baseUB As Long
+                            On Error Resume Next
+                            baseLB = LBound(baseValLocal)
+                            baseUB = UBound(baseValLocal)
+                            If err.Number <> 0 Then
+                                err.Clear
+                                vAssignment tmpResult, Empty: GoTo exitfun
+                            End If
+                            Dim countEls As Long: countEls = baseUB - baseLB + 1
+                            If countEls < 0 Then countEls = 0
+                        
+                            Dim optBaseLocal As Long: optBaseLocal = progScope.GetValue("__option_base")
+                            Dim outArr() As Variant
+                            If countEls = 0 Then
+                                ReDim outArr(optBaseLocal To optBaseLocal)
+                            Else
+                                ReDim outArr(optBaseLocal To optBaseLocal + countEls - 1)
+                            End If
+                        
+                            Dim ii As Long
+                            vAssignment tmpMapObj, mapper
+                            For ii = 0 To countEls - 1
+                                Dim srcIndex As Long: srcIndex = baseLB + ii
+                                Dim resVal As Variant
+                                ' Recursively apply mapper to nested arrays (preserves nested structure)
+                                vAssignment resVal, map_apply_recursive(baseValLocal(srcIndex), _
+                                                        tmpMapObj, progScope, baseValLocal, optBaseLocal)
+                                vAssignment outArr(optBaseLocal + ii), resVal
+                            Next ii
+                        
+                            vAssignment tmpResult, outArr
+                            GoTo exitfun
+
+                        Case "filter"
+                            ' filter(fn) -> return new array with elements where fn(elem) truthy
+                            If evaluated.count < 1 Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim pred As Variant: pred = evaluated(1)
+                            If TypeName(pred) <> "ASF_Map" Or pred.GetValue("type") <> "Closure" Then
+                                vAssignment tmpResult, Empty: GoTo exitfun
+                            End If
+                            If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim tmpCol As New Collection
+                            Dim jj As Long
+                            For jj = LBound(baseValLocal) To UBound(baseValLocal)
+                                Dim ca As New Collection
+                                ca.Add baseValLocal(jj)
+                                vAssignment tmpMapObj, pred
+                                Dim keep As Variant: vAssignment keep, CallClosure(tmpMapObj, ca, baseValLocal)
+                                If IsTruthy(keep) Then tmpCol.Add baseValLocal(jj)
+                            Next jj
+                            ' build array from tmpCol
+                            Dim outA() As Variant
+                            Dim ob As Long: ob = progScope.GetValue("__option_base")
+                            If tmpCol.count = 0 Then
+                                ReDim outA(ob To ob)
+                            Else
+                                ReDim outA(ob To ob + tmpCol.count - 1)
+                                For jj = 1 To tmpCol.count
+                                    vAssignment outA(ob + jj - 1), tmpCol(jj)
+                                Next jj
+                            End If
+                            vAssignment tmpResult, outA
+                            GoTo exitfun
+                        Case "reduce"
+                            ' reduce(fn, initial?) -> apply reduction
+                            If evaluated.count < 1 Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim rfn As Variant: vAssignment rfn, evaluated(1)
+                            If TypeName(rfn) <> "ASF_Map" Or rfn.GetValue("type") <> "Closure" Then
+                                vAssignment tmpResult, Empty: GoTo exitfun
+                            End If
+                            If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim acc As Variant
+                            Dim startIdx As Long
+                            If evaluated.count >= 2 Then
+                                vAssignment acc, evaluated(2)
+                                startIdx = LBound(baseValLocal)
+                            Else
+                                ' use first element as initial
+                                vAssignment acc, baseValLocal(LBound(baseValLocal))
+                                startIdx = LBound(baseValLocal) + 1
+                            End If
+                            Dim kk As Long
+                            For kk = startIdx To UBound(baseValLocal)
+                                Dim carr As New Collection
+                                carr.Add acc
+                                carr.Add baseValLocal(kk)
+                                vAssignment tmpMapObj, rfn
+                                vAssignment acc, CallClosure(tmpMapObj, carr, baseValLocal)
+                            Next kk
+                            vAssignment tmpResult, acc
+                            GoTo exitfun
+                        Case "slice"
+                            ' slice(start, end) -> non-mutating
+                            Dim s As Long, e As Long
+                            Dim lenA As Long
+                            If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
+                            lenA = UBound(baseValLocal) - LBound(baseValLocal) + 1
+                            If evaluated.count = 0 Then
+                                s = 0: e = lenA
+                            ElseIf evaluated.count = 1 Then
+                                s = CLng(evaluated(1)): e = lenA
+                            Else
+                                s = CLng(evaluated(1)): e = CLng(evaluated(2))
+                            End If
+                            ' normalize negative indexes
+                            If s < 0 Then s = lenA + s
+                            If e < 0 Then e = lenA + e
+                            If s < 0 Then s = 0
+                            If e > lenA Then e = lenA
+                            If e < s Then e = s
+                            Dim outS() As Variant
+                            Dim ob2 As Long: ob2 = progScope.GetValue("__option_base")
+                            Dim cnt As Long: cnt = e - s
+                            If cnt <= 0 Then
+                                ReDim outS(ob2 To ob2)
+                            Else
+                                ReDim outS(ob2 To ob2 + cnt - 1)
+                                Dim pidx As Long: pidx = 0
+                                Dim si As Long
+                                For si = s To e - 1
+                                    vAssignment outS(ob2 + pidx), baseValLocal(LBound(baseValLocal) + si)
+                                    pidx = pidx + 1
+                                Next si
+                            End If
+                            vAssignment tmpResult, outS
+                            GoTo exitfun
+                        Case "push"
+                            ' push(...values) -> mutates array, returns new length
+                            If Not IsArray(baseValLocal) Then
+                                ' create new array and set it back
+                                Dim na() As Variant
+                                ReDim na(1 To 0)
+                                baseValLocal = na
+                            End If
+                            Dim insertCount As Long: insertCount = evaluated.count
+                            Dim oldLB As Long: oldLB = LBound(baseValLocal)
+                            Dim oldUB As Long: oldUB = UBound(baseValLocal)
+                            Dim oldLen As Long: oldLen = oldUB - oldLB + 1
+                            Dim newLen As Long: newLen = oldLen + insertCount
+                            Dim newArr() As Variant
+                            ReDim newArr(oldLB To oldLB + newLen - 1)
+                            Dim zz As Long
+                            For zz = oldLB To oldUB
+                                vAssignment newArr(zz), baseValLocal(zz)
+                            Next zz
+                            For zz = 1 To insertCount
+                                vAssignment newArr(oldLB + oldLen + zz - 1), evaluated(zz)
+                            Next zz
+                            ' write back to original container via ResolvePath
+                            Dim rp As ASF_Map: Set rp = ResolvePath(calleeExpr.GetValue("base"), progScope, True)
+                            If rp.GetValue("kind") = "scopeVar" Then
+                                progScope.SetValue CStr(rp.GetValue("key")), newArr
+                            ElseIf rp.GetValue("kind") = "prop" Then
+                                Dim cont As Variant: cont = rp.GetValue("container")
+                                If TypeName(cont) = "ASF_Map" Then
+                                    cont.SetValue CStr(rp.GetValue("key")), newArr
+                                ElseIf TypeName(cont) = "ASF_ScopeStack" Then
+                                    cont.SetValue CStr(rp.GetValue("key")), newArr
+                                End If
+                            End If
+                            vAssignment tmpResult, newLen
+                            GoTo exitfun
+                        Case "pop"
+                            ' pop() -> remove last element, return it
+                            If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim lbp As Long: lbp = LBound(baseValLocal)
+                            Dim ubp As Long: ubp = UBound(baseValLocal)
+                            If ubp < lbp Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim popped As Variant: vAssignment popped, baseValLocal(ubp)
+                            If ubp = lbp Then
+                                Dim zeroA() As Variant
+                                ReDim zeroA(lbp To lbp)
+                                vAssignment baseValLocal, zeroA
+                            Else
+                                ReDim Preserve baseValLocal(lbp To ubp - 1)
+                            End If
+                            ' write back:
+                            Dim rp2 As ASF_Map: Set rp2 = ResolvePath(calleeExpr.GetValue("base"), progScope, True)
+                            If rp2.GetValue("kind") = "scopeVar" Then
+                                progScope.SetValue CStr(rp2.GetValue("key")), baseValLocal
+                            ElseIf rp2.GetValue("kind") = "prop" Then
+                                Dim ccont As Variant: vAssignment ccont, rp2.GetValue("container")
+                                If TypeName(ccont) = "ASF_Map" Then
+                                    ccont.SetValue CStr(rp2.GetValue("key")), baseValLocal
+                                ElseIf TypeName(ccont) = "ASF_ScopeStack" Then
+                                    ccont.SetValue CStr(rp2.GetValue("key")), baseValLocal
+                                End If
+                            End If
+                            vAssignment tmpResult, popped
+                        Case Else
+                            GoTo namedFunctions
+                    End Select
+                    ' --- end method builtins ---
+                    GoTo exitfun
+                End If
+            End If
+namedFunctions:
+            ' If callee is a Variable AST -> treat as named call (builtins like range, IsArray, IsNumeric, flatten, clone)
+            If fname = vbNullString Then
+                If Not calleeExpr Is Nothing Then
+                    If calleeExpr.Exists("type") And CStr(calleeExpr.GetValue("type")) = "Variable" Then
+                        fname = CStr(calleeExpr.GetValue("name"))
+                    End If
+                Else
+                    ' check "name" property instead of a callee AST
+                    If node.Exists("name") Then fname = CStr(node.GetValue("name")) Else fname = ""
+                End If
+            End If
+            If fname <> "" Then
+                ' --- builtin named functions ---
+                If LCase$(fname) = "range" Then
+                    ' range([start,] end[, step]) -> returns an array (python-style range semantics)
+                    Dim rcount As Long: rcount = evaluated.count
+                    Dim rs As Double, re As Double, rstep As Double
+                    If rcount = 1 Then
+                        rs = 0
+                        re = CDbl(evaluated(1))
+                        rstep = 1
+                    ElseIf rcount = 2 Then
+                        rs = CDbl(evaluated(1))
+                        re = CDbl(evaluated(2))
+                        rstep = 1
+                    ElseIf rcount >= 3 Then
+                        rs = CDbl(evaluated(1))
+                        re = CDbl(evaluated(2))
+                        rstep = CDbl(evaluated(3))
+                    Else
+                        vAssignment tmpResult, Empty
+                        GoTo exitfun
+                    End If
+                    Dim tmpArr() As Variant
+                    Dim optionBase_local As Long: optionBase_local = progScope.GetValue("__option_base")
+                    Dim vals As New Collection
+                    Dim vv As Double: vv = rs
+                    If rstep = 0 Then rstep = 1
+                    If rstep > 0 Then
+                        Do While vv < re
+                            vals.Add vv
+                            vv = vv + rstep
+                        Loop
+                    Else
+                        Do While vv > re
+                            vals.Add vv
+                            vv = vv + rstep
+                        Loop
+                    End If
+                    If vals.count = 0 Then
+                        ReDim tmpArr(optionBase_local To optionBase_local)
+                    Else
+                        ReDim tmpArr(optionBase_local To optionBase_local + vals.count - 1)
+                        Dim ri As Long
+                        For ri = 1 To vals.count
+                            vAssignment tmpArr(optionBase_local + ri - 1), vals(ri)
+                        Next ri
+                    End If
+                    vAssignment tmpResult, tmpArr
+                    GoTo exitfun
+                End If
+                If LCase$(fname) = "flatten" Then
+                    If evaluated.count = 0 Then
+                        vAssignment tmpResult, Empty
+                        GoTo exitfun
+                    End If
+                    vAssignment tmpMapObj, node.GetValue("args")(1)
+                    vAssignment tmpResult, builtin_flatten(EvalExprNode(tmpMapObj, progScope), progScope)
+                    GoTo exitfun
+                End If
+                If LCase$(fname) = "clone" Then
+                    If evaluated.count = 0 Then
+                        vAssignment tmpResult, Empty
+                        GoTo exitfun
+                    End If
+                    vAssignment tmpMapObj, node.GetValue("args")(1)
+                    vAssignment tmpResult, builtin_clone(EvalExprNode(tmpMapObj, progScope), progScope)
+                    GoTo exitfun
+                End If
+                If LCase$(fname) = "isarray" Then
+                    If evaluated.count = 0 Then
+                        vAssignment tmpResult, False
+                    Else
+                        Dim v0 As Variant: v0 = evaluated(1)
+                        On Error Resume Next
+                        Dim isArr As Boolean: isArr = IsArray(v0)
+                        If err.Number <> 0 Then
+                            err.Clear
+                            isArr = False
+                        End If
+                        vAssignment tmpResult, CBool(isArr)
+                    End If
+                    GoTo exitfun
+                End If
+                If LCase$(fname) = "isnumeric" Then
+                    If evaluated.count = 0 Then
+                        vAssignment tmpResult, False
+                    Else
+                        Dim v1 As Variant: v1 = evaluated(1)
+                        Dim numericRes As Boolean
+                        On Error Resume Next
+                        ' reject arrays and objects quickly
+                        If IsArray(v1) Then
+                            numericRes = False
+                        ElseIf IsObject(v1) Then
+                            numericRes = False
+                        Else
+                            numericRes = VBA.IsNumeric(v1) ' use VBA's IsNumeric for broad compatibility
+                        End If
+                        If err.Number <> 0 Then
+                            err.Clear
+                            numericRes = False
+                        End If
+                        vAssignment tmpResult, CBool(numericRes)
+                    End If
+                    GoTo exitfun
+                End If
+                ' --- end builtins ---
+            End If
+            If Not hasCalleeExpr Then
+                ' named call
                 If GLOBALS_.gFuncTable.Exists(fname) Then
                     funcIdx = CLng(GLOBALS_.gFuncTable.GetValue(fname))
                     vAssignment tmpResult, CallFuncByIndex_AST(funcIdx, evaluated)
@@ -1010,7 +1398,7 @@ Private Function ValueToStringWithCtx(v As Variant, visited As Collection, depth
 
     ' Scalars
     If VarType(v) = vbString Then
-        ValueToStringWithCtx = CStr(v): Exit Function
+        ValueToStringWithCtx = "'" & CStr(v) & "'": Exit Function
     End If
     If VarType(v) = vbBoolean Then
         If CBool(v) Then ValueToStringWithCtx = "True" Else ValueToStringWithCtx = "False"
@@ -1075,9 +1463,9 @@ ErrHandler:
 End Function
 
 ' Convert Map -> string
-Private Function MapToString(M As Variant, visited As Collection, depth As Long) As String
+Private Function MapToString(m As Variant, visited As Collection, depth As Long) As String
     On Error GoTo ErrHandler
-    Dim keys As Collection: Set keys = M.keys
+    Dim keys As Collection: Set keys = m.keys
     Dim kcnt As Long: kcnt = keys.count
 
     If kcnt = 0 Then
@@ -1091,7 +1479,7 @@ Private Function MapToString(M As Variant, visited As Collection, depth As Long)
         Dim i As Long
         For i = 1 To kcnt
             Dim key As String: key = CStr(keys(i))
-            Dim val As Variant: val = M.GetValue(key)
+            Dim val As Variant: val = m.GetValue(key)
             parts(i) = CStr(key) & ": " & ValueToStringWithCtx(val, visited, depth)
         Next i
         MapToString = "{ " & Join(parts, ", ") & " }"
@@ -1107,7 +1495,7 @@ Private Function MapToString(M As Variant, visited As Collection, depth As Long)
     Dim kk As Variant
     For Each kk In keys
         If Not first Then sb = sb & vbCrLf
-        sb = sb & innerIndent & CStr(kk) & ": " & ValueToStringWithCtx(M.GetValue(CStr(kk)), visited, depth + 1)
+        sb = sb & innerIndent & CStr(kk) & ": " & ValueToStringWithCtx(m.GetValue(CStr(kk)), visited, depth + 1)
         first = False
     Next kk
     sb = sb & vbCrLf & indent & "}"
@@ -1236,14 +1624,14 @@ Private Function EvalVBExpressionWithScope(expr As String, progScope As ASF_Scop
     
          ' Inject variables from progScope (shadowing: global frames first, then locals)
          Dim frame As Variant
-         Dim M As ASF_Map
+         Dim m As ASF_Map
          Dim keyCol As Collection
          Dim key As Variant
          For Each frame In progScope.Raw
-             Set M = frame
-             Set keyCol = M.keys
+             Set m = frame
+             Set keyCol = m.keys
              For Each key In keyCol
-                 .VarValue(CStr(key)) = M.GetValue(CStr(key))
+                 .VarValue(CStr(key)) = m.GetValue(CStr(key))
              Next key
          Next frame
     
@@ -1521,7 +1909,122 @@ Function GetElementMapFromIndexNode(indexNode As ASF_Map, progScope As ASF_Scope
         err.Raise vbObjectError + 9023, "VM.GetElementMapFromIndexNode", "Unsupported resolved kind for index -> " & kind
     End Select
 End Function
+' ---------------------
+' Builtin helper functions (range/flatten/clone) and helpers for array methods
+' ---------------------
+
+Private Function builtin_flatten(v As Variant, progScope As ASF_ScopeStack) As Variant
+    Dim col As New Collection
+    Call flatten_recursive(v, col)
+    Dim ob As Long: ob = progScope.GetValue("__option_base")
+    Dim outArr() As Variant
+    If col.count = 0 Then
+        ReDim outArr(ob To ob)
+    Else
+        ReDim outArr(ob To ob + col.count - 1)
+        Dim i As Long
+        For i = 1 To col.count
+            outArr(ob + i - 1) = col(i)
+        Next i
+    End If
+    vAssignment builtin_flatten, outArr
+End Function
+
+Private Sub flatten_recursive(v As Variant, ByRef col As Collection)
+    If IsArray(v) Then
+        Dim i As Long
+        For i = LBound(v) To UBound(v)
+            Call flatten_recursive(v(i), col)
+        Next i
+    Else
+        col.Add v
+    End If
+End Sub
+
+Private Function builtin_clone(v As Variant, progScope As ASF_ScopeStack) As Variant
+    If IsArray(v) Then
+        Dim lb As Long: lb = LBound(v)
+        Dim ub As Long: ub = UBound(v)
+        Dim outArr() As Variant
+        ReDim outArr(lb To ub)
+        Dim i As Long
+        For i = lb To ub
+            outArr(i) = builtin_clone(v(i), progScope)
+        Next i
+        vAssignment builtin_clone, outArr
+        Exit Function
+    End If
+    If IsObject(v) Then
+        If TypeName(v) = "ASF_Map" Then
+            Dim m As ASF_Map: Set m = v
+            Dim mc As ASF_Map: Set mc = m.Clone()
+            vAssignment builtin_clone, mc
+            Exit Function
+        End If
+    End If
+    vAssignment builtin_clone, v
+End Function
+
  ' ----------------- end LValue helpers -----------------
+ ' Recursively applies mapper closure to value. If value is an array, map each element recursively.
+' mapper : closure map (type="Closure")
+' progScope : current scope stack (used for __option_base and to pass as runtime context)
+' parentThis : optional 'this' value passed to CallClosure (typically the containing array)
+' optBase: the indexing base
+Private Function map_apply_recursive(value As Variant, mapper As ASF_Map, _
+                                    progScope As ASF_ScopeStack, Optional parentThis As Variant, _
+                                    Optional optBase As Long = 1) As Variant
+    On Error GoTo ErrHandler
+
+    ' If the value is an array, create an output array with same length and map each element recursively
+    If IsArray(value) Then
+        Dim lb As Long, ub As Long
+        On Error Resume Next
+        lb = LBound(value)
+        ub = UBound(value)
+        If err.Number <> 0 Then
+            err.Clear
+            vAssignment map_apply_recursive, Empty
+            Exit Function
+        End If
+        On Error GoTo ErrHandler
+
+        Dim cnt As Long: cnt = ub - lb + 1
+        If cnt < 0 Then cnt = 0
+        Dim outArr() As Variant
+        If cnt = 0 Then
+            ReDim outArr(optBase To optBase)
+        Else
+            ReDim outArr(optBase To optBase + cnt - 1)
+        End If
+
+        Dim i As Long
+        For i = 0 To cnt - 1
+            Dim srcIdx As Long: srcIdx = lb + i
+            Dim childRes As Variant
+            ' Recurse: pass the current array as parentThis so mapper can use it if needed
+            vAssignment childRes, map_apply_recursive(value(srcIdx), mapper, progScope, value, optBase)
+            vAssignment outArr(optBase + i), childRes
+        Next i
+
+        vAssignment map_apply_recursive, outArr
+        Exit Function
+    End If
+
+    ' If not an array, call the mapper closure with the value as single argument.
+    Dim args As New Collection
+    args.Add value
+    Dim result As Variant
+    vAssignment result, CallClosure(mapper, args, parentThis)
+    args.Remove args.count
+    vAssignment map_apply_recursive, result
+    Exit Function
+
+ErrHandler:
+    ' On mapper errors propagate as runtime error so calling code can handle (consistent with earlier semantics)
+    err.Raise err.Number, err.Source, err.Description
+End Function
+
 ' ---------------------
 ' End VM class
 ' ---------------------
