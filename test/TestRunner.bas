@@ -225,7 +225,7 @@ Private Sub if_chain_same_line()
     With globals
         actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.count))
     End With
-    expected = "PRINT:two, PRINT:done"
+    expected = "PRINT:'two', PRINT:'done'"
     Assert.AreEqual expected, actual
 
 TestExit:
@@ -254,7 +254,7 @@ Private Sub if_multiline()
     With globals
         actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.count))
     End With
-    expected = "PRINT:three, PRINT:end"
+    expected = "PRINT:'three', PRINT:'end'"
     Assert.AreEqual expected, actual
 
 TestExit:
@@ -642,3 +642,25 @@ TestFail:
     Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
+        ' Deeply nested arrays //Expect: [10,[20,[30,[40]]]]
+'        pidx = .Compile("a = [1,[2,[3,[4]]]]; b = a.map(fun(x) { return x * 10 }); print(b);")
+        ' Array of objects + nested arrays //Expect: [{k:2, arr:[11, 21]}, {k:4, arr:[ 31, [41, 51]]}]
+'        pidx = .Compile("a = [{ k: 1, arr: [10,20] }, { k: 2, arr: [30,[40,50]] }];" & _
+                        "b = a.map(fun(o){return { k: o.k * 2, arr: o.arr.map(fun(x){ return x + 1 })}; });" & _
+                        "print(b);")
+        ' Closure capture inside map //Expect: [5,10,15]
+'        pidx = .Compile("mul = fun(factor){return fun(x){ return x * factor };};" & _
+                        "a = [1,2,3]; b = a.map(mul(5));" & _
+                        "print(b);")
+        ' Map returning nested arrays //Expect: [[1,1],[2,2]]
+'        pidx = .Compile("print( [1,2].map(fun(x){ return [x,x] }) );")
+        ' Map returning arrays that contain objects that contain arrays
+        ' //Expect: [{orig:1, pair:[1, 1], nested:[[1, 2], {v:1}]}, {orig:2, pair:[2, 4], nested:[[2, 3], {v:4}]}]
+'        pidx = .Compile("a = [1,2];" & _
+                        "b = a.map(fun(n){return {orig: n,pair: [n, n*n],nested: [ [n, n+1], { v: n*n } ]};});" & _
+                        "print(b);")
+        ' Mapping nested arrays of mixed types //Expect: [3,x,[2,y,[3]]]
+'        pidx = .Compile("a = [1,'x',[2,'y',[3]]];" & _
+                        "b = a.map(fun(x){if (IsArray(x)) {return x} elseif (IsNumeric(x)) {return x*3} else {return x}};);" & _
+                        "print(b);")
+
