@@ -896,18 +896,20 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                         Case "filter"
                             ' filter(fn) -> return new array with elements where fn(elem) truthy
                             If evaluated.count < 1 Then vAssignment tmpResult, Empty: GoTo exitfun
-                            Dim pred As Variant: pred = evaluated(1)
+                            Dim pred As Variant: vAssignment pred, evaluated(1)
                             If TypeName(pred) <> "ASF_Map" Or pred.GetValue("type") <> "Closure" Then
                                 vAssignment tmpResult, Empty: GoTo exitfun
                             End If
                             If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
                             Dim tmpCol As New Collection
                             Dim jj As Long
+                            Dim keep As Variant
+                            Dim ca As Collection
                             For jj = LBound(baseValLocal) To UBound(baseValLocal)
-                                Dim ca As New Collection
+                                Set ca = New Collection
                                 ca.Add baseValLocal(jj)
                                 vAssignment tmpMapObj, pred
-                                Dim keep As Variant: vAssignment keep, CallClosure(tmpMapObj, ca, baseValLocal)
+                                vAssignment keep, CallClosure(tmpMapObj, ca, baseValLocal)
                                 If IsTruthy(keep) Then tmpCol.Add baseValLocal(jj)
                             Next jj
                             ' build array from tmpCol
@@ -942,8 +944,9 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                 startIdx = LBound(baseValLocal) + 1
                             End If
                             Dim kk As Long
+                            Dim carr As Collection
                             For kk = startIdx To UBound(baseValLocal)
-                                Dim carr As New Collection
+                                Set carr = New Collection
                                 carr.Add acc
                                 carr.Add baseValLocal(kk)
                                 vAssignment tmpMapObj, rfn
@@ -952,38 +955,74 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                             vAssignment tmpResult, acc
                             GoTo exitfun
                         Case "slice"
-                            ' slice(start, end) -> non-mutating
+                            ' slice(start, end) -> non-mutating, respects __option_base
                             Dim s As Long, e As Long
                             Dim lenA As Long
                             If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
+                        
+                            ' number of elements in the array (independent of its LBound)
                             lenA = UBound(baseValLocal) - LBound(baseValLocal) + 1
+                        
+                            ' runtime option base for arrays (0 or 1 typically)
+                            Dim optBase As Long: optBase = progScope.GetValue("__option_base")
+                        
+                            Dim sRaw As Long, eRaw As Long
+                        
+                            ' Interpret arguments in the user's indexing space (option base)
                             If evaluated.count = 0 Then
+                                ' default: full slice
                                 s = 0: e = lenA
                             ElseIf evaluated.count = 1 Then
-                                s = CLng(evaluated(1)): e = lenA
+                                sRaw = CLng(evaluated(1))
+                                ' convert start to zero-based offset (and support negative indices)
+                                If sRaw < 0 Then
+                                    s = lenA + sRaw
+                                Else
+                                    s = sRaw - optBase
+                                End If
+                                e = lenA
                             Else
-                                s = CLng(evaluated(1)): e = CLng(evaluated(2))
+                                sRaw = CLng(evaluated(1))
+                                eRaw = CLng(evaluated(2))
+                                If sRaw < 0 Then
+                                    s = lenA + sRaw
+                                Else
+                                    s = sRaw - optBase
+                                End If
+                                If eRaw < 0 Then
+                                    e = lenA + eRaw
+                                Else
+                                    e = eRaw - optBase
+                                End If
                             End If
-                            ' normalize negative indexes
-                            If s < 0 Then s = lenA + s
-                            If e < 0 Then e = lenA + e
+                        
+                            ' Normalize & clamp to valid ranges (zero-based offsets)
                             If s < 0 Then s = 0
+                            If e < 0 Then e = 0
+                            If s > lenA Then s = lenA
                             If e > lenA Then e = lenA
                             If e < s Then e = s
-                            Dim outS() As Variant
-                            Dim ob2 As Long: ob2 = progScope.GetValue("__option_base")
+                        
                             Dim cnt As Long: cnt = e - s
+                        
+                            Dim outS() As Variant
+                            Dim ob2 As Long: ob2 = optBase
+                        
                             If cnt <= 0 Then
+                                ' Produce minimal array using same option base — keep conservative behavior:
+                                ' if you prefer an empty array representation, you can return Empty instead.
                                 ReDim outS(ob2 To ob2)
                             Else
                                 ReDim outS(ob2 To ob2 + cnt - 1)
                                 Dim pidx As Long: pidx = 0
                                 Dim si As Long
+                                Dim baseL As Long: baseL = LBound(baseValLocal)
                                 For si = s To e - 1
-                                    vAssignment outS(ob2 + pidx), baseValLocal(LBound(baseValLocal) + si)
+                                    vAssignment outS(ob2 + pidx), baseValLocal(baseL + si)
                                     pidx = pidx + 1
                                 Next si
                             End If
+                        
                             vAssignment tmpResult, outS
                             GoTo exitfun
                         Case "push"
@@ -991,7 +1030,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                             If Not IsArray(baseValLocal) Then
                                 ' create new array and set it back
                                 Dim na() As Variant
-                                ReDim na(1 To 0)
+                                ReDim na(1 To 1)
                                 baseValLocal = na
                             End If
                             Dim insertCount As Long: insertCount = evaluated.count
@@ -1074,6 +1113,7 @@ namedFunctions:
                     ' range([start,] end[, step]) -> returns an array (python-style range semantics)
                     Dim rcount As Long: rcount = evaluated.count
                     Dim rs As Double, re As Double, rstep As Double
+                    Dim optionBase_local As Long: optionBase_local = progScope.GetValue("__option_base")
                     If rcount = 1 Then
                         rs = 0
                         re = CDbl(evaluated(1))
@@ -1091,7 +1131,6 @@ namedFunctions:
                         GoTo exitfun
                     End If
                     Dim tmpArr() As Variant
-                    Dim optionBase_local As Long: optionBase_local = progScope.GetValue("__option_base")
                     Dim vals As New Collection
                     Dim vv As Double: vv = rs
                     If rstep = 0 Then rstep = 1
@@ -1124,7 +1163,11 @@ namedFunctions:
                         GoTo exitfun
                     End If
                     vAssignment tmpMapObj, node.GetValue("args")(1)
-                    vAssignment tmpResult, builtin_flatten(EvalExprNode(tmpMapObj, progScope), progScope)
+                    If evaluated.count = 1 Then
+                        vAssignment tmpResult, builtin_flatten(EvalExprNode(tmpMapObj, progScope), progScope)
+                    Else
+                        vAssignment tmpResult, builtin_flatten(EvalExprNode(tmpMapObj, progScope), progScope, evaluated(2))
+                    End If
                     GoTo exitfun
                 End If
                 If LCase$(fname) = "clone" Then
@@ -1913,9 +1956,53 @@ End Function
 ' Builtin helper functions (range/flatten/clone) and helpers for array methods
 ' ---------------------
 
-Private Function builtin_flatten(v As Variant, progScope As ASF_ScopeStack) As Variant
+' Flatten builtin with optional depth
+' Usage:
+'   builtin_flatten(value, progScope)         -> full flatten (old behavior)
+'   builtin_flatten(value, progScope, depth) -> flatten up to 'depth' levels
+Private Function builtin_flatten(v As Variant, progScope As ASF_ScopeStack, Optional depthParam As Variant) As Variant
+    Dim flattenAll As Boolean
+    Dim maxDepth As Long
+
+    ' Determine depth semantics:
+    ' - If no depthParam or it's Empty/Non-numeric -> full flatten (use -1 sentinel)
+    ' - If numeric and < 0 -> full flatten (-1)
+    ' - Else use provided non-negative integer depth
+    If IsMissing(depthParam) Then
+        flattenAll = True
+        maxDepth = -1
+    ElseIf IsEmpty(depthParam) Then
+        flattenAll = True
+        maxDepth = -1
+    Else
+        On Error Resume Next
+        Dim dVal As Double
+        dVal = CDbl(depthParam)
+        If err.Number <> 0 Then
+            err.Clear
+            flattenAll = True
+            maxDepth = -1
+        Else
+            On Error GoTo 0
+            If dVal < 0 Then
+                flattenAll = True
+                maxDepth = -1
+            Else
+                flattenAll = False
+                maxDepth = CLng(dVal)
+            End If
+        End If
+    End If
+
+    ' Collect flattened elements into a Collection
     Dim col As New Collection
-    Call flatten_recursive(v, col)
+    If flattenAll Then
+        Call flatten_recursive_full(v, col)
+    Else
+        Call flatten_recursive_depth(v, col, maxDepth)
+    End If
+
+    ' Build output array using __option_base
     Dim ob As Long: ob = progScope.GetValue("__option_base")
     Dim outArr() As Variant
     If col.count = 0 Then
@@ -1927,20 +2014,40 @@ Private Function builtin_flatten(v As Variant, progScope As ASF_ScopeStack) As V
             outArr(ob + i - 1) = col(i)
         Next i
     End If
+
     vAssignment builtin_flatten, outArr
 End Function
 
-Private Sub flatten_recursive(v As Variant, ByRef col As Collection)
+' Full flatten
+Private Sub flatten_recursive_full(v As Variant, ByRef col As Collection)
     If IsArray(v) Then
         Dim i As Long
         For i = LBound(v) To UBound(v)
-            Call flatten_recursive(v(i), col)
+            Call flatten_recursive_full(v(i), col)
         Next i
     Else
         col.Add v
     End If
 End Sub
 
+' Depth-limited flatten: maxDepth indicates how many levels to flatten.
+' - If maxDepth = 0 and v is an array -> add the array itself as a single element (no flatten)
+' - If maxDepth > 0 and v is an array -> recurse with maxDepth-1
+Private Sub flatten_recursive_depth(v As Variant, ByRef col As Collection, ByVal maxDepth As Long)
+    If IsArray(v) Then
+        If maxDepth < 0 Then
+            ' Do not flatten this array level — push the array object as an element.
+            col.Add v
+        Else
+            Dim i As Long
+            For i = LBound(v) To UBound(v)
+                Call flatten_recursive_depth(v(i), col, maxDepth - 1)
+            Next i
+        End If
+    Else
+        col.Add v
+    End If
+End Sub
 Private Function builtin_clone(v As Variant, progScope As ASF_ScopeStack) As Variant
     If IsArray(v) Then
         Dim lb As Long: lb = LBound(v)
