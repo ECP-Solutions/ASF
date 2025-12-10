@@ -107,20 +107,20 @@ Compiler_MainLoop:
         If toks(i)(0) = "IDENT" And LCase$(toks(i)(1)) = "fun" Then
             i = i + 1
             ' skip comments
-            Do While i <= toks.count And toks(i)(0) = "COMMENT"
+            Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
                 i = i + 1
             Loop
             If i > toks.count Then err.Raise vbObjectError + 1, , "Unexpected end after fun"
             Dim fname As String: fname = toks(i)(1)
             i = i + 1
-            Do While i <= toks.count And toks(i)(0) = "COMMENT"
+            Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
                 i = i + 1
             Loop
 
             Dim argList As New Collection
             If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = "(" Then
                 i = i + 1
-                Do While i <= toks.count And Not (toks(i)(0) = "PAREN" And toks(i)(1) = ")")
+                Do While i <= toks.count And Not (safeTVRetInner(toks, i, 0) = "PAREN" And safeTVRetInner(toks, i, 1) = ")")
                     If toks(i)(0) = "COMMENT" Then
                         i = i + 1
                     Else
@@ -131,7 +131,7 @@ Compiler_MainLoop:
                 If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = ")" Then i = i + 1
             End If
 
-            Do While i <= toks.count And toks(i)(0) = "COMMENT"
+            Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
                 i = i + 1
             Loop
             If i > toks.count Or Not (toks(i)(0) = "PAREN" And toks(i)(1) = "{") Then
@@ -316,17 +316,13 @@ ParseInner:
                             ' closing brace is followed by 'elseif' or 'else'. If so, continue
                             ' collecting tokens into the same stmtTokens (do not finalize yet).
                             Dim nexti As Long: nexti = i
-                            Do While nexti <= toks.count
-                                If toks(nexti)(0) = "COMMENT" Then
-                                    nexti = nexti + 1
-                                Else
-                                    Exit Do
-                                End If
+                            Do While nexti <= toks.count And safeTVRetInner(toks, nexti, 0) = "COMMENT"
+                                nexti = nexti + 1
                             Loop
 
                             If nexti <= toks.count Then
                                 If toks(nexti)(0) = "IDENT" Then
-                                    Dim nextKw As String: nextKw = LCase$(toks(nexti)(1))
+                                    Dim nextKw As String: nextKw = LCase$(safeTVRetInner(toks, nexti, 1))
                                     If nextKw = "elseif" Or nextKw = "else" Then
                                         ' Don't finalize the statement: continue the inner loop
                                         ' so the elseif/else tokens will be collected into stmtTokens.
@@ -407,7 +403,7 @@ Private Function ParseStatementTokensToAST(stmtTokens As Collection) As ASF_Map
     If stmtTokens.count >= 2 Then
         If stmtTokens(1)(0) = "IDENT" And LCase$(stmtTokens(1)(1)) = "print" Then
             Dim k As Long: k = 2
-            Do While k <= stmtTokens.count And Not (stmtTokens(k)(0) = "PAREN" And stmtTokens(k)(1) = "(")
+            Do While k <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, k, 0) = "PAREN" And safeTVRetInner(stmtTokens, k, 1) = "(")
                 k = k + 1
             Loop
             If k <= stmtTokens.count Then
@@ -969,15 +965,15 @@ Private Function DoPostfixChaining(ByVal currentNode As ASF_Map, types() As Stri
                             Case "("
                                 argTokDepthParen = argTokDepthParen + 1
                             Case ")"
-                                argTokDepthParen = argTokDepthParen - 1
+                                If argTokDepthParen = 0 Then Exit Do Else argTokDepthParen = argTokDepthParen - 1
                             Case "["
                                 argTokDepthBr = argTokDepthBr + 1
                             Case "]"
-                                argTokDepthBr = argTokDepthBr - 1
+                                If argTokDepthBr = 0 Then Exit Do Else argTokDepthBr = argTokDepthBr - 1
                             Case "{"
                                 argTokDepthB = argTokDepthB + 1
                             Case "}"
-                                argTokDepthB = argTokDepthB - 1
+                                If argTokDepthB = 0 Then Exit Do Else argTokDepthB = argTokDepthB - 1
                         End Select
                     ElseIf safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = "," And argTokDepthParen = 0 And argTokDepthBr = 0 And argTokDepthB = 0 Then
                         Exit Do
@@ -1173,7 +1169,7 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
                             builtinLen.SetValue "name", ".__len__"
                             lenCall.SetValue "callee", builtinLen
                             lenCall.SetValue "name", ".__len__"
-                            Dim al As New Collection
+                            Dim al As Collection: Set al = New Collection
                             al.Add currentNode.Clone
                             lenCall.SetValue "args", al
                             idx = idx + 1
@@ -1336,7 +1332,7 @@ End Function
 Private Function ParseIfAST(stmtTokens As Collection) As ASF_Map
     Dim node As ASF_Map: Set node = MakeNode("If")
     Dim i As Long: i = 2
-    Do While i <= stmtTokens.count And Not (stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = "(")
+    Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "(")
         i = i + 1
     Loop
     If i > stmtTokens.count Then Set ParseIfAST = node: Exit Function
@@ -1361,12 +1357,8 @@ Private Function ParseIfAST(stmtTokens As Collection) As ASF_Map
     Loop
     node.SetValue "cond", ParseExprTokensToNode(condTokens)
 
-    Do While i <= stmtTokens.count
-        If Not (stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = "{") Then
-            i = i + 1
-        Else
-            Exit Do
-        End If
+    Do While i <= stmtTokens.count And Not (safeTVRet(stmtTokens(i), 0) = "PAREN" And safeTVRet(stmtTokens(i), 1) = "{")
+        i = i + 1
     Loop
     If i > stmtTokens.count Then Set ParseIfAST = node.Clone: GoTo clean_
     Dim j As Long: j = i + 1
@@ -1409,7 +1401,7 @@ Private Function ParseIfAST(stmtTokens As Collection) As ASF_Map
             tname = LCase$(stmtTokens(pos)(1))
             If tname = "elseif" Then
                 pos = pos + 1
-                Do While pos <= stmtTokens.count And Not (stmtTokens(pos)(0) = "PAREN" And stmtTokens(pos)(1) = "(")
+                Do While pos <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, pos, 0) = "PAREN" And safeTVRetInner(stmtTokens, pos, 1) = "(")
                     pos = pos + 1
                 Loop
                 If pos > stmtTokens.count Then Exit Do
@@ -1431,7 +1423,7 @@ Private Function ParseIfAST(stmtTokens As Collection) As ASF_Map
                     eCondTok.Add stmtTokens(pos)
                     pos = pos + 1
                 Loop
-                Do While pos <= stmtTokens.count And Not (stmtTokens(pos)(0) = "PAREN" And stmtTokens(pos)(1) = "{")
+                Do While pos <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, pos, 0) = "PAREN" And safeTVRetInner(stmtTokens, pos, 1) = "{")
                     pos = pos + 1
                 Loop
                 If pos > stmtTokens.count Then Exit Do
@@ -1459,7 +1451,7 @@ Private Function ParseIfAST(stmtTokens As Collection) As ASF_Map
                 GoTo IfParseNext
             ElseIf tname = "else" Then
                 pos = pos + 1
-                Do While pos <= stmtTokens.count And Not (stmtTokens(pos)(0) = "PAREN" And stmtTokens(pos)(1) = "{")
+                Do While pos <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, pos, 0) = "PAREN" And safeTVRetInner(stmtTokens, pos, 1) = "{")
                     pos = pos + 1
                 Loop
                 If pos > stmtTokens.count Then Exit Do
@@ -1513,7 +1505,7 @@ Private Function ParseForAST(stmtTokens As Collection) As ASF_Map
     Dim stepTok As Collection
     Dim bodyToks As Collection
     Dim i As Long: i = 2
-    Do While i <= stmtTokens.count And Not (stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = "(")
+    Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "(")
         i = i + 1
     Loop
     If i > stmtTokens.count Then Set ParseForAST = node: Exit Function
@@ -1587,7 +1579,7 @@ Private Function ParseForAST(stmtTokens As Collection) As ASF_Map
 
     Set stepTok = New Collection
     hdrParen = 0: hdrBracket = 0: hdrBrace = 0
-    Do While i <= stmtTokens.count And Not (stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = ")")
+    Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = ")")
         If stmtTokens(i)(0) = "PAREN" Then
             Select Case stmtTokens(i)(1)
                 Case "("
@@ -1609,7 +1601,7 @@ Private Function ParseForAST(stmtTokens As Collection) As ASF_Map
     Loop
     node.SetValue "step", ParseExprTokensToNode(stepTok)
 
-    Do While i <= stmtTokens.count And Not (stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = "{")
+    Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "{")
         i = i + 1
     Loop
     If i > stmtTokens.count Then Set ParseForAST = node.Clone: GoTo clean_
@@ -1644,7 +1636,7 @@ End Function
 Private Function ParseWhileAST(stmtTokens As Collection) As ASF_Map
     Dim node As ASF_Map: Set node = MakeNode("While")
     Dim i As Long: i = 2
-    Do While i <= stmtTokens.count And Not (stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = "(")
+    Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "(")
         i = i + 1
     Loop
     If i > stmtTokens.count Then Set ParseWhileAST = node: Exit Function
@@ -1669,7 +1661,7 @@ Private Function ParseWhileAST(stmtTokens As Collection) As ASF_Map
     Loop
     node.SetValue "cond", ParseExprTokensToNode(condTok)
 
-    Do While i <= stmtTokens.count And Not (stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = "{")
+    Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "{")
         i = i + 1
     Loop
     If i > stmtTokens.count Then Set ParseWhileAST = node: Exit Function
@@ -1699,7 +1691,7 @@ End Function
 Private Function ParseTryCatchAST(stmtTokens As Collection) As ASF_Map
     Dim node As ASF_Map: Set node = MakeNode("TryCatch")
     Dim i As Long: i = 2
-    Do While i <= stmtTokens.count And Not (stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = "{")
+    Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "{")
         i = i + 1
     Loop
     If i > stmtTokens.count Then Set ParseTryCatchAST = node: Exit Function
@@ -1730,7 +1722,7 @@ Private Function ParseTryCatchAST(stmtTokens As Collection) As ASF_Map
     Do While k <= stmtTokens.count
         If stmtTokens(k)(0) = "IDENT" And LCase$(stmtTokens(k)(1)) = "catch" Then
             Dim kk As Long: kk = k + 1
-            Do While kk <= stmtTokens.count And Not (stmtTokens(kk)(0) = "PAREN" And stmtTokens(kk)(1) = "{")
+            Do While kk <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, kk, 0) = "PAREN" And safeTVRetInner(stmtTokens, kk, 1) = "{")
                 kk = kk + 1
             Loop
             If kk <= stmtTokens.count Then
@@ -1763,19 +1755,19 @@ End Function
 Private Function ParseSwitchAST(stmtTokens As Collection) As ASF_Map
     Dim node As ASF_Map: Set node = MakeNode("Switch")
     Dim i As Long: i = 2
-    Do While i <= stmtTokens.count And Not (stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = "(")
+    Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "(")
         i = i + 1
     Loop
     If i > stmtTokens.count Then Set ParseSwitchAST = node: Exit Function
     i = i + 1
     Dim condTok As New Collection
-    Do While i <= stmtTokens.count And Not (stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = ")")
+    Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = ")")
         condTok.Add stmtTokens(i)
         i = i + 1
     Loop
     node.SetValue "expr", ParseExprTokensToNode(condTok)
 
-    Do While i <= stmtTokens.count And Not (stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = "{")
+    Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "{")
         i = i + 1
     Loop
     If i > stmtTokens.count Then Set ParseSwitchAST = node: Exit Function
@@ -1784,7 +1776,7 @@ Private Function ParseSwitchAST(stmtTokens As Collection) As ASF_Map
     Set cases = New Collection
     Dim defaultBlock As Collection
     Dim valTok As Collection
-    Do While i <= stmtTokens.count And Not (stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = "}")
+    Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "}")
         If stmtTokens(i)(0) = "IDENT" And LCase$(stmtTokens(i)(1)) = "case" Then
             i = i + 1
             Set valTok = New Collection
@@ -2316,6 +2308,13 @@ Private Function safeTVRet(ByRef arr As Variant, idx As Long) As String
     Exit Function
 err_handler:
     safeTVRet = vbNullString
+End Function
+Private Function safeTVRetInner(ByRef arr As Variant, idx1 As Long, idx2 As Long) As String
+    On Error GoTo err_handler
+    safeTVRetInner = arr(idx1)(idx2)
+    Exit Function
+err_handler:
+    safeTVRetInner = vbNullString
 End Function
 ' ---------------------
 ' End Compiler class
