@@ -647,7 +647,7 @@ End Sub
 Private Sub map_nested_array()
     On Error GoTo TestFail
     Dim globals As ASF_Globals
-    GetResult "a = [1,[2,[3,[4]]]]; b = a.map(fun(x) { return x * 10 }); print(b);)", True
+    GetResult "a = [1,[2,[3,[4]]]]; b = a.map(fun(x) { return x * 10 }); print(b);", True
     Set globals = scriptEngine.GetGlobals
     With globals
         actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
@@ -885,7 +885,7 @@ Private Sub pop_push()
         actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
                     & CStr(.gRuntimeLog(.gRuntimeLog.count))
     End With
-    expected = "PRINT:[ 1, 2, 3 ], 4"
+    expected = "PRINT:[ 1, 2, 3 ], PRINT:4"
     Assert.AreEqual expected, actual
 
 TestExit:
