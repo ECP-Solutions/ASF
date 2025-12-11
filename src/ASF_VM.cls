@@ -819,7 +819,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
             ' builtin length function
             If fname = ".__len__" Then
                 Dim argn As Collection: Set argn = node.GetValue("args")
-                Dim av As Variant: av = EvalExprNode(argn(1), progScope)
+                Dim av As Variant: vAssignment av, EvalExprNode(argn(1), progScope)
                 If Not IsArray(av) Then
                     vAssignment tmpResult, 0
                 Else
@@ -1049,16 +1049,34 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                             Next zz
                             ' write back to original container via ResolvePath
                             Dim rp As ASF_Map: Set rp = ResolvePath(calleeExpr.GetValue("base"), progScope, True)
-                            If rp.GetValue("kind") = "scopeVar" Then
-                                progScope.SetValue CStr(rp.GetValue("key")), newArr
-                            ElseIf rp.GetValue("kind") = "prop" Then
-                                Dim cont As Variant: cont = rp.GetValue("container")
-                                If TypeName(cont) = "ASF_Map" Then
-                                    cont.SetValue CStr(rp.GetValue("key")), newArr
-                                ElseIf TypeName(cont) = "ASF_ScopeStack" Then
-                                    cont.SetValue CStr(rp.GetValue("key")), newArr
-                                End If
-                            End If
+                            Select Case rp.GetValue("kind")
+                                Case "scopeVar"
+                                    progScope.SetValue CStr(rp.GetValue("key")), newArr
+                                Case "prop"
+                                    Dim cont As Variant: vAssignment cont, ResolveProp(rp)
+                                    Dim propKey As String: propKey = CStr(rp.GetValue("key"))
+                                    If IsObject(cont) Then
+                                        Select Case TypeName(cont)
+                                            Case "ASF_Map"
+                                                ' set property on map
+                                                cont.SetValue propKey, newArr
+                                            Case "ASF_ScopeStack"
+                                                ' set named variable in scope stack
+                                                cont.SetValue propKey, newArr
+                                            Case Else
+                                                ' try a late-bound SetValue, otherwise fallback to current progScope assignment
+                                                On Error Resume Next
+                                                cont.SetValue propKey, newArr
+                                                If err.Number <> 0 Then
+                                                    err.Clear
+                                                    progScope.SetValue propKey, newArr
+                                                End If
+                                        End Select
+                                    Else
+                                        ' couldn't resolve a container object — fall back to storing in current scope
+                                        progScope.SetValue propKey, newArr
+                                    End If
+                            End Select
                             vAssignment tmpResult, newLen
                             GoTo exitfun
                         Case "pop"
@@ -1077,16 +1095,34 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                             End If
                             ' write back:
                             Dim rp2 As ASF_Map: Set rp2 = ResolvePath(calleeExpr.GetValue("base"), progScope, True)
-                            If rp2.GetValue("kind") = "scopeVar" Then
-                                progScope.SetValue CStr(rp2.GetValue("key")), baseValLocal
-                            ElseIf rp2.GetValue("kind") = "prop" Then
-                                Dim ccont As Variant: vAssignment ccont, rp2.GetValue("container")
-                                If TypeName(ccont) = "ASF_Map" Then
-                                    ccont.SetValue CStr(rp2.GetValue("key")), baseValLocal
-                                ElseIf TypeName(ccont) = "ASF_ScopeStack" Then
-                                    ccont.SetValue CStr(rp2.GetValue("key")), baseValLocal
-                                End If
-                            End If
+                            Select Case rp.GetValue("kind")
+                                Case "scopeVar"
+                                    progScope.SetValue CStr(rp2.GetValue("key")), baseValLocal
+                                Case "prop"
+                                    Dim ccont As Variant: vAssignment ccont, ResolveProp(rp)
+                                    Dim cpropKey As String: cpropKey = CStr(rp.GetValue("key"))
+                                    If IsObject(ccont) Then
+                                        Select Case TypeName(ccont)
+                                            Case "ASF_Map"
+                                                ' set property on map
+                                                ccont.SetValue cpropKey, baseValLocal
+                                            Case "ASF_ScopeStack"
+                                                ' set named variable in scope stack
+                                                ccont.SetValue cpropKey, baseValLocal
+                                            Case Else
+                                                ' try a late-bound SetValue, otherwise fallback to current progScope assignment
+                                                On Error Resume Next
+                                                ccont.SetValue cpropKey, baseValLocal
+                                                If err.Number <> 0 Then
+                                                    err.Clear
+                                                    progScope.SetValue cpropKey, baseValLocal
+                                                End If
+                                        End Select
+                                    Else
+                                        ' couldn't resolve a container object — fall back to storing in current scope
+                                        progScope.SetValue cpropKey, baseValLocal
+                                    End If
+                            End Select
                             vAssignment tmpResult, popped
                         Case Else
                             GoTo namedFunctions
@@ -1845,6 +1881,22 @@ Private Function ResolveIndexProp(ByRef lval) As Variant
         vAssignment pObject, pObject.GetValue(keys(i))
     Next
     vAssignment ResolveIndexProp, pObject(keys(1))
+End Function
+Private Function ResolveProp(ByRef lval) As Variant
+    Dim baseVariable As String
+    Dim pObject As Variant
+    Dim i As Long
+    vAssignment pObject, lval("parentObj")
+    Do While pObject.Exists("parentObj")
+        vAssignment pObject, pObject("parentObj")
+        If Not pObject.Exists("parentKey") Then
+            Exit Do
+        End If
+    Loop
+    baseVariable = pObject("key")
+    Dim container As Variant: vAssignment container, lval("container")
+    vAssignment pObject, container.GetValue(baseVariable)
+    vAssignment ResolveProp, pObject
 End Function
  Sub AssignToArrayByName(arrVarName As String, idx As Long, newValue As Variant, progScope As ASF_ScopeStack)
      Dim arrVal As Variant: arrVal = progScope.GetValue(arrVarName)
