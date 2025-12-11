@@ -642,58 +642,385 @@ TestFail:
     Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
-        ' Deeply nested arrays //Expect: [10,[20,[30,[40]]]]
-'        pidx = .Compile("a = [1,[2,[3,[4]]]]; b = a.map(fun(x) { return x * 10 }); print(b);")
-        ' Array of objects + nested arrays //Expect: [{k:2, arr:[11, 21]}, {k:4, arr:[ 31, [41, 51]]}]
-'        pidx = .Compile("a = [{ k: 1, arr: [10,20] }, { k: 2, arr: [30,[40,50]] }];" & _
+
+'@TestMethod("map_nested_array")
+Private Sub map_nested_array()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "a = [1,[2,[3,[4]]]]; b = a.map(fun(x) { return x * 10 }); print(b);)", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 10, [ 20, [ 30, [ 40 ] ] ] ]"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("map_array_of_objects")
+Private Sub map_array_of_objects()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "a = [{ k: 1, arr: [10,20] }, { k: 2, arr: [30,[40,50]] }];" & _
                         "b = a.map(fun(o){return { k: o.k * 2, arr: o.arr.map(fun(x){ return x + 1 })}; });" & _
-                        "print(b);")
-        ' Closure capture inside map //Expect: [5,10,15]
-'        pidx = .Compile("mul = fun(factor){return fun(x){ return x * factor };};" & _
+                        "print(b);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ { k: 2, arr: [ 11, 21 ] }, { k: 4, arr: [ 31, [ 41, 51 ] ] } ]"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("map_closure_capture")
+Private Sub map_closure_capture()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "mul = fun(factor){return fun(x){ return x * factor };};" & _
                         "a = [1,2,3]; b = a.map(mul(5));" & _
-                        "print(b);")
-        ' Map returning nested arrays //Expect: [[1,1],[2,2]]
-'        pidx = .Compile("print( [1,2].map(fun(x){ return [x,x] }) );")
-        ' Map returning arrays that contain objects that contain arrays
-        ' //Expect: [{orig:1, pair:[1, 1], nested:[[1, 2], {v:1}]}, {orig:2, pair:[2, 4], nested:[[2, 3], {v:4}]}]
-'        pidx = .Compile("a = [1,2];" & _
+                        "print(b);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 5, 10, 15 ]"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("map_returning_nested_array")
+Private Sub map_returning_nested_array()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "print( [1,2].map(fun(x){ return [x,x] }) );", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ [ 1, 1 ], [ 2, 2 ] ]"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("map_returning_objects_and_arrays")
+Private Sub map_returning_objects_and_arrays()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "a = [1,2];" & _
                         "b = a.map(fun(n){return {orig: n,pair: [n, n*n],nested: [ [n, n+1], { v: n*n } ]};});" & _
-                        "print(b);")
-        ' Mapping nested arrays of mixed types //Expect: [3,x,[2,y,[3]]]
-'        pidx = .Compile("a = [1,'x',[2,'y',[3]]];" & _
+                        "print(b);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ { orig: 1, pair: [ 1, 1 ], nested: [ [ 1, 2 ], { v: 1 } ] }, { orig: 2, pair: [ 2, 4 ], nested: [ [ 2, 3 ], { v: 4 } ] } ]"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("mapping_mixed_types")
+Private Sub mapping_mixed_types()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "a = [1,'x',[2,'y',[3]]];" & _
                         "b = a.map(fun(x){if (IsArray(x)) {return x} elseif (IsNumeric(x)) {return x*3} else {return x}};);" & _
-                        "print(b);")
-        ' Filter simple array //Expect: [ 2, 4 ]
-'        pidx = .Compile("a = [1,2,3,4];" & _
+                        "print(b);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 3, 'x', [ 6, 'y', [ 9 ] ] ]"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("filter_simple")
+Private Sub filter_simple()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "a = [1,2,3,4];" & _
                         "b = a.filter(fun(x){ return x % 2 == 0 });" & _
-                        "print(b);")
-        ' Filter nested arrays //Expect: [ [ 2, 3 ], [ 5 ] ]
-'        pidx = .Compile("a=[1,[2,3],4,[5]];" & _
+                        "print(b);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 2, 4 ]"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("filter_nested_arrays")
+Private Sub filter_nested_arrays()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "a=[1,[2,3],4,[5]];" & _
                         "b=a.filter(fun(x){ return IsArray(x) });" & _
-                        "print(b);")
-        ' Reduce sum with initial //Expect: 10
-'        pidx = .Compile("a=[1,2,3,4]; return(a.reduce(fun(acc,x){ return acc + x }, 0));")
-        ' Reduce sum with NO initial //Expect: 6
-'        pidx = .Compile("a=[1,2,3]; return(a.reduce(fun(acc,x){ return acc + x }));")
-        ' Slice with starting point only/ only tail //Expect: [ 20, 30, 40 ]
-'        pidx = .Compile("a=[10,20,30,40]; b=a.slice(2); print(b);")
-        ' Slice with start and end //Expect: [ 'camel', 'duck' ]
-'        pidx = .Compile("a=['ant', 'bison', 'camel', 'duck', 'elephant']; b=a.slice(3,5); print(b);")
-        ' Pop and push //Expect: [ 1, 2, 3 ], 4
-'        pidx = .Compile("a=[1,2]; a.push(3); a.push(4); x = a.pop(); print(a); print(x);")
-        ' Default range //Expect: [ 0, 1, 2 ]
-'        pidx = .Compile("print(range(3));")
-        ' Custom range //Expect: [ 1, 2 ]
-'        pidx = .Compile("print(range(1,3));")
-        ' Range with step //Expect: [ 1, 3, 5, 7, 9 ]
-'        pidx = .Compile("print(range(1,10,2));")
-        ' Flatten full //Expect: [ 1, 2, 3, 4, 5 ]
-'        pidx = .Compile("a=[1,[2,3],[4,[5]]]; b = flatten(a); print(b);")
-        ' Flatten depth 1 //Expect: [ 1, 2, [ 3 ] ]
-'        pidx = .Compile("a=[1,[2,[3]]]; b = flatten(a,1); print(b);")
-        ' Clone deep independence //Expect: [ 1, 2 ], [  1, 2 3 ]
-'        pidx = .Compile("o = { x: 1, a: [1,2] }; c = clone(o); c.a.push(3); print(o.a); print(c.a);")
-        ' Filter-reduce chain //Expect: 12
-'        pidx = .Compile("a=[1,2,3,4,5]; return(a.filter(fun(x){ return x > 2 }).reduce(fun(acc,x){ return acc + x }, 0));")
+                        "print(b);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ [ 2, 3 ], [ 5 ] ]"
+    Assert.AreEqual expected, actual
 
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
 
+'@TestMethod("reduce_with_initial")
+Private Sub reduce_with_initial()
+    On Error GoTo TestFail
+    
+    actual = CStr(GetResult("a=[1,2,3,4]; return(a.reduce(fun(acc,x){ return acc + x }, 0));"))
+    expected = "10"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("reduce_with_NO_initial")
+Private Sub reduce_with_NO_initial()
+    On Error GoTo TestFail
+    
+    actual = CStr(GetResult("a=[1,2,3]; return(a.reduce(fun(acc,x){ return acc + x }));"))
+    expected = "6"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("slice_tail_only")
+Private Sub slice_tail_only()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "a=[10,20,30,40]; b=a.slice(2); print(b);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 20, 30, 40 ]"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("slice_start_end")
+Private Sub slice_start_end()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "a=['ant', 'bison', 'camel', 'duck', 'elephant']; b=a.slice(3,5); print(b);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 'camel', 'duck' ]"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("pop_push")
+Private Sub pop_push()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "a=[1,2]; a.push(3); a.push(4); x = a.pop(); print(a); print(x);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
+                    & CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 1, 2, 3 ], 4"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("range_default")
+Private Sub range_default()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "print(range(3));", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 0, 1, 2 ]"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("range_custom")
+Private Sub range_custom()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "print(range(1,3));", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 1, 2 ]"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("range_with_step")
+Private Sub range_with_step()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "print(range(1,10,2));", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 1, 3, 5, 7, 9 ]"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("flatten_full")
+Private Sub flatten_full()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "a=[1,[2,3],[4,[5]]]; b = flatten(a); print(b);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 1, 2, 3, 4, 5 ]"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("flatten_depth_one")
+Private Sub flatten_depth_one()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "a=[1,[2,[3]]]; b = flatten(a,1); print(b);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 1, 2, [ 3 ] ]"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("clone_array")
+Private Sub clone_array()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "o = { x: 1, a: [1,2] }; c = clone(o); c.a.push(3); print(o.a); print(c.a);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
+                    & CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 1, 2 ], PRINT:[ 1, 2, 3 ]"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("filter_reduce_chain")
+Private Sub filter_reduce_chain()
+    On Error GoTo TestFail
+    
+    actual = CStr(GetResult("a=[1,2,3,4,5]; return(a.filter(fun(x){ return x > 2 }).reduce(fun(acc,x){ return acc + x }, 0));"))
+    expected = "12"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
