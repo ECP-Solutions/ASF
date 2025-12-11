@@ -663,4 +663,37 @@ End Sub
 '        pidx = .Compile("a = [1,'x',[2,'y',[3]]];" & _
                         "b = a.map(fun(x){if (IsArray(x)) {return x} elseif (IsNumeric(x)) {return x*3} else {return x}};);" & _
                         "print(b);")
+        ' Filter simple array //Expect: [ 2, 4 ]
+'        pidx = .Compile("a = [1,2,3,4];" & _
+                        "b = a.filter(fun(x){ return x % 2 == 0 });" & _
+                        "print(b);")
+        ' Filter nested arrays //Expect: [ [ 2, 3 ], [ 5 ] ]
+'        pidx = .Compile("a=[1,[2,3],4,[5]];" & _
+                        "b=a.filter(fun(x){ return IsArray(x) });" & _
+                        "print(b);")
+        ' Reduce sum with initial //Expect: 10
+'        pidx = .Compile("a=[1,2,3,4]; return(a.reduce(fun(acc,x){ return acc + x }, 0));")
+        ' Reduce sum with NO initial //Expect: 6
+'        pidx = .Compile("a=[1,2,3]; return(a.reduce(fun(acc,x){ return acc + x }));")
+        ' Slice with starting point only/ only tail //Expect: [ 20, 30, 40 ]
+'        pidx = .Compile("a=[10,20,30,40]; b=a.slice(2); print(b);")
+        ' Slice with start and end //Expect: [ 'camel', 'duck' ]
+'        pidx = .Compile("a=['ant', 'bison', 'camel', 'duck', 'elephant']; b=a.slice(3,5); print(b);")
+        ' Pop and push //Expect: [ 1, 2, 3 ], 4
+'        pidx = .Compile("a=[1,2]; a.push(3); a.push(4); x = a.pop(); print(a); print(x);")
+        ' Default range //Expect: [ 0, 1, 2 ]
+'        pidx = .Compile("print(range(3));")
+        ' Custom range //Expect: [ 1, 2 ]
+'        pidx = .Compile("print(range(1,3));")
+        ' Range with step //Expect: [ 1, 3, 5, 7, 9 ]
+'        pidx = .Compile("print(range(1,10,2));")
+        ' Flatten full //Expect: [ 1, 2, 3, 4, 5 ]
+'        pidx = .Compile("a=[1,[2,3],[4,[5]]]; b = flatten(a); print(b);")
+        ' Flatten depth 1 //Expect: [ 1, 2, [ 3 ] ]
+'        pidx = .Compile("a=[1,[2,[3]]]; b = flatten(a,1); print(b);")
+        ' Clone deep independence //Expect: [ 1, 2 ], [  1, 2 3 ]
+'        pidx = .Compile("o = { x: 1, a: [1,2] }; c = clone(o); c.a.push(3); print(o.a); print(c.a);")
+        ' Filter-reduce chain //Expect: 12
+'        pidx = .Compile("a=[1,2,3,4,5]; return(a.filter(fun(x){ return x > 2 }).reduce(fun(acc,x){ return acc + x }, 0));")
+
 
