@@ -1095,12 +1095,12 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                             End If
                             ' write back:
                             Dim rp2 As ASF_Map: Set rp2 = ResolvePath(calleeExpr.GetValue("base"), progScope, True)
-                            Select Case rp.GetValue("kind")
+                            Select Case rp2.GetValue("kind")
                                 Case "scopeVar"
                                     progScope.SetValue CStr(rp2.GetValue("key")), baseValLocal
                                 Case "prop"
-                                    Dim ccont As Variant: vAssignment ccont, ResolveProp(rp)
-                                    Dim cpropKey As String: cpropKey = CStr(rp.GetValue("key"))
+                                    Dim ccont As Variant: vAssignment ccont, ResolveProp(rp2)
+                                    Dim cpropKey As String: cpropKey = CStr(rp2.GetValue("key"))
                                     If IsObject(ccont) Then
                                         Select Case TypeName(ccont)
                                             Case "ASF_Map"
