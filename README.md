@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 > Modern scripting power inside classic VBA. Fast to adopt — impossible to ignore. 
-> **ASF** gives you useful scripting features (closures, objects, arrays, first-class functions) inside VBA — without leaving the Office ecosystem.
+> Turn VBA into a full-featured script host. **ASF brings modern scripting ergonomics (first-class functions, closures, arrays & objects, method chaining, builtin helpers like `map`/`filter`/`reduce`, and even VBExpressions) to classic VBA projects — without leaving the Office ecosystem.
 
 ASF is an embeddable scripting engine written in plain VBA that brings modern language features — first-class functions, anonymous closures, array & object literals, and safe interop with your existing VBA code — to legacy Office apps.
 
@@ -13,14 +13,14 @@ This project provides a production-proven compiler and VM plus a complete test-s
 ---
 
 ## Why ASF?
+- **Seamless bridge** between VBA codebases and modern scripting paradigms.
+- **No external runtime** — runs on top of VBA using a compact AST interpreter.
+- **Powerful features** not found in any other VBA tool: shared-write closures, expression-level anonymous functions, nested arrays & objects, array helpers, VBExpressions integration, method chaining, and more.
+- **Tested** — the comprehensive [Rubberduck](https://github.com/rubberduck-vba/Rubberduck)  test-suite passes across arithmetic, flow control, functions, closures, array/object manipulation and builtin methods.
 - **Unmatched expressiveness:** Implement complex logic with concise scripts and enrich them with heavyweight VBA code.
 - **Safe interoperability:** Delegate numeric and domain-specific work to your existing VBA functions via `@(...)`, we already have [VBA-expressions](https://github.com/ECP-Solutions/VBA-Expressions) embedded!
-- **Non-invasive adoption:** Import a few class modules and you’re ready — no COM servers, no external dependencies.
-- **Ship scripting to end-users without new runtimes.** Embed scripts into Excel/Access/Word projects and run code dynamically.
 - **Readable, debuggable AST-first design.** The Compiler emits Map-based ASTs (human-inspectable). The VM executes those ASTs directly so you can step through behavior and trace problems — no opaque bytecode black box.
-- **Enterprise-ready:** Canonical source modules (`ASF_Compiler.cls`, `ASF_VM.cls`) and a full [Rubberduck](https://github.com/rubberduck-vba/Rubberduck) test-suite enable confident audits and CI.
 - **Closure semantics you actually expect.** Shared-write closure capture (like JavaScript/Python) keeps behavior intuitive.
-- **Progressive optimization path.** Start with a rock-solid AST runtime for correctness — later switch on the performant compact-bytecode fast-path with minimal changes.
 - **Designed for real engineering work.** Robust array/object handling, VB-expression passthrough (`@(...)`), and a small host-wrapper for easy integration.
 
 ---
@@ -31,11 +31,14 @@ This project provides a production-proven compiler and VM plus a complete test-s
 - Arrays, objects (Map-like), member access and indexing.
 - First-class functions + anonymous functions + closures.
 - Control flow: `if` / `elseif` / `else`, `for`, `while`, `switch`, `try/catch`, `break` / `continue`.
+- Map / Filter / Reduce / Slice / Push / Pop as array methods
+- Builtin helpers: `range`, `flatten`, `clone`, `IsArray`, `IsNumeric`, etc.
+- Method chaining: `a.filter(...).reduce(...)`
 - `print(...)` convenience for quick debugging.
+- Pretty-printing for arrays/objects with cycle-safety
 - VBA expressions passthrough (`@(...)`) to call into native user defined functions where needed.
-- Traceable runtime log via `GLOBALS_.gRuntimeLog` for deep debugging.
 - Compact wrapper (`ASF` class) — `Compile` + `Run` are one-liners from host code.
-
+  
 ---
 
 ## Quick Start
@@ -45,15 +48,25 @@ This project provides a production-proven compiler and VM plus a complete test-s
 
 **Recommended module list:** `ASF.cls`, `ASF_Compiler.cls`, `ASF_VM.cls`, `ASF_Globals.cls`, `ASF_ScopeStack.cls`, `ASF_Parser.cls`, `ASF_Map.cls`, `UDFunctions.cls`, `VBAcallBack.cls`, `VBAexpressions.cls`, `VBAexpressionsScope.cls`.
 
-**Minimal example**
+**Examples**
 
+Map & nested arrays:
 ```vb
 Dim engine As ASF
 Set engine = New ASF
 Dim idx As Long
-idx = engine.Compile("a = 1; f = fun() { a = a + 1; return a }; print(f()); print(a);")
-engine.Run idx
-' Inspect engine.GetGlobals.gRuntimeLog
+idx = engine.Compile("a = [1,'x',[2,'y',[3]]];" & _
+"b = a.map(fun(x){" & _
+  "if (IsArray(x)) { return x }" & _
+  "elseif (IsNumeric(x)) { return x*3 }" & _
+  "else { return x }" & _
+"});" & _
+"print(b);")
+engine.Run idx '// => [ 3, 'x', [ 6, 'y', [ 9 ] ] ]
+```
+Chained helpers:
+```vb
+"a=[1,2,3,4,5]; return(a.filter(fun(x){ return x > 2 }).reduce(fun(acc,x){ return acc + x }, 0));" '// => 12
 ```
 ---
 
@@ -65,8 +78,7 @@ engine.Run idx
 - Member access, nested indexing, and LValue semantics for assignments.
 - Short-circuit logical operators, ternary operator, compound assignments.
 - VB-expression embedding: reuse your VBA libraries seamlessly.
-- Pretty-printing, runtime logging and cycle-safe map/collection serialization.
-
+  
 ---
 
 ## Examples & Patterns
