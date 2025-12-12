@@ -1,4 +1,4 @@
-# ASF — Syntax Reference (v1.0.0)
+# ASF — Syntax Reference
 
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/ECP-Solutions/ASF?style=plastic)](https://github.com/ECP-Solutions/ASF/releases/latest) [![Tests](https://img.shields.io/badge/tests-85%2B-green.svg)](.)  
 
