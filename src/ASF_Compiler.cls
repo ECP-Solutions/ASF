@@ -57,7 +57,7 @@ Private Function CheckParents(src As String) As Boolean
     Dim openPar As Long
     
     For i = 1 To Len(src)
-        Select Case Mid(src, i, 1)
+        Select Case mid(src, i, 1)
             Case "[", "{", "("
                 openPar = openPar + 1
             Case "]", "}", ")"
@@ -535,7 +535,7 @@ Private Function ParseStatementTokensToAST(stmtTokens As Collection) As ASF_Map
             Dim nm As String: nm = lhsT(1)(1)
             If InStr(nm, "[") > 0 Then
                 Dim baseName As String: baseName = left$(nm, InStr(nm, "[") - 1)
-                Dim idxStr As String: idxStr = Mid$(nm, InStr(nm, "[") + 1, Len(nm) - InStr(nm, "[") - 1)
+                Dim idxStr As String: idxStr = mid$(nm, InStr(nm, "[") + 1, Len(nm) - InStr(nm, "[") - 1)
                 Dim idxNode As ASF_Map: Set idxNode = ParseExprFromStringToNode(idxStr)
                 Set lhsNode = MakeNode("Index")
                 Dim tmpVar As ASF_Map: Set tmpVar = MakeNode("Variable")
@@ -806,7 +806,9 @@ Private Function ParseAddNode(types() As String, vals() As Variant, n As Long, B
     Dim node As ASF_Map
     Set left_ = ParseMulNode(types, vals, n, idx)
     Do While idx < n
-        If Not (safeTVRet(types, idx) = "OP" And (safeTVRet(vals, idx) = "+" Or safeTVRet(vals, idx) = "-")) Then Exit Do
+        If Not (safeTVRet(types, idx) = "OP" And (safeTVRet(vals, idx) = "+" _
+                                                    Or safeTVRet(vals, idx) = "-" _
+                                                    Or safeTVRet(vals, idx) = "&")) Then Exit Do
         op = safeTVRet(vals, idx)
         idx = idx + 1
         Set right_ = ParseMulNode(types, vals, n, idx)
@@ -1144,7 +1146,7 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
                 Dim propName As String
                 
                 Do While posS <= L
-                    Dim ch0 As String: ch0 = Mid$(s, posS, 1)
+                    Dim ch0 As String: ch0 = mid$(s, posS, 1)
                     If ch0 = "." Or ch0 = "[" Then Exit Do
                     ident = ident & ch0
                     posS = posS + 1
@@ -1153,12 +1155,12 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
                 currentNode.SetValue "name", ident
 
                 Do While posS <= L
-                    Dim ch As String: ch = Mid$(s, posS, 1)
+                    Dim ch As String: ch = mid$(s, posS, 1)
                     If ch = "." Then
                         posS = posS + 1
                         propName = ""
                         Do While posS <= L
-                            Dim ch2 As String: ch2 = Mid$(s, posS, 1)
+                            Dim ch2 As String: ch2 = mid$(s, posS, 1)
                             If ch2 = "." Or ch2 = "[" Then Exit Do
                             propName = propName & ch2
                             posS = posS + 1
@@ -1185,7 +1187,7 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
                         Dim posClose As Long: posClose = 0
                         Dim iCh As Long
                         For iCh = posS To L
-                            Dim cch As String: cch = Mid$(s, iCh, 1)
+                            Dim cch As String: cch = mid$(s, iCh, 1)
                             If cch = "[" Then
                                 depthBr = depthBr + 1
                             ElseIf cch = "]" Then
@@ -1199,7 +1201,7 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
                         If posClose = 0 Then
                             err.Raise vbObjectError + 8002, "Compiler.ParsePrimary", "Invalid collapsed identifier: missing ']' in " & s
                         End If
-                        Dim idxStr As String: idxStr = Mid$(s, posS + 1, posClose - posS - 1)
+                        Dim idxStr As String: idxStr = mid$(s, posS + 1, posClose - posS - 1)
                         Dim idxNodeFromStr As ASF_Map: Set idxNodeFromStr = ParseExprFromStringToNode(idxStr)
                         Set indexNode = MakeNode("Index")
                         indexNode.SetValue "base", currentNode.Clone
@@ -1244,7 +1246,9 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
                     idx = idx + 1
                     Dim emptyArrNode As ASF_Map: Set emptyArrNode = MakeNode("Array")
                     emptyArrNode.SetValue "items", arrList
-                    Set ParsePrimaryNode = emptyArrNode.Clone
+                    Set currentNode = emptyArrNode.Clone
+                    Set currentNode = DoPostfixChaining(currentNode, types, vals, n, idx)
+                    Set ParsePrimaryNode = currentNode.Clone
                     Exit Function
                 End If
 

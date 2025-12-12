@@ -693,7 +693,7 @@ Private Function AbstractValidate(strAssignments As String) As Boolean
     L = Len(d_FullGrammar)
     i = 1
     Do
-        tmpResult = (InStr(1, strAssignments, Mid(d_FullGrammar, i, 1)) = 0)
+        tmpResult = (InStr(1, strAssignments, mid(d_FullGrammar, i, 1)) = 0)
         i = i + 1
     Loop While i <= L And tmpResult
     AbstractValidate = tmpResult
@@ -6341,14 +6341,14 @@ Private Sub LUbkSub(ByRef a() As Double, ByRef indx() As Long, ByRef b() As Doub
     Dim j As Long
     Dim n As Long
     Dim pSum As Double
-    Dim aLB As Long
-    Dim aUB As Long
+    Dim alb As Long
+    Dim aub As Long
     Dim bLB As Long
     
-    aUB = UBound(a)
-    aLB = LBound(a)
+    aub = UBound(a)
+    alb = LBound(a)
     bLB = LBound(b)
-    n = aUB - aLB + 1
+    n = aub - alb + 1
     ii = 0
     For i = 1 To n
         ip = indx(i)
@@ -6356,7 +6356,7 @@ Private Sub LUbkSub(ByRef a() As Double, ByRef indx() As Long, ByRef b() As Doub
         b(ip + bLB - 1) = b(i + bLB - 1)
         If ii Then
             For j = ii To i - 1
-                pSum = pSum - a(i + aLB - 1, j + aLB - 1) * b(j + bLB - 1)
+                pSum = pSum - a(i + alb - 1, j + alb - 1) * b(j + bLB - 1)
             Next j
         ElseIf pSum Then
             ii = i
@@ -6366,9 +6366,9 @@ Private Sub LUbkSub(ByRef a() As Double, ByRef indx() As Long, ByRef b() As Doub
     For i = n To 1 Step -1
         pSum = b(i + bLB - 1)
         For j = i + 1 To n
-            pSum = pSum - a(i + aLB - 1, j + aLB - 1) * b(j + bLB - 1)
+            pSum = pSum - a(i + alb - 1, j + alb - 1) * b(j + bLB - 1)
         Next j
-        b(i + bLB - 1) = pSum / a(i + aLB - 1, i + aLB - 1)
+        b(i + bLB - 1) = pSum / a(i + alb - 1, i + alb - 1)
     Next i
 End Sub
 
@@ -6398,19 +6398,19 @@ Private Sub LUdecomp(ByRef a() As Double, ByRef indx() As Long, _
     Dim pSum As Double
     Dim temp As Double
     Dim vv() As Double         'vv stores the implicit scaling of each row
-    Dim aLB As Long
-    Dim aUB As Long
+    Dim alb As Long
+    Dim aub As Long
     
-    aUB = UBound(a)
-    aLB = LBound(a)
-    n = aUB - aLB + 1
+    aub = UBound(a)
+    alb = LBound(a)
+    n = aub - alb + 1
     ReDim vv(1 To n)
     ReDim indx(1 To n)
     d = 1                       'No row interchanges yet
     For i = 1 To n              'Loop rows to get the implicit scaling information
         big = 0
         For j = 1 To n
-            temp = Abs(a(i + aLB - 1, j + aLB - 1))
+            temp = Abs(a(i + alb - 1, j + alb - 1))
             If temp > big Then big = temp
         Next j
         If big = 0 Then         'a is a singular matrix
@@ -6421,19 +6421,19 @@ Private Sub LUdecomp(ByRef a() As Double, ByRef indx() As Long, _
     Next i
     For j = 1 To n               'Loop over columns of Crout's method
         For i = 1 To j - 1
-            pSum = a(i + aLB - 1, j + aLB - 1)
+            pSum = a(i + alb - 1, j + alb - 1)
             For k = 1 To i - 1
-                pSum = pSum - a(i + aLB - 1, k + aLB - 1) * a(k + aLB - 1, j + aLB - 1)
+                pSum = pSum - a(i + alb - 1, k + alb - 1) * a(k + alb - 1, j + alb - 1)
             Next k
-            a(i + aLB - 1, j + aLB - 1) = pSum
+            a(i + alb - 1, j + alb - 1) = pSum
         Next i
         big = 0                  'Initialize for search the largest pivot element
         For i = j To n
-            pSum = a(i + aLB - 1, j + aLB - 1)
+            pSum = a(i + alb - 1, j + alb - 1)
             For k = 1 To j - 1
-                pSum = pSum - a(i + aLB - 1, k + aLB - 1) * a(k + aLB - 1, j + aLB - 1)
+                pSum = pSum - a(i + alb - 1, k + alb - 1) * a(k + alb - 1, j + alb - 1)
             Next k
-            a(i + aLB - 1, j + aLB - 1) = pSum
+            a(i + alb - 1, j + alb - 1) = pSum
             dum = vv(i) * Abs(pSum)
             If dum >= big Then
                 big = dum
@@ -6442,21 +6442,21 @@ Private Sub LUdecomp(ByRef a() As Double, ByRef indx() As Long, _
         Next i
         If j <> imax Then         'Need rows interchange?
             For k = 1 To n
-                dum = a(imax + aLB - 1, k + aLB - 1)
-                a(imax + aLB - 1, k + aLB - 1) = a(j + aLB - 1, k + aLB - 1)
-                a(j + aLB - 1, k + aLB - 1) = dum
+                dum = a(imax + alb - 1, k + alb - 1)
+                a(imax + alb - 1, k + alb - 1) = a(j + alb - 1, k + alb - 1)
+                a(j + alb - 1, k + alb - 1) = dum
             Next k
             d = -1 * d           'Change parity
             vv(imax) = vv(j)     'Change scale factor
         End If
         indx(j) = imax
-        If a(j + aLB - 1, j + aLB - 1) = 0 Then    'Avoid division by zero in singular matrix
-            a(j + aLB - 1, j + aLB - 1) = Tiny
+        If a(j + alb - 1, j + alb - 1) = 0 Then    'Avoid division by zero in singular matrix
+            a(j + alb - 1, j + alb - 1) = Tiny
         End If
         If j <> n Then           'Divide by the pivot element
-            dum = 1 / a(j + aLB - 1, j + aLB - 1)
+            dum = 1 / a(j + alb - 1, j + alb - 1)
             For i = j + 1 To n
-                a(i + aLB - 1, j + aLB - 1) = a(i + aLB - 1, j + aLB - 1) * dum
+                a(i + alb - 1, j + alb - 1) = a(i + alb - 1, j + alb - 1) * dum
             Next i
         End If
     Next j
@@ -6633,14 +6633,14 @@ Private Function Mid_(ByRef expression As String, ByRef fname As String) As Stri
     Select Case argsCount
         Case 2
             tmpEval = ToLiteralString( _
-                                        Mid( _
+                                        mid( _
                                                 FormatLiteralString(tmpData(lb), True), _
                                                 CLng(FormatLiteralString(tmpData(ub), True)) _
                                                 ) _
                                     )
         Case 3
             tmpEval = ToLiteralString( _
-                                        Mid( _
+                                        mid( _
                                                 FormatLiteralString(tmpData(lb), True), _
                                                 CLng(FormatLiteralString(tmpData(lb + 1), True)), _
                                                 CLng(FormatLiteralString(tmpData(ub), True)) _
@@ -6744,13 +6744,13 @@ Private Function MInverse_(ByRef a() As Double, ByRef indx() As Long, _
     Dim col() As Double
     Dim i As Long
     Dim j As Long
-    Dim aUB As Long
-    Dim aLB As Long
+    Dim aub As Long
+    Dim alb As Long
     Dim n As Long
     
-    aUB = UBound(a)
-    aLB = LBound(a)
-    n = aUB - aLB + 1
+    aub = UBound(a)
+    alb = LBound(a)
+    n = aub - alb + 1
     ReDim y(0 To n - 1, 0 To n - 1)
     ReDim col(1 To n)
     LUdecomp a, indx, d
@@ -7012,8 +7012,8 @@ End Function
 
 Private Function MMULT_(ByRef a() As Double, ByRef b As Variant) As Variant
     Dim aIsVector As Boolean
-    Dim aLB As Long, aLB2 As Long
-    Dim aUB As Long, aUB2 As Long
+    Dim alb As Long, aLB2 As Long
+    Dim aub As Long, aUB2 As Long
     Dim bIsVector As Boolean
     Dim bLB As Long, bLB2 As Long
     Dim bUB As Long, bUB2 As Long
@@ -7043,35 +7043,35 @@ Private Function MMULT_(ByRef a() As Double, ByRef b As Variant) As Variant
             (Not aIsVector And Not IsArray(b)) Then '1D or 2D array x scalar
         If IsArray(a) Then
             If aIsVector Then
-                aLB = LBound(a): aUB = UBound(a)
-                m = aUB - aLB + 1
+                alb = LBound(a): aub = UBound(a)
+                m = aub - alb + 1
                 ReDim c(0 To m - 1)
                 For i = 0 To m - 1
-                    c(i) = a(aLB + i) * b
+                    c(i) = a(alb + i) * b
                 Next i
             Else
-                aLB = LBound(a): aUB = UBound(a)
+                alb = LBound(a): aub = UBound(a)
                 aLB2 = LBound(a, 2): aUB2 = UBound(a, 2)
-                n = aUB - aLB + 1
+                n = aub - alb + 1
                 m = aUB2 - aLB2 + 1
                 ReDim c(0 To n - 1, 0 To m - 1)
                 For i = 0 To n - 1
                     For j = 0 To m - 1
-                        c(i, j) = a(aLB + i, aLB2 + j) * b
+                        c(i, j) = a(alb + i, aLB2 + j) * b
                     Next j
                 Next i
             End If
         End If
     ElseIf aIsVector And IsArray(b) Then '1D array x 2D array
-        VM_DOT_ a, b, aLB, aLB2, aUB, _
+        VM_DOT_ a, b, alb, aLB2, aub, _
                 aUB2, bLB2, bUB2, c, i, j, _
                 m, n, pSum, bLB, bUB, jj
     ElseIf Not aIsVector And Not bIsVector Then '2D array x 2D array
-        MM_DOT_ a, b, aLB, aLB2, aUB, _
+        MM_DOT_ a, b, alb, aLB2, aub, _
                 aUB2, bLB, bLB2, bUB, _
                 bUB2, c, i, j, jj, m, n, pSum
     ElseIf Not aIsVector And bIsVector Then '2D array x 1D array
-        MV_DOT_ a, b, aLB, aLB2, aUB, _
+        MV_DOT_ a, b, alb, aLB2, aub, _
                 aUB2, bLB, bLB2, bUB, _
                 bUB2, c, i, j, jj, m, n, pSum
     End If
@@ -7086,16 +7086,16 @@ Private Function MMULT_(ByRef a() As Double, ByRef b As Variant) As Variant
     End If
 End Function
 
-Private Sub MM_DOT_(ByRef a() As Double, ByRef b As Variant, ByRef aLB As Long, ByRef aLB2 As Long, ByRef aUB As Long, _
+Private Sub MM_DOT_(ByRef a() As Double, ByRef b As Variant, ByRef alb As Long, ByRef aLB2 As Long, ByRef aub As Long, _
                     ByRef aUB2 As Long, ByRef bLB As Long, ByRef bLB2 As Long, ByRef bUB As Long, ByRef bUB2 As Long, _
                     ByRef c() As Double, ByRef i As Long, ByRef j As Long, ByRef jj As Long, ByRef m As Long, _
                     ByRef n As Long, ByRef pSum As Double)
                     
-    aLB = LBound(a): aUB = UBound(a)
+    alb = LBound(a): aub = UBound(a)
     aLB2 = LBound(a, 2): aUB2 = UBound(a, 2)
     bLB = LBound(b): bUB = UBound(b)
     bLB2 = LBound(b, 2): bUB2 = UBound(b, 2)
-    n = aUB - aLB + 1
+    n = aub - alb + 1
     m = bUB2 - bLB2 + 1
     If Not (aUB2 - aLB2 + 1) <> (bUB - bLB + 1) Then
         ReDim c(0 To n - 1, 0 To m - 1)
@@ -7103,7 +7103,7 @@ Private Sub MM_DOT_(ByRef a() As Double, ByRef b As Variant, ByRef aLB As Long, 
             For j = 0 To m - 1
                 pSum = 0
                 For jj = 0 To aUB2 - aLB2
-                    pSum = pSum + a(aLB + i, aLB2 + jj) * b(bLB + jj, bLB2 + j)
+                    pSum = pSum + a(alb + i, aLB2 + jj) * b(bLB + jj, bLB2 + j)
                 Next jj
                 c(i, j) = pSum
             Next j
@@ -7523,16 +7523,16 @@ Private Function MTranspose_(ByRef a() As Double) As Double()
     MTranspose_ = c
 End Function
 
-Private Sub MV_DOT_(ByRef a() As Double, ByVal b As Variant, ByVal aLB As Long, ByVal aLB2 As Long, _
-                    ByVal aUB As Long, ByVal aUB2 As Long, ByVal bLB As Long, ByVal bLB2 As Long, _
+Private Sub MV_DOT_(ByRef a() As Double, ByVal b As Variant, ByVal alb As Long, ByVal aLB2 As Long, _
+                    ByVal aub As Long, ByVal aUB2 As Long, ByVal bLB As Long, ByVal bLB2 As Long, _
                     ByVal bUB As Long, ByVal bUB2 As Long, ByRef c() As Double, ByVal i As Long, _
                     ByVal j As Long, ByVal jj As Long, ByVal m As Long, ByVal n As Long, ByRef pSum As Double)
                     
-    aLB = LBound(a): aUB = UBound(a)
+    alb = LBound(a): aub = UBound(a)
     aLB2 = LBound(a, 2): aUB2 = UBound(a, 2)
     bLB = 0: bUB = 0
     bLB2 = LBound(b): bUB2 = UBound(b)
-    n = aUB - aLB + 1
+    n = aub - alb + 1
     m = bUB2 - bLB2 + 1
     If Not (aUB2 - aLB2 + 1) <> (bUB - bLB + 1) Then
         ReDim c(0 To n - 1, 0 To m - 1)
@@ -7540,7 +7540,7 @@ Private Sub MV_DOT_(ByRef a() As Double, ByVal b As Variant, ByVal aLB As Long, 
             For j = 0 To m - 1
                 pSum = 0
                 For jj = 0 To aUB2 - aLB2
-                    pSum = pSum + a(aLB + i, aLB2 + jj) * b(bLB2 + j)
+                    pSum = pSum + a(alb + i, aLB2 + jj) * b(bLB2 + j)
                 Next jj
                 c(i, j) = pSum
             Next j
@@ -10022,16 +10022,16 @@ Private Sub VariablesInit(ByRef expression As String)
     P_SCOPE.FillPredefinedVars
 End Sub
 
-Private Sub VM_DOT_(ByRef a() As Double, ByRef b As Variant, ByRef aLB As Long, ByRef aLB2 As Long, _
-                    ByRef aUB As Long, ByRef aUB2 As Long, ByRef bLB2 As Long, ByRef bUB2 As Long, _
+Private Sub VM_DOT_(ByRef a() As Double, ByRef b As Variant, ByRef alb As Long, ByRef aLB2 As Long, _
+                    ByRef aub As Long, ByRef aUB2 As Long, ByRef bLB2 As Long, ByRef bUB2 As Long, _
                     ByRef c() As Double, ByRef i As Long, ByRef j As Long, ByRef m As Long, _
                     ByRef n As Long, ByRef pSum As Double, ByRef bLB As Long, ByRef bUB As Long, ByRef jj As Long)
                     
-    aLB = 0: aUB = 0
+    alb = 0: aub = 0
     aLB2 = LBound(a): aUB2 = UBound(a)
     bLB = LBound(b): bUB = UBound(b)
     bLB2 = LBound(b, 2): bUB2 = UBound(b, 2)
-    n = aUB - aLB + 1
+    n = aub - alb + 1
     m = bUB2 - bLB2 + 1
     If Not (aUB2 - aLB2 + 1) <> (bUB - bLB + 1) Then
         ReDim c(0 To n - 1, 0 To m - 1)
@@ -10039,7 +10039,7 @@ Private Sub VM_DOT_(ByRef a() As Double, ByRef b As Variant, ByRef aLB As Long, 
             For j = 0 To m - 1
                 pSum = 0
                 For jj = 0 To aUB2 - aLB2        'Loop a() columns
-                    pSum = pSum + a(aLB + jj) * b(bLB + jj, bLB2 + j)
+                    pSum = pSum + a(alb + jj) * b(bLB + jj, bLB2 + j)
                 Next jj
                 c(i, j) = pSum
             Next j

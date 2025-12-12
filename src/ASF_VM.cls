@@ -49,7 +49,7 @@ Public Sub RunProgramByIndex(idx As Long)
     Dim stmts As Collection: Set stmts = p(1)
     Dim rawScope As Collection: Set rawScope = p(2)
     Dim optionBase As Long: optionBase = IIf(UBound(p) >= 3, p(3), 1)
-    Dim progScope As New ASF_ScopeStack
+    Dim progScope As ASF_ScopeStack: Set progScope = New ASF_ScopeStack
     progScope.LoadRaw rawScope
     progScope.SetValue "__option_base", optionBase
     progScope.Push
@@ -286,7 +286,7 @@ Private Function ParsePath(ByVal path As String) As Collection
     Dim lenP As Long: lenP = Len(path)
     Dim currentPart As String
     While pos <= lenP
-        Dim ch As String: ch = Mid(path, pos, 1)
+        Dim ch As String: ch = mid(path, pos, 1)
         If ch = "." Then
             If currentPart <> "" Then col.Add currentPart
             currentPart = ""
@@ -296,11 +296,11 @@ Private Function ParsePath(ByVal path As String) As Collection
             currentPart = ""
             Dim startB As Long: startB = pos
             pos = pos + 1
-            While pos <= lenP And Mid(path, pos, 1) <> "]"
+            While pos <= lenP And mid(path, pos, 1) <> "]"
                 pos = pos + 1
             Wend
             If pos > lenP Then err.Raise vbObjectError + 5003, "VM.ParsePath", "Unmatched bracket in path"
-            currentPart = Mid(path, startB, pos - startB + 1)
+            currentPart = mid(path, startB, pos - startB + 1)
             col.Add currentPart
             currentPart = ""
             pos = pos + 1
@@ -327,7 +327,7 @@ Private Function ResolvePath(node As ASF_Map, progScope As ASF_ScopeStack, Optio
             For ii = 2 To parts.count - IIf(forAssign, 1, 0)
                 Dim part As String: part = parts(ii)
                 If left(part, 1) = "[" Then
-                    Dim indexStr As String: indexStr = Mid(part, 2, Len(part) - 2)
+                    Dim indexStr As String: indexStr = mid(part, 2, Len(part) - 2)
                     Dim indexV As Variant: indexV = EvalVBExpressionWithScope(indexStr, progScope) ' Twist: use VBEXPR for fallback computed
                     current = GetIndexedValue(current, indexV, progScope)
                 Else
@@ -634,7 +634,41 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
     Dim baseExpr As ASF_Map
     Dim tmpMapObj As ASF_Map
     Dim calleeExpr As ASF_Map
+    Dim thisVal As Variant
     Dim fname As String
+    Dim optBase As Long
+    Dim ii As Long
+    Dim rp As ASF_Map
+    Dim cont As Variant
+    Dim propKey As String
+    Dim av As Variant
+    Dim k As Long
+    
+    Dim sep As String
+    Dim lb_val As Long, ub_val As Long, len_val As Long
+    Dim parts() As String
+    Dim ii_j As Long
+    Dim valj As Variant
+    Dim ob_opt As Long
+    Dim popped2 As Variant
+    Dim newA_s() As Variant
+    Dim idx_s As Long, k_s As Long
+    
+    Dim optBase_u2 As Long
+    Dim alb As Long, aub As Long
+    Dim len_base As Long, totalCount As Long
+    Dim outArr() As Variant, writeIdx As Long
+    Dim avTmp As Variant
+    Dim lb_b As Long, ub_b As Long
+    
+    Dim startRaw_sp As Long, startN_sp As Long, deleteCount_sp As Long
+    Dim removedCount As Long
+    Dim tempIn() As Variant, removedArr() As Variant, newTemp() As Variant
+    Dim insertCount As Long, newSize As Long
+    Dim i_sp As Long, j_sp As Long, cur As Long
+    Dim insertedItem As Variant
+    Dim removedOut() As Variant
+    
     
     Select Case tp
         Case "FuncLiteral", "AnonFunc"
@@ -819,7 +853,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
             ' builtin length function
             If fname = ".__len__" Then
                 Dim argn As Collection: Set argn = node.GetValue("args")
-                Dim av As Variant: vAssignment av, EvalExprNode(argn(1), progScope)
+                vAssignment av, EvalExprNode(argn(1), progScope)
                 If Not IsArray(av) Then
                     vAssignment tmpResult, 0
                 Else
@@ -831,7 +865,6 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
             Dim argsColl As Collection: Set argsColl = node.GetValue("args")
             Dim evaluated As Collection
             Set evaluated = New Collection
-            Dim k As Long
             For k = 1 To argsColl.count
                 evaluated.Add EvalExprNode(argsColl(k), progScope)
             Next k
@@ -872,14 +905,12 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                             If countEls < 0 Then countEls = 0
                         
                             Dim optBaseLocal As Long: optBaseLocal = progScope.GetValue("__option_base")
-                            Dim outArr() As Variant
                             If countEls = 0 Then
                                 ReDim outArr(optBaseLocal To optBaseLocal)
                             Else
                                 ReDim outArr(optBaseLocal To optBaseLocal + countEls - 1)
                             End If
                         
-                            Dim ii As Long
                             vAssignment tmpMapObj, mapper
                             For ii = 0 To countEls - 1
                                 Dim srcIndex As Long: srcIndex = baseLB + ii
@@ -964,7 +995,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                             lenA = UBound(baseValLocal) - LBound(baseValLocal) + 1
                         
                             ' runtime option base for arrays (0 or 1 typically)
-                            Dim optBase As Long: optBase = progScope.GetValue("__option_base")
+                            optBase = progScope.GetValue("__option_base")
                         
                             Dim sRaw As Long, eRaw As Long
                         
@@ -1033,7 +1064,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                 ReDim na(1 To 1)
                                 baseValLocal = na
                             End If
-                            Dim insertCount As Long: insertCount = evaluated.count
+                            insertCount = evaluated.count
                             Dim oldLB As Long: oldLB = LBound(baseValLocal)
                             Dim oldUB As Long: oldUB = UBound(baseValLocal)
                             Dim oldLen As Long: oldLen = oldUB - oldLB + 1
@@ -1048,35 +1079,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                 vAssignment newArr(oldLB + oldLen + zz - 1), evaluated(zz)
                             Next zz
                             ' write back to original container via ResolvePath
-                            Dim rp As ASF_Map: Set rp = ResolvePath(calleeExpr.GetValue("base"), progScope, True)
-                            Select Case rp.GetValue("kind")
-                                Case "scopeVar"
-                                    progScope.SetValue CStr(rp.GetValue("key")), newArr
-                                Case "prop"
-                                    Dim cont As Variant: vAssignment cont, ResolveProp(rp)
-                                    Dim propKey As String: propKey = CStr(rp.GetValue("key"))
-                                    If IsObject(cont) Then
-                                        Select Case TypeName(cont)
-                                            Case "ASF_Map"
-                                                ' set property on map
-                                                cont.SetValue propKey, newArr
-                                            Case "ASF_ScopeStack"
-                                                ' set named variable in scope stack
-                                                cont.SetValue propKey, newArr
-                                            Case Else
-                                                ' try a late-bound SetValue, otherwise fallback to current progScope assignment
-                                                On Error Resume Next
-                                                cont.SetValue propKey, newArr
-                                                If err.Number <> 0 Then
-                                                    err.Clear
-                                                    progScope.SetValue propKey, newArr
-                                                End If
-                                        End Select
-                                    Else
-                                        ' couldn't resolve a container object — fall back to storing in current scope
-                                        progScope.SetValue propKey, newArr
-                                    End If
-                            End Select
+                            WriteToContainer calleeExpr, progScope, newArr
                             vAssignment tmpResult, newLen
                             GoTo exitfun
                         Case "pop"
@@ -1094,36 +1097,874 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                 ReDim Preserve baseValLocal(lbp To ubp - 1)
                             End If
                             ' write back:
-                            Dim rp2 As ASF_Map: Set rp2 = ResolvePath(calleeExpr.GetValue("base"), progScope, True)
-                            Select Case rp2.GetValue("kind")
-                                Case "scopeVar"
-                                    progScope.SetValue CStr(rp2.GetValue("key")), baseValLocal
-                                Case "prop"
-                                    Dim ccont As Variant: vAssignment ccont, ResolveProp(rp2)
-                                    Dim cpropKey As String: cpropKey = CStr(rp2.GetValue("key"))
-                                    If IsObject(ccont) Then
-                                        Select Case TypeName(ccont)
-                                            Case "ASF_Map"
-                                                ' set property on map
-                                                ccont.SetValue cpropKey, baseValLocal
-                                            Case "ASF_ScopeStack"
-                                                ' set named variable in scope stack
-                                                ccont.SetValue cpropKey, baseValLocal
-                                            Case Else
-                                                ' try a late-bound SetValue, otherwise fallback to current progScope assignment
-                                                On Error Resume Next
-                                                ccont.SetValue cpropKey, baseValLocal
-                                                If err.Number <> 0 Then
-                                                    err.Clear
-                                                    progScope.SetValue cpropKey, baseValLocal
-                                                End If
-                                        End Select
-                                    Else
-                                        ' couldn't resolve a container object — fall back to storing in current scope
-                                        progScope.SetValue cpropKey, baseValLocal
-                                    End If
-                            End Select
+                            WriteToContainer calleeExpr, progScope, baseValLocal
                             vAssignment tmpResult, popped
+                        Case "foreach"
+                            ' forEach(fn) -> invoke fn(value, index, array) for each element; returns the original array
+                            If evaluated.count = 0 Then
+                                vAssignment tmpResult, Empty
+                                GoTo exitfun
+                            End If
+                        
+                            Dim cb As Variant: vAssignment cb, evaluated(1)
+                            If TypeName(cb) <> "ASF_Map" Or cb.GetValue("type") <> "Closure" Then
+                                vAssignment tmpResult, Empty
+                                GoTo exitfun
+                            End If
+                        
+                            ' must be an array to iterate
+                            If Not IsArray(baseValLocal) Then
+                                vAssignment tmpResult, Empty
+                                GoTo exitfun
+                            End If
+                        
+                            Dim lb As Long: lb = LBound(baseValLocal)
+                            Dim ub As Long: ub = UBound(baseValLocal)
+                            optBase = progScope.GetValue("__option_base")
+                            Dim idxLocal As Long: idxLocal = 0
+                            Dim callArgs As Collection
+                            For ii = lb To ub
+                                Set callArgs = New Collection
+                                ' value
+                                callArgs.Add baseValLocal(ii)
+                                ' index in user-space (respect option base)
+                                callArgs.Add (optBase + idxLocal)
+                                ' array reference as third arg
+                                callArgs.Add baseValLocal
+                                ' call closure with this = base array (so callback can use this)
+                                Dim tmpResCall As Variant
+                                vAssignment tmpMapObj, cb
+                                vAssignment tmpResCall, CallClosure(tmpMapObj, callArgs, baseValLocal)
+                                ' discard tmpResCall (forEach ignores return)
+                                idxLocal = idxLocal + 1
+                            Next ii
+                        
+                            ' return original array to allow chaining
+                            vAssignment tmpResult, baseValLocal
+                            GoTo exitfun
+                        Case "unique"
+                            If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim optBase_u As Long: optBase_u = progScope.GetValue("__option_base")
+                            Dim lb_u As Long: lb_u = LBound(baseValLocal)
+                            Dim ub_u As Long: ub_u = UBound(baseValLocal)
+                            Dim len_u As Long: len_u = IIf(ub_u >= lb_u, ub_u - lb_u + 1, 0)
+                            
+                            ' Fast temp buffer (worst-case size = len_u)
+                            Dim tmpBuf() As Variant
+                            If len_u <= 0 Then
+                                ReDim tmpBuf(0 To 0) ' empty
+                            Else
+                                ReDim tmpBuf(0 To len_u - 1)
+                            End If
+                            Dim outCount As Long: outCount = 0
+                            Dim i_u As Long
+                            Dim v_i As Variant
+                            For i_u = lb_u To ub_u
+                                vAssignment v_i, baseValLocal(i_u)
+                                Dim found As Boolean: found = False
+                                Dim j_u As Long
+                                For j_u = 0 To outCount - 1
+                                    If DeepEqual(tmpBuf(j_u), v_i) Then
+                                        found = True
+                                        Exit For
+                                    End If
+                                Next j_u
+                                If Not found Then
+                                    ' append to tmpBuf
+                                    vAssignment tmpBuf(outCount), v_i
+                                    outCount = outCount + 1
+                                End If
+                            Next i_u
+                            ' Build result array honoring option base
+                            If outCount = 0 Then
+                                ReDim outArr(optBase_u To optBase_u)
+                            Else
+                                ReDim outArr(optBase_u To optBase_u + outCount - 1)
+                                For k = 0 To outCount - 1
+                                    vAssignment outArr(optBase_u + k), tmpBuf(k)
+                                Next k
+                            End If
+                            vAssignment tmpResult, outArr
+                            GoTo exitfun
+                        Case "concat"
+                             ' concat: concat arrays/values into the callee array
+                            If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim optBase_c As Long: optBase_c = progScope.GetValue("__option_base")
+                            lb_b = LBound(baseValLocal)
+                            ub_b = UBound(baseValLocal)
+                            If ub_b >= lb_b Then len_base = ub_b - lb_b + 1 Else len_base = 0
+                            
+                            Dim argc As Long: argc = evaluated.count
+                            Dim p As Long
+                            totalCount = len_base
+                            
+                            ' first pass: compute total size
+                            For p = 1 To argc
+                                vAssignment avTmp, evaluated(p)
+                                If IsArray(avTmp) Then
+                                    alb = LBound(avTmp)
+                                    aub = UBound(avTmp)
+                                    If aub >= alb Then totalCount = totalCount + (aub - alb + 1)
+                                Else
+                                    totalCount = totalCount + 1
+                                End If
+                            Next p
+                            
+                            ' allocate output array honoring option base
+                            If totalCount = 0 Then
+                                ReDim outArr(optBase_c To optBase_c)
+                            Else
+                                ReDim outArr(optBase_c To optBase_c + totalCount - 1)
+                            End If
+                            
+                            ' second pass: copy base and args into outArr
+                            writeIdx = 0
+                            Dim ci As Long, q As Long
+                            If len_base > 0 Then
+                                For ci = lb_b To ub_b
+                                    vAssignment outArr(optBase_c + writeIdx), baseValLocal(ci)
+                                    writeIdx = writeIdx + 1
+                                Next ci
+                            End If
+                            For p = 1 To argc
+                                vAssignment avTmp, evaluated(p)
+                                If IsArray(avTmp) Then
+                                    alb = LBound(avTmp)
+                                    aub = UBound(avTmp)
+                                    If aub >= alb Then
+                                        For q = alb To aub
+                                            vAssignment outArr(optBase_c + writeIdx), avTmp(q)
+                                            writeIdx = writeIdx + 1
+                                        Next q
+                                    End If
+                                Else
+                                    vAssignment outArr(optBase_c + writeIdx), avTmp
+                                    writeIdx = writeIdx + 1
+                                End If
+                            Next p
+                            vAssignment tmpResult, outArr
+                            ' write back to original container (use your VM's helper to resolve LValue)
+                            WriteToContainer calleeExpr, progScope, tmpResult
+                            GoTo exitfun
+                        Case "tostring", "join"
+                            ' toString / join: join(customSep)
+                            If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
+                            sep = ", "
+                            If evaluated.count >= 1 Then sep = CStr(evaluated(1))
+                            lb_val = LBound(baseValLocal)
+                            ub_val = UBound(baseValLocal)
+                            len_val = IIf(ub_val >= lb_val, ub_val - lb_val + 1, 0)
+                            If len_val <= 0 Then
+                                ' empty -> empty string
+                                vAssignment tmpResult, ""
+                                GoTo exitfun
+                            End If
+                            ReDim parts(1 To len_val)
+                            For ii_j = 0 To len_val - 1
+                                vAssignment valj, baseValLocal(lb_val + ii_j)
+                                If IsArray(valj) Or (IsObject(valj) And TypeName(valj) = "ASF_Map") Then
+                                    parts(ii_j + 1) = ValueToStringForPrint(valj)
+                                Else
+                                    parts(ii_j + 1) = CStr(valj)
+                                End If
+                            Next ii_j
+                            Dim sb As String: sb = parts(1)
+                            For ii_j = 2 To len_val
+                                sb = sb & sep & parts(ii_j)
+                            Next ii_j
+                            vAssignment tmpResult, sb
+                            GoTo exitfun
+                        Case "shift"
+                            ' shift: remove first element, mutate array, return popped value
+                            If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim ob_s As Long: ob_s = progScope.GetValue("__option_base")
+                            Dim lb_s As Long: lb_s = LBound(baseValLocal)
+                            Dim ub_s As Long: ub_s = UBound(baseValLocal)
+                            If lb_s > ub_s Then
+                                vAssignment tmpResult, Empty: GoTo exitfun
+                            End If
+                            vAssignment popped2, baseValLocal(lb_s)
+                            ' create new array without first element
+                            If lb_s = ub_s Then
+                                ReDim baseValLocal(ob_s To ob_s)
+                                ' empty arr = single slot by convention
+                            Else
+                                ReDim newA_s(ob_s To ob_s + (ub_s - lb_s - 1))
+                                idx_s = 0
+                                For k_s = lb_s + 1 To ub_s
+                                    vAssignment newA_s(ob_s + idx_s), baseValLocal(k_s)
+                                    idx_s = idx_s + 1
+                                Next k_s
+                                baseValLocal = newA_s
+                            End If
+                            vAssignment tmpResult, popped2
+                            ' write back to original container via ResolvePath
+                            WriteToContainer calleeExpr, progScope, baseValLocal
+                            GoTo exitfun
+                        Case "unshift"
+                            ' unshift: add elements at start, returns new length
+                            If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
+                            optBase_u2 = progScope.GetValue("__option_base")
+                            lb_b = LBound(baseValLocal)
+                            ub_b = UBound(baseValLocal)
+                            len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
+                            insertCount = evaluated.count
+                            newSize = len_base + insertCount
+                            If newSize <= 0 Then
+                                ReDim outArr(optBase_u2 To optBase_u2)
+                            Else
+                                ReDim newTemp(0 To newSize - 1)
+                                cur = 0
+                                ' copy inserted args (in order)
+                                For j_sp = 1 To evaluated.count
+                                    vAssignment insertedItem, evaluated(j_sp)
+                                    newTemp(cur) = insertedItem
+                                    cur = cur + 1
+                                Next j_sp
+                                ' copy old items
+                                For i_sp = 0 To len_base - 1
+                                    newTemp(cur) = baseValLocal(lb_b + i_sp)
+                                    cur = cur + 1
+                                Next i_sp
+                                ' convert to option-base array
+                                ReDim outArr(optBase_u2 To optBase_u2 + newSize - 1)
+                                For i_sp = 0 To newSize - 1
+                                    outArr(optBase_u2 + i_sp) = newTemp(i_sp)
+                                Next i_sp
+                            End If
+                            vAssignment tmpResult, IIf(newSize <= 0, 0, (UBound(outArr) - LBound(outArr) + 1))
+                            baseValLocal = outArr
+                            WriteToContainer calleeExpr, progScope, baseValLocal
+                            GoTo exitfun
+                        Case "delete"
+                            ' delete(index): remove element at index (user-space) and return true/false
+                            If Not IsArray(baseValLocal) Or evaluated.count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
+                            optBase_u2 = progScope.GetValue("__option_base")
+                            lb_b = LBound(baseValLocal)
+                            ub_b = UBound(baseValLocal)
+                            len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
+                            startRaw_sp = CLng(evaluated(1))
+                            startN_sp = NormalizeIndex(startRaw_sp, len_base, optBase_u2) ' zero-based offset
+                            If startN_sp >= len_base Then
+                                vAssignment tmpResult, False: GoTo exitfun
+                            End If
+                            ' build tempIn
+                            If len_base > 0 Then
+                                ReDim tempIn(0 To len_base - 1)
+                                For i_sp = 0 To len_base - 1
+                                    vAssignment tempIn(i_sp), baseValLocal(lb_b + i_sp)
+                                Next i_sp
+                            Else
+                                ReDim tempIn(0 To -1)
+                            End If
+                            ' build new array without the specified element
+                            newSize = len_base - 1
+                            If newSize <= 0 Then
+                                ReDim outArr(optBase_u2 To optBase_u2)
+                            Else
+                                ReDim newTemp(0 To newSize - 1)
+                                cur = 0
+                                For i_sp = 0 To len_base - 1
+                                    If i_sp <> startN_sp Then
+                                        vAssignment newTemp(cur), tempIn(i_sp)
+                                        cur = cur + 1
+                                    End If
+                                Next i_sp
+                                ReDim outArr(optBase_u2 To optBase_u2 + newSize - 1)
+                                For i_sp = 0 To newSize - 1
+                                    vAssignment outArr(optBase_u2 + i_sp), newTemp(i_sp)
+                                Next i_sp
+                            End If
+                            baseValLocal = outArr
+                            vAssignment tmpResult, True
+                            ' write back to original container via ResolvePath
+                            WriteToContainer calleeExpr, progScope, baseValLocal
+                            GoTo exitfun
+                        Case "splice"
+                            ' splice(start, deleteCount?, ...items): mutating splice - returns array of deleted elements
+                            If Not IsArray(baseValLocal) Or evaluated.count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim optBase_sp As Long: optBase_sp = progScope.GetValue("__option_base")
+                            lb_b = LBound(baseValLocal)
+                            ub_b = UBound(baseValLocal)
+                            Dim len_sp As Long: len_sp = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
+                            startRaw_sp = CLng(evaluated(1))
+                            startN_sp = NormalizeIndex(startRaw_sp, len_sp, optBase_sp) ' zero-based offset
+                            If evaluated.count >= 2 Then
+                                deleteCount_sp = CLng(evaluated(2))
+                                If deleteCount_sp < 0 Then deleteCount_sp = 0
+                            Else
+                                deleteCount_sp = IIf(len_sp - startN_sp > 0, len_sp - startN_sp, 0)
+                            End If
+                            removedCount = IIf(len_sp - startN_sp > 0, _
+                                            IIf(deleteCount_sp < (len_sp - startN_sp), deleteCount_sp, len_sp - startN_sp), 0)
+                            ' prepare tempIn
+                            If len_sp > 0 Then
+                                ReDim tempIn(0 To len_sp - 1)
+                                For i_sp = 0 To len_sp - 1
+                                    vAssignment tempIn(i_sp), baseValLocal(lb_b + i_sp)
+                                Next i_sp
+                            Else
+                                ReDim tempIn(0 To -1)
+                            End If
+                            ' removed elements
+                            If removedCount > 0 Then
+                                ReDim removedArr(0 To removedCount - 1)
+                                For i_sp = 0 To removedCount - 1
+                                    vAssignment removedArr(i_sp), tempIn(startN_sp + i_sp)
+                                Next i_sp
+                            Else
+                                ReDim removedArr(0 To -1)
+                            End If
+                            ' insertion count
+                            insertCount = IIf(evaluated.count > 2, evaluated.count - 2, 0)
+                            newSize = len_sp - removedCount + insertCount
+                            If newSize > 0 Then
+                                ReDim newTemp(0 To newSize - 1)
+                            Else
+                                ReDim newTemp(0 To -1)
+                            End If
+                            cur = 0
+                            ' copy prefix
+                            For i_sp = 0 To startN_sp - 1
+                                If i_sp <= UBound(tempIn) Then
+                                    vAssignment newTemp(cur), tempIn(i_sp)
+                                    cur = cur + 1
+                                End If
+                            Next i_sp
+                            ' inserted items
+                            For j_sp = 3 To evaluated.count
+                                vAssignment insertedItem, evaluated(j_sp)
+                                vAssignment newTemp(cur), insertedItem
+                                cur = cur + 1
+                            Next j_sp
+                            ' copy suffix
+                            For i_sp = startN_sp + removedCount To len_sp - 1
+                                If i_sp <= UBound(tempIn) Then
+                                    vAssignment newTemp(cur), tempIn(i_sp)
+                                    cur = cur + 1
+                                End If
+                            Next i_sp
+                            ' convert newTemp to option-base array
+                            If newSize <= 0 Then
+                                ReDim outArr(optBase_sp To optBase_sp)
+                            Else
+                                ReDim outArr(optBase_sp To optBase_sp + newSize - 1)
+                                For i_sp = 0 To newSize - 1
+                                    vAssignment outArr(optBase_sp + i_sp), newTemp(i_sp)
+                                Next i_sp
+                            End If
+                            baseValLocal = outArr
+                            ' build removedOut
+                            If removedCount <= 0 Then
+                                ReDim removedOut(optBase_sp To optBase_sp)
+                            Else
+                                ReDim removedOut(optBase_sp To optBase_sp + removedCount - 1)
+                                For i_sp = 0 To removedCount - 1
+                                    vAssignment removedOut(optBase_sp + i_sp), removedArr(i_sp)
+                                Next i_sp
+                            End If
+                            vAssignment tmpResult, removedOut
+                            ' write back to original container via ResolvePath
+                            WriteToContainer calleeExpr, progScope, baseValLocal
+                            GoTo exitfun
+                        Case "tospliced"
+                            ' toSpliced(start, deleteCount?, ...items) -> non-mutating version of splice
+                            If Not IsArray(baseValLocal) Or evaluated.count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
+                            optBase_sp = progScope.GetValue("__option_base")
+                            lb_b = LBound(baseValLocal)
+                            ub_b = UBound(baseValLocal)
+                            len_sp = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
+                        
+                            startRaw_sp = CLng(evaluated(1))
+                            startN_sp = NormalizeIndex(startRaw_sp, len_sp, optBase_sp) ' zero-based offset within logical array
+                            If evaluated.count >= 2 Then
+                                deleteCount_sp = CLng(evaluated(2))
+                                If deleteCount_sp < 0 Then deleteCount_sp = 0
+                            Else
+                                deleteCount_sp = IIf(len_sp - startN_sp > 0, len_sp - startN_sp, 0)
+                            End If
+                            ' prepare tempIn from baseValLocal (zero-based)
+                            If len_sp > 0 Then
+                                ReDim tempIn(0 To len_sp - 1)
+                                For i_sp = 0 To len_sp - 1
+                                    vAssignment tempIn(i_sp), baseValLocal(lb_b + i_sp)
+                                Next i_sp
+                            Else
+                                ReDim tempIn(0 To -1)
+                            End If
+                            ' build newTemp: prefix, inserted items, suffix
+                            insertCount = IIf(evaluated.count > 2, evaluated.count - 2, 0)
+                            newSize = len_sp - deleteCount_sp + insertCount
+                            If newSize > 0 Then ReDim newTemp(0 To newSize - 1) Else ReDim newTemp(0 To -1)
+                            cur = 0
+                            ' copy prefix
+                            For i_sp = 0 To startN_sp - 1
+                                If i_sp <= UBound(tempIn) Then
+                                    vAssignment newTemp(cur), tempIn(i_sp)
+                                    cur = cur + 1
+                                End If
+                            Next i_sp
+                            ' insert new items (in order)
+                            For i_sp = 3 To evaluated.count
+                                vAssignment insertedItem, evaluated(i_sp)
+                                vAssignment newTemp(cur), insertedItem
+                                cur = cur + 1
+                            Next i_sp
+                            ' copy suffix
+                            For i_sp = startN_sp + deleteCount_sp To len_sp - 1
+                                If i_sp <= UBound(tempIn) Then
+                                    vAssignment newTemp(cur), tempIn(i_sp)
+                                    cur = cur + 1
+                                End If
+                            Next i_sp
+                            ' convert newTemp -> option-base array
+                            If newSize <= 0 Then
+                                ReDim outArr(optBase_sp To optBase_sp)
+                            Else
+                                ReDim outArr(optBase_sp To optBase_sp + newSize - 1)
+                                For i_sp = 0 To newSize - 1
+                                    vAssignment outArr(optBase_sp + i_sp), newTemp(i_sp)
+                                Next i_sp
+                            End If
+                            vAssignment tmpResult, outArr
+                            GoTo exitfun
+                        Case "at"
+                            If Not IsArray(baseValLocal) Or evaluated.count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
+                            optBase_u2 = progScope.GetValue("__option_base")
+                            lb_b = LBound(baseValLocal)
+                            ub_b = UBound(baseValLocal)
+                            len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
+                            Dim idxRaw_sp As Long: idxRaw_sp = CLng(evaluated(1))
+                            Dim idxN_sp As Long: idxN_sp = NormalizeIndex(idxRaw_sp, len_base, optBase_u2)
+                            If idxN_sp >= len_base Then vAssignment tmpResult, Empty: GoTo exitfun
+                            vAssignment tmpResult, baseValLocal(lb_b + idxN_sp)
+                            GoTo exitfun
+                        Case "copywithin"
+                            If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim optBase_cw As Long: optBase_cw = progScope.GetValue("__option_base")
+                            lb_b = LBound(baseValLocal)
+                            ub_b = UBound(baseValLocal)
+                            Dim len_cw As Long: len_cw = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
+                        
+                            Dim targetRaw_cw As Long: targetRaw_cw = CLng(IIf(evaluated.count >= 1, evaluated(1), optBase_cw))
+                            Dim startRaw_cw As Long: startRaw_cw = CLng(IIf(evaluated.count >= 2, evaluated(2), optBase_cw))
+                            Dim endRaw_cw As Long: endRaw_cw = CLng(IIf(evaluated.count >= 3, evaluated(3), optBase_cw + len_cw))
+                        
+                            Dim targN As Long: targN = NormalizeIndex(targetRaw_cw, len_cw, optBase_cw)
+                            Dim startN_cw As Long: startN_cw = NormalizeIndex(startRaw_cw, len_cw, optBase_cw)
+                            Dim endN_cw As Long: endN_cw = NormalizeIndex(endRaw_cw, len_cw, optBase_cw)
+                            If endN_cw < startN_cw Then endN_cw = startN_cw
+                            Dim srcLen_cw As Long: srcLen_cw = endN_cw - startN_cw
+                            Dim i_cw As Long
+                            ' build tempIn from baseValLocal
+                            If len_cw > 0 Then
+                                ReDim tempIn(0 To len_cw - 1)
+                                For i_cw = 0 To len_cw - 1
+                                    vAssignment tempIn(i_cw), baseValLocal(lb_b + i_cw)
+                                Next i_cw
+                            Else
+                                ReDim tempIn(0 To -1)
+                            End If
+                            ' build chunk to copy (length = srcLen_cw)
+                            If srcLen_cw <= 0 Then
+                                ReDim tempArr(0 To -1)
+                            Else
+                                ReDim tempArr(0 To srcLen_cw - 1)
+                                For i_cw = 0 To srcLen_cw - 1
+                                    If (startN_cw + i_cw) <= UBound(tempIn) Then
+                                        vAssignment tempArr(i_cw), tempIn(startN_cw + i_cw)
+                                    Else
+                                        tempArr(i_cw) = Empty
+                                    End If
+                                Next i_cw
+                            End If
+                            Dim j_cw As Long
+                            Dim destPos As Long
+                            ' copy into destination (mutating)
+                            For j_cw = 0 To UBound(tempArr)
+                                destPos = targN + j_cw
+                                If destPos >= 0 And destPos <= UBound(tempIn) Then
+                                    vAssignment tempIn(destPos), tempArr(j_cw)
+                                End If
+                            Next j_cw
+                            ' convert tempIn back to option-base array
+                            If len_cw <= 0 Then
+                                ReDim outArr(optBase_cw To optBase_cw)
+                            Else
+                                ReDim outArr(optBase_cw To optBase_cw + len_cw - 1)
+                                For i_cw = 0 To len_cw - 1
+                                    vAssignment outArr(optBase_cw + i_cw), tempIn(i_cw)
+                                Next i_cw
+                            End If
+                            baseValLocal = outArr
+                            vAssignment tmpResult, baseValLocal
+                            ' write back to original container via ResolvePath
+                            WriteToContainer calleeExpr, progScope, baseValLocal
+                            GoTo exitfun
+                        Case "entries"
+                            If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim ob_entries As Long: ob_entries = progScope.GetValue("__option_base")
+                            lb_b = LBound(baseValLocal)
+                            ub_b = UBound(baseValLocal)
+                            len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
+                            If len_base <= 0 Then
+                                ReDim outArr(ob_entries To ob_entries)
+                                vAssignment tmpResult, outArr
+                                GoTo exitfun
+                            End If
+                            ReDim newTemp(0 To len_base - 1)
+                            For i_sp = 0 To len_base - 1
+                                Dim pairArr_local() As Variant
+                                ReDim pairArr_local(0 To 1)
+                                vAssignment pairArr_local(0), ob_entries + i_sp
+                                vAssignment pairArr_local(1), baseValLocal(lb_b + i_sp)
+                                vAssignment newTemp(i_sp), pairArr_local
+                            Next i_sp
+                            ReDim outArr(ob_entries To ob_entries + len_base - 1)
+                            For i_sp = 0 To len_base - 1
+                                vAssignment outArr(ob_entries + i_sp), newTemp(i_sp)
+                            Next i_sp
+                            vAssignment tmpResult, outArr
+                            GoTo exitfun
+                        Case "every"
+                            If Not IsArray(baseValLocal) Or evaluated.count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim cb_every As Variant: vAssignment cb_every, evaluated(1)
+                            If TypeName(cb_every) <> "ASF_Map" Or cb_every.GetValue("type") <> "Closure" Then vAssignment tmpResult, Empty: GoTo exitfun
+                            lb_b = LBound(baseValLocal)
+                            ub_b = UBound(baseValLocal)
+                            len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
+                            Dim ob_ev As Long: ob_ev = progScope.GetValue("__option_base")
+                            Dim idx_ev As Long
+                            Dim i_ev As Long
+                            Dim args_ev As Collection
+                            Dim res_ev As Variant
+                            For i_ev = 0 To len_base - 1
+                                Set args_ev = New Collection
+                                args_ev.Add baseValLocal(lb_b + i_ev)
+                                args_ev.Add (ob_ev + idx_ev)
+                                args_ev.Add baseValLocal
+                                vAssignment tmpMapObj, cb_every
+                                vAssignment res_ev, CallClosure(tmpMapObj, args_ev, baseValLocal)
+                                If Not IsTruthy(res_ev) Then
+                                    vAssignment tmpResult, False: GoTo exitfun
+                                End If
+                                idx_ev = idx_ev + 1
+                            Next i_ev
+                            vAssignment tmpResult, True
+                            GoTo exitfun
+                        Case "find", "findindex", "findlast", "findlastindex"
+                            If Not IsArray(baseValLocal) Or evaluated.count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim cb_find As Variant: vAssignment cb_find, evaluated(1)
+                            If TypeName(cb_find) <> "ASF_Map" Or cb_find.GetValue("type") <> "Closure" Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim ob_f As Long: ob_f = progScope.GetValue("__option_base")
+                            lb_b = LBound(baseValLocal)
+                            ub_b = UBound(baseValLocal)
+                            len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
+                        
+                            If propN = "findlast" Or propN = "findlastindex" Then
+                                Dim i_f As Long
+                                Dim args_f As Collection
+                                Dim res_f As Variant
+                                For i_f = len_base - 1 To 0 Step -1
+                                    Set args_f = New Collection
+                                    args_f.Add baseValLocal(lb_b + i_f)
+                                    args_f.Add (ob_f + i_f)
+                                    args_f.Add baseValLocal
+                                    vAssignment tmpMapObj, cb_find
+                                    vAssignment res_f, CallClosure(tmpMapObj, args_f, baseValLocal)
+                                    If IsTruthy(res_f) Then
+                                        If propN = "findlast" Then vAssignment tmpResult, baseValLocal(lb_b + i_f) Else vAssignment tmpResult, (ob_f + i_f)
+                                        GoTo exitfun
+                                    End If
+                                Next i_f
+                                If propN = "findlast" Then vAssignment tmpResult, Empty Else vAssignment tmpResult, -1
+                                GoTo exitfun
+                            Else
+                                Dim args_f2 As Collection
+                                Dim res_f2 As Variant
+                                For i_f = 0 To len_base - 1
+                                    Set args_f2 = New Collection
+                                    args_f2.Add baseValLocal(lb_b + i_f)
+                                    args_f2.Add (ob_f + i_f)
+                                    args_f2.Add baseValLocal
+                                    vAssignment tmpMapObj, cb_find
+                                    vAssignment res_f2, CallClosure(tmpMapObj, args_f2, baseValLocal)
+                                    If IsTruthy(res_f2) Then
+                                        If propN = "find" Then vAssignment tmpResult, baseValLocal(lb_b + i_f) Else vAssignment tmpResult, (ob_f + i_f)
+                                        GoTo exitfun
+                                    End If
+                                Next i_f
+                                If propN = "find" Then vAssignment tmpResult, Empty Else vAssignment tmpResult, -1
+                                GoTo exitfun
+                            End If
+                        Case "from"
+                            If evaluated.count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim val_from As Variant: vAssignment val_from, evaluated(1)
+                            Dim opt_from As Long: opt_from = progScope.GetValue("__option_base")
+                        
+                            ' Build a zero-based tempIn[] with the source elements and also
+                            ' build srcArrOption (option-base array)
+                            If IsArray(val_from) Then
+                                
+                                ' copy source into option-base array and tempIn
+                                Dim srcArrOption As Variant
+                                vAssignment srcArrOption, ShallowCopyArray(val_from, opt_from)
+                                lb_b = LBound(srcArrOption)
+                                ub_b = UBound(srcArrOption)
+                                newSize = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
+                                If newSize > 0 Then
+                                    ReDim tempIn(0 To newSize - 1)
+                                    For i_sp = 0 To newSize - 1
+                                        tempIn(i_sp) = srcArrOption(lb_b + i_sp)
+                                    Next i_sp
+                                Else
+                                    ReDim tempIn(0 To -1)
+                                End If
+                        
+                            ElseIf TypeName(val_from) = "String" Then
+                                ' string -> array of characters (option base)
+                                If Len(val_from) = 0 Then
+                                    ReDim outArr(opt_from To opt_from)
+                                    vAssignment tmpResult, outArr
+                                    GoTo exitfun
+                                End If
+                                newSize = Len(val_from)
+                                ReDim tempIn(0 To newSize - 1)
+                                ReDim srcArrOption(opt_from To opt_from + newSize - 1)
+                                For i_sp = 1 To newSize
+                                    tempIn(i_sp - 1) = mid$(val_from, i_sp, 1)
+                                    srcArrOption(opt_from + i_sp - 1) = tempIn(i_sp - 1)
+                                Next i_sp
+                        
+                            Else
+                                ' single value -> one-element source
+                                newSize = 1
+                                ReDim tempIn(0 To 0)
+                                tempIn(0) = val_from
+                                ReDim srcArrOption(opt_from To opt_from)
+                                srcArrOption(opt_from) = val_from
+                            End If
+                        
+                            ' optional mapping closure (mapFn) and optional thisArg
+                            Dim comp As Variant
+                            If evaluated.count >= 2 Then vAssignment comp, evaluated(2)
+                            If evaluated.count >= 3 Then vAssignment thisVal, evaluated(3)
+                        
+                            ' If mapping function is a closure, apply it; otherwise just copy
+                            If newSize <= 0 Then
+                                ReDim outArr(opt_from To opt_from)
+                                vAssignment tmpResult, outArr
+                                GoTo exitfun
+                            End If
+                        
+                            ReDim outArr(opt_from To opt_from + newSize - 1)
+                            Dim mapResult As Variant
+                            Dim argColl As Collection
+                            
+                            If Not IsEmpty(comp) And Not IsNull(comp) Then
+                                ' only apply mapping if comp is a Closure map object
+                                If TypeName(comp) = "ASF_Map" Then
+                                    If comp.Exists("type") And CStr(comp.GetValue("type")) = "Closure" Then
+                                        For i_sp = 0 To newSize - 1
+                                            Set argColl = New Collection
+                                            argColl.Add tempIn(i_sp)
+                                            argColl.Add (opt_from + i_sp)
+                                            argColl.Add srcArrOption
+                                            vAssignment tmpMapObj, comp
+                                            vAssignment mapResult, CallClosure(tmpMapObj, argColl, thisVal)
+                                            outArr(opt_from + i_sp) = mapResult
+                                        Next i_sp
+                                        vAssignment tmpResult, outArr
+                                        GoTo exitfun
+                                    End If
+                                End If
+                            End If
+                        
+                            ' fallback -> direct copy
+                            For i_sp = 0 To newSize - 1
+                                outArr(opt_from + i_sp) = tempIn(i_sp)
+                            Next i_sp
+                            vAssignment tmpResult, outArr
+                            GoTo exitfun
+                        Case "includes", "indexof", "lastindexof"
+                            If Not IsArray(baseValLocal) Or evaluated.count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim needle As Variant: vAssignment needle, evaluated(1)
+                            Dim optBase_in As Long: optBase_in = progScope.GetValue("__option_base")
+                            lb_b = LBound(baseValLocal)
+                            ub_b = UBound(baseValLocal)
+                            len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
+                            Dim foundIdx As Long: foundIdx = -1
+                            Dim i_in As Long
+                            If propN = "lastindexof" Then
+                                For i_in = len_base - 1 To 0 Step -1
+                                    If DeepEqual(baseValLocal(lb_b + i_in), needle) Then
+                                        foundIdx = optBase_in + i_in
+                                        Exit For
+                                    End If
+                                Next i_in
+                            Else
+                                For i_in = 0 To len_base - 1
+                                    If DeepEqual(baseValLocal(lb_b + i_in), needle) Then
+                                        foundIdx = optBase_in + i_in
+                                        Exit For
+                                    End If
+                                Next i_in
+                            End If
+                            If propN = "includes" Then
+                                vAssignment tmpResult, (foundIdx <> -1)
+                            Else
+                                If foundIdx = -1 Then vAssignment tmpResult, -1 Else vAssignment tmpResult, foundIdx
+                            End If
+                            GoTo exitfun
+                        Case "of"
+                            Dim optBase_of As Long: optBase_of = progScope.GetValue("__option_base")
+                            newSize = evaluated.count
+                            If newSize <= 0 Then
+                                ReDim outArr(optBase_of To optBase_of)
+                            Else
+                                ReDim outArr(optBase_of To optBase_of + newSize - 1)
+                                For i_sp = 1 To evaluated.count
+                                    vAssignment outArr(optBase_of + i_sp - 1), evaluated(i_sp)
+                                Next i_sp
+                            End If
+                            vAssignment tmpResult, outArr
+                            GoTo exitfun
+                        Case "reverse"
+                            If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim optBase_rev As Long: optBase_rev = progScope.GetValue("__option_base")
+                            lb_b = LBound(baseValLocal)
+                            ub_b = UBound(baseValLocal)
+                            len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
+                            If len_base <= 0 Then
+                                ReDim outArr(optBase_rev To optBase_rev)
+                                vAssignment tmpResult, outArr
+                                GoTo exitfun
+                            End If
+                            ReDim newTemp(0 To len_base - 1)
+                            For i_sp = 0 To len_base - 1
+                                newTemp(i_sp) = baseValLocal(lb_b + (len_base - 1 - i_sp))
+                            Next i_sp
+                            ReDim outArr(optBase_rev To optBase_rev + len_base - 1)
+                            For i_sp = 0 To len_base - 1
+                                outArr(optBase_rev + i_sp) = newTemp(i_sp)
+                            Next i_sp
+                            baseValLocal = outArr
+                            vAssignment tmpResult, baseValLocal
+                            ' write back to original container via ResolvePath
+                            WriteToContainer calleeExpr, progScope, baseValLocal
+                            GoTo exitfun
+                        Case "toreversed"
+                            If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim optBase_tr As Long: optBase_tr = progScope.GetValue("__option_base")
+                            lb_b = LBound(baseValLocal)
+                            ub_b = UBound(baseValLocal)
+                            len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
+                            If len_base <= 0 Then
+                                ReDim outArr(optBase_tr To optBase_tr)
+                                vAssignment tmpResult, outArr
+                                GoTo exitfun
+                            End If
+                            ReDim newTemp(0 To len_base - 1)
+                            For i_sp = 0 To len_base - 1
+                                newTemp(i_sp) = baseValLocal(lb_b + (len_base - 1 - i_sp))
+                            Next i_sp
+                            ReDim outArr(optBase_tr To optBase_tr + len_base - 1)
+                            For i_sp = 0 To len_base - 1
+                                outArr(optBase_tr + i_sp) = newTemp(i_sp)
+                            Next i_sp
+                            vAssignment tmpResult, outArr
+                            GoTo exitfun
+                        Case "some"
+                            If Not IsArray(baseValLocal) Or evaluated.count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim cb_some As Variant: vAssignment cb_some, evaluated(1)
+                            If TypeName(cb_some) <> "ASF_Map" Or cb_some.GetValue("type") <> "Closure" Then vAssignment tmpResult, Empty: GoTo exitfun
+                            lb_b = LBound(baseValLocal)
+                            ub_b = UBound(baseValLocal)
+                            len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
+                            Dim ob_som As Long: ob_som = progScope.GetValue("__option_base")
+                            Dim i_som As Long
+                            Dim args_s As Collection
+                            Dim res_s As Variant
+                            For i_som = 0 To len_base - 1
+                                Set args_s = New Collection
+                                args_s.Add baseValLocal(lb_b + i_som)
+                                args_s.Add (ob_som + i_som)
+                                args_s.Add baseValLocal
+                                vAssignment tmpMapObj, cb_some
+                                vAssignment res_s, CallClosure(tmpMapObj, args_s, baseValLocal)
+                                If IsTruthy(res_s) Then
+                                    vAssignment tmpResult, True: GoTo exitfun
+                                End If
+                            Next i_som
+                            vAssignment tmpResult, False
+                            GoTo exitfun
+                        Case "with"
+                            If Not IsArray(baseValLocal) Or evaluated.count < 2 Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim optBase_w As Long: optBase_w = progScope.GetValue("__option_base")
+                            lb_b = LBound(baseValLocal)
+                            ub_b = UBound(baseValLocal)
+                            Dim len_w As Long: len_w = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
+                            Dim idxRaw_w As Long: idxRaw_w = CLng(evaluated(1))
+                            Dim idxN_w As Long: idxN_w = NormalizeIndex(idxRaw_w, len_w, optBase_w)
+                            Dim copy_w As Variant: vAssignment copy_w, ShallowCopyArray(baseValLocal, optBase_w)
+                            Dim baseL_w As Long: baseL_w = LBound(copy_w)
+                            vAssignment copy_w(baseL_w + idxN_w), evaluated(2)
+                            vAssignment tmpResult, copy_w
+                            GoTo exitfun
+                        Case "sort", "tosorted"
+                            If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
+                            Dim optBase_srt As Long: optBase_srt = progScope.GetValue("__option_base")
+                            lb_b = LBound(baseValLocal)
+                            ub_b = UBound(baseValLocal)
+                            Dim n_s As Long: n_s = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
+                        
+                            ' get comparator if any
+                            If evaluated.count >= 1 Then vAssignment comp, evaluated(1) Else comp = Empty
+                        
+                            If n_s <= 1 Then
+                                If propN = "sort" Then
+                                    ' ensure mutation writes back even if single element (keeps behavior consistent)
+                                    WriteToContainer calleeExpr, progScope, baseValLocal
+                                    vAssignment tmpResult, baseValLocal
+                                Else
+                                    vAssignment tmpResult, baseValLocal
+                                End If
+                                GoTo exitfun
+                            End If
+                        
+                            ' build zero-based tempIn array
+                            ReDim tempIn(0 To n_s - 1)
+                            For i_sp = 0 To n_s - 1
+                                vAssignment tempIn(i_sp), baseValLocal(lb_b + i_sp)
+                            Next i_sp
+                        
+                            ' determine if comp is a closure
+                            Dim hasComp As Boolean: hasComp = False
+                            If Not IsEmpty(comp) And Not IsNull(comp) Then
+                                If TypeName(comp) = "ASF_Map" Then
+                                    If comp.Exists("type") And CStr(comp.GetValue("type")) = "Closure" Then hasComp = True
+                                End If
+                            End If
+                        
+                            ' quicksort in-place on tempIn. Pass baseValLocal as thisVal (so comparator gets same this as other calls)
+                            Call QS_QuickSort(tempIn, 0, n_s - 1, comp, hasComp, baseValLocal)
+                        
+                            ' convert sorted tempIn back to option-base array
+                            ReDim outArr(optBase_srt To optBase_srt + n_s - 1)
+                            For i_sp = 0 To n_s - 1
+                                vAssignment outArr(optBase_srt + i_sp), tempIn(i_sp)
+                            Next i_sp
+                        
+                            If propN = "sort" Then
+                                baseValLocal = outArr
+                                ' persist mutation to original container (LValue)
+                                WriteToContainer calleeExpr, progScope, baseValLocal
+                                vAssignment tmpResult, baseValLocal
+                            Else
+                                vAssignment tmpResult, outArr
+                            End If
+                        
+                            GoTo exitfun
                         Case Else
                             GoTo namedFunctions
                     End Select
@@ -1145,7 +1986,8 @@ namedFunctions:
             End If
             If fname <> "" Then
                 ' --- builtin named functions ---
-                If LCase$(fname) = "range" Then
+                Dim nameLcase As String: nameLcase = LCase$(fname)
+                If nameLcase = "range" Then
                     ' range([start,] end[, step]) -> returns an array (python-style range semantics)
                     Dim rcount As Long: rcount = evaluated.count
                     Dim rs As Double, re As Double, rstep As Double
@@ -1193,7 +2035,7 @@ namedFunctions:
                     vAssignment tmpResult, tmpArr
                     GoTo exitfun
                 End If
-                If LCase$(fname) = "flatten" Then
+                If nameLcase = "flatten" Then
                     If evaluated.count = 0 Then
                         vAssignment tmpResult, Empty
                         GoTo exitfun
@@ -1206,7 +2048,7 @@ namedFunctions:
                     End If
                     GoTo exitfun
                 End If
-                If LCase$(fname) = "clone" Then
+                If nameLcase = "clone" Then
                     If evaluated.count = 0 Then
                         vAssignment tmpResult, Empty
                         GoTo exitfun
@@ -1215,7 +2057,7 @@ namedFunctions:
                     vAssignment tmpResult, builtin_clone(EvalExprNode(tmpMapObj, progScope), progScope)
                     GoTo exitfun
                 End If
-                If LCase$(fname) = "isarray" Then
+                If nameLcase = "isarray" Then
                     If evaluated.count = 0 Then
                         vAssignment tmpResult, False
                     Else
@@ -1230,7 +2072,7 @@ namedFunctions:
                     End If
                     GoTo exitfun
                 End If
-                If LCase$(fname) = "isnumeric" Then
+                If nameLcase = "isnumeric" Then
                     If evaluated.count = 0 Then
                         vAssignment tmpResult, False
                     Else
@@ -1253,6 +2095,47 @@ namedFunctions:
                     End If
                     GoTo exitfun
                 End If
+                If nameLcase = "foreach" Then
+                    ' foreach(arr, fn) -> same behavior as method-style forEach
+                    If evaluated.count < 2 Then
+                        vAssignment tmpResult, Empty
+                        GoTo exitfun
+                    End If
+                
+                    Dim arrVal As Variant: vAssignment arrVal, evaluated(1)
+                    Dim cbFn As Variant: vAssignment cbFn, evaluated(2)
+                
+                    If TypeName(cbFn) <> "ASF_Map" Or cbFn.GetValue("type") <> "Closure" Then
+                        vAssignment tmpResult, Empty
+                        GoTo exitfun
+                    End If
+                
+                    If Not IsArray(arrVal) Then
+                        vAssignment tmpResult, Empty
+                        GoTo exitfun
+                    End If
+                
+                    Dim lb2 As Long: lb2 = LBound(arrVal)
+                    Dim ub2 As Long: ub2 = UBound(arrVal)
+                    Dim optBase2 As Long: optBase2 = progScope.GetValue("__option_base")
+                    Dim idx2 As Long: idx2 = 0
+                    Dim j As Long
+                    Dim callArgs2 As Collection
+                    For j = lb2 To ub2
+                        Set callArgs2 = New Collection
+                        callArgs2.Add arrVal(j)
+                        callArgs2.Add (optBase2 + idx2)
+                        callArgs2.Add arrVal
+                        Dim tmpRc As Variant
+                        vAssignment tmpMapObj, cbFn
+                        vAssignment tmpRc, CallClosure(tmpMapObj, callArgs2, arrVal)
+                        idx2 = idx2 + 1
+                    Next j
+                
+                    ' return original array for convenience
+                    vAssignment tmpResult, arrVal
+                    GoTo exitfun
+                End If
                 ' --- end builtins ---
             End If
             If Not hasCalleeExpr Then
@@ -1265,7 +2148,6 @@ namedFunctions:
                 ' dynamic callee: evaluate callee expression -> it must yield a closure map or call via VB
                 Dim calleeVal As Variant
                 Dim hasThisVal As Boolean: hasThisVal = False
-                Dim thisVal As Variant
                 ' If callee is a member or index expression, compute base as `this` for method call binding.
                 If Not calleeExpr Is Nothing Then
                     Dim ct As String: ct = IIf(calleeExpr.Exists("type"), CStr(calleeExpr.GetValue("type")), "")
@@ -1338,6 +2220,7 @@ namedFunctions:
                         If rop = 0 Then err.Raise vbObjectError + 2001, "VM.EvalExprNode", "Division by zero" Else vAssignment tmpResult, lop / rop
                     Case "%": vAssignment tmpResult, lop Mod rop
                     Case "^": vAssignment tmpResult, lop ^ rop
+                    Case "&": vAssignment tmpResult, CStr(lop) & CStr(rop)
                     Case "==", "=": vAssignment tmpResult, (lop = rop)
                     Case "!=": vAssignment tmpResult, (lop <> rop)
                     Case "<": vAssignment tmpResult, (lop < rop)
@@ -2183,6 +3066,319 @@ ErrHandler:
     ' On mapper errors propagate as runtime error so calling code can handle (consistent with earlier semantics)
     err.Raise err.Number, err.Source, err.Description
 End Function
+
+' ---------------------------
+' Array method helpers
+' ---------------------------
+
+' Convert VBA fixed/dynamic array to a 0-based logical list (Collection)
+Private Function ArrayToList(arr As Variant) As Collection
+    Dim col As New Collection
+    If Not IsArray(arr) Then
+        Set ArrayToList = col
+        Exit Function
+    End If
+    Dim i As Long
+    For i = LBound(arr) To UBound(arr)
+        col.Add arr(i)
+    Next i
+    Set ArrayToList = col
+End Function
+
+' Convert 0-based Collection back to array using runtime option base
+Private Function ListToArray(col As Collection, optBase As Long) As Variant
+    Dim outArr() As Variant
+    If col.count = 0 Then
+        ReDim outArr(optBase To optBase)
+    Else
+        ReDim outArr(optBase To optBase + col.count - 1)
+        Dim i As Long
+        For i = 1 To col.count
+            vAssignment outArr(optBase + i - 1), col(i)
+        Next i
+    End If
+    ListToArray = outArr
+End Function
+
+' Deep equality for nested arrays and ASF_Map (objects)
+Private Function DeepEqual(a As Variant, b As Variant) As Boolean
+    On Error GoTo notEqual
+    ' same reference?
+    If IsObject(a) And IsObject(b) Then
+        If TypeName(a) = "ASF_Map" And TypeName(b) = "ASF_Map" Then
+            ' compare keys count and values
+            Dim keysA As Collection: Set keysA = a.keys()
+            Dim keysB As Collection: Set keysB = b.keys()
+            If keysA.count <> keysB.count Then GoTo notEqual
+            Dim k As Variant
+            For Each k In keysA
+                If Not b.Exists(CStr(k)) Then GoTo notEqual
+                If Not DeepEqual(a.GetValue(CStr(k)), b.GetValue(CStr(k))) Then GoTo notEqual
+            Next k
+            DeepEqual = True
+            Exit Function
+        Else
+            ' fallback to object reference equality
+            DeepEqual = (a Is b)
+            Exit Function
+        End If
+    End If
+
+    If IsArray(a) And IsArray(b) Then
+        Dim la As Long: la = UBound(a) - LBound(a) + 1
+        Dim lb As Long: lb = UBound(b) - LBound(b) + 1
+        If la <> lb Then GoTo notEqual
+        Dim i As Long
+        For i = LBound(a) To UBound(a)
+            If Not DeepEqual(a(i), b(i)) Then GoTo notEqual
+        Next i
+        DeepEqual = True
+        Exit Function
+    End If
+
+    ' primitive comparison (numbers, strings, booleans)
+    If IsNull(a) And IsNull(b) Then
+        DeepEqual = True
+        Exit Function
+    End If
+    If IsEmpty(a) And IsEmpty(b) Then
+        DeepEqual = True
+        Exit Function
+    End If
+    If VarType(a) = VarType(b) Then
+        If VarType(a) = vbString Then
+            DeepEqual = (CStr(a) = CStr(b))
+        ElseIf (VarType(a) = vbDouble Or VarType(a) = vbSingle Or VarType(a) = vbInteger Or VarType(a) = vbLong Or VarType(a) = vbCurrency) Then
+            DeepEqual = (CDbl(a) = CDbl(b))
+        Else
+            DeepEqual = (a = b)
+        End If
+        Exit Function
+    Else
+        ' try string compare fallback
+        DeepEqual = (CStr(a) = CStr(b))
+        Exit Function
+    End If
+
+notEqual:
+    DeepEqual = False
+    Exit Function
+End Function
+
+' Helper: normalize an index (user-space index to zero-based offset). Accept negative indexing.
+Private Function NormalizeIndex(idxRaw As Long, lenA As Long, optBase As Long) As Long
+    Dim idx As Long
+    If idxRaw < 0 Then
+        idx = lenA + idxRaw  ' negative => from end (zero-based)
+    Else
+        idx = idxRaw - optBase ' convert to zero-based offset
+    End If
+    If idx < 0 Then idx = 0
+    If idx > lenA Then idx = lenA
+    NormalizeIndex = idx
+End Function
+
+' Helper: get element at logical index (option base aware)
+Private Function GetElementAt(arr As Variant, userIndex As Long, optBase As Long) As Variant
+    If Not IsArray(arr) Then GetElementAt = Empty: Exit Function
+    Dim baseL As Long: baseL = LBound(arr)
+    Dim off As Long: off = userIndex - optBase
+    Dim pos As Long: pos = baseL + off
+    If pos < LBound(arr) Or pos > UBound(arr) Then GetElementAt = Empty Else vAssignment GetElementAt, arr(pos)
+End Function
+
+' Helper: set element at logical index (resizing if necessary)
+Private Function SetElementAt(ByRef arr As Variant, userIndex As Long, optBase As Long, value As Variant) As Variant
+    ' arr passed by reference - ensure bounds
+    Dim baseL As Long, ub As Long, lb As Long
+    If Not IsArray(arr) Then
+        ' create minimal array
+        ReDim arr(optBase To optBase)
+        vAssignment arr(optBase), value
+        vAssignment SetElementAt, arr
+        Exit Function
+    End If
+    lb = LBound(arr)
+    ub = UBound(arr)
+    Dim off As Long: off = userIndex - optBase
+    Dim pos As Long: pos = lb + off
+    If pos < lb Then
+        ' grow lower bound (rare). Simplest: create new array with same elements shifted.
+        Dim newLen As Long: newLen = ub - pos + 1
+        Dim tmp() As Variant
+        ReDim tmp(pos To pos + (ub - lb))
+        Dim i As Long, j As Long: j = lb
+        For i = pos To pos + (ub - lb)
+            If i = pos Then
+                vAssignment tmp(i), value
+            Else
+                vAssignment tmp(i), arr(j)
+                j = j + 1
+            End If
+        Next i
+        arr = tmp
+    ElseIf pos > ub Then
+        ' need to extend upper bound
+        Dim newUB As Long: newUB = pos
+        Dim tmp2() As Variant
+        ReDim tmp2(lb To newUB)
+        Dim k As Long
+        For k = lb To ub
+            vAssignment tmp2(k), arr(k)
+        Next k
+        vAssignment tmp2(pos), value
+        arr = tmp2
+    Else
+        vAssignment arr(pos), value
+    End If
+    vAssignment SetElementAt, arr
+End Function
+
+' Helper: create shallow copy of array preserving option base
+Private Function ShallowCopyArray(arr As Variant, optBase As Long) As Variant
+    If Not IsArray(arr) Then ShallowCopyArray = Empty: Exit Function
+    Dim lb As Long: lb = LBound(arr)
+    Dim ub As Long: ub = UBound(arr)
+    Dim lenA As Long: lenA = ub - lb + 1
+    Dim out() As Variant
+    ReDim out(optBase To optBase + lenA - 1)
+    Dim i As Long
+    For i = 0 To lenA - 1
+        vAssignment out(optBase + i), arr(lb + i)
+    Next i
+    ShallowCopyArray = out
+End Function
+
+' Helper Write value back to a property
+Private Sub WriteToContainer(ByRef calleeExpr As ASF_Map, ByRef progScope As ASF_ScopeStack, tValue As Variant)
+    Dim rp As ASF_Map
+    Dim cont As Variant
+    Dim propKey As String
+    
+    Set rp = ResolvePath(calleeExpr.GetValue("base"), progScope, True)
+    Select Case rp.GetValue("kind")
+        Case "scopeVar"
+            progScope.SetValue CStr(rp.GetValue("key")), tValue
+        Case "prop"
+            vAssignment cont, ResolveProp(rp)
+            propKey = CStr(rp.GetValue("key"))
+            If IsObject(cont) Then
+                Select Case TypeName(cont)
+                    Case "ASF_Map"
+                        ' set property on map
+                        cont.SetValue propKey, tValue
+                    Case "ASF_ScopeStack"
+                        ' set named variable in scope stack
+                        cont.SetValue propKey, tValue
+                    Case Else
+                        ' try a late-bound SetValue, otherwise fallback to current progScope assignment
+                        On Error Resume Next
+                        cont.SetValue propKey, tValue
+                        If err.Number <> 0 Then
+                            err.Clear
+                            progScope.SetValue propKey, tValue
+                        End If
+                End Select
+            Else
+                ' couldn't resolve a container object — fall back to storing in current scope
+                progScope.SetValue propKey, tValue
+            End If
+    End Select
+End Sub
+' QS_Compare: returns -1/0/1 using optional closure comparator; fallback to numeric/string compare
+Private Function QS_Compare(ByVal a As Variant, ByVal b As Variant, ByVal comp As Variant, ByVal hasComp As Boolean, ByVal thisVal As Variant) As Long
+    On Error GoTo fallback_cmp
+    Dim cres As Variant
+    Dim tmpMapObj As ASF_Map
+    
+    If hasComp Then
+        Dim args_cmp As New Collection
+        args_cmp.Add a
+        args_cmp.Add b
+        vAssignment tmpMapObj, comp
+        vAssignment cres, CallClosure(tmpMapObj, args_cmp, thisVal)
+        If IsNumeric(cres) Then
+            Dim d As Double: d = CDbl(cres)
+            If d < 0 Then
+                QS_Compare = -1
+            ElseIf d > 0 Then
+                QS_Compare = 1
+            Else
+                QS_Compare = 0
+            End If
+            Exit Function
+        Else
+            If IsTruthy(cres) Then
+                QS_Compare = 1
+                Exit Function
+            Else
+                QS_Compare = 0
+                Exit Function
+            End If
+        End If
+    End If
+
+fallback_cmp:
+    err.Clear
+    ' default comparator: numeric when possible, otherwise string compare
+    If IsNumeric(a) And IsNumeric(b) Then
+        Dim da As Double: da = CDbl(a)
+        Dim db As Double: db = CDbl(b)
+        If da < db Then
+            QS_Compare = -1
+        ElseIf da > db Then
+            QS_Compare = 1
+        Else
+            QS_Compare = 0
+        End If
+    Else
+        Dim sa As String: sa = CStr(a)
+        Dim sb As String: sb = CStr(b)
+        If sa < sb Then
+            QS_Compare = -1
+        ElseIf sa > sb Then
+            QS_Compare = 1
+        Else
+            QS_Compare = 0
+        End If
+    End If
+End Function
+
+' QS_Swap: swap two elements in a Variant array
+Private Sub QS_Swap(ByRef arr() As Variant, ByVal i As Long, ByVal j As Long)
+    Dim tmp As Variant
+    tmp = arr(i)
+    arr(i) = arr(j)
+    arr(j) = tmp
+End Sub
+
+' QS_QuickSort: in-place quicksort (Hoare-style partition)
+Private Sub QS_QuickSort(ByRef arr() As Variant, ByVal low As Long, ByVal high As Long, ByVal comp As Variant, ByVal hasComp As Boolean, ByVal thisVal As Variant)
+    Dim i As Long, j As Long
+    If low >= high Then Exit Sub
+
+    i = low
+    j = high
+    Dim mid As Long: mid = (low + high) \ 2
+    Dim pivot As Variant: pivot = arr(mid)
+
+    Do While i <= j
+        Do While QS_Compare(arr(i), pivot, comp, hasComp, thisVal) < 0
+            i = i + 1
+        Loop
+        Do While QS_Compare(arr(j), pivot, comp, hasComp, thisVal) > 0
+            j = j - 1
+        Loop
+        If i <= j Then
+            QS_Swap arr, i, j
+            i = i + 1
+            j = j - 1
+        End If
+    Loop
+
+    If low < j Then QS_QuickSort arr, low, j, comp, hasComp, thisVal
+    If i < high Then QS_QuickSort arr, i, high, comp, hasComp, thisVal
+End Sub
 
 ' ---------------------
 ' End VM class
