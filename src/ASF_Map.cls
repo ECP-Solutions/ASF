@@ -169,12 +169,12 @@ Public Sub Clear()
 End Sub
 ' Clone (shallow clone of keys and values - values themselves are Variant references)
 Public Function Clone() As ASF_Map
-    Dim M As New ASF_Map
+    Dim m As New ASF_Map
     Dim k As Long
     For k = 0 To pKeys.index
-        M.Add CStr(pKeys.Storage(k)), pItems.Storage(k)
+        m.Add CStr(pKeys.Storage(k)), pItems.Storage(k)
     Next k
-    Set Clone = M
+    Set Clone = m
 End Function
 Private Sub vAssignment(ByRef var As Variant, ByRef vValue As Variant)
     If IsObject(vValue) Then

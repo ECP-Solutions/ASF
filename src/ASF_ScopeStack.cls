@@ -24,8 +24,8 @@ Private pFrames As Collection ' collection of Map objects (frames)
 Private Sub Class_Initialize()
     Set pFrames = New Collection
     ' initial frame
-    Dim M As New ASF_Map
-    pFrames.Add M
+    Dim m As New ASF_Map
+    pFrames.Add m
 End Sub
 
 Public Function CaptureByReference() As ASF_ScopeStack

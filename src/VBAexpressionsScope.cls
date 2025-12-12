@@ -42,7 +42,7 @@ Private Type ClusterItem
     Assigned As Boolean
 End Type
 Private Type ClusterBuffer
-    capacity As Long
+    Capacity As Long
     index As Long
     Storage() As ClusterItem
 End Type
@@ -366,8 +366,8 @@ Public Function CopyToScope() As VBAexpressionsScope
 End Function
 
 Private Sub ExpandCBbuffer(ByRef aBuffer As ClusterBuffer)
-    aBuffer.capacity = 2 * (aBuffer.capacity + 1)
-    ReDim Preserve aBuffer.Storage(0 To aBuffer.capacity - 1)
+    aBuffer.Capacity = 2 * (aBuffer.Capacity + 1)
+    ReDim Preserve aBuffer.Storage(0 To aBuffer.Capacity - 1)
 End Sub
 
 Public Sub FillPredefinedVars()
@@ -412,8 +412,8 @@ Private Function GetCBItemIdx(ByRef cbBuffer As ClusterBuffer, ByRef ItemName As
 End Function
 
 Private Sub InitCBbuffer(ByRef aBuffer As ClusterBuffer)
-    aBuffer.capacity = 128
-    ReDim aBuffer.Storage(0 To aBuffer.capacity - 1)
+    aBuffer.Capacity = 128
+    ReDim aBuffer.Storage(0 To aBuffer.Capacity - 1)
     aBuffer.index = -1
 End Sub
 
