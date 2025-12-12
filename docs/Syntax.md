@@ -95,7 +95,13 @@ This BNF uses a mixture of concrete tokens and non-terminals to show the languag
 
 <paramlist>      ::= [ IDENT ( ',' IDENT )* ]
 
-IDENT            ::= letter followed by letters/digits/underscore (collapsed forms allowed: e.g. "o.a[2].b" may be emitted as Ident token and expanded) NUMBER           ::= decimal or float STRING           ::= '...' or "..." VBA_EXPR         ::= any raw text until matching ')'
+IDENT            ::= letter followed by letters/digits/underscore (collapsed forms allowed: e.g. "o.a[2].b" may be emitted as Ident token and expanded)
+
+NUMBER           ::= decimal or float
+
+STRING           ::= '...' or "..."
+
+VBA_EXPR         ::= any raw text until matching ')'
 ```
 
 Notes:
