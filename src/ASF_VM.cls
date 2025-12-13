@@ -186,6 +186,15 @@ Private Sub AssignToArray(arrName As String, idxV As Variant, val As Variant, pr
     progScope.SetValue arrName, arr
 End Sub
 
+'Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As Variant
+'    If Not node.Exists("prop") And Not node.Exists("property") Then err.Raise vbObjectError + 5010, "VM.EvalMemberNode", "Missing prop/property in Member node"
+'    Dim propKey As String: propKey = IIf(node.Exists("prop"), "prop", "property")  ' Twist: auto-detect
+'    Dim prop As String: prop = node.GetValue(propKey)
+'    Dim baseVal As Variant
+'    vAssignment baseVal, EvalExprNode(node.GetValue("base"), progScope)
+'    If TypeName(baseVal) <> "ASF_Map" Then err.Raise vbObjectError + 5007, "VM.EvalMemberNode", "Cannot access property on non-map"
+'    vAssignment EvalMemberNode, baseVal.GetValue(prop)
+'End Function
 Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As Variant
     If Not node.Exists("prop") And Not node.Exists("property") Then _
         err.Raise vbObjectError + 5010, "VM.EvalMemberNode", "Missing prop/property in Member node"
@@ -469,10 +478,10 @@ Private Function ExecForNode(node As ASF_Map, progScope As ASF_ScopeStack) As St
         initType = initNode.GetValue("type")
         Select Case initType
             Case "Assign", "Print", "If", "For", "While", "TryCatch", "Switch", "Return", "Break", "Continue", "ExprStmt"
-                ' Already a statement node — execute directly so side-effects happen.
+                ' Already a statement node Â— execute directly so side-effects happen.
                 ExecuteStmtNode initNode, progScope
             Case Else
-                ' Expression node — wrap into ExprStmt for side-effect evaluation.
+                ' Expression node Â— wrap into ExprStmt for side-effect evaluation.
                 ExecuteStmtNode MakeNodeExprStmt(initNode), progScope
         End Select
     End If
@@ -719,7 +728,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
             Dim vVal As Variant
             vAssignment vVal, progScope.GetValue(vname)
 
-            ' If scope contains a non-empty value, return it — this covers closures
+            ' If scope contains a non-empty value, return it Â— this covers closures
             ' stored As ASF_Map/AST nodes (FuncLiteral/Closure/etc.).
             If Not IsEmpty(vVal) Then
                 ' If it's a Map and looks like a function node, return as callable
@@ -739,7 +748,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                         End If
                     End If
                 End If
-                ' Not necessarily a function-like Map — still return stored value.
+                ' Not necessarily a function-like Map Â— still return stored value.
                 vAssignment tmpResult, vVal
                 GoTo exitfun
             End If
@@ -771,7 +780,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                 paramsCol.Add vbNullString
                             End If
                         ElseIf TypeName(paVar) = "Collection" Then
-                            ' already a collection — copy it
+                            ' already a collection Â— copy it
                             Dim it As Variant
                             For Each it In paVar
                                 paramsCol.Add it
@@ -786,7 +795,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                     pinfo = GLOBALS_.gPrograms(funcIdx)
                     If err.Number <> 0 Then
                         err.Clear
-                        ' fallback: no program info — return Empty
+                        ' fallback: no program info Â— return Empty
                         EvalExprNode = Empty
                         Exit Function
                     End If
@@ -814,7 +823,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
             End If
             On Error GoTo 0
 
-            ' Not found — log and return Empty
+            ' Not found Â— log and return Empty
             If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "VM: Variable '" & vname & "' is undefined or not callable (returned Empty)."
             vAssignment tmpResult, Empty
             GoTo exitfun
@@ -1030,7 +1039,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                             Dim ob2 As Long: ob2 = optBase
                         
                             If cnt <= 0 Then
-                                ' Produce minimal array using same option base — keep conservative behavior:
+                                ' Produce minimal array using same option base Â— keep conservative behavior:
                                 ' if you prefer an empty array representation, you can return Empty instead.
                                 ReDim outS(ob2 To ob2)
                             Else
@@ -2979,7 +2988,7 @@ End Sub
 Private Sub flatten_recursive_depth(v As Variant, ByRef col As Collection, ByVal maxDepth As Long)
     If IsArray(v) Then
         If maxDepth < 0 Then
-            ' Do not flatten this array level — push the array object as an element.
+            ' Do not flatten this array level Â— push the array object as an element.
             col.Add v
         Else
             Dim i As Long
@@ -3288,7 +3297,7 @@ Private Sub WriteToContainer(ByRef calleeExpr As ASF_Map, ByRef progScope As ASF
                         End If
                 End Select
             Else
-                ' couldn't resolve a container object — fall back to storing in current scope
+                ' couldn't resolve a container object Â— fall back to storing in current scope
                 progScope.SetValue propKey, tValue
             End If
     End Select
