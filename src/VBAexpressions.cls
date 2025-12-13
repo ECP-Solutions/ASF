@@ -1411,17 +1411,20 @@ End Function
 '''     Turns a like Java array string ({{*};{*}}) into VBA jagged array with n rows.
 ''' </summary>
 ''' <param name="StrArray">The string definition used to create the array.</param>
-Public Function ArrayFromString2(ByRef strArray As String) As Variant()
+''' <param name="castTypeData">Set to True if you want to cast the resulting data types.</param>
+Public Function ArrayFromString2(ByRef strArray As String, Optional castTypeData As Boolean = False) As Variant()
     Dim aIndex As Long
     Dim arrCapacity As Long
     Dim boolOpenArray As Boolean
     Dim curChar As String
-    Dim i As Long
+    Dim i As Long, j As Long
     Dim JaggedArrFlag As Boolean
     Dim NumRows As Long
     Dim StrCopy As String
     Dim StrLen As Long
     Dim tmpStr() As Variant
+    Dim tmpSplit() As String
+    Dim tmpVar() As Variant
     Dim VectorEndPos As Long
     Dim VectorStartPos As Long
     Dim OpenCBrackets As Long
@@ -1464,8 +1467,24 @@ Public Function ArrayFromString2(ByRef strArray As String) As Variant()
                         ReDim Preserve tmpStr(0 To arrCapacity - 1)
                     End If
                     If boolOpenArray And Not JaggedArrFlag Then
-                        tmpStr(aIndex) = Split(MidB$(StrCopy, VectorStartPos, _
+                        tmpSplit = Split(MidB$(StrCopy, VectorStartPos, _
                                         VectorEndPos - VectorStartPos + 1), P_SEPARATORCHAR)
+                        If castTypeData Then
+                            ReDim tmpVar(LBound(tmpSplit) To UBound(tmpSplit))
+                            For j = LBound(tmpSplit) To UBound(tmpSplit)
+                                tmpSplit(j) = FormatLiteralString(CStr(tmpSplit(j)), True)
+                                If IsNumeric(tmpSplit(j)) Then
+                                    tmpVar(j) = CDbl(tmpSplit(j))
+                                ElseIf IsBoolean(tmpSplit(j)) Then
+                                    tmpVar(j) = CBool(tmpSplit(j))
+                                Else
+                                    tmpVar(j) = tmpSplit(j)
+                                End If
+                            Next j
+                            tmpStr(aIndex) = tmpVar
+                        Else
+                            tmpStr(aIndex) = tmpSplit
+                        End If
                     Else
                         If JaggedArrFlag Then
                             tmpStr(aIndex) = ArrayFromString2(MidB$(StrCopy, VectorStartPos, _

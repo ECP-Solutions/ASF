@@ -597,16 +597,53 @@ TestFail:
     Resume TestExit
 End Sub
 
+'@TestMethod("mutating_VBAexpressions_Arrays")
+Private Sub mutating_VBAexpressions_Arrays()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "a=@({{1;2;3};{4;(5+4);'value'}}); a[1]=2*5; print(a);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 10, [ 4, 9, 'value' ] ]"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
 '@TestMethod("vbexpr_embedded")
 Private Sub vbexpr_embedded()
     On Error GoTo TestFail
-    
-    actual = CStr(GetResult("a = @({1;0;4});" & _
+    Dim globals As ASF_Globals
+    GetResult "a = @({1;0;4});" & _
                             " b = @({1;1;6});" & _
                             " c = @({-3;0;-10});" & _
-                            " d = @({2;3;4});" & _
-                            " return(@(MROUND(LUDECOMP(ARRAY(a;b;c));4)))"))
-    expected = "{{-3;0;-10};{-0.3333;1;2.6667};{-0.3333;0;0.6667}}"
+                            " print(@(MROUND(LUDECOMP(ARRAY(a;b;c));4)))", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ [ -3, 0, -10 ], [ -0.3333, 1, 2.6667 ], [ -0.3333, 0, 0.6667 ] ]"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("reusing_results_from_VBAexpressions")
+Private Sub reusing_results_from_VBAexpressions()
+    On Error GoTo TestFail
+    
+    actual = CStr(GetResult("a=@(lgn(32;2)); b=a*2; return b;"))
+    expected = "10"
     Assert.AreEqual expected, actual
 
 TestExit:
