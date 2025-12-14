@@ -680,6 +680,33 @@ TestFail:
     Resume TestExit
 End Sub
 
+'@TestMethod("host_sees_array_mutation")
+Sub host_sees_array_mutation()
+    On Error GoTo TestFail
+    Dim asfGlobals As New ASF_Globals
+    Dim progIdx  As Long
+    
+    With asfGlobals
+        .ASF_InitGlobals
+        .gExprEvaluator.DeclareUDF "HostCheckSecondNestedElement", "UserDefFunctions"
+    End With
+    Set scriptEngine = New ASF
+    With scriptEngine
+        .SetGlobals asfGlobals
+        progIdx = .Compile("a=@({{7;8;9}}); a[1][2]=42; return(@(HostCheckSecondNestedElement(a)));")
+        .Run progIdx
+        actual = CStr(.OUTPUT_)
+    End With
+    expected = "42"
+    Assert.AreEqual expected, actual
+    
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
 '@TestMethod("map_nested_array")
 Private Sub map_nested_array()
     On Error GoTo TestFail
