@@ -51,7 +51,8 @@ Public Sub RunProgramByIndex(idx As Long)
     Dim optionBase As Long: optionBase = IIf(UBound(p) >= 3, p(3), 1)
     Dim progScope As ASF_ScopeStack: Set progScope = New ASF_ScopeStack
     progScope.LoadRaw rawScope
-    progScope.SetValue "__option_base", optionBase
+'    progScope.SetValue "__option_base", optionBase
+    progScope.SetValue "__option_base", 1 'Enforce option base=1
     progScope.Push
     If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "RUN Program: " & progName
     Dim i As Long
@@ -2588,7 +2589,7 @@ Private Function EvalVBExpressionWithScope(expr As String, progScope As ASF_Scop
                  If IsArray(tmpVal) Then
                     .VarValue(CStr(key)) = .ArrayToString(tmpVal)
                  Else
-                    .VarValue(CStr(key)) = tmpVal
+                    .VarValue(CStr(key)) = CStr(tmpVal)
                 End If
              Next key
          Next frame
@@ -2767,6 +2768,195 @@ Private Sub HandleAssignment(left As ASF_Map, ByVal rval As Variant, progScope A
             baseVal.SetValue left.GetValue(propKey), rval
     End Select
 End Sub
+' UpdateNestedArrayByPath
+' Mutates a jagged Variant array "root" at the nested path specified by idxPath (Array or Collection of indexes).
+' root is passed ByRef and will be updated (the top-level will be overwritten if needed).
+' idxPath: either an Array(...) or a Collection of numeric indexes (user-space, using optBase)
+' newVal: value to write at target slot
+' optBase: 0 or 1 (default 1)
+' createMissing: if True, create missing inner arrays as needed (default True)
+' Returns True on success, False on failure.
+Public Function UpdateNestedArrayByPath(ByRef root As Variant, ByVal idxPath As Variant, ByVal newVal As Variant, _
+                                       Optional ByVal optBase As Long = 1, Optional ByVal createMissing As Boolean = True) As Boolean
+    On Error GoTo ErrHandler
+    Dim idxs() As Long, depth As Long
+    depth = 0
+
+    ' --- Normalize idxPath to 1..depth long array idxs() ---
+    If IsArray(idxPath) Then
+        Dim lbp As Long, ubp As Long
+        lbp = LBound(idxPath): ubp = UBound(idxPath)
+        depth = ubp - lbp + 1
+        If depth <= 0 Then UpdateNestedArrayByPath = False: Exit Function
+        ReDim idxs(1 To depth)
+        Dim ii As Long, posi As Long: posi = 1
+        For ii = lbp To ubp
+            If LBound(root) <> optBase Then
+                idxs(posi) = NormalizeIndex(CLng(idxPath(ii)), UBound(root) - LBound(root) + 1, optBase)
+            Else
+                idxs(posi) = CLng(idxPath(ii))
+            End If
+            posi = posi + 1
+        Next ii
+    Else
+        ' single scalar index
+        depth = 1
+        ReDim idxs(1 To 1)
+        idxs(1) = CLng(idxPath)
+    End If
+
+    ' Ensure root is an array (create if allowed)
+    If Not IsArray(root) Then
+        If createMissing Then
+            ReDim root(optBase To optBase) ' single-slot per ASF convention
+        Else
+            UpdateNestedArrayByPath = False: Exit Function
+        End If
+    End If
+
+    ' containers(k) will hold the array value at level k (1-based levels)
+    ' posAbs(k) will hold the absolute position (array index) at that level (LBound..UBound inclusive)
+    Dim containers() As Variant, posAbs() As Long
+    ReDim containers(1 To depth)
+    ReDim posAbs(1 To depth)
+
+    ' initialize level 1 container to root
+    vAssignment containers(1), root
+
+    Dim level As Long
+    For level = 1 To depth
+        Dim arr As Variant
+        vAssignment arr, containers(level)           ' may be a copy - we'll write back after changes
+        Dim arrLB As Long, arrUB As Long, arrLen As Long
+        If IsArray(arr) Then
+            arrLB = LBound(arr): arrUB = UBound(arr)
+            If arrUB >= arrLB Then arrLen = arrUB - arrLB + 1 Else arrLen = 0
+        Else
+            arrLB = 0: arrUB = -1: arrLen = 0
+        End If
+
+        ' compute normalized relative index (0-based offset) from user-provided index (supports negatives)
+        Dim userIdx As Long: userIdx = idxs(level)
+        Dim relOff As Long
+        relOff = NormalizeIndexOffset(userIdx, arrLen, optBase)
+
+        ' absolute position inside arr expected
+        Dim absPos As Long
+        absPos = arrLB + relOff
+
+        ' If array is empty or position outside bounds, resize to include absPos
+        If Not IsArray(arr) Or absPos < arrLB Or absPos > arrUB Then
+            If Not createMissing Then
+                UpdateNestedArrayByPath = False: Exit Function
+            End If
+            ' compute new bounds
+            Dim newLB As Long, newUB As Long
+            If Not IsArray(arr) Then
+                newLB = absPos: newUB = absPos
+            Else
+                newLB = arrLB: newUB = arrUB
+                If absPos < newLB Then newLB = absPos
+                If absPos > newUB Then newUB = absPos
+            End If
+            Dim tmp() As Variant
+            ReDim tmp(newLB To newUB)
+            ' copy existing values if any
+            If IsArray(arr) Then
+                Dim k As Long
+                For k = arrLB To arrUB
+                    vAssignment tmp(k), arr(k)
+                Next k
+            End If
+            vAssignment arr, tmp
+            arrLB = newLB: arrUB = newUB: arrLen = arrUB - arrLB + 1
+            ' store back into containers(level) - we'll propagate later
+            vAssignment containers(level), arr
+            ' propagate upward so parents hold updated child arrays
+            Call PropagateUp(containers, posAbs, level, root)
+        End If
+
+        ' store absolute position and ensure containers(level) holds updated arr
+        posAbs(level) = absPos
+        vAssignment containers(level), arr
+
+        If level < depth Then
+            ' need to step into child at arr(absPos); ensure it's an array (create if necessary)
+            Dim child As Variant
+            vAssignment child, arr(absPos)
+
+            If Not IsArray(child) Then
+                If Not createMissing Then
+                    UpdateNestedArrayByPath = False: Exit Function
+                End If
+                ' create single-slot inner array
+                Dim newInner() As Variant
+                ReDim newInner(optBase To optBase)
+                vAssignment child, newInner
+                ' assign into arr and propagate
+                vAssignment arr(absPos), child
+                vAssignment containers(level), arr
+                Call PropagateUp(containers, posAbs, level, root)
+            End If
+
+            ' set next level container to child (fresh copy)
+            vAssignment containers(level + 1), arr(absPos)
+            ' continue loop
+        Else
+            ' final level: assign newVal into arr(absPos)
+            vAssignment arr(absPos), newVal
+            vAssignment containers(level), arr
+            ' propagate upward to root
+            Call PropagateUp(containers, posAbs, level, root)
+            UpdateNestedArrayByPath = True
+            Exit Function
+        End If
+    Next level
+
+    UpdateNestedArrayByPath = False
+    Exit Function
+
+ErrHandler:
+    UpdateNestedArrayByPath = False
+End Function
+
+' Helper: compute zero-based relative offset for user index, supports negatives
+' userIdx: may be negative to access from end, or absolute user base (optBase)
+' arrLen: length of array (may be 0)
+' optBase: user base (0 or 1)
+Private Function NormalizeIndexOffset(ByVal userIdx As Long, ByVal arrLen As Long, ByVal optBase As Long) As Long
+    Dim idx As Long: idx = userIdx
+    If idx < 0 Then
+        ' negative: -1 => last element
+        If arrLen > 0 Then
+            idx = arrLen + idx + optBase
+        Else
+            ' no elements; treat negative as optBase (will become index 0 offset)
+            idx = optBase
+        End If
+    End If
+    ' relative zero-based offset
+    NormalizeIndexOffset = idx - optBase
+    If NormalizeIndexOffset < 0 Then NormalizeIndexOffset = 0
+End Function
+
+' PropagateUp(containers, posAbs, changedLevel, root)
+' - containers(1..N) holds arrays at each level (may be copies)
+' - posAbs(1..N) holds absolute positions chosen at each level (valid for levels <= changedLevel)
+' - changedLevel: the highest level whose containers(changedLevel) has just been modified
+' This writes containers(changedLevel) into containers(changedLevel-1)(posAbs(changedLevel-1)),
+' then that container into its parent, etc, and finally updates the top-level "root" variable.
+Private Sub PropagateUp(ByRef containers As Variant, ByRef posAbs As Variant, ByVal changedLevel As Long, ByRef root As Variant)
+    Dim lvl As Long
+    For lvl = changedLevel To 2 Step -1
+        Dim parentArr As Variant
+        vAssignment parentArr, containers(lvl - 1)
+        vAssignment parentArr(posAbs(lvl - 1)), containers(lvl)
+        vAssignment containers(lvl - 1), parentArr
+    Next lvl
+    ' finally update root to containers(1)
+    vAssignment root, containers(1)
+End Sub
+
 Private Function ResolveIndexProp(ByRef lval) As Variant
     Dim baseVariable As String
     Dim pObject As Variant
@@ -2828,22 +3018,58 @@ End Function
      Dim lb As Long, ub As Long
      Dim pos As Long
      If Not keypath Is Nothing Then
+        Dim tmpsltCopy As Variant
+        Dim tmpsltCopy2 As Variant
         Dim tmpSlot As Variant
         Dim i As Long
-        For i = 1 To keypath.count - 1
-            vAssignment tmpSlot, arrVal(NormalizeIndex(keypath(i), UBound(arrVal) - LBound(arrVal) + 1, oBase))
+        For i = keypath.count - 1 To 1 Step -1
+            If i = keypath.count - 1 Then
+                If LBound(arrVal) <> oBase Then
+                    vAssignment tmpSlot, arrVal(NormalizeIndex(keypath(i), UBound(arrVal) - LBound(arrVal) + 1, oBase))
+                Else
+                    vAssignment tmpSlot, arrVal(keypath(i))
+                End If
+            Else
+                If LBound(tmpSlot) <> oBase Then
+                    vAssignment tmpsltCopy, tmpSlot
+                    vAssignment tmpSlot, tmpsltCopy(NormalizeIndex(keypath(i), UBound(tmpSlot) - LBound(tmpSlot) + 1, oBase))
+                Else
+                    vAssignment tmpsltCopy, tmpSlot
+                    vAssignment tmpSlot, tmpsltCopy(keypath(i))
+                End If
+            End If
         Next i
-        lb = LBound(tmpSlot)
-        ub = UBound(tmpSlot)
-        pos = lb + idx - 1
-        If pos < lb Then
-            err.Raise vbObjectError + 9120, "VM.AssignToArrayValueInPlace", "Index out of bounds (below LBound)"
+        If IsEmpty(tmpSlot) Then
+            Dim emptySlot() As Variant
+            ReDim emptySlot(oBase To oBase)
+            vAssignment tmpSlot, emptySlot
         End If
-        If pos > ub Then
-            ReDim Preserve tmpSlot(lb To pos)
+        If IsArray(tmpSlot) Then
+            Dim pathToSlot() As Variant
+            lb = LBound(tmpSlot)
+            ub = UBound(tmpSlot)
+            pos = lb + idx - 1
+            If pos < lb Then
+                err.Raise vbObjectError + 9120, "VM.AssignToArrayValueInPlace", "Index out of bounds (below LBound)"
+            End If
+            If pos > ub Then
+                ReDim Preserve tmpSlot(lb To pos)
+            End If
+            vAssignment tmpSlot(pos), newValue
+            ReDim pathToSlot(1 To keypath.count - 1)
+            vAssignment pathToSlot(1), keypath(keypath.count)
+            For i = 1 To keypath.count - 2
+                vAssignment pathToSlot(1 + i), keypath(i)
+            Next i
+            UpdateNestedArrayByPath arrVal, pathToSlot, tmpSlot, oBase, True
+        Else
+            If LBound(arrVal) <> oBase Then
+                vAssignment arrVal(NormalizeIndex(keypath(keypath.count - 1), _
+                                    UBound(arrVal) - LBound(arrVal) + 1, oBase)), newValue
+            Else
+                vAssignment arrVal(keypath(keypath.count - 1)), newValue
+            End If
         End If
-        vAssignment tmpSlot(pos), newValue
-        vAssignment arrVal(NormalizeIndex(keypath(keypath.count - 1), UBound(arrVal) - LBound(arrVal) + 1, oBase)), tmpSlot
      Else
         lb = LBound(arrVal)
         ub = UBound(arrVal)
@@ -2857,6 +3083,65 @@ End Function
         vAssignment arrVal(pos), newValue
     End If
  End Sub
+ ' RebaseArray: recursively rebase a Variant (possibly jagged) array so each nested
+' Variant array uses the given optionBase as its LBound.
+' - arr: Variant expected to be an array (if not, the function returns arr unchanged)
+' - optionBase: desired lower bound for every array that is encountered (0 or 1 typically)
+' Returns: a Variant array (newly allocated) where every nested Variant array is re-based.
+Public Function RebaseArray(arr As Variant, optionBase As Long) As Variant
+    On Error GoTo ErrHandler
+
+    ' If not an array, return as-is
+    If Not IsArray(arr) Then
+        RebaseArray = arr
+        Exit Function
+    End If
+
+    Dim lb As Long, ub As Long
+    lb = LBound(arr)
+    ub = UBound(arr)
+
+    ' handle empty-like arrays gracefully: if ub < lb produce single-slot array per ASF convention
+    Dim count As Long
+    If ub >= lb Then
+        count = ub - lb + 1
+    Else
+        count = 0
+    End If
+
+    Dim tmpArr() As Variant
+    If count <= 0 Then
+        ' empty -> keep single-slot convention
+        ReDim tmpArr(optionBase To optionBase)
+        RebaseArray = tmpArr
+        Exit Function
+    Else
+        ReDim tmpArr(optionBase To optionBase + count - 1)
+    End If
+
+    Dim i As Long, destIdx As Long
+    For i = lb To ub
+        destIdx = optionBase + (i - lb)
+        Dim v As Variant
+        v = arr(i)
+
+        If IsArray(v) Then
+            ' recursive rebase for nested arrays
+            tmpArr(destIdx) = RebaseArray(v, optionBase)
+        Else
+            ' non-array: copy as-is
+            tmpArr(destIdx) = v
+        End If
+    Next i
+
+    RebaseArray = tmpArr
+    Exit Function
+
+ErrHandler:
+    ' On error return the original array unchanged (fail-safe)
+    RebaseArray = arr
+End Function
+
 '-----------------------------------------------------------------------
 ' GetElementMapFromIndexNode
 ' Given an Index AST node, resolve the array container and return the actual
