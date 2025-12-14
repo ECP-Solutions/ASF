@@ -2,6 +2,7 @@
 ## ![ASF](/docs/assets/img/ASF%20logo.png)
 [![Tests (Rubberduck)](https://img.shields.io/badge/tests-Rubberduck-brightgreen)](https://rubberduckvba.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/ECP-Solutions/ASF?style=plastic)](https://github.com/ECP-Solutions/ASF/releases/latest)
 
 > Modern scripting power inside classic VBA. Fast to adopt — impossible to ignore. 
 > Turn VBA into a full-featured script host. **ASF brings modern scripting ergonomics (first-class functions, closures, arrays & objects, method chaining, builtin helpers like `map`/`filter`/`reduce`, and even VBExpressions) to classic VBA projects — without leaving the Office ecosystem.
