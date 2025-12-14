@@ -186,15 +186,6 @@ Private Sub AssignToArray(arrName As String, idxV As Variant, val As Variant, pr
     progScope.SetValue arrName, arr
 End Sub
 
-'Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As Variant
-'    If Not node.Exists("prop") And Not node.Exists("property") Then err.Raise vbObjectError + 5010, "VM.EvalMemberNode", "Missing prop/property in Member node"
-'    Dim propKey As String: propKey = IIf(node.Exists("prop"), "prop", "property")  ' Twist: auto-detect
-'    Dim prop As String: prop = node.GetValue(propKey)
-'    Dim baseVal As Variant
-'    vAssignment baseVal, EvalExprNode(node.GetValue("base"), progScope)
-'    If TypeName(baseVal) <> "ASF_Map" Then err.Raise vbObjectError + 5007, "VM.EvalMemberNode", "Cannot access property on non-map"
-'    vAssignment EvalMemberNode, baseVal.GetValue(prop)
-'End Function
 Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As Variant
     If Not node.Exists("prop") And Not node.Exists("property") Then _
         err.Raise vbObjectError + 5010, "VM.EvalMemberNode", "Missing prop/property in Member node"
@@ -478,10 +469,10 @@ Private Function ExecForNode(node As ASF_Map, progScope As ASF_ScopeStack) As St
         initType = initNode.GetValue("type")
         Select Case initType
             Case "Assign", "Print", "If", "For", "While", "TryCatch", "Switch", "Return", "Break", "Continue", "ExprStmt"
-                ' Already a statement node Â— execute directly so side-effects happen.
+                ' Already a statement node — execute directly so side-effects happen.
                 ExecuteStmtNode initNode, progScope
             Case Else
-                ' Expression node Â— wrap into ExprStmt for side-effect evaluation.
+                ' Expression node — wrap into ExprStmt for side-effect evaluation.
                 ExecuteStmtNode MakeNodeExprStmt(initNode), progScope
         End Select
     End If
@@ -728,7 +719,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
             Dim vVal As Variant
             vAssignment vVal, progScope.GetValue(vname)
 
-            ' If scope contains a non-empty value, return it Â— this covers closures
+            ' If scope contains a non-empty value, return it — this covers closures
             ' stored As ASF_Map/AST nodes (FuncLiteral/Closure/etc.).
             If Not IsEmpty(vVal) Then
                 ' If it's a Map and looks like a function node, return as callable
@@ -748,7 +739,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                         End If
                     End If
                 End If
-                ' Not necessarily a function-like Map Â— still return stored value.
+                ' Not necessarily a function-like Map — still return stored value.
                 vAssignment tmpResult, vVal
                 GoTo exitfun
             End If
@@ -780,7 +771,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                 paramsCol.Add vbNullString
                             End If
                         ElseIf TypeName(paVar) = "Collection" Then
-                            ' already a collection Â— copy it
+                            ' already a collection — copy it
                             Dim it As Variant
                             For Each it In paVar
                                 paramsCol.Add it
@@ -795,7 +786,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                     pinfo = GLOBALS_.gPrograms(funcIdx)
                     If err.Number <> 0 Then
                         err.Clear
-                        ' fallback: no program info Â— return Empty
+                        ' fallback: no program info — return Empty
                         EvalExprNode = Empty
                         Exit Function
                     End If
@@ -823,7 +814,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
             End If
             On Error GoTo 0
 
-            ' Not found Â— log and return Empty
+            ' Not found — log and return Empty
             If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "VM: Variable '" & vname & "' is undefined or not callable (returned Empty)."
             vAssignment tmpResult, Empty
             GoTo exitfun
@@ -1039,7 +1030,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                             Dim ob2 As Long: ob2 = optBase
                         
                             If cnt <= 0 Then
-                                ' Produce minimal array using same option base Â— keep conservative behavior:
+                                ' Produce minimal array using same option base — keep conservative behavior:
                                 ' if you prefer an empty array representation, you can return Empty instead.
                                 ReDim outS(ob2 To ob2)
                             Else
@@ -2590,9 +2581,15 @@ Private Function EvalVBExpressionWithScope(expr As String, progScope As ASF_Scop
          Dim key As Variant
          For Each frame In progScope.Raw
              Set m = frame
+             Dim tmpVal As Variant
              Set keyCol = m.keys
              For Each key In keyCol
-                 .VarValue(CStr(key)) = m.GetValue(CStr(key))
+                 vAssignment tmpVal, m.GetValue(CStr(key))
+                 If IsArray(tmpVal) Then
+                    .VarValue(CStr(key)) = .ArrayToString(tmpVal)
+                 Else
+                    .VarValue(CStr(key)) = tmpVal
+                End If
              Next key
          Next frame
     
@@ -2720,8 +2717,15 @@ Private Sub HandleAssignment(left As ASF_Map, ByVal rval As Variant, progScope A
         
             ' If ResolvePath provided parentKey this means the array is stored under a property/variable:
             Dim parentKey As Variant
+            Dim keyChain As New Collection
+            Dim baseKey As Variant: baseKey = lval("key")
             If lval.Exists("parentKey") Then vAssignment parentKey, lval("parentKey") Else parentKey = Empty
-        
+            Do While lval.Exists("parentKind") And lval("parentKind") = "index"
+                keyChain.Add parentKey
+                vAssignment lval, lval("parentObj")
+                vAssignment parentKey, lval("parentKey")
+            Loop
+            keyChain.Add baseKey
             If Not IsEmpty(parentKey) Then
                 ' parent container holds the array under parentKey (could be progScope or Map)
                 Dim arrVal As Variant
@@ -2733,10 +2737,12 @@ Private Sub HandleAssignment(left As ASF_Map, ByVal rval As Variant, progScope A
                     ' fallback: maybe container itself is the array
                     vAssignment arrVal, container
                 End If
-        
                 ' Ensure arrVal is an array we can index into (AssignToArrayValueInPlace will create/resize).
-                Call AssignToArrayValueInPlace(arrVal, pos, rval)
-        
+                If keyChain.count > 1 Then 'nested indexes
+                    Call AssignToArrayValueInPlace(arrVal, pos, rval, optionBase, keyChain)
+                Else
+                    Call AssignToArrayValueInPlace(arrVal, pos, rval)
+                End If
                 ' Write the updated array back into the parent container
                 If TypeName(container) = "ASF_Map" Then
                     container.SetValue CStr(parentKey), arrVal
@@ -2809,7 +2815,9 @@ End Function
      progScope.SetValue arrVarName, arrVal
  End Sub
 
- Sub AssignToArrayValueInPlace(ByRef arrVal As Variant, idx As Long, newValue As Variant)
+ Sub AssignToArrayValueInPlace(ByRef arrVal As Variant, idx As Long, _
+                                newValue As Variant, Optional oBase As Long, _
+                                Optional keypath As Collection = Nothing)
      If Not IsArray(arrVal) Then
          Dim na() As Variant
          ReDim na(1 To idx)
@@ -2817,16 +2825,37 @@ End Function
          arrVal = na
          Exit Sub
      End If
-     Dim lb As Long: lb = LBound(arrVal)
-     Dim ub As Long: ub = UBound(arrVal)
-     Dim pos As Long: pos = lb + idx - 1
-     If pos < lb Then
-         err.Raise vbObjectError + 9120, "VM.AssignToArrayValueInPlace", "Index out of bounds (below LBound)"
-     End If
-     If pos > ub Then
-         ReDim Preserve arrVal(lb To pos)
-     End If
-     vAssignment arrVal(pos), newValue
+     Dim lb As Long, ub As Long
+     Dim pos As Long
+     If Not keypath Is Nothing Then
+        Dim tmpSlot As Variant
+        Dim i As Long
+        For i = 1 To keypath.count - 1
+            vAssignment tmpSlot, arrVal(NormalizeIndex(keypath(i), UBound(arrVal) - LBound(arrVal) + 1, oBase))
+        Next i
+        lb = LBound(tmpSlot)
+        ub = UBound(tmpSlot)
+        pos = lb + idx - 1
+        If pos < lb Then
+            err.Raise vbObjectError + 9120, "VM.AssignToArrayValueInPlace", "Index out of bounds (below LBound)"
+        End If
+        If pos > ub Then
+            ReDim Preserve tmpSlot(lb To pos)
+        End If
+        vAssignment tmpSlot(pos), newValue
+        vAssignment arrVal(NormalizeIndex(keypath(keypath.count - 1), UBound(arrVal) - LBound(arrVal) + 1, oBase)), tmpSlot
+     Else
+        lb = LBound(arrVal)
+        ub = UBound(arrVal)
+        pos = lb + idx - 1
+        If pos < lb Then
+            err.Raise vbObjectError + 9120, "VM.AssignToArrayValueInPlace", "Index out of bounds (below LBound)"
+        End If
+        If pos > ub Then
+            ReDim Preserve arrVal(lb To pos)
+        End If
+        vAssignment arrVal(pos), newValue
+    End If
  End Sub
 '-----------------------------------------------------------------------
 ' GetElementMapFromIndexNode
@@ -2988,7 +3017,7 @@ End Sub
 Private Sub flatten_recursive_depth(v As Variant, ByRef col As Collection, ByVal maxDepth As Long)
     If IsArray(v) Then
         If maxDepth < 0 Then
-            ' Do not flatten this array level Â— push the array object as an element.
+            ' Do not flatten this array level — push the array object as an element.
             col.Add v
         Else
             Dim i As Long
@@ -3297,7 +3326,7 @@ Private Sub WriteToContainer(ByRef calleeExpr As ASF_Map, ByRef progScope As ASF
                         End If
                 End Select
             Else
-                ' couldn't resolve a container object Â— fall back to storing in current scope
+                ' couldn't resolve a container object — fall back to storing in current scope
                 progScope.SetValue propKey, tValue
             End If
     End Select
