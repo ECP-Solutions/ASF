@@ -78,3 +78,10 @@ End Function
 Public Function ThisWBname(emptyVar As Variant) As String
     ThisWBname = ThisWorkbook.name
 End Function
+Public Function HostCheckSecondNestedElement(arr As Variant) As String
+    Dim tmpArr As Variant
+    Dim expHelper As VBAexpressions
+    Set expHelper = New VBAexpressions
+    tmpArr = expHelper.ArrayFromString(CStr(arr(0)))
+    HostCheckSecondNestedElement = tmpArr(LBound(tmpArr) + 1)
+End Function
