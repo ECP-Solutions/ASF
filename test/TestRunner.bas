@@ -1634,3 +1634,22 @@ TestFail:
     Assert.Fail "complex_splice_copyWithin failed: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
+
+'@TestMethod("deeply_nested_Arrays")
+Private Sub deeply_nested_Arrays()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "a=[1,[[2,3],4],5]; a[2][1][2]=10; print(a);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 1, [ [ 2, 10 ], 4 ], 5 ]"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
