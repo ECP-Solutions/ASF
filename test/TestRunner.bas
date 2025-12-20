@@ -1144,7 +1144,7 @@ Private Sub array_unique_basic()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "unique_basic failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1162,7 +1162,7 @@ Private Sub array_unique_nested()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "unique_nested failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1180,7 +1180,7 @@ Private Sub array_concat()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "concat failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1193,7 +1193,7 @@ Private Sub array_join_toString()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "join_toString failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1211,7 +1211,7 @@ Private Sub array_shift_unshift()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "shift_unshift failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1229,7 +1229,7 @@ Private Sub array_delete()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "delete failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1247,7 +1247,7 @@ Private Sub array_splice_mutating()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "splice_mutating failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Descriptionn
     Resume TestExit
 End Sub
 
@@ -1265,7 +1265,7 @@ Private Sub array_toSpliced_non_mutating()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "toSpliced_non_mutating failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1278,7 +1278,7 @@ Private Sub array_at_negative()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "at_negative failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1296,7 +1296,7 @@ Private Sub array_copyWithin()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "copyWithin failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1314,7 +1314,7 @@ Private Sub array_entries()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "entries failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1328,7 +1328,7 @@ Private Sub array_every()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "every failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1345,7 +1345,7 @@ Private Sub array_find_and_indexes()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "find_and_indexes failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1363,7 +1363,7 @@ Private Sub array_from_string()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "from_string failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1382,7 +1382,7 @@ Private Sub from_array_copy()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "from_array_copy failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1401,7 +1401,7 @@ Private Sub from_single_value_wrap()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "from_single_value_wrap failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1420,7 +1420,7 @@ Private Sub from_with_map_array()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "from_with_map_array failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1439,7 +1439,7 @@ Private Sub from_with_map_string()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "from_with_map_string failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1459,7 +1459,7 @@ Private Sub from_nonclosure_second_arg_ignored()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "from_nonclosure_second_arg_ignored failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1473,7 +1473,7 @@ Private Sub array_includes_indexOf_lastIndexOf()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "includes_indexOf_lastIndexOf failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1486,7 +1486,7 @@ Private Sub array_of_factory_and_access()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "of_factory failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1504,7 +1504,7 @@ Private Sub array_reverse_and_toReversed()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "reverse_toReversed failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1517,7 +1517,7 @@ Private Sub array_some()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "some failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1535,7 +1535,7 @@ Private Sub array_with_non_mutating()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "with_non_mutating failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1553,7 +1553,7 @@ Private Sub array_sort_and_toSorted()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "sort_toSorted failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1573,7 +1573,7 @@ Private Sub array_toSpliced_and_join()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "toSpliced_and_join failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1593,7 +1593,7 @@ Private Sub array_entries_and_every_find_combo()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "entries_every_find_combo failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1612,7 +1612,7 @@ Private Sub array_includes_and_index_checks_with_objects()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "includes_index_with_objects failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1631,7 +1631,7 @@ Private Sub array_complex_splice_and_copyWithin()
 TestExit:
     Exit Sub
 TestFail:
-    Assert.Fail "complex_splice_copyWithin failed: #" & err.Number & " - " & err.Description
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
 
@@ -1647,6 +1647,124 @@ Private Sub deeply_nested_Arrays()
     expected = "PRINT:[ 1, [ [ 2, 10 ], 4 ], 5 ]"
     Assert.AreEqual expected, actual
 
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("typeof_array")
+Private Sub typeof_array()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "a=['fruits', 'animals']; print(typeof a); print(typeof a[1]);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
+                & CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:'array', PRINT:'string'"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("typeof_object")
+Private Sub typeof_object()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "a={name: 'mango', fruit: true}; print(typeof a); print(typeof a.fruit);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
+                & CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:'object', PRINT:'boolean'"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("typeof_closures")
+Private Sub typeof_closures()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "f = fun(a) { a = a + 1; return a }; print(typeof f); print(typeof f(1));", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
+                & CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:'function', PRINT:'number'"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("for_of_with_array")
+Private Sub for_of_with_array()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("a=[1,2,3]; s=0; for (v of a) { s = s + v }; return(s);"))
+    expected = "6"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("for_in_with_array_indices")
+Private Sub for_in_with_array_indices()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "a=[10,20]; out=[]; for (i in a) { out.push(i) }; print(out);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 1, 2 ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("for_of_with_string")
+Private Sub for_of_with_string()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("s='ab'; out=''; for (ch of s) { out = out + ch }; return(out);"))
+    expected = "ab"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("for_in_with_object_properties")
+Private Sub for_in_with_object_properties()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "o = { a:1, b:2 }; keys=[]; for (k in o) { keys.push(k) }; print(keys);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 'a', 'b' ]"
+    Assert.AreEqual expected, actual
 TestExit:
     Exit Sub
 TestFail:

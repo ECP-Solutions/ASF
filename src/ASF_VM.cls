@@ -260,7 +260,7 @@ Private Function EvalArrayNode(node As ASF_Map, progScope As ASF_ScopeStack) As 
     Dim arr As Variant
     Dim optionBase As Long: optionBase = progScope.GetValue("__option_base")
     If items Is Nothing Or items.count = 0 Then
-        ReDim arr(optionBase To optionBase)
+        ReDim arr(-1 To -1)
     Else
         ReDim arr(optionBase To optionBase + items.count - 1)
         Dim ii As Long
@@ -459,12 +459,137 @@ End Function
 ' ExecForNode
 ' ---------------------
 Private Function ExecForNode(node As ASF_Map, progScope As ASF_ScopeStack) As String
-    Dim initNode As ASF_Map: Set initNode = node.GetValue("init")
-    Dim condNode As ASF_Map: Set condNode = node.GetValue("cond")
-    Dim stepNode As ASF_Map: Set stepNode = node.GetValue("step")
+    On Error GoTo ExecForErr
+
+    Dim kind As String
+    If node.Exists("kind") Then
+        kind = LCase$(CStr(node.GetValue("kind")))
+    Else
+        kind = "classic"
+    End If
+
+    ' Classic for(...) branch variables (may be Nothing for in/of)
+    Dim initNode As ASF_Map: Set initNode = IIf(node.Exists("init"), node.GetValue("init"), Nothing)
+    Dim condNode As ASF_Map: Set condNode = IIf(node.Exists("cond"), node.GetValue("cond"), Nothing)
+    Dim stepNode As ASF_Map: Set stepNode = IIf(node.Exists("step"), node.GetValue("step"), Nothing)
     Dim body As Collection: Set body = node.GetValue("body")
-    Dim condOk As Boolean
-    
+
+    If kind = "in" Or kind = "of" Then
+        ' for-in / for-of semantics
+        Dim eachNode As ASF_Map: Set eachNode = node.GetValue("each")
+        Dim iterNode As ASF_Map: Set iterNode = node.GetValue("iter")
+
+        ' Evaluate iterable once (like JS for-of), per semantics
+        Dim iterVal As Variant
+        vAssignment iterVal, EvalExprNode(iterNode, progScope)
+
+        ' Option base (for index translation)
+        Dim optBase As Long: optBase = progScope.GetValue("__option_base")
+
+        ' Prepare iterator lists
+        Dim keysCol As Collection: Set keysCol = New Collection
+        Dim isArrayIter As Boolean: isArrayIter = False
+        Dim isStringIter As Boolean: isStringIter = False
+        Dim isMapIter As Boolean: isMapIter = False
+
+        ' Arrays
+        If IsArray(iterVal) Then
+            isArrayIter = True
+            Dim lb As Long: lb = LBound(iterVal)
+            Dim ub As Long: ub = UBound(iterVal)
+            Dim idxA As Long
+            For idxA = lb To ub
+                ' for-in yields indices (adjusted); for-of yields values
+                If kind = "in" Then
+                    keysCol.Add (optBase + (idxA - lb))
+                Else
+                    keysCol.Add iterVal(idxA)
+                End If
+            Next idxA
+
+        ' Strings
+        ElseIf VarType(iterVal) = vbString Then
+            isStringIter = True
+            Dim str As String: str = CStr(iterVal)
+            Dim nch As Long: nch = Len(str)
+            Dim iChar As Long
+            For iChar = 1 To nch
+                If kind = "in" Then
+                    keysCol.Add (optBase + (iChar - 1))   ' index-like
+                Else
+                    keysCol.Add mid$(str, iChar, 1)
+                End If
+            Next iChar
+
+        ' ASF_Map objects (attempt to obtain keys)
+        ElseIf Not IsEmpty(iterVal) And Not IsNull(iterVal) And IsObject(iterVal) And TypeName(iterVal) = "ASF_Map" Then
+            isMapIter = True
+            Set keysCol = GetMapKeys(iterVal) ' returns Collection of keys (strings or numeric)
+            ' for-of: replace keysCol with values collection
+            If kind = "of" Then
+                Dim valsCol As New Collection
+                Dim kk As Long
+                For kk = 1 To keysCol.count
+                    Dim kkey As Variant: kkey = keysCol(kk)
+                    Dim valv As Variant
+                    On Error Resume Next
+                    vAssignment valv, iterVal.GetValue(CStr(kkey))
+                    On Error GoTo ExecForErr
+                    valsCol.Add valv
+                Next kk
+                Set keysCol = valsCol
+            End If
+
+        Else
+            ' Unknown iterable -> nothing to iterate
+            Set keysCol = New Collection
+        End If
+
+        ' Iterate over keysCol
+        Dim itCount As Long: itCount = keysCol.count
+        Dim iterIndex As Long
+        For iterIndex = 1 To itCount
+            Dim curVal As Variant: vAssignment curVal, keysCol(iterIndex)
+
+            ' Bind the 'each' target (if provided) -> we need to assign LValue
+            If Not eachNode Is Nothing Then
+                ' For "in": assign key (for arrays this is numeric index adjusted to option base)
+                ' For "of": assign value
+                Dim toAssign As Variant: vAssignment toAssign, curVal
+
+                ' If 'each' is a simple IDENT variable or any lvalue AST node,
+                ' reuse HandleAssignment which performs ResolveLValue and writes back to container.
+                ' But HandleAssignment expects an AST node (Variable/Member/Index)
+                On Error Resume Next
+                Call HandleAssignment(eachNode, toAssign, progScope)
+                If err.Number <> 0 Then
+                    ' If assignment failed (e.g., eachNode not an LValue) clear error and skip binding
+                    err.Clear
+                End If
+                On Error GoTo ExecForErr
+            End If
+
+            ' Execute body statements
+            Dim s As Long
+            For s = 1 To body.count
+                Dim ctrl As String: ctrl = ExecuteStmtNode(body(s), progScope)
+                If ctrl = "BREAK" Then
+                    GoTo ForInEnd
+                ElseIf ctrl = "CONTINUE" Then
+                    Exit For ' continue outer loop: move to next iterIndex
+                ElseIf ctrl = "RETURN" Or ctrl = "ERR" Then
+                    ExecForNode = ctrl
+                    Exit Function
+                End If
+            Next s
+        Next iterIndex
+
+ForInEnd:
+        ExecForNode = ""
+        Exit Function
+    End If
+
+    ' ---------- classic for(init; cond; step) fallback ----------
     If Not initNode Is Nothing Then
         Dim initType As String
         initType = initNode.GetValue("type")
@@ -479,19 +604,19 @@ Private Function ExecForNode(node As ASF_Map, progScope As ASF_ScopeStack) As St
     End If
 
 ForStart:
-    condOk = True
+    Dim condOk As Boolean: condOk = True
     If Not condNode Is Nothing Then
         condOk = IsTruthy(EvalExprNode(condNode, progScope))
     End If
     If Not condOk Then GoTo ForEnd
 
-    Dim s As Long
-    For s = 1 To body.count
-        Dim ctrl As String: ctrl = ExecuteStmtNode(body(s), progScope)
-        If ctrl = "BREAK" Then GoTo ForEnd
-        If ctrl = "CONTINUE" Then Exit For
-        If ctrl = "RETURN" Or ctrl = "ERR" Then ExecForNode = ctrl: Exit Function
-    Next s
+    Dim s2 As Long
+    For s2 = 1 To body.count
+        Dim ctrl2 As String: ctrl2 = ExecuteStmtNode(body(s2), progScope)
+        If ctrl2 = "BREAK" Then GoTo ForEnd
+        If ctrl2 = "CONTINUE" Then Exit For
+        If ctrl2 = "RETURN" Or ctrl2 = "ERR" Then ExecForNode = ctrl2: Exit Function
+    Next s2
 
     If Not stepNode Is Nothing Then
         Dim stepType As String
@@ -507,6 +632,14 @@ ForStart:
 
 ForEnd:
     ExecForNode = ""
+    Exit Function
+
+ExecForErr:
+    ' propagate error as VM runtime error marker
+    ExecForNode = "ERR"
+    If err.Number <> 0 Then
+        ' You may prefer to re-raise or log error — currently we return "ERR" for caller to handle
+    End If
 End Function
 
 ' Helper to wrap an expression node into an ExprStmt node
@@ -1049,11 +1182,15 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                             GoTo exitfun
                         Case "push"
                             ' push(...values) -> mutates array, returns new length
-                            If Not IsArray(baseValLocal) Then
+                            Dim offs As Long
+                            If Not IsArray(baseValLocal) Or UBound(baseValLocal) = -1 Then
                                 ' create new array and set it back
                                 Dim na() As Variant
                                 ReDim na(1 To 1)
                                 baseValLocal = na
+                                offs = 1 'Empty array
+                            Else
+                                offs = 0
                             End If
                             insertCount = evaluated.count
                             Dim oldLB As Long: oldLB = LBound(baseValLocal)
@@ -1061,13 +1198,13 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                             Dim oldLen As Long: oldLen = oldUB - oldLB + 1
                             Dim newLen As Long: newLen = oldLen + insertCount
                             Dim newArr() As Variant
-                            ReDim newArr(oldLB To oldLB + newLen - 1)
+                            ReDim newArr(oldLB To oldLB + newLen - 1 - offs)
                             Dim zz As Long
-                            For zz = oldLB To oldUB
+                            For zz = oldLB To oldUB - offs
                                 vAssignment newArr(zz), baseValLocal(zz)
                             Next zz
                             For zz = 1 To insertCount
-                                vAssignment newArr(oldLB + oldLen + zz - 1), evaluated(zz)
+                                vAssignment newArr(oldLB + oldLen + zz - 1 - offs), evaluated(zz)
                             Next zz
                             ' write back to original container via ResolvePath
                             WriteToContainer calleeExpr, progScope, newArr
@@ -2169,11 +2306,13 @@ namedFunctions:
 
         Case "Unary"
             Dim op As String: op = node.GetValue("op")
-            Dim ev As Variant: ev = EvalExprNode(node.GetValue("expr"), progScope)
+            Dim ev As Variant: vAssignment ev, EvalExprNode(node.GetValue("expr"), progScope)
             If op = "!" Then
                 vAssignment tmpResult, Not IsTruthy(ev)
             ElseIf op = "-" Then
                 vAssignment tmpResult, -CDbl(ev)
+            ElseIf op = "typeof" Then
+                vAssignment tmpResult, builtin_typeof(ev)
             Else
                 vAssignment tmpResult, ev
             End If
@@ -3338,7 +3477,6 @@ Private Function builtin_clone(v As Variant, progScope As ASF_ScopeStack) As Var
     vAssignment builtin_clone, v
 End Function
 
- ' ----------------- end LValue helpers -----------------
  ' Recursively applies mapper closure to value. If value is an array, map each element recursively.
 ' mapper : closure map (type="Closure")
 ' progScope : current scope stack (used for __option_base and to pass as runtime context)
@@ -3396,6 +3534,77 @@ Private Function map_apply_recursive(value As Variant, mapper As ASF_Map, _
 ErrHandler:
     ' On mapper errors propagate as runtime error so calling code can handle (consistent with earlier semantics)
     err.Raise err.Number, err.Source, err.Description
+End Function
+
+Private Function builtin_typeof(v As Variant) As String
+    On Error Resume Next
+    ' Null / VBA Null
+    If IsNull(v) Then
+        builtin_typeof = "null"
+        Exit Function
+    End If
+
+    ' Empty / uninitialized
+    If IsEmpty(v) Then
+        builtin_typeof = "undefined"
+        Exit Function
+    End If
+
+    ' Array
+    Dim isArr As Boolean
+    isArr = False
+    If Not IsError(v) Then
+        On Error Resume Next
+        Dim lb As Long
+        lb = LBound(v)
+        If err.Number = 0 Then isArr = True Else err.Clear
+        On Error GoTo 0
+    End If
+    If isArr Then
+        builtin_typeof = "array"
+        Exit Function
+    End If
+
+    ' ASF_Map (objects and closures) — detect function closures specially
+    If IsObject(v) Then
+        ' if it's an ASF_Map, look inside for "type" = "Closure"
+        If TypeName(v) = "ASF_Map" Then
+            If v.Exists("type") Then
+                Dim tp As Variant: tp = v.GetValue("type")
+                If CStr(tp) = "Closure" Then
+                    builtin_typeof = "function"
+                    Exit Function
+                End If
+            End If
+            ' generic ASF_Map object
+            builtin_typeof = "object"
+            Exit Function
+        End If
+        ' other COM/host objects
+        builtin_typeof = "object"
+        Exit Function
+    End If
+
+    ' Boolean (True/False)
+    If VarType(v) = vbBoolean Then
+        builtin_typeof = "boolean"
+        Exit Function
+    End If
+
+    ' Numeric
+    If IsNumeric(v) Then
+        builtin_typeof = "number"
+        Exit Function
+    End If
+
+    ' String
+    If VarType(v) = vbString Then
+        builtin_typeof = "string"
+        Exit Function
+    End If
+
+    ' Fallback: unknown
+    builtin_typeof = "unknown"
 End Function
 
 ' ---------------------------
@@ -3710,6 +3919,36 @@ Private Sub QS_QuickSort(ByRef arr() As Variant, ByVal low As Long, ByVal high A
     If low < j Then QS_QuickSort arr, low, j, comp, hasComp, thisVal
     If i < high Then QS_QuickSort arr, i, high, comp, hasComp, thisVal
 End Sub
+
+' Returns a Collection of keys (1-based).
+Private Function GetMapKeys(mapObj As Variant) As Collection
+    Dim out As New Collection
+    On Error GoTo GetKeysFallback
+
+    If TypeName(mapObj) <> "ASF_Map" Then
+        Set GetMapKeys = out
+        Exit Function
+    End If
+
+    ' Try: mapObj.Keys -> returns Collection
+    On Error Resume Next
+    Dim tmpKeys As Variant
+    tmpKeys = Empty
+    vAssignment tmpKeys, mapObj.keys
+    If err.Number = 0 Then
+        Dim k As Variant
+        For Each k In tmpKeys
+            out.Add k
+        Next k
+        Set GetMapKeys = out
+        Exit Function
+    End If
+    err.Clear
+
+GetKeysFallback:
+    ' If we reach here, return empty collection
+    Set GetMapKeys = out
+End Function
 
 ' ---------------------
 ' End VM class
