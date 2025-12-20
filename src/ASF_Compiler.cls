@@ -1136,6 +1136,32 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
                 End If
             End If
 
+            ' support typeof operator: typeof x  OR  typeof(x)
+            If LCase$(name) = "typeof" Then
+                ' consume 'typeof'
+                idx = idx + 1
+            
+                ' Parse operand: allow parentheses or a plain primary/expression
+                Dim operandNode As ASF_Map
+                If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "(" Then
+                    ' typeof( ... )
+                    idx = idx + 1
+                    Set operandNode = ParseLogicalOrNode(types, vals, n, idx)
+                    If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = ")" Then
+                        idx = idx + 1
+                    End If
+                Else
+                    ' typeof x  -> parse the next primary/unary subtree
+                    Set operandNode = ParsePrimaryNode(types, vals, n, idx)
+                End If
+            
+                Dim uNode_tf As ASF_Map: Set uNode_tf = MakeNode("Unary")
+                uNode_tf.SetValue "op", "typeof"
+                uNode_tf.SetValue "expr", operandNode.Clone
+                Set ParsePrimaryNode = uNode_tf.Clone
+                Exit Function
+            End If
+
             ' Collapsed identifiers path (a.b[2].c style, possibly with bracket tokens following the IDENT)
             Set currentNode = Nothing
             If InStr(name, ".") > 0 Or InStr(name, "[") > 0 Then
@@ -1544,6 +1570,7 @@ clean_:
     Set elseifBlocks = Nothing
 End Function
 
+' Replace the existing ParseForAST with the function below
 Private Function ParseForAST(stmtTokens As Collection) As ASF_Map
     Dim node As ASF_Map: Set node = MakeNode("For")
     Dim initTok As Collection
@@ -1551,11 +1578,17 @@ Private Function ParseForAST(stmtTokens As Collection) As ASF_Map
     Dim stepTok As Collection
     Dim bodyToks As Collection
     Dim i As Long: i = 2
+
+    ' locate opening '(' of the for header
     Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "(")
         i = i + 1
     Loop
     If i > stmtTokens.count Then Set ParseForAST = node: Exit Function
+
+    ' enter header (consume '(')
     i = i + 1
+
+    ' collect header tokens until the matching ')'
     Set initTok = New Collection
     Dim hdrParen As Long, hdrBracket As Long, hdrBrace As Long
     hdrParen = 0: hdrBracket = 0: hdrBrace = 0
@@ -1568,6 +1601,7 @@ Private Function ParseForAST(stmtTokens As Collection) As ASF_Map
                     If hdrParen > 0 Then
                         hdrParen = hdrParen - 1
                     Else
+                        ' closing header paren found (do not consume it here; caller logic will advance)
                         Exit Do
                     End If
                 Case "["
@@ -1580,16 +1614,122 @@ Private Function ParseForAST(stmtTokens As Collection) As ASF_Map
                     If hdrBrace > 0 Then hdrBrace = hdrBrace - 1
             End Select
         End If
+
+        ' if we are at top-level header and found a separator (comma/semicolon) treat as classic for parts boundary
         If hdrParen = 0 And hdrBracket = 0 And hdrBrace = 0 And stmtTokens(i)(0) = "SEP" And _
                         (stmtTokens(i)(1) = "," Or stmtTokens(i)(1) = ";") Then
             i = i + 1
             Exit Do
         End If
+
         initTok.Add stmtTokens(i)
         i = i + 1
     Loop
+
+    ' Try to detect "for (<left> in <right>)" or "for (<left> of <right>)"
+    Dim foundPos As Long: foundPos = 0
+    Dim foundKind As String: foundKind = ""
+    If initTok.count > 0 Then
+        Dim depthP As Long: depthP = 0
+        Dim depthB As Long: depthB = 0
+        Dim depthC As Long: depthC = 0
+        Dim tIdx As Long
+        For tIdx = 1 To initTok.count
+            Dim tkType As String: tkType = CStr(initTok(tIdx)(0))
+            Dim tkVal As String: tkVal = CStr(initTok(tIdx)(1))
+            If tkType = "PAREN" Then
+                Select Case tkVal
+                    Case "(", "[", "{"
+                        If tkVal = "(" Then depthP = depthP + 1
+                        If tkVal = "[" Then depthB = depthB + 1
+                        If tkVal = "{" Then depthC = depthC + 1
+                    Case ")", "]", "}"
+                        If tkVal = ")" And depthP > 0 Then depthP = depthP - 1
+                        If tkVal = "]" And depthB > 0 Then depthB = depthB - 1
+                        If tkVal = "}" And depthC > 0 Then depthC = depthC - 1
+                End Select
+            End If
+            ' only consider 'in' / 'of' at top-level (no nested parens/brackets/braces)
+            If depthP = 0 And depthB = 0 And depthC = 0 Then
+                If tkType = "IDENT" Then
+                    If LCase$(tkVal) = "in" Or LCase$(tkVal) = "of" Then
+                        foundPos = tIdx
+                        foundKind = LCase$(tkVal) ' "in" or "of"
+                        Exit For
+                    End If
+                End If
+            End If
+        Next tIdx
+    End If
+
+    If foundPos > 0 Then
+        ' Build for-in / for-of node: left = tokens before foundPos, right = tokens after foundPos
+        Dim leftTok As Collection: Set leftTok = New Collection
+        Dim rightTok As Collection: Set rightTok = New Collection
+        Dim k As Long
+        For k = 1 To foundPos - 1
+            leftTok.Add initTok(k)
+        Next k
+        For k = foundPos + 1 To initTok.count
+            rightTok.Add initTok(k)
+        Next k
+
+        ' parse expressions for left and right sides
+        Dim leftNode As ASF_Map: Set leftNode = ParseExprTokensToNode(leftTok)
+        Dim rightNode As ASF_Map: Set rightNode = ParseExprTokensToNode(rightTok)
+
+        node.SetValue "kind", foundKind ' "in" or "of"
+        node.SetValue "each", leftNode
+        node.SetValue "iter", rightNode
+
+        ' advance i past the ')' that closes the header (stmtTokens(i) should be ')')
+        If i <= stmtTokens.count And (stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = ")") Then
+            i = i + 1
+        End If
+
+        ' now find body opening '{'
+        Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "{")
+            i = i + 1
+        Loop
+        If i > stmtTokens.count Then
+            Set ParseForAST = node.Clone
+            Exit Function
+        End If
+
+        ' collect body tokens (between '{' and matching '}')
+        Dim j As Long: j = i + 1
+        Dim depth As Long: depth = 0
+        Set bodyToks = New Collection
+        Do While j <= stmtTokens.count
+            If stmtTokens(j)(0) = "PAREN" Then
+                If stmtTokens(j)(1) = "{" Then
+                    depth = depth + 1
+                ElseIf stmtTokens(j)(1) = "}" Then
+                    If depth = 0 Then
+                        Exit Do
+                    Else
+                        depth = depth - 1
+                    End If
+                End If
+            End If
+            bodyToks.Add stmtTokens(j)
+            j = j + 1
+        Loop
+        node.SetValue "body", ParseTokensToAST(bodyToks)
+        Set ParseForAST = node.Clone
+
+        ' cleanup
+        Set bodyToks = Nothing
+        Set initTok = Nothing
+        Set leftTok = Nothing
+        Set rightTok = Nothing
+        Exit Function
+    End If
+
+    ' ---------- classic for(init; cond; step) parsing (fallback to original behaviour) ----------
     node.SetValue "init", ParseExprTokensToNode(initTok)
 
+    ' parse cond (tokens between first sep and second sep or closing ')')
     Set condTok = New Collection
     hdrParen = 0: hdrBracket = 0: hdrBrace = 0
     Do While i <= stmtTokens.count
@@ -1623,6 +1763,7 @@ Private Function ParseForAST(stmtTokens As Collection) As ASF_Map
     Loop
     node.SetValue "cond", ParseExprTokensToNode(condTok)
 
+    ' parse step (rest until closing ')' at header-level)
     Set stepTok = New Collection
     hdrParen = 0: hdrBracket = 0: hdrBrace = 0
     Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = ")")
@@ -1647,30 +1788,34 @@ Private Function ParseForAST(stmtTokens As Collection) As ASF_Map
     Loop
     node.SetValue "step", ParseExprTokensToNode(stepTok)
 
+    ' find body opening '{'
     Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "{")
         i = i + 1
     Loop
     If i > stmtTokens.count Then Set ParseForAST = node.Clone: GoTo clean_
-    Dim j As Long: j = i + 1
-    Dim depth As Long: depth = 0
+
+    ' collect body tokens
+    Dim j2 As Long: j2 = i + 1
+    Dim depth2 As Long: depth2 = 0
     Set bodyToks = New Collection
-    Do While j <= stmtTokens.count
-        If stmtTokens(j)(0) = "PAREN" Then
-            If stmtTokens(j)(1) = "{" Then
-                depth = depth + 1
-            ElseIf stmtTokens(j)(1) = "}" Then
-                If depth = 0 Then
+    Do While j2 <= stmtTokens.count
+        If stmtTokens(j2)(0) = "PAREN" Then
+            If stmtTokens(j2)(1) = "{" Then
+                depth2 = depth2 + 1
+            ElseIf stmtTokens(j2)(1) = "}" Then
+                If depth2 = 0 Then
                     Exit Do
                 Else
-                    depth = depth - 1
+                    depth2 = depth2 - 1
                 End If
             End If
         End If
-        bodyToks.Add stmtTokens(j)
-        j = j + 1
+        bodyToks.Add stmtTokens(j2)
+        j2 = j2 + 1
     Loop
     node.SetValue "body", ParseTokensToAST(bodyToks)
     Set ParseForAST = node.Clone
+
 clean_:
     Set node = Nothing
     Set bodyToks = Nothing
@@ -2175,13 +2320,127 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
             If Not outElse Is Nothing Then nif.SetValue "else", outElse
             Set NormalizeNodeRecursive = nif
             Exit Function
-
+'
+'        Case "For"
+'            ' normalize init/cond/step and body
+'            Set initNode = node.GetValue("init")
+'            Set condNode = node.GetValue("cond")
+'            Set stepNode = node.GetValue("step")
+'            Set body = node.GetValue("body")
+'            If Not initNode Is Nothing Then
+'                If initNode.GetValue("type") = "Binary" And CStr(initNode.GetValue("op")) = "=" Then
+'                    Set L = initNode.GetValue("left")
+'                    If Not L Is Nothing And IsAssignableNode(L) Then
+'                        Set na = New ASF_Map
+'                        na.Add "type", "Assign"
+'                        na.SetValue "left", L
+'                        na.SetValue "right", NormalizeExprNodeRecursive(initNode.GetValue("right"))
+'                        Set nInit = na
+'                    Else
+'                        Set nInit = NormalizeExprNodeRecursive(initNode)
+'                    End If
+'                ElseIf initNode.GetValue("type") = "ExprStmt" Then
+'                    ' exprstmt could wrap a binary expression
+'                    Set e = initNode.GetValue("expr")
+'                    If Not e Is Nothing And e.GetValue("type") = "Binary" And CStr(e.GetValue("op")) = "=" Then
+'                        Set L2 = e.GetValue("left")
+'                        If Not L2 Is Nothing And IsAssignableNode(L2) Then
+'                            Set na2 = New ASF_Map
+'                            na2.Add "type", "Assign"
+'                            na2.SetValue "left", L2
+'                            na2.SetValue "right", NormalizeExprNodeRecursive(e.GetValue("right"))
+'                            Set nInit = na2
+'                        Else
+'                            Set nInit = NormalizeExprNodeRecursive(e)
+'                        End If
+'                    Else
+'                        Set nInit = NormalizeExprNodeRecursive(e)
+'                    End If
+'                Else
+'                    Set nInit = NormalizeExprNodeRecursive(initNode)
+'                End If
+'            End If
+'            If Not condNode Is Nothing Then Set nCond = NormalizeExprNodeRecursive(condNode)
+'            If Not stepNode Is Nothing Then
+'                If stepNode.GetValue("type") = "Binary" And CStr(stepNode.GetValue("op")) = "=" Then
+'                    Set SL = stepNode.GetValue("left")
+'                    If Not SL Is Nothing And IsAssignableNode(SL) Then
+'                        Set na3 = New ASF_Map
+'                        na3.Add "type", "Assign"
+'                        na3.SetValue "left", SL
+'                        na3.SetValue "right", NormalizeExprNodeRecursive(stepNode.GetValue("right"))
+'                        Set nStep = na3
+'                    Else
+'                        Set nStep = NormalizeExprNodeRecursive(stepNode)
+'                    End If
+'                Else
+'                    Set nStep = NormalizeExprNodeRecursive(stepNode)
+'                End If
+'            End If
+'            Set newBody = New Collection
+'            If Not body Is Nothing Then
+'                Dim bidx As Long
+'                For bidx = 1 To body.count
+'                    newBody.Add NormalizeNodeRecursive(body(bidx))
+'                Next bidx
+'            End If
+'            Set nf = New ASF_Map
+'            nf.Add "type", "For"
+'            If Not nInit Is Nothing Then nf.SetValue "init", nInit
+'            If Not nCond Is Nothing Then nf.SetValue "cond", nCond
+'            If Not nStep Is Nothing Then nf.SetValue "step", nStep
+'            nf.SetValue "body", newBody
+'            Set NormalizeNodeRecursive = nf
+'            Exit Function
         Case "For"
-            ' normalize init/cond/step and body
+            ' Normalize For nodes.
+            ' If node has "kind" => this is a for-in / for-of form: normalize "each" and "iter".
+            ' Otherwise, treat as classic for(init; cond; step).
+            Set newBody = New Collection
+            Dim bodyOrig As Collection: Set bodyOrig = node.GetValue("body")
+            If Not bodyOrig Is Nothing Then
+                Dim bidx As Long
+                For bidx = 1 To bodyOrig.count
+                    newBody.Add NormalizeNodeRecursive(bodyOrig(bidx))
+                Next bidx
+            End If
+
+            If node.Exists("kind") Then
+                Dim kindVal As String: kindVal = CStr(node.GetValue("kind"))
+                Dim eachOrig As ASF_Map: Set eachOrig = Nothing
+                Dim iterOrig As ASF_Map: Set iterOrig = Nothing
+                If node.Exists("each") Then Set eachOrig = node.GetValue("each")
+                If node.Exists("iter") Then Set iterOrig = node.GetValue("iter")
+
+                Dim nEach As ASF_Map: Set nEach = Nothing
+                Dim nIter As ASF_Map: Set nIter = Nothing
+                If Not eachOrig Is Nothing Then Set nEach = NormalizeExprNodeRecursive(eachOrig)
+                If Not iterOrig Is Nothing Then Set nIter = NormalizeExprNodeRecursive(iterOrig)
+
+                Dim nfKind As New ASF_Map
+                nfKind.Add "type", "For"
+                nfKind.SetValue "kind", kindVal
+                If nEach Is Nothing Then
+                    If Not eachOrig Is Nothing Then nfKind.SetValue "each", eachOrig
+                Else
+                    nfKind.SetValue "each", nEach
+                End If
+                If nIter Is Nothing Then
+                    If Not iterOrig Is Nothing Then nfKind.SetValue "iter", iterOrig
+                Else
+                    nfKind.SetValue "iter", nIter
+                End If
+                nfKind.SetValue "body", newBody
+
+                Set NormalizeNodeRecursive = nfKind
+                Exit Function
+            End If
+
+            ' --- classic for(init; cond; step) normalization (unchanged behavior) ---
             Set initNode = node.GetValue("init")
             Set condNode = node.GetValue("cond")
             Set stepNode = node.GetValue("step")
-            Set body = node.GetValue("body")
+
             If Not initNode Is Nothing Then
                 If initNode.GetValue("type") = "Binary" And CStr(initNode.GetValue("op")) = "=" Then
                     Set L = initNode.GetValue("left")
@@ -2195,7 +2454,6 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
                         Set nInit = NormalizeExprNodeRecursive(initNode)
                     End If
                 ElseIf initNode.GetValue("type") = "ExprStmt" Then
-                    ' exprstmt could wrap a binary expression
                     Set e = initNode.GetValue("expr")
                     If Not e Is Nothing And e.GetValue("type") = "Binary" And CStr(e.GetValue("op")) = "=" Then
                         Set L2 = e.GetValue("left")
@@ -2215,7 +2473,9 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
                     Set nInit = NormalizeExprNodeRecursive(initNode)
                 End If
             End If
+
             If Not condNode Is Nothing Then Set nCond = NormalizeExprNodeRecursive(condNode)
+
             If Not stepNode Is Nothing Then
                 If stepNode.GetValue("type") = "Binary" And CStr(stepNode.GetValue("op")) = "=" Then
                     Set SL = stepNode.GetValue("left")
@@ -2232,19 +2492,14 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
                     Set nStep = NormalizeExprNodeRecursive(stepNode)
                 End If
             End If
-            Set newBody = New Collection
-            If Not body Is Nothing Then
-                Dim bidx As Long
-                For bidx = 1 To body.count
-                    newBody.Add NormalizeNodeRecursive(body(bidx))
-                Next bidx
-            End If
+
             Set nf = New ASF_Map
             nf.Add "type", "For"
             If Not nInit Is Nothing Then nf.SetValue "init", nInit
             If Not nCond Is Nothing Then nf.SetValue "cond", nCond
             If Not nStep Is Nothing Then nf.SetValue "step", nStep
             nf.SetValue "body", newBody
+
             Set NormalizeNodeRecursive = nf
             Exit Function
 
@@ -2269,12 +2524,12 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
             Set tryBlk = node.GetValue("try")
             Set catchBlk = node.GetValue("catch")
             Set nt = New Collection: Set nc = New Collection
-            Dim ti As Long
+            Dim tI As Long
             If Not tryBlk Is Nothing Then
-                For ti = 1 To tryBlk.count: nt.Add NormalizeNodeRecursive(tryBlk(ti)): Next ti
+                For tI = 1 To tryBlk.count: nt.Add NormalizeNodeRecursive(tryBlk(tI)): Next tI
             End If
             If Not catchBlk Is Nothing Then
-                For ti = 1 To catchBlk.count: nc.Add NormalizeNodeRecursive(catchBlk(ti)): Next ti
+                For tI = 1 To catchBlk.count: nc.Add NormalizeNodeRecursive(catchBlk(tI)): Next tI
             End If
             Set ntc = New ASF_Map
             ntc.Add "type", "TryCatch"
