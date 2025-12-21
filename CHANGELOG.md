@@ -2,8 +2,45 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [v1.0.5] - 2025-12-21
+https://github.com/ECP-Solutions/ASF/releases/tag/v1.0.5
+
+## Summary
+
+ASF v1.0.5 supports a large number of string functions. The `String` data type is treated as an object from which methods can be invoked.
+
+---
+
+## Highlights
+
+-  **Added** 
+    - javascript functions: `length`, `charAt`, `charCodeAt`, `concat`, `endsWith`, `fromCharCode`, `includes`, `indexOf`, `lastIndexOf`, `localeCompare`, `padEnd`, `padStart`, `repeat`, `replace`, `slice`, `split`, `startsWith`, `substring`, `toLowercase`, `toUppercase`, `trim`, `trimStart`, `trimEnd`.  
+	
+		So users can now write code like this one for advanced string operations
+        ```js
+			welcome=fun(string){return string.concat('!')}; return('Hello world'.replace('world', welcome('VBA')));
+			//-> Outputs 'Hello VBA!'
+        ```
+    - String templates are now supported.  
+         ```js
+			a='Happy! '; return(`I feel ${a.repeat(3)}`);
+			//-> Outputs 'I feel Happy! Happy! Happy! '
+        ```
+- **Internal core change**: the builtins methods are now packed by object type.
+
+---
+**Full Changelog**: https://github.com/ECP-Solutions/ASF/compare/v1.0.4...v1.0.5
+
 ## [v1.0.4] - 2025-12-20
 https://github.com/ECP-Solutions/ASF/releases/tag/v1.0.4
+
+## Summary
+
+ASF v1.0.4 has now a syntax more similar to javascript. The Framework can executed `for-in` and `for-of` methods.
+
+---
+
+## Highlights
 
 -  **Added** 
     - javascript `typeof` operator 
@@ -15,6 +52,10 @@ https://github.com/ECP-Solutions/ASF/releases/tag/v1.0.4
         o = { a:1, b:2 }; keys=[]; for (k in o) { keys.push(k) }; print(keys); //--→PRINT:[ 'a', 'b' ]
         ```
 - **Fixed**: extra element appended by the push operation when operating empty arrays.
+
+---
+**Full Changelog**: https://github.com/ECP-Solutions/ASF/compare/v1.0.3...v1.0.4
+
 
 ## [v1.0.3] - 2025-12-14
 https://github.com/ECP-Solutions/ASF/releases/tag/v1.0.3
