@@ -901,25 +901,11 @@ Private Function DoPostfixChaining(ByVal currentNode As ASF_Map, types() As Stri
             idx = idx + 1
             If idx < n And safeTVRet(types, idx) = "IDENT" Then
                 propName = CStr(safeTVRet(vals, idx))
-                Select Case LCase$(propName)
-                    Case "length"
-                        Dim lenCallNode As ASF_Map: Set lenCallNode = MakeNode("Call")
-                        Dim builtinLenVar As ASF_Map: Set builtinLenVar = MakeNode("Variable")
-                        builtinLenVar.SetValue "name", ".__len__"
-                        lenCallNode.SetValue "callee", builtinLenVar
-                        lenCallNode.SetValue "name", ".__len__"
-                        Dim lenArgs As New Collection
-                        lenArgs.Add currentNode.Clone
-                        lenCallNode.SetValue "args", lenArgs
-                        Set currentNode = lenCallNode.Clone
-                        idx = idx + 1
-                    Case Else
-                        Set mem = MakeNode("Member")
-                        mem.SetValue "base", currentNode
-                        mem.SetValue "prop", propName
-                        Set currentNode = mem.Clone
-                        idx = idx + 1
-                End Select
+                Set mem = MakeNode("Member")
+                mem.SetValue "base", currentNode
+                mem.SetValue "prop", propName
+                Set currentNode = mem.Clone
+                idx = idx + 1
             Else
                 ' invalid member access; stop postfixing
                 Exit Do
@@ -1045,12 +1031,25 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
             Exit Function
 
         Case "STRING"
-            Dim sNode As ASF_Map: Set sNode = MakeNode("Literal")
-            sNode.SetValue "value", v
-            idx = idx + 1
-            Set ParsePrimaryNode = sNode
-            Exit Function
-
+            Dim rawS As String: rawS = CStr(v)
+            ' If this is a template (backtick-wrapped), compile it into a Template AST node
+            If Len(rawS) >= 2 And left$(rawS, 1) = "`" And right$(rawS, 1) = "`" Then
+                Dim tplNode As ASF_Map
+                Set tplNode = ParseTemplateStringToNode(rawS)
+                idx = idx + 1
+                Set ParsePrimaryNode = tplNode.Clone
+                Exit Function
+            Else
+                Dim sNode As ASF_Map: Set sNode = MakeNode("Literal")
+                sNode.SetValue "value", v
+                idx = idx + 1
+                ' Allow postfix chaining on string literal results
+                Set currentNode = sNode.Clone
+                Set currentNode = DoPostfixChaining(currentNode, types, vals, n, idx)
+                Set ParsePrimaryNode = currentNode.Clone
+                Exit Function
+            End If
+    
         Case "VBEXPR"
             Dim vbNode As ASF_Map: Set vbNode = MakeNode("VBAexpr")
             vbNode.SetValue "expr", CStr(v)
@@ -1193,19 +1192,6 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
                             propName = propName & ch2
                             posS = posS + 1
                         Loop
-                        If LCase$(propName) = "length" Then
-                            Dim lenCall As ASF_Map: Set lenCall = MakeNode("Call")
-                            Dim builtinLen As ASF_Map: Set builtinLen = MakeNode("Variable")
-                            builtinLen.SetValue "name", ".__len__"
-                            lenCall.SetValue "callee", builtinLen
-                            lenCall.SetValue "name", ".__len__"
-                            Dim al As Collection: Set al = New Collection
-                            al.Add currentNode.Clone
-                            lenCall.SetValue "args", al
-                            idx = idx + 1
-                            Set ParsePrimaryNode = lenCall
-                            Exit Function
-                        End If
                         Set mem = MakeNode("Member")
                         mem.SetValue "base", currentNode.Clone
                         mem.SetValue "prop", propName
@@ -2617,6 +2603,82 @@ Private Function safeTVRetInner(ByRef arr As Variant, idx1 As Long, idx2 As Long
 err_handler:
     safeTVRetInner = vbNullString
 End Function
+' Compile a backtick-wrapped template string (like `foo ${a+1} bar`) into a Template AST node.
+Private Function ParseTemplateStringToNode(ByVal rawBacktickString As String) As ASF_Map
+    ' rawBacktickString includes the backticks: "`...`"
+    Dim inner As String
+    inner = mid$(rawBacktickString, 2, Len(rawBacktickString) - 2)
+
+    Dim parts As New Collection
+    Dim i As Long: i = 1
+    Dim Ls As Long: Ls = Len(inner)
+    Dim curLit As String: curLit = ""
+
+    Do While i <= Ls
+        Dim ch As String: ch = mid$(inner, i, 1)
+        If ch = "\" Then
+            ' preserve escapes in literal
+            If i < Ls Then
+                curLit = curLit & mid$(inner, i + 1, 1)
+                i = i + 2
+            Else
+                curLit = curLit & "\"
+                i = i + 1
+            End If
+            GoTo PT_continue
+        End If
+
+        If ch = "$" And i < Ls And mid$(inner, i + 1, 1) = "{" Then
+            ' flush literal
+            If Len(curLit) > 0 Then
+                Dim litNode As ASF_Map: Set litNode = MakeNode("Literal")
+                litNode.SetValue "value", curLit
+                parts.Add litNode
+                curLit = ""
+            End If
+            ' capture expression until matching brace
+            i = i + 2
+            Dim depth As Long: depth = 1
+            Dim exprStart As Long: exprStart = i
+            Do While i <= Ls And depth > 0
+                Dim cc As String: cc = mid$(inner, i, 1)
+                If cc = "\" Then
+                    If i < Ls Then i = i + 2 Else i = i + 1
+                Else
+                    If cc = "{" Then
+                        depth = depth + 1
+                    ElseIf cc = "}" Then
+                        depth = depth - 1
+                    End If
+                    i = i + 1
+                End If
+            Loop
+            Dim exprLen As Long: exprLen = i - exprStart - 1
+            Dim exprSrc As String
+            If exprLen >= 0 Then exprSrc = mid$(inner, exprStart, exprLen) Else exprSrc = ""
+            ' parse expression string to an AST node (reuse existing helper)
+            Dim exprNode As ASF_Map: Set exprNode = ParseExprFromStringToNode(exprSrc)
+            parts.Add exprNode
+            GoTo PT_continue
+        End If
+
+        ' normal literal char
+        curLit = curLit & ch
+        i = i + 1
+PT_continue:
+    Loop
+
+    If Len(curLit) > 0 Then
+        Dim lastLit As ASF_Map: Set lastLit = MakeNode("Literal")
+        lastLit.SetValue "value", curLit
+        parts.Add lastLit
+    End If
+
+    Dim tnode As ASF_Map: Set tnode = MakeNode("Template")
+    tnode.SetValue "parts", parts
+    Set ParseTemplateStringToNode = tnode
+End Function
+
 ' ---------------------
 ' End Compiler class
 ' ---------------------
