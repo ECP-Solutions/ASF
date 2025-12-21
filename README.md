@@ -29,7 +29,7 @@ This project provides a production-proven compiler and VM plus a complete test-s
 ## Highlights / Features
 
 - Full expression language: arithmetic, boolean, ternary, short-circuit logic.
-- Arrays, objects (Map-like), member access and indexing.
+- Arrays, objects (Map-like), member access, strings manipulation and indexing.
 - First-class functions + anonymous functions + closures.
 - Control flow: `if` / `elseif` / `else`, `for`, `while`, `switch`, `try/catch`, `break` / `continue`.
 - Map / Filter / Reduce / Slice / Push / Pop as array methods
@@ -66,8 +66,16 @@ idx = engine.Compile("a = [1,'x',[2,'y',[3]]];" & _
 engine.Run idx '// => [ 3, 'x', [ 6, 'y', [ 9 ] ] ]
 ```
 Chained helpers:
-```vb
-"a=[1,2,3,4,5]; return(a.filter(fun(x){ return x > 2 }).reduce(fun(acc,x){ return acc + x }, 0));" '// => 12
+```js
+a=[1,2,3,4,5]; return(a.filter(fun(x){ return x > 2 }).reduce(fun(acc,x){ return acc + x }, 0)); // => 12
+```
+String templates:
+```js
+a=[1,2]; return(`arr:${a[1] + a[2]} sum two items`); // => 'arr:3 sum two items'
+```
+String manipulation:
+```js
+welcome=fun(string){return string.concat('!')}; return('Hello world'.replace('world', welcome('VBA'))); // => 'Hello VBA!'
 ```
 ---
 
@@ -75,7 +83,7 @@ Chained helpers:
 
 - Full AST-based compiler and VM implemented in VBA.
 - Function literals (anonymous), named top-level functions, recursion.
-- Arrays and objects with literal syntax and `.length` helpers.
+- Arrays, objects and strings with literal syntax and methods helpers.
 - Member access, nested indexing, and LValue semantics for assignments.
 - Short-circuit logical operators, ternary operator, compound assignments.
 - VB-expression embedding: reuse your VBA libraries seamlessly.

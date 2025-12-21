@@ -16,7 +16,6 @@ Private GLOBALS_ As ASF_Globals
 Public Sub SetGlobals(ByRef aGlobals As ASF_Globals)
     Set GLOBALS_ = aGlobals
 End Sub
-
 Public Function Tokenize(src As String) As Collection
     Dim toks As New Collection
     Dim i As Long, n As Long
@@ -77,6 +76,114 @@ Tokenize_MainLoop:
             Case " ", vbTab, vbCr, vbLf
                 i = i + 1
                 GoTo Tokenize_SkipToLoopEnd
+
+            ' TEMPLATE literal handling: `...${ expr }...`
+            Case "`"
+                ' consume opening backtick
+                i = i + 1
+                Dim tplParts As New Collection
+                Dim curLit As String: curLit = ""
+                Dim Ls As Long: Ls = n
+            
+                Do While i <= Ls
+                    Dim c As String: c = mid$(src, i, 1)
+            
+                    ' escape sequences - keep them as raw characters in the literal
+                    If c = "\" Then
+                        If i < Ls Then
+                            curLit = curLit & mid$(src, i + 1, 1)
+                            i = i + 2
+                        Else
+                            curLit = curLit & "\"
+                            i = i + 1
+                        End If
+                        GoTo ContinueTemplateLoop
+                    End If
+            
+                    ' placeholder start ${ ... }
+                    If c = "$" And i < Ls And mid$(src, i + 1, 1) = "{" Then
+                        ' flush current literal
+                        If Len(curLit) > 0 Then
+                            tplParts.Add Array("LITERAL", curLit)
+                            curLit = ""
+                        End If
+                        ' consume "${"
+                        i = i + 2
+                        Dim depth As Long: depth = 1
+                        Dim exprStart As Long: exprStart = i
+                        Do While i <= Ls And depth > 0
+                            Dim cc As String: cc = mid$(src, i, 1)
+                            If cc = "\" Then
+                                ' preserve escaped char in expression substring (skip next char)
+                                If i < Ls Then i = i + 2 Else i = i + 1
+                            Else
+                                If cc = "{" Then
+                                    depth = depth + 1
+                                ElseIf cc = "}" Then
+                                    depth = depth - 1
+                                End If
+                                i = i + 1
+                            End If
+                        Loop
+                        ' exprStart .. i-2 is the inner expression (we stopped just after the closing '}')
+                        Dim exprLen As Long: exprLen = i - exprStart - 1
+                        Dim exprSrc As String
+                        If exprLen >= 0 Then
+                            exprSrc = mid$(src, exprStart, exprLen)
+                        Else
+                            exprSrc = ""
+                        End If
+                        tplParts.Add Array("EXPR", exprSrc)
+                        GoTo ContinueTemplateLoop
+                    End If
+            
+                    ' closing backtick ends template
+                    If c = "`" Then
+                        If Len(curLit) > 0 Then
+                            tplParts.Add Array("LITERAL", curLit)
+                            curLit = ""
+                        End If
+                        i = i + 1 ' consume closing backtick
+            
+                        ' Reconstruct a plain string token value containing backticks and ${...}
+                        Dim reconstructed As String: reconstructed = ""
+                        Dim pi As Long
+                        For pi = 1 To tplParts.count
+                            Dim p As Variant: p = tplParts(pi)
+                            If p(0) = "LITERAL" Then
+                                ' We keep the literal text as-is. No special escaping required here.
+                                reconstructed = reconstructed & p(1)
+                            ElseIf p(0) = "EXPR" Then
+                                reconstructed = reconstructed & "${" & p(1) & "}"
+                            End If
+                        Next pi
+                        ' Wrap in backticks so compiler can detect it easily
+                        toks.Add Array("STRING", "`" & reconstructed & "`")
+                        GoTo Tokenize_SkipToLoopEnd
+                    End If
+            
+                    ' normal char, accumulate literal
+                    curLit = curLit & c
+                    i = i + 1
+            
+ContinueTemplateLoop:
+                Loop
+            
+                ' Unterminated template: treat remainder as literal and emit as a STRING token
+                If Len(curLit) > 0 Then tplParts.Add Array("LITERAL", curLit)
+                Dim reconstructed2 As String: reconstructed2 = ""
+                Dim pj As Long
+                For pj = 1 To tplParts.count
+                    Dim pp As Variant: pp = tplParts(pj)
+                    If pp(0) = "LITERAL" Then
+                        reconstructed2 = reconstructed2 & pp(1)
+                    Else
+                        reconstructed2 = reconstructed2 & "${" & pp(1) & "}"
+                    End If
+                Next pj
+                toks.Add Array("STRING", "`" & reconstructed2 & "`")
+                GoTo Tokenize_SkipToLoopEnd
+
             Case ","
                 toks.Add Array("SEP", ch): i = i + 1: GoTo Tokenize_SkipToLoopEnd
             Case ";"
@@ -242,6 +349,7 @@ Tokenize_CollapseLoop:
 
     Set Tokenize = out
 End Function
+
 
 Public Function JoinTokens(tokens As Collection) As String
     Dim s As String: s = ""

@@ -1768,7 +1768,7 @@ Private Function BETAINV_(p As Double, a As Double, b As Double) As Double
     Dim a1, b1 As Double
     Dim j As Long
     Dim lna As Double, lnb As Double
-    Dim PP As Double, t As Double
+    Dim pp As Double, t As Double
     Dim u As Double, err As Double
     Dim x As Double, h As Double
     Dim w As Double, afac As Double
@@ -1785,11 +1785,11 @@ Private Function BETAINV_(p As Double, a As Double, b As Double) As Double
     End If
     If a >= 1 And b >= 1 Then
         If p < 0.5 Then
-            PP = p
+            pp = p
         Else
-            PP = 1 - p
+            pp = 1 - p
         End If
-        t = Sqr(-2 * Log(PP))
+        t = Sqr(-2 * Log(pp))
         x = (2.30753 + t * 0.27061) / (1 + t * (0.99229 + t * 0.04481)) - t
         If p < 0.5 Then x = -x
         al = (x * x - 3) / 6
@@ -5397,7 +5397,7 @@ Private Function iBETAINV(p As Double, a As Double, b As Double) As Double
     Dim a1, b1 As Double
     Dim j As Long
     Dim lna As Double, lnb As Double
-    Dim PP As Double, t As Double
+    Dim pp As Double, t As Double
     Dim u As Double, err As Double
     Dim x As Double, h As Double
     Dim w As Double, afac As Double
@@ -5414,11 +5414,11 @@ Private Function iBETAINV(p As Double, a As Double, b As Double) As Double
     End If
     If a >= 1 And b >= 1 Then
         If p < 0.5 Then
-            PP = p
+            pp = p
         Else
-            PP = 1 - p
+            pp = 1 - p
         End If
-        t = Sqr(-2 * Log(PP))
+        t = Sqr(-2 * Log(pp))
         x = (2.30753 + t * 0.27061) / (1 + t * (0.99229 + t * 0.04481)) - t
         If p < 0.5 Then x = -x
         al = (x * x - 3) / 6
@@ -6183,7 +6183,7 @@ Private Function LinesIntersection(ByRef PointsInLine1 As Variant, _
     Dim m As Double
     Dim n As Double
     Dim O As Double
-    Dim PP As Double
+    Dim pp As Double
     Dim HomogeneousPointsL1(0 To 1, 0 To 2) As Variant
     Dim HomogeneousPointsL2(0 To 1, 0 To 2) As Variant
     Dim HomogeneousEcuations(0 To 1, 0 To 2) As Variant
@@ -6197,16 +6197,16 @@ Private Function LinesIntersection(ByRef PointsInLine1 As Variant, _
     i = 0
     For O = m To m + 1
         j = 0
-        For PP = n To n + 2
-            If PP < n + 2 Then
-                HomogeneousPointsL1(i, j) = PointsInLine1(O, PP)
-                HomogeneousPointsL2(i, j) = PointsInLine2(O, PP)
+        For pp = n To n + 2
+            If pp < n + 2 Then
+                HomogeneousPointsL1(i, j) = PointsInLine1(O, pp)
+                HomogeneousPointsL2(i, j) = PointsInLine2(O, pp)
             Else
                 HomogeneousPointsL1(i, j) = k
                 HomogeneousPointsL2(i, j) = k
             End If
             j = j + 1
-        Next PP
+        Next pp
         i = i + 1
     Next O
     'Compute the lines homogeneous ecuations using Vectorial Matrix Products
