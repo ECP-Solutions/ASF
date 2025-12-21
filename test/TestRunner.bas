@@ -1771,3 +1771,329 @@ TestFail:
     Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
+
+'@TestMethod("string_at")
+Private Sub string_at()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("b='ABCD'.at(1); return(b);"))
+    expected = "B"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_at_negative_index")
+Private Sub string_at_negative_index()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("b='ABCD'.at(-2); return(b);"))
+    expected = "C"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_at_default_index")
+Private Sub string_at_default_index()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("b='ABCD'.at; return(b);"))
+    expected = "A"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_length")
+Private Sub string_length()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("b='ABCD'.length(); return(b);"))
+    expected = "4"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_charAt")
+Private Sub string_charAt()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("b='ABCD'; a=b.charAt(b.length - 1); return(a);"))
+    expected = "D"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_charCodeAt")
+Private Sub string_charCodeAt()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("b='ABCD'; a=b.charCodeAt(2); return(a);"))
+    expected = "67"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_concat")
+Private Sub string_concat()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("a='ABCD'; b='EFGH'; c='IJKL'; d=a.concat(' + ', b, c); return(d);"))
+    expected = "ABCD + EFGH + IJKL"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_endsWith")
+Private Sub string_endsWith()
+    On Error GoTo TestFail
+    actual = CBool(GetResult("a='Scripting for all'; b=a.endsWith('all'); return(b);"))
+    expected = True
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_fromCharCode")
+Private Sub string_fromCharCode()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("a=''.fromCharCode(68); return(a);"))
+    expected = "D"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_includes")
+Private Sub string_includes()
+    On Error GoTo TestFail
+    actual = CBool(GetResult("a='Bridging the gap with modern programming'.includes('modern'); return(a);"))
+    expected = True
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_indexOf")
+Private Sub string_indexOf()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("a='Bridging the gap with modern programming'.indexOf('gap'); return(a);"))
+    expected = "13"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_lastIndexOf")
+Private Sub string_lastIndexOf()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("a='Flow control, functions, closures'.lastIndexOf(',', 8); return(a);"))
+    expected = "23"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_localCompare")
+Private Sub string_localCompare()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("a='AB'.localeCompare('ab'); return(a);"))
+    expected = "-1"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_pad")
+Private Sub string_pad()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("a='AB'.padEnd(9, '+_'); return(a.padStart(17, '+_'));"))
+    expected = "+_+_+_+_AB+_+_+_+"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_template")
+Private Sub string_template()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("a='Happy! '; return(`I feel ${a.repeat(3)}`);"))
+    expected = "I feel Happy! Happy! Happy! "
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_template_with_arrays")
+Private Sub string_template_with_arrays()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("a=[1,2]; return(`arr:${a[1] + a[2]} sum two items`);"))
+    expected = "arr:3 sum two items"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_replace")
+Private Sub string_replace()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("welcome=fun(string){return string.concat('!')};" & _
+                    "return('Hello world'.replace('world', welcome('VBA')));"))
+    expected = "Hello VBA!"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_slice")
+Private Sub string_slice()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return('Bridging old VBA to modern syntax.'.slice(-21, -1));"))
+    expected = "VBA to modern syntax"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_splite")
+Private Sub string_splite()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("chars='Bridging old VBA to modern syntax.'.split('', 4); return(chars[4]);"))
+    expected = "d"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_startWith")
+Private Sub string_startWith()
+    On Error GoTo TestFail
+    actual = CBool(GetResult("a='Scripting for all'; b=a.startsWith('Script'); return(b);"))
+    expected = True
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_subString")
+Private Sub string_subString()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return('Do more inside VBA'.substring(0,3));"))
+    expected = "Do "
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_toLowercase")
+Private Sub string_toLowercase()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return('Do more inside VBA'.toLowercase);"))
+    expected = "do more inside vba"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_toUppercase")
+Private Sub string_toUppercase()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return('Do more inside VBA'.toUppercase);"))
+    expected = "DO MORE INSIDE VBA"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_trim")
+Private Sub string_trim()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return('   less boilerplate    '.trim);"))
+    expected = "less boilerplate"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("string_trim_start_end")
+Private Sub string_trim_start_end()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return('   less boilerplate    '.trimStart().trimEnd);"))
+    expected = "less boilerplate"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
