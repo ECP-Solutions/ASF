@@ -775,7 +775,7 @@ Private Sub vAssignment(ByRef var As Variant, ByRef vValue As Variant)
         var = vValue
     End If
 End Sub
-' --- Debug-capable Exec/Test/ExecAt ---
+
 Public Function Test(ByVal subj As String) As Boolean
     Dim res As Collection
     Set res = Exec(subj)
