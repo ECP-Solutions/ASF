@@ -16,6 +16,7 @@ Attribute VB_Exposed = False
 '  - Quantifiers: *, +, ?, {m,n} with {m,} and exact {n}
 '  - Greedy and lazy quantifiers (use trailing ? after quantifier to mark lazy)
 '  - Grouping: ( ... ) with precise capture start/end tracking
+'  - Non-capturing groups: (?:pattern)
 '  - Alternation: | via `alt` AST node
 '  - Anchors: ^ and $
 '  - IgnoreCase (i) flag
