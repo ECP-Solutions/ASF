@@ -135,6 +135,9 @@ End Function
 
 ' ---------------- Parser & AST precomputation ----------------------------
 Private Function CompilePattern(ByVal pat As String) As Collection
+    ' Reject unsupported inline-comment syntax early
+    DetectUnsupportedCommentSyntax pat
+    
     Dim ast As New Collection
     NodeAdd ast, "raw", pat
 
@@ -149,6 +152,9 @@ Private Function CompilePattern(ByVal pat As String) As Collection
     Dim groupCounter As Long: groupCounter = 0
     Dim body As Collection: Set body = ParseAlternation(pat, pos, Len(pat), groupCounter)
     NodeAdd ast, "body", body
+    
+    ' enforce lookbehind fixed-width constraint (raise at Init/Compile time)
+    EnforceFixedWidthLookbehinds ast
 
     ' Precompute minLen
     Dim mlen As Long: mlen = ComputeMinLen(body)
@@ -224,6 +230,7 @@ Private Function ParseSequence(ByVal pat As String, ByRef p As Long, ByVal pEnd 
                             Dim laNode As Collection: Set laNode = NewNode("lookahead_pos")
                             NodeAdd laNode, "child", innerLA
                             Set node = laNode
+
                         Case "!" ' (?! ) negative lookahead
                             p = p + 1
                             Dim innerNL As Collection
@@ -232,6 +239,7 @@ Private Function ParseSequence(ByVal pat As String, ByRef p As Long, ByVal pEnd 
                             Dim nlaNode As Collection: Set nlaNode = NewNode("lookahead_neg")
                             NodeAdd nlaNode, "child", innerNL
                             Set node = nlaNode
+
                         Case "<" ' (?<= or (?<! ) lookbehinds
                             p = p + 1
                             If p <= pEnd Then
@@ -259,6 +267,7 @@ Private Function ParseSequence(ByVal pat As String, ByRef p As Long, ByVal pEnd 
                             Else
                                 Set node = NewNode("lit"): NodeAdd node, "ch", "("
                             End If
+
                         Case ">" ' (?> ) atomic group
                             p = p + 1
                             Dim innerAtomic As Collection
@@ -267,15 +276,64 @@ Private Function ParseSequence(ByVal pat As String, ByRef p As Long, ByVal pEnd 
                             Dim atomicNode As Collection: Set atomicNode = NewNode("atomic")
                             NodeAdd atomicNode, "child", innerAtomic
                             Set node = atomicNode
+
+                        Case ":" ' (?: ) TRUE non-capturing group (do NOT allocate capture)
+                            p = p + 1
+                            Dim innerNC As Collection
+                            Set innerNC = ParseSequence(pat, p, pEnd, groupCounter)
+                            If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
+                            Dim ncNode As Collection: Set ncNode = NewNode("group") ' keep node type 'group' but no "idx"
+                            NodeAdd ncNode, "child", innerNC
+                            NodeAdd ncNode, "noncap_syntax", True
+                            Set node = ncNode
+
+                        Case "("
+                            ' Conditional constructs like (?(cond)yes|no) are not supported.
+                            ' Fail fast at compile time so Init returns an error (InitRegexAndHandle will catch it).
+                            err.Raise vbObjectError + 1000, "RegexEngine", "Conditional constructs '(?(...)...)' are not supported"
+
                         Case Else
-                            ' Unknown ?something: fallback to literal '('
-                            Set node = NewNode("lit"): NodeAdd node, "ch", "("
+                            ' Could be inline flags (group-scoped) like (?i:...), or unsupported (?i) form.
+                            ' Parse a sequence of flag letters [ims] possibly combined, ending on ':' (group scoped).
+                            Dim flagsStart As Long: flagsStart = p
+                            Dim flagsStr As String: flagsStr = ""
+                            Do While p <= pEnd
+                                Dim fch As String: fch = SafeMid(pat, p, 1)
+                                If fch >= "a" And fch <= "z" Or fch >= "A" And fch <= "Z" Or fch = "-" Then
+                                    flagsStr = flagsStr & fch
+                                    p = p + 1
+                                Else
+                                    Exit Do
+                                End If
+                            Loop
+                            If p <= pEnd And SafeMid(pat, p, 1) = ":" Then
+                                ' group-scoped flags: (?flags: inner )
+                                p = p + 1 ' consume ':'
+                                Dim innerFlagged As Collection
+                                Set innerFlagged = ParseSequence(pat, p, pEnd, groupCounter)
+                                If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
+                                Dim gnodeF As Collection: Set gnodeF = NewNode("group")
+                                NodeAdd gnodeF, "child", innerFlagged
+                                ' normalize flagsStr: only keep i,m,s letters (lowercase)
+                                Dim normFlags As String: normFlags = ""
+                                Dim kch As Long
+                                For kch = 1 To Len(flagsStr)
+                                    Dim fc As String: fc = LCase$(mid$(flagsStr, kch, 1))
+                                    If fc = "i" Or fc = "m" Or fc = "s" Then normFlags = normFlags & fc
+                                Next kch
+                                If Len(normFlags) > 0 Then NodeAdd gnodeF, "flags_on", normFlags
+                                Set node = gnodeF
+                            Else
+                                ' Bare flags (e.g. (?i) ) — **not supported** as a global toggle here.
+                                ' Fail init: raise a compile-time error so tests expecting failure will pass.
+                                err.Raise vbObjectError + 101, "RegexEngine", "Inline flags without ':' are not supported at compile time (use (?i:...) for group-scoped flags)."
+                            End If
                     End Select
                 Else
                     Set node = NewNode("lit"): NodeAdd node, "ch", "("
                 End If
             Else
-                ' normal capturing group
+                ' normal capturing group (allocate index)
                 groupCounter = groupCounter + 1
                 Dim thisIdx As Long: thisIdx = groupCounter
                 Dim inner As Collection
@@ -400,7 +458,29 @@ Private Function ParseClass(ByVal pat As String, ByVal pStart As Long, ByVal pEn
         Dim ch As String: ch = SafeMid(pat, i, 1)
         If ch = "\" Then
             i = i + 1
-            If i <= pEnd Then chars.Add ParseEscapeChar(SafeMid(pat, i, 1))
+            If i <= pEnd Then
+                Dim esc As String: esc = SafeMid(pat, i, 1)
+                Select Case esc
+                    Case "d"
+                        ' digits
+                        chars.Add Array("range", "0", "9")
+                    Case "w"
+                        ' word chars: A-Z, a-z, 0-9, _
+                        chars.Add Array("range", "A", "Z")
+                        chars.Add Array("range", "a", "z")
+                        chars.Add Array("range", "0", "9")
+                        chars.Add "_"
+                    Case "s"
+                        ' whitespace
+                        chars.Add " "
+                        chars.Add vbTab
+                        chars.Add vbLf
+                        chars.Add vbCr
+                    Case Else
+                        ' fallback (n, r, t, or literal)
+                        chars.Add ParseEscapeChar(esc)
+                End Select
+            End If
             i = i + 1
         ElseIf i + 2 <= pEnd And SafeMid(pat, i + 1, 1) = "-" Then
             chars.Add Array("range", SafeMid(pat, i, 1), SafeMid(pat, i + 2, 1))
@@ -433,6 +513,7 @@ Private Function ParseClass(ByVal pat As String, ByVal pStart As Long, ByVal pEn
     NodeAdd node, "map", mapArr
     Set ParseClass = node
 End Function
+
 
 Private Function ParseClassFromSimple(ByVal spec As String) As Collection
     Dim node As Collection: Set node = NewNode("class")
@@ -553,19 +634,52 @@ Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal
             End If
 
         Case "group"
-            Dim gIdx As Long: gIdx = NodeGet(node, "idx")
-            Dim prevStart As Long: prevStart = capsStart(gIdx)
-            Dim prevEnd As Long: prevEnd = capsEnd(gIdx)
-            capsStart(gIdx) = pos
+            ' Handle both capturing and non-capturing groups.
+            Dim hasIdx As Boolean: hasIdx = NodeExists(node, "idx")
+            Dim gIdx As Long
+            If hasIdx Then gIdx = CLng(NodeGet(node, "idx"))
+
+            ' Support group-scoped inline flags (flags_on) during the child match.
+            Dim flagsApplied As Boolean: flagsApplied = False
+            Dim savedIgnore As Boolean, savedMultiline As Boolean, savedDotAll As Boolean
+            If NodeExists(node, "flags_on") Then
+                flagsApplied = True
+                savedIgnore = pIgnoreCase
+                savedMultiline = IIf(NodeExists(Me, "pMultiline"), pMultiline, False) ' defensive read if not present
+                savedDotAll = IIf(NodeExists(Me, "pDotAll"), pDotAll, False)
+                Dim fstr As String: fstr = CStr(NodeGet(node, "flags_on"))
+                If InStr(fstr, "i") > 0 Then pIgnoreCase = True
+                If InStr(fstr, "m") > 0 Then pMultiline = True
+                If InStr(fstr, "s") > 0 Then pDotAll = True
+            End If
+
+            Dim prevStart As Long, prevEnd As Long
+            If hasIdx Then
+                prevStart = capsStart(gIdx)
+                prevEnd = capsEnd(gIdx)
+                capsStart(gIdx) = pos
+            End If
+
             Dim childEnd As Variant
             If MatchNode(NodeGet(node, "child"), subj, pos, childEnd) Then
-                capsEnd(gIdx) = childEnd
+                If hasIdx Then
+                    capsEnd(gIdx) = CLng(childEnd)
+                End If
                 localEnd = childEnd
                 res = True
             Else
-                capsStart(gIdx) = prevStart
-                capsEnd(gIdx) = prevEnd
+                If hasIdx Then
+                    capsStart(gIdx) = prevStart
+                    capsEnd(gIdx) = prevEnd
+                End If
                 res = False
+            End If
+
+            ' restore flags if applied
+            If flagsApplied Then
+                pIgnoreCase = savedIgnore
+                pMultiline = savedMultiline
+                pDotAll = savedDotAll
             End If
 
         Case "alt"
@@ -587,7 +701,8 @@ Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal
             Dim mn As Long: mn = NodeGet(node, "min")
             Dim mx As Long: mx = NodeGet(node, "max")
             Dim lazy As Boolean: lazy = NodeGet(node, "lazy")
-            Dim poss As Boolean: poss = NodeGet(node, "possessive")
+            Dim poss As Boolean: poss = False
+            If NodeExists(node, "possessive") Then poss = NodeGet(node, "possessive")
             If mx = -1 Then mx = Len(subj) - pos + 1
             ' Fallback simple behaviour: attempt greedy expansion and accept largest if poss else backtracking handled by MatchSequence
             Dim occPos() As Long: ReDim occPos(0 To 0)
@@ -612,100 +727,115 @@ Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal
                 res = False
             End If
 
+        ' ---- Positive lookahead (?=...) ----
         Case "lookahead_pos"
-            ' Snapshot captures, test child at current pos, restore captures
-            Dim snapLA() As Long: snapLA = CopyCaps()
-            Dim laEnd As Variant
-            If MatchNode(NodeGet(node, "child"), subj, pos, laEnd) Then
-                res = True
-            Else
-                res = False
+            If Not NodeExists(node, "child") Then
+                MatchNode = False: Exit Function
             End If
+
+            Dim laChild As Collection: Set laChild = NodeGet(node, "child")
+            Dim snapLA() As Long: snapLA = CopyCaps()
+            Dim laEnd As Long
+            Dim laMatched As Boolean
+
+            ' try the inner pattern at current pos (non-consuming)
+            laMatched = MatchNode(laChild, subj, pos, laEnd)
+
+            ' always restore capture snapshot (non-consuming)
             RestoreCaps snapLA
 
-        Case "lookahead_neg"
-            Dim snapLN() As Long: snapLN = CopyCaps()
-            Dim lnEnd As Variant
-            If MatchNode(NodeGet(node, "child"), subj, pos, lnEnd) Then
-                res = False
+            If laMatched Then
+                outEnd = pos - 1          ' zero-width: leave curPos unchanged
+                MatchNode = True
             Else
-                res = True
+                MatchNode = False
             End If
+            Exit Function
+
+        ' ---- Negative lookahead (?!...) ----
+        Case "lookahead_neg"
+            If Not NodeExists(node, "child") Then
+                MatchNode = False: Exit Function
+            End If
+
+            Dim lnChild As Collection: Set lnChild = NodeGet(node, "child")
+            Dim snapLN() As Long: snapLN = CopyCaps()
+            Dim lnEnd As Long
+            Dim lnMatched As Boolean
+
+            lnMatched = MatchNode(lnChild, subj, pos, lnEnd)
+
+            ' restore (assertions do not consume)
             RestoreCaps snapLN
 
+            If lnMatched Then
+                MatchNode = False
+            Else
+                outEnd = pos - 1
+                MatchNode = True
+            End If
+            Exit Function
+
+        ' ---- Positive lookbehind (?<=...)  -- fixed-width only ----
         Case "lookbehind_pos"
-            ' Fixed-width lookbehind. Use annotated width if present; otherwise compute/validate.
-            Dim widthLB As Long
-            If NodeExists(node, "width") Then
-                widthLB = CLng(NodeGet(node, "width"))
-            Else
-                Dim lbMin As Long: lbMin = ComputeMinLen(NodeGet(node, "child"))
-                Dim lbMax As Long: lbMax = ComputeMaxLen(NodeGet(node, "child"))
-                If lbMin = -1 Or lbMax = -1 Or lbMin <> lbMax Then
-                    err.Raise vbObjectError + 10, "RegexEngine", "Unsupported variable-length lookbehind (must be fixed-width)."
-                End If
-                widthLB = lbMin
-                NodeAdd node, "width", widthLB
+            If Not NodeExists(node, "child") Or Not NodeExists(node, "width") Then
+                MatchNode = False: Exit Function
             End If
-        
-            If widthLB < 1 Or (pos - widthLB) < 1 Then
-                res = False
-            Else
-                Dim startLB As Long: startLB = pos - widthLB
-                Dim snapLB() As Long: snapLB = CopyCaps()
-                Dim lbEnd As Variant
-                If MatchNode(NodeGet(node, "child"), subj, startLB, lbEnd) Then
-                    ' require the inner match to end exactly at pos-1
-                    If CLng(lbEnd) = pos - 1 Then
-                        ' indicate we consumed nothing by returning pos-1 as localEnd
-                        localEnd = pos - 1
-                        res = True
-                    Else
-                        res = False
-                    End If
-                Else
-                    res = False
-                End If
-                RestoreCaps snapLB
+
+            Dim lbChild As Collection: Set lbChild = NodeGet(node, "child")
+            Dim lbWidth As Long: lbWidth = CLng(NodeGet(node, "width"))
+            Dim snapLB() As Long
+            Dim lbStart As Long, lbEnd As Long
+            Dim lbMatched As Boolean
+
+            ' not enough characters before pos -> fail
+            If pos - 1 < lbWidth Then
+                MatchNode = False: Exit Function
             End If
-        
+
+            lbStart = pos - lbWidth
+            snapLB = CopyCaps()
+            lbMatched = MatchNode(lbChild, subj, lbStart, lbEnd)
+            RestoreCaps snapLB
+
+            If lbMatched Then
+                outEnd = pos - 1
+                MatchNode = True
+            Else
+                MatchNode = False
+            End If
+            Exit Function
+
+        ' ---- Negative lookbehind (?<!...)  -- fixed-width only ----
         Case "lookbehind_neg"
-            Dim widthLBN As Long
-            If NodeExists(node, "width") Then
-                widthLBN = CLng(NodeGet(node, "width"))
-            Else
-                Dim lbnMin As Long: lbnMin = ComputeMinLen(NodeGet(node, "child"))
-                Dim lbnMax As Long: lbnMax = ComputeMaxLen(NodeGet(node, "child"))
-                If lbnMin = -1 Or lbnMax = -1 Or lbnMin <> lbnMax Then
-                    err.Raise vbObjectError + 10, "RegexEngine", "Unsupported variable-length lookbehind (must be fixed-width)."
-                End If
-                widthLBN = lbnMin
-                NodeAdd node, "width", widthLBN
+            If Not NodeExists(node, "child") Or Not NodeExists(node, "width") Then
+                MatchNode = False: Exit Function
             End If
-        
-            If widthLBN < 1 Or (pos - widthLBN) < 1 Then
-                ' Not enough chars before pos -> negative lookbehind trivially true; consume nothing
-                localEnd = pos - 1
-                res = True
-            Else
-                Dim startLBN As Long: startLBN = pos - widthLBN
-                Dim snapLBN() As Long: snapLBN = CopyCaps()
-                Dim lbnEnd As Variant
-                If MatchNode(NodeGet(node, "child"), subj, startLBN, lbnEnd) Then
-                    If CLng(lbnEnd) = pos - 1 Then
-                        ' inner matched immediately before pos -> negative fails
-                        res = False
-                    Else
-                        localEnd = pos - 1
-                        res = True
-                    End If
-                Else
-                    ' inner didn't match -> negative succeeds; consume nothing
-                    localEnd = pos - 1
-                    res = True
-                End If
-                RestoreCaps snapLBN
+
+            Dim lbnChild As Collection: Set lbnChild = NodeGet(node, "child")
+            Dim lbnWidth As Long: lbnWidth = CLng(NodeGet(node, "width"))
+            Dim snapLBN() As Long
+            Dim lbnStart As Long, lbnEnd As Long
+            Dim lbnMatched As Boolean
+
+            If pos - 1 < lbnWidth Then
+                ' no room for inner to match -> negative succeeds
+                outEnd = pos - 1
+                MatchNode = True: Exit Function
             End If
+
+            lbnStart = pos - lbnWidth
+            snapLBN = CopyCaps()
+            lbnMatched = MatchNode(lbnChild, subj, lbnStart, lbnEnd)
+            RestoreCaps snapLBN
+
+            If lbnMatched Then
+                MatchNode = False
+            Else
+                outEnd = pos - 1
+                MatchNode = True
+            End If
+            Exit Function
 
         Case "atomic"
             ' Attempt to match child; if it succeeds protect changed capture slots from later restore
@@ -747,6 +877,7 @@ Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal
     If DEBUG_TRACE Then Debug.Print "TRACE MatchNode EXIT type=" & t & " pos=" & pos & " res=" & CStr(res) & " localEnd=" & CStr(localEnd) & " caps0=[" & capsStart(0) & "," & capsEnd(0) & "]"
     MatchNode = res
 End Function
+
 
 Private Function MatchSequence(ByVal children As Collection, ByVal subj As String, ByVal pos As Long, Optional ByRef outEnd As Variant) As Boolean
     If DEBUG_TRACE Then Debug.Print "TRACE MatchSequence start pos=" & pos & " children=" & children.count
@@ -1106,11 +1237,32 @@ Private Function MatchCharClassNode(ByVal node As Collection, ByVal ch As String
     Dim code As Long: code = AscW(ch)
     If code >= 0 And code <= 255 Then
         Dim mapArr() As Boolean: mapArr = NodeGet(node, "map")
-        Dim matched As Boolean: matched = mapArr(code)
-        If NodeGet(node, "neg") Then MatchCharClassNode = Not matched Else MatchCharClassNode = matched
+        Dim matched As Boolean: matched = False
+
+        ' direct ASCII fast-path
+        If code >= 0 And code <= 255 Then
+            matched = mapArr(code)
+            ' if ignore-case, check the swapped-case ASCII code too (A<->a)
+            If pIgnoreCase And Not matched Then
+                If code >= AscW("A") And code <= AscW("Z") Then
+                    Dim alt As Long: alt = code + 32 ' to lower
+                    If alt >= 0 And alt <= 255 Then matched = mapArr(alt)
+                ElseIf code >= AscW("a") And code <= AscW("z") Then
+                    Dim alt2 As Long: alt2 = code - 32 ' to upper
+                    If alt2 >= 0 And alt2 <= 255 Then matched = mapArr(alt2)
+                End If
+            End If
+        End If
+
+        If NodeGet(node, "neg") Then
+            MatchCharClassNode = Not matched
+        Else
+            MatchCharClassNode = matched
+        End If
         Exit Function
     End If
-    ' fallback for non-ASCII: brute-force check
+
+    ' Non-ASCII fallback: brute-force check, but respect ignore-case
     Dim items As Collection: Set items = NodeGet(node, "chars")
     Dim matched2 As Boolean: matched2 = False
     Dim i As Long
@@ -1118,16 +1270,27 @@ Private Function MatchCharClassNode(ByVal node As Collection, ByVal ch As String
         Dim it As Variant: it = items(i)
         If IsArray(it) Then
             If it(0) = "range" Then
-                If AscW(ch) >= AscW(it(1)) And AscW(ch) <= AscW(it(2)) Then matched2 = True
+                If Not pIgnoreCase Then
+                    If AscW(ch) >= AscW(it(1)) And AscW(ch) <= AscW(it(2)) Then matched2 = True
+                Else
+                    ' case-insensitive range test: compare lowercased codepoints where possible
+                    Dim lowerCh As String: lowerCh = LCase$(ch)
+                    Dim lowerA As String: lowerA = LCase$(it(1))
+                    Dim lowerB As String: lowerB = LCase$(it(2))
+                    If AscW(lowerCh) >= AscW(lowerA) And AscW(lowerCh) <= AscW(lowerB) Then matched2 = True
+                End If
             End If
         Else
-            If ch = it Then matched2 = True
+            If Not pIgnoreCase Then
+                If ch = it Then matched2 = True
+            Else
+                If LCase$(ch) = LCase$(CStr(it)) Then matched2 = True
+            End If
         End If
         If matched2 Then Exit For
     Next i
     If NodeGet(node, "neg") Then MatchCharClassNode = Not matched2 Else MatchCharClassNode = matched2
 End Function
-
 ' ---------------- Replacement helpers -----------------------------------
 Private Function ExpandReplacement(ByVal caps As Collection, ByVal repl As String) As String
     Dim out As String: out = ""
@@ -1488,5 +1651,153 @@ Private Sub AnnotateLookbehinds(ByVal node As Collection)
                 AnnotateLookbehinds it
             Next
     End Select
+End Sub
+' Return fixed width in characters for node, or -1 if variable/unbounded
+Private Function ComputeFixedWidth(ByVal node As Collection) As Long
+    Dim t As String: t = NodeGet(node, "type")
+    Select Case t
+        Case "lit", "dot", "class"
+            ComputeFixedWidth = 1
+            Exit Function
+        Case "seq"
+            Dim sum As Long: sum = 0
+            Dim ch As Variant
+            For Each ch In NodeGet(node, "children")
+                Dim w As Long: w = ComputeFixedWidth(ch)
+                If w = -1 Then
+                    ComputeFixedWidth = -1: Exit Function
+                End If
+                sum = sum + w
+            Next
+            ComputeFixedWidth = sum
+            Exit Function
+        Case "group"
+            ComputeFixedWidth = ComputeFixedWidth(NodeGet(node, "child"))
+            Exit Function
+        Case "quant"
+            Dim child As Collection: Set child = NodeGet(node, "child")
+            Dim cw As Long: cw = ComputeFixedWidth(child)
+            If cw = -1 Then
+                ComputeFixedWidth = -1: Exit Function
+            End If
+            Dim mn As Long: mn = NodeGet(node, "min")
+            Dim mx As Long: mx = NodeGet(node, "max")
+            ' if max is -1 (unbounded) or range not fixed -> variable
+            If mx = -1 Then
+                ComputeFixedWidth = -1: Exit Function
+            End If
+            If mn <> mx Then
+                ComputeFixedWidth = -1: Exit Function
+            End If
+            ' fixed repeat count
+            ComputeFixedWidth = mn * cw
+            Exit Function
+        Case "alt"
+            ' alternation: all alternatives must have same fixed width for the alt to be fixed-width
+            Dim firstW As Variant: firstW = Empty
+            Dim childAlt As Variant
+            For Each childAlt In NodeGet(node, "children")
+                Dim aw As Long: aw = ComputeFixedWidth(childAlt)
+                If aw = -1 Then
+                    ComputeFixedWidth = -1: Exit Function
+                End If
+                If IsEmpty(firstW) Then
+                    firstW = aw
+                Else
+                    If aw <> firstW Then
+                        ComputeFixedWidth = -1: Exit Function
+                    End If
+                End If
+            Next childAlt
+            If IsEmpty(firstW) Then
+                ComputeFixedWidth = 0
+            Else
+                ComputeFixedWidth = CLng(firstW)
+            End If
+            Exit Function
+        Case Else
+            ' unknown/complex node types: assume variable
+            ComputeFixedWidth = -1
+            Exit Function
+    End Select
+End Function
+' Walk AST; for lookbehind nodes compute width and enforce fixed width.
+Private Sub EnforceFixedWidthLookbehinds(ByVal ast As Collection)
+    TraverseEnforce NodeGet(ast, "body")
+End Sub
+
+Private Sub TraverseEnforce(ByVal node As Collection)
+    Dim t As String: t = NodeGet(node, "type")
+    Select Case t
+        Case "seq"
+            Dim ch As Variant
+            For Each ch In NodeGet(node, "children")
+                TraverseEnforce ch
+            Next
+        Case "group"
+            TraverseEnforce NodeGet(node, "child")
+        Case "quant"
+            TraverseEnforce NodeGet(node, "child")
+        Case "alt"
+            Dim altCh As Variant
+            For Each altCh In NodeGet(node, "children")
+                TraverseEnforce altCh
+            Next
+        Case "lookbehind_pos", "lookbehind_neg"
+            ' compute fixed width of the inner child
+            Dim child As Collection: Set child = NodeGet(node, "child")
+            Dim w As Long: w = ComputeFixedWidth(child)
+            ' store width for runtime use (lookbehind code expects node width)
+            NodeAdd node, "width", w
+            If w = -1 Then
+                ' raise the specific error your tests expect
+                err.Raise vbObjectError + 10, "RegexEngine", "Variable-length lookbehind not supported"
+            End If
+        Case Else
+            ' other nodes need no special traversal
+    End Select
+End Sub
+' Raise error if pattern contains unsupported (?#comment) syntax outside character classes.
+Private Sub DetectUnsupportedCommentSyntax(ByVal pat As String)
+    Dim i As Long
+    Dim L As Long: L = Len(pat)
+    Dim esc As Boolean: esc = False
+    Dim inClass As Boolean: inClass = False
+
+    For i = 1 To L
+        Dim c As String: c = mid$(pat, i, 1)
+
+        If esc Then
+            esc = False
+            GoTo ContinueLoop
+        End If
+
+        If c = "\" Then
+            esc = True
+            GoTo ContinueLoop
+        End If
+
+        If inClass Then
+            If c = "]" Then inClass = False
+            GoTo ContinueLoop
+        Else
+            If c = "[" Then
+                inClass = True
+                GoTo ContinueLoop
+            End If
+        End If
+
+        ' look for literal "(?#" outside classes and not escaped
+        If c = "(" Then
+            If i + 2 <= L Then
+                If mid$(pat, i + 1, 2) = "?#" Then
+                    ' unsupported comment syntax
+                    err.Raise vbObjectError + 20, "RegexEngine", "(?# comments are not supported"
+                End If
+            End If
+        End If
+
+ContinueLoop:
+    Next i
 End Sub
 
