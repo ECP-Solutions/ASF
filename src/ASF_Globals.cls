@@ -20,6 +20,7 @@ Public DEBUG_TRACE As Boolean
 Public STRICT_STRINGS As Boolean
 Public gCallStack As Collection
 Public gExprEvaluator As VBAexpressions
+Public re As ASF_RegexEngine
 Private MAX_CALL_DEPTH_ As Long
 
 Public Function ASF_InitGlobals() As ASF_Globals
@@ -31,6 +32,7 @@ Public Function ASF_InitGlobals() As ASF_Globals
     If gRuntimeLog Is Nothing Then Set gRuntimeLog = New Collection
     If gCallStack Is Nothing Then Set gCallStack = New Collection
     If gExprEvaluator Is Nothing Then Set gExprEvaluator = New VBAexpressions
+    If re Is Nothing Then Set re = New ASF_RegexEngine
     DEBUG_TRACE = True
     STRICT_STRINGS = True
     MAX_CALL_DEPTH_ = 512

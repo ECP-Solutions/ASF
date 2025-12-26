@@ -1,6 +1,6 @@
 Attribute VB_Name = "RegexTests"
-' RegexTests_Standalone.bas
-' Standalone test harness for ASF_RegexEngine (full conversion of CSV test rows).
+' RegexTests
+' Standalone test harness for ASF_RegexEngine
 ' No Rubberduck dependency. Uses Debug.Print for reporting.
 Option Explicit
 
@@ -418,12 +418,12 @@ End Sub
 ' -----------------------------------------------------------------------
 ' Assertions & helpers used by tests
 ' -----------------------------------------------------------------------
-Private Function InitRegexAndHandle(ByRef r As ASF_RegexEngine, ByVal pattern As String, Optional ByVal ignoreCase As Boolean = False, Optional ByVal maxSteps As Long = -1, Optional ByVal multiline As Boolean = False, Optional ByVal dotAll As Boolean = False) As Boolean
+Private Function InitRegexAndHandle(ByRef r As ASF_RegexEngine, ByVal pattern As String, Optional ByVal ignoreCase As Boolean = False, Optional ByVal MaxSteps As Long = -1, Optional ByVal multiline As Boolean = False, Optional ByVal dotAll As Boolean = False) As Boolean
     On Error GoTo EH
-    If maxSteps <= 0 Then
+    If MaxSteps <= 0 Then
         r.Init pattern, ignoreCase, r.MaxMatchSteps, multiline, dotAll
     Else
-        r.Init pattern, ignoreCase, maxSteps, multiline, dotAll
+        r.Init pattern, ignoreCase, MaxSteps, multiline, dotAll
     End If
     InitRegexAndHandle = True
     Exit Function
@@ -1609,3 +1609,11 @@ Public Function T_15_07_conditionals_unsupported() As Boolean
     T_15_07_conditionals_unsupported = True
 End Function
 
+Public Function testNewG() As Boolean
+    Dim r As New ASF_RegexEngine
+    If InitRegexAndHandle(r, "(\D*)(\d*)(\W*)") Then
+        Dim c As Collection
+'        Set c = ExecColl(r, "abc12345#$*%")
+        Set c = r.ExecAt("abc12345#$*%", 1)
+    End If
+End Function

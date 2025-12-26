@@ -998,7 +998,6 @@ Private Function DoPostfixChaining(ByVal currentNode As ASF_Map, types() As Stri
             callNode.SetValue "callee", currentNode
             callNode.SetValue "args", argNodes
             Set currentNode = callNode.Clone
-
         Else
             Exit Do
         End If
@@ -1145,7 +1144,7 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
                 If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "(" Then
                     ' typeof( ... )
                     idx = idx + 1
-                    Set operandNode = ParseLogicalOrNode(types, vals, n, idx)
+                    Set operandNode = ParseTernaryNode(types, vals, n, idx)
                     If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = ")" Then
                         idx = idx + 1
                     End If
@@ -1165,32 +1164,32 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
             Set currentNode = Nothing
             If InStr(name, ".") > 0 Or InStr(name, "[") > 0 Then
                 Dim s As String: s = CStr(name)
-                Dim posS As Long: posS = 1
+                Dim poss As Long: poss = 1
                 Dim L As Long: L = Len(s)
                 Dim ident As String: ident = ""
                 Dim propName As String
 
                 ' read leading ident
-                Do While posS <= L
-                    Dim ch0 As String: ch0 = mid$(s, posS, 1)
+                Do While poss <= L
+                    Dim ch0 As String: ch0 = mid$(s, poss, 1)
                     If ch0 = "." Or ch0 = "[" Then Exit Do
                     ident = ident & ch0
-                    posS = posS + 1
+                    poss = poss + 1
                 Loop
                 Set currentNode = MakeNode("Variable")
                 currentNode.SetValue "name", ident
 
                 ' parse internal segments embedded in IDENT string (handles a[1][2].b)
-                Do While posS <= L
-                    Dim ch As String: ch = mid$(s, posS, 1)
+                Do While poss <= L
+                    Dim ch As String: ch = mid$(s, poss, 1)
                     If ch = "." Then
-                        posS = posS + 1
+                        poss = poss + 1
                         propName = ""
-                        Do While posS <= L
-                            Dim ch2 As String: ch2 = mid$(s, posS, 1)
+                        Do While poss <= L
+                            Dim ch2 As String: ch2 = mid$(s, poss, 1)
                             If ch2 = "." Or ch2 = "[" Then Exit Do
                             propName = propName & ch2
-                            posS = posS + 1
+                            poss = poss + 1
                         Loop
                         Set mem = MakeNode("Member")
                         mem.SetValue "base", currentNode.Clone
@@ -1201,7 +1200,7 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
                         Dim depthBr As Long: depthBr = 0
                         Dim posClose As Long: posClose = 0
                         Dim iCh As Long
-                        For iCh = posS To L
+                        For iCh = poss To L
                             Dim cch As String: cch = mid$(s, iCh, 1)
                             If cch = "[" Then
                                 depthBr = depthBr + 1
@@ -1216,13 +1215,13 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
                         If posClose = 0 Then
                             err.Raise vbObjectError + 8002, "Compiler.ParsePrimary", "Invalid collapsed identifier: missing ']' in " & s
                         End If
-                        Dim idxStr As String: idxStr = mid$(s, posS + 1, posClose - posS - 1)
+                        Dim idxStr As String: idxStr = mid$(s, poss + 1, posClose - poss - 1)
                         Dim idxNodeFromStr As ASF_Map: Set idxNodeFromStr = ParseExprFromStringToNode(idxStr)
                         Set indexNode = MakeNode("Index")
                         indexNode.SetValue "base", currentNode.Clone
                         indexNode.SetValue "index", idxNodeFromStr
                         Set currentNode = indexNode
-                        posS = posClose + 1
+                        poss = posClose + 1
                     Else
                         Exit Do
                     End If
@@ -1280,22 +1279,67 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
             Set currentNode = DoPostfixChaining(currentNode, types, vals, n, idx)
             Set ParsePrimaryNode = currentNode.Clone
             Exit Function
-
         Case "PAREN"
+            ' Handles parenthesized expressions and array/object literals.
             If v = "(" Then
+                ' Consume opening "("
                 idx = idx + 1
-                Dim innerNode As ASF_Map: Set innerNode = ParseLogicalOrNode(types, vals, n, idx)
-                If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = ")" Then idx = idx + 1
+
+                ' Collect tokens inside the parentheses only (respect nested (), [], {})
+                Dim innerTok As New Collection
+                Dim depth As Long: depth = 1
+                Do While idx < n And depth > 0
+                    Dim tType As String: tType = safeTVRet(types, idx)
+                    Dim tVal As Variant: tVal = safeTVRet(vals, idx)
+
+                    If tType = "PAREN" Then
+                        Select Case CStr(tVal)
+                            Case "("
+                                ' nested open -> include token and increment depth
+                                innerTok.Add Array(tType, tVal)
+                                depth = depth + 1
+                                idx = idx + 1
+                                GoTo ContinueParenInner
+                            Case ")"
+                                ' matching close -> consume; if depth>1 it's a nested close and should be added,
+                                ' if depth==1 this closes the outermost paren and we must consume it and stop.
+                                depth = depth - 1
+                                idx = idx + 1
+                                If depth = 0 Then
+                                    Exit Do
+                                Else
+                                    innerTok.Add Array(tType, tVal)
+                                    GoTo ContinueParenInner
+                                End If
+                        End Select
+                    End If
+
+                    ' Normal token inside parentheses -> collect it
+                    innerTok.Add Array(tType, tVal)
+                    idx = idx + 1
+
+ContinueParenInner:
+                Loop
+
+                ' Parse the inner token slice safely (won't see tokens after the closing ')')
+                Dim innerNode As ASF_Map
+                Set innerNode = ParseExprTokensToNode(innerTok)
+
+                ' Prepare node for postfix chaining
                 Set currentNode = innerNode.Clone
-                ' Postfix chaining for parenthesized expression
+
+                ' Allow postfix chaining starting at the token after the closing ')'
                 Set currentNode = DoPostfixChaining(currentNode, types, vals, n, idx)
+
                 Set ParsePrimaryNode = currentNode.Clone
                 Exit Function
 
             ElseIf v = "[" Then
+                ' Array literal parsing (existing behavior, kept intact; ensure idx handling consistent)
                 idx = idx + 1
                 Dim arrList As Collection: Set arrList = New Collection
 
+                ' empty array literal []
                 If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "]" Then
                     idx = idx + 1
                     Dim emptyArrNode As ASF_Map: Set emptyArrNode = MakeNode("Array")
@@ -1308,10 +1352,11 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
 
                 Do While idx < n And Not (safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "]")
                     Dim elemTok As Collection: Set elemTok = New Collection
-                    Dim depth As Long: depth = 0
+                    Dim edepth As Long: edepth = 0
                     Do While idx < n
-                        If depth = 0 Then
-                            If (safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = ",") Or (safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "]") Then
+                        If edepth = 0 Then
+                            If (safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = ",") _
+                               Or (safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "]") Then
                                 Exit Do
                             End If
                         End If
@@ -1319,9 +1364,9 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
                         If safeTVRet(types, idx) = "PAREN" Then
                             Select Case safeTVRet(vals, idx)
                                 Case "[", "(", "{"
-                                    depth = depth + 1
+                                    edepth = edepth + 1
                                 Case "]", ")", "}"
-                                    If depth > 0 Then depth = depth - 1
+                                    If edepth > 0 Then edepth = edepth - 1
                             End Select
                         End If
                         idx = idx + 1
@@ -1342,30 +1387,60 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
                 Exit Function
 
             ElseIf v = "{" Then
+                ' Object literal parsing: collect key / value pairs; parse value tokens safely so they cannot swallow outside tokens.
                 idx = idx + 1
                 Dim objItems As Collection: Set objItems = New Collection
                 Dim pair As Collection
                 Dim keyTok As String
+
                 Do While idx < n And Not (safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "}")
+                    ' key must be IDENT or STRING
                     If safeTVRet(types, idx) = "IDENT" Or safeTVRet(types, idx) = "STRING" Then
                         keyTok = CStr(safeTVRet(vals, idx))
                         idx = idx + 1
                     Else
                         err.Raise vbObjectError + 8002, "Compiler.ParsePrimary", "Invalid object key"
                     End If
+
                     If idx < n And safeTVRet(types, idx) = "OP" And safeTVRet(vals, idx) = ":" Then
                         idx = idx + 1
                     Else
                         err.Raise vbObjectError + 8003, "Compiler.ParsePrimary", "Expected ':' after object key"
                     End If
+
+                    ' Collect tokens for value expression up to comma or closing '}' at top level (support nested constructs)
+                    Dim valTok As Collection: Set valTok = New Collection
+                    Dim vdepth As Long: vdepth = 0
+                    Do While idx < n
+                        If vdepth = 0 Then
+                            If (safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = ",") _
+                               Or (safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "}") Then
+                                Exit Do
+                            End If
+                        End If
+                        valTok.Add Array(safeTVRet(types, idx), safeTVRet(vals, idx))
+                        If safeTVRet(types, idx) = "PAREN" Then
+                            Select Case safeTVRet(vals, idx)
+                                Case "[", "(", "{"
+                                    vdepth = vdepth + 1
+                                Case "]", ")", "}"
+                                    If vdepth > 0 Then vdepth = vdepth - 1
+                            End Select
+                        End If
+                        idx = idx + 1
+                    Loop
+
                     Dim valNode As ASF_Map
-                    Set valNode = ParseTernaryNode(types, vals, n, idx)
+                    Set valNode = ParseExprTokensToNode(valTok)
+
                     Set pair = New Collection
                     pair.Add keyTok
                     pair.Add valNode.Clone
                     objItems.Add pair
+
                     If idx < n And safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = "," Then idx = idx + 1
                 Loop
+
                 If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "}" Then idx = idx + 1
                 Dim onode As ASF_Map: Set onode = MakeNode("Object")
                 onode.SetValue "items", objItems
@@ -1447,7 +1522,7 @@ Private Function ParseIfAST(stmtTokens As Collection) As ASF_Map
     Dim eCondTok As Collection
     Dim eBlockTok As Collection
     Dim elseTok As Collection
-    Dim eDepth As Long
+    Dim edepth As Long
     Set elseifConds = New Collection
     Set elseifBlocks = New Collection
     Do While pos <= stmtTokens.count
@@ -1464,17 +1539,17 @@ Private Function ParseIfAST(stmtTokens As Collection) As ASF_Map
                 Loop
                 If pos > stmtTokens.count Then Exit Do
                 pos = pos + 1
-                eDepth = 0
+                edepth = 0
                 Set eCondTok = New Collection
                 Do While pos <= stmtTokens.count
                     If stmtTokens(pos)(0) = "PAREN" Then
                         If stmtTokens(pos)(1) = "(" Then
-                            eDepth = eDepth + 1
+                            edepth = edepth + 1
                         ElseIf stmtTokens(pos)(1) = ")" Then
-                            If eDepth = 0 Then
+                            If edepth = 0 Then
                                 Exit Do
                             Else
-                                eDepth = eDepth - 1
+                                edepth = edepth - 1
                             End If
                         End If
                     End If
@@ -2171,7 +2246,7 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
     End If
     Dim expr As ASF_Map
     Dim left_ As ASF_Map
-    Dim a As ASF_Map
+    Dim A As ASF_Map
     Dim r As ASF_Map
     Dim newExpr As ASF_Map
     Dim ns As ASF_Map
@@ -2221,8 +2296,8 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
     Dim leftA As ASF_Map
     Dim rightA As ASF_Map
     Dim naNode As ASF_Map
-    Dim tp As String: tp = node.GetValue("type")
-    Select Case tp
+    Dim tP As String: tP = node.GetValue("type")
+    Select Case tP
         Case "ExprStmt"
             Set expr = node.GetValue("expr")
             ' If expression is a Binary "=" with assignable LHS, convert to Assign node.
@@ -2232,13 +2307,13 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
                         Set left_ = expr.GetValue("left")
                         If Not left_ Is Nothing Then
                             If IsAssignableNode(left_) Then
-                                a.Add "type", "Assign"
-                                a.SetValue "left", left_
+                                A.Add "type", "Assign"
+                                A.SetValue "left", left_
                                 ' right: normalize recursively as expression
                                 Set r = NormalizeExprNodeRecursive(expr.GetValue("right"))
                                 If r Is Nothing Then Set r = expr.GetValue("right")
-                                a.SetValue "right", r
-                                Set NormalizeNodeRecursive = a
+                                A.SetValue "right", r
+                                Set NormalizeNodeRecursive = A
                                 Exit Function
                             End If
                         End If
@@ -2618,13 +2693,8 @@ Private Function ParseTemplateStringToNode(ByVal rawBacktickString As String) As
         Dim ch As String: ch = mid$(inner, i, 1)
         If ch = "\" Then
             ' preserve escapes in literal
-            If i < Ls Then
-                curLit = curLit & mid$(inner, i + 1, 1)
-                i = i + 2
-            Else
-                curLit = curLit & "\"
-                i = i + 1
-            End If
+            curLit = curLit & "\"
+            i = i + 1
             GoTo PT_continue
         End If
 

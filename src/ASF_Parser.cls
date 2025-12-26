@@ -89,12 +89,15 @@ Tokenize_MainLoop:
                     Dim c As String: c = mid$(src, i, 1)
             
                     ' escape sequences - keep them as raw characters in the literal
+                    ' if not succeeded by the backtick (`) or the slash (/) symbol
+                    ' or the scape character itself (\)
                     If c = "\" Then
-                        If i < Ls Then
-                            curLit = curLit & mid$(src, i + 1, 1)
+                        nxt = mid$(src, i + 1, 1)
+                        If nxt = "`" Or nxt = "/" Or nxt = "\" Then
+                            curLit = curLit & nxt
                             i = i + 2
                         Else
-                            curLit = curLit & "\"
+                            curLit = curLit & c
                             i = i + 1
                         End If
                         GoTo ContinueTemplateLoop
@@ -109,22 +112,151 @@ Tokenize_MainLoop:
                         End If
                         ' consume "${"
                         i = i + 2
+            
+                        ' We'll scan forward until we find the matching '}' that is not inside
+                        ' strings, regex literals, character classes or nested braces.
                         Dim depth As Long: depth = 1
                         Dim exprStart As Long: exprStart = i
+                        Dim inSingle As Boolean: inSingle = False
+                        Dim inDouble As Boolean: inDouble = False
+                        Dim inBacktick As Boolean: inBacktick = False
+                        Dim inRegex As Boolean: inRegex = False
+                        Dim inRegexClass As Boolean: inRegexClass = False
+            
                         Do While i <= Ls And depth > 0
                             Dim cc As String: cc = mid$(src, i, 1)
-                            If cc = "\" Then
-                                ' preserve escaped char in expression substring (skip next char)
-                                If i < Ls Then i = i + 2 Else i = i + 1
+            
+                            ' If currently inside single-quoted string
+                            If inSingle Then
+                                If cc = "\" Then
+                                    ' skip escaped char inside string
+                                    If i < Ls Then i = i + 2 Else i = i + 1
+                                ElseIf cc = "'" Then
+                                    inSingle = False
+                                    i = i + 1
+                                Else
+                                    i = i + 1
+                                End If
+            
+                            ' Double-quoted string
+                            ElseIf inDouble Then
+                                If cc = "\" Then
+                                    If i < Ls Then i = i + 2 Else i = i + 1
+                                ElseIf cc = """" Then
+                                    inDouble = False
+                                    i = i + 1
+                                Else
+                                    i = i + 1
+                                End If
+            
+                            ' Backtick-quoted (template) inside expression (rare but safe)
+                            ElseIf inBacktick Then
+                                If cc = "\" Then
+                                    If i < Ls Then i = i + 2 Else i = i + 1
+                                ElseIf cc = "`" Then
+                                    inBacktick = False
+                                    i = i + 1
+                                Else
+                                    i = i + 1
+                                End If
+            
+                            ' Inside a regex literal .../.../
+                            ElseIf inRegex Then
+                                If inRegexClass Then
+                                    If cc = "\" Then
+                                        If i < Ls Then i = i + 2 Else i = i + 1
+                                    ElseIf cc = "]" Then
+                                        inRegexClass = False
+                                        i = i + 1
+                                    Else
+                                        i = i + 1
+                                    End If
+                                Else
+                                    If cc = "\" Then
+                                        If i < Ls Then i = i + 2 Else i = i + 1
+                                    ElseIf cc = "[" Then
+                                        inRegexClass = True
+                                        i = i + 1
+                                    ElseIf cc = "/" Then
+                                        ' end of regex literal; consume trailing flags (letters)
+                                        i = i + 1
+                                        Do While i <= Ls
+                                            Dim fc As String: fc = mid$(src, i, 1)
+                                            If (fc >= "a" And fc <= "z") Or (fc >= "A" And fc <= "Z") Then
+                                                i = i + 1
+                                            Else
+                                                Exit Do
+                                            End If
+                                        Loop
+                                        inRegex = False
+                                    Else
+                                        i = i + 1
+                                    End If
+                                End If
+            
                             Else
-                                If cc = "{" Then
+                                ' Not inside any quoted/regex context
+                                If cc = "\" Then
+                                    ' preserve escaped char inside expression (skip next char)
+                                    If i < Ls Then i = i + 2 Else i = i + 1
+                                ElseIf cc = "'" Then
+                                    inSingle = True
+                                    i = i + 1
+                                ElseIf cc = """" Then
+                                    inDouble = True
+                                    i = i + 1
+                                ElseIf cc = "`" Then
+                                    inBacktick = True
+                                    i = i + 1
+                                ElseIf cc = "{" Then
                                     depth = depth + 1
+                                    i = i + 1
                                 ElseIf cc = "}" Then
                                     depth = depth - 1
+                                    i = i + 1
+                                ElseIf cc = "/" Then
+                                    ' Heuristic: determine if this '/' is starting a regex literal.
+                                    ' Find previous non-space char in the current expression buffer (from exprStart .. i-1)
+                                    Dim prevPos As Long: prevPos = i - 1
+                                    Dim prevCh As String: prevCh = ""
+                                    Do While prevPos >= exprStart
+                                        Dim pc As String: pc = mid$(src, prevPos, 1)
+                                        If pc = " " Or pc = vbTab Or pc = vbCr Or pc = vbLf Then
+                                            prevPos = prevPos - 1
+                                        Else
+                                            prevCh = pc
+                                            Exit Do
+                                        End If
+                                    Loop
+                                    ' If there's no meaningful previous character, or it's one that
+                                    ' typically precedes an expression or operator, treat as regex start.
+                                    Dim startsRegex As Boolean: startsRegex = False
+                                    If prevPos < exprStart Then
+                                        startsRegex = True
+                                    Else
+                                        Select Case prevCh
+                                            Case "(", "[", "{", "=", ":", ",", ";", "?", "+", "-", "*", "/", "%", "&", "|", "^", "!", "~", "<", ">", vbNullString
+                                                startsRegex = True
+                                            Case Else
+                                                startsRegex = False
+                                        End Select
+                                    End If
+            
+                                    If startsRegex Then
+                                        inRegex = True
+                                        inRegexClass = False
+                                        i = i + 1
+                                    Else
+                                        ' probably a division operator — treat as normal char
+                                        i = i + 1
+                                    End If
+            
+                                Else
+                                    i = i + 1
                                 End If
-                                i = i + 1
                             End If
                         Loop
+            
                         ' exprStart .. i-2 is the inner expression (we stopped just after the closing '}')
                         Dim exprLen As Long: exprLen = i - exprStart - 1
                         Dim exprSrc As String
@@ -183,7 +315,6 @@ ContinueTemplateLoop:
                 Next pj
                 toks.Add Array("STRING", "`" & reconstructed2 & "`")
                 GoTo Tokenize_SkipToLoopEnd
-
             Case ","
                 toks.Add Array("SEP", ch): i = i + 1: GoTo Tokenize_SkipToLoopEnd
             Case ";"

@@ -71,10 +71,10 @@ End Sub
 ' Execute a statement node (Map). Return control signals: "", "BREAK", "CONTINUE", "RETURN", "ERR"
 Private Function ExecuteStmtNode(node As ASF_Map, progScope As ASF_ScopeStack) As String
     On Error GoTo ErrHandler
-    Dim tp As String: tp = node.GetValue("type")
+    Dim tP As String: tP = node.GetValue("type")
     Dim rval As Variant
     Dim i As Long
-    Select Case tp
+    Select Case tP
         Case "Print"
             Dim args As Collection: Set args = node.GetValue("args")
             Dim outParts As New Collection
@@ -141,7 +141,7 @@ Private Function ExecuteStmtNode(node As ASF_Map, progScope As ASF_ScopeStack) A
 
         Case Else
             ' unknown node type
-            If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "Unknown statement node: " & tp
+            If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "Unknown statement node: " & tP
             ExecuteStmtNode = ""
             Exit Function
     End Select
@@ -308,8 +308,8 @@ End Function
 
 Private Function ResolvePath(node As ASF_Map, progScope As ASF_ScopeStack, Optional forAssign As Boolean = False) As ASF_Map
     Dim res As New ASF_Map
-    Dim tp As String: tp = node.GetValue("type")
-    If tp = "Variable" Then
+    Dim tP As String: tP = node.GetValue("type")
+    If tP = "Variable" Then
         If (InStr(node.GetValue("name"), ".") > 0 Or InStr(node.GetValue("name"), "[") > 0) Then
             ' Fallback for flat names (if Compiler didn't nest)
             Dim path As String: path = node.GetValue("name")
@@ -349,7 +349,7 @@ Private Function ResolvePath(node As ASF_Map, progScope As ASF_ScopeStack, Optio
         End If
     Else
         ' Nested nodes (preferred)
-        Select Case tp
+        Select Case tP
             Case "Member"
                 Dim baseRes As ASF_Map: Set baseRes = ResolvePath(node.GetValue("base"), progScope, forAssign)
                 If forAssign Then
@@ -752,11 +752,12 @@ End Sub
 ' ---------------------
 Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As Variant
     If node Is Nothing Then EvalExprNode = Empty: Exit Function
-    Dim tp As String: tp = node.GetValue("type")
+    Dim tP As String: tP = node.GetValue("type")
     Dim items As Collection
     Dim tmpResult As Variant
     Dim pi As Long
     Dim funcIdx As Long
+    Dim argColl As Collection
     Dim baseExpr As ASF_Map
     Dim tmpMapObj As ASF_Map
     Dim calleeExpr As ASF_Map
@@ -794,9 +795,9 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
     Dim i_sp As Long, j_sp As Long, cur As Long
     Dim insertedItem As Variant
     Dim removedOut() As Variant
+    Dim foundIdx As Long
     
-    
-    Select Case tp
+    Select Case tP
         Case "FuncLiteral", "AnonFunc"
             ' Create closure (capture env by reference for shared-write closures)
             Dim cparams As Collection: vAssignment cparams, node.GetValue("params")
@@ -1252,6 +1253,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                 ' write back:
                                 WriteToContainer calleeExpr, progScope, baseValLocal
                                 vAssignment tmpResult, popped
+                                GoTo exitfun
                             Case "foreach"
                                 ' forEach(fn) -> invoke fn(value, index, array) for each element; returns the original array
                                 If evaluated.count = 0 Then
@@ -1912,7 +1914,6 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                             
                                 ReDim outArr(opt_from To opt_from + newSize - 1)
                                 Dim mapResult As Variant
-                                Dim argColl As Collection
                                 
                                 If Not IsEmpty(comp) And Not IsNull(comp) Then
                                     ' only apply mapping if comp is a Closure map object
@@ -1946,7 +1947,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                 lb_b = LBound(baseValLocal)
                                 ub_b = UBound(baseValLocal)
                                 len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
-                                Dim foundIdx As Long: foundIdx = -1
+                                foundIdx = -1
                                 Dim i_in As Long
                                 If propN = "lastindexof" Then
                                     For i_in = len_base - 1 To 0 Step -1
@@ -2121,6 +2122,53 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                             Case Else
                                 GoTo namedFunctions
                         End Select
+                    ElseIf TypeName(baseValLocal) = "ASF_RegexEngine" Then
+                        ' Expose regex module methods with the Regex object
+                        Select Case propN
+                            Case "escape"
+                                tmpResult = baseValLocal.Escape(CStr(evaluated(1)))
+                                GoTo exitfun
+                            Case "exec"
+                                tmpResult = RegexCapsToVariantArray(baseValLocal.Exec(CStr(evaluated(1))))
+                                GoTo exitfun
+                            Case "execat"
+                                tmpResult = RegexCapsToVariantArray(baseValLocal.ExecAt(CStr(evaluated(1)), CLng(evaluated(2))))
+                                GoTo exitfun
+                            Case "init"
+                                On Error GoTo init_Error_Handler
+                                Select Case evaluated.count
+                                    Case 1
+                                        ' pattern
+                                        baseValLocal.Init CStr(evaluated(1))
+                                    Case Is <= 2
+                                        ' pattern, ignoreCase
+                                        baseValLocal.Init CStr(evaluated(1)), CBool(evaluated(2))
+                                    Case Is <= 3
+                                        ' pattern, ignoreCase flag, multiline flag
+                                        baseValLocal.Init CStr(evaluated(1)), CBool(evaluated(2)), , CBool(evaluated(3))
+                                    Case Is <= 4
+                                        ' pattern, ignoreCase flag, multiline flag, dotAll flag
+                                        baseValLocal.Init CStr(evaluated(1)), CBool(evaluated(2)), , CBool(evaluated(3)), CBool(evaluated(4))
+                                End Select
+                                tmpResult = True
+init_Return:
+                                GoTo exitfun
+init_Error_Handler:
+                                tmpResult = False
+                                Resume init_Return
+                            Case "pattern"
+                                tmpResult = baseValLocal.pattern
+                                GoTo exitfun
+                            Case "replace"
+                                tmpResult = baseValLocal.Replace(CStr(evaluated(1)), CStr(evaluated(2)))
+                                GoTo exitfun
+                            Case "split"
+                                tmpResult = RegexCapsToVariantArray(baseValLocal.Split(CStr(evaluated(1))))
+                                GoTo exitfun
+                            Case "test"
+                                tmpResult = baseValLocal.Test(CStr(evaluated(1)))
+                                GoTo exitfun
+                        End Select
                     ElseIf TypeName(baseValLocal) = "String" Then
                         'Builtins string methods
                         Dim nidx As Long
@@ -2217,6 +2265,90 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                 ' A tiny VBA based implementation, does not behave like javascript
                                 tmpResult = StrComp(baseValLocal, evaluated(1), vbBinaryCompare)
                                 GoTo exitfun
+                            Case "match", "matchall"
+                                Dim sourceStr As String: sourceStr = CStr(baseValLocal)
+                                Dim searchArg As Variant: searchArg = evaluated(1)
+                                Dim isSlashRegex As Boolean: isSlashRegex = VM_IsSlashRegexString(searchArg)
+                                If Not isSlashRegex Then
+                                    ' treat as plain string -> match: if exact match return array [full] else Nothing / empty
+                                    If propN = "matchall" Then
+                                        Dim matchesList() As Variant: ReDim matchesList(1 To 0)
+                                        ' naive: find all occurrences of the literal substring
+                                        Dim startAt2 As Long: startAt2 = 1
+                                        foundIdx = 0
+                                        Do
+                                            Dim pFind As Long: pFind = InStr(startAt2, sourceStr, CStr(searchArg), vbBinaryCompare)
+                                            If pFind = 0 Then Exit Do
+                                            foundIdx = foundIdx + 1
+                                            ReDim Preserve matchesList(1 To foundIdx)
+                                            matchesList(foundIdx) = mid$(sourceStr, pFind, Len(CStr(searchArg)))
+                                            startAt2 = pFind + Len(CStr(searchArg))
+                                            If Len(CStr(searchArg)) = 0 Then startAt2 = startAt2 + 1
+                                        Loop
+                                        tmpResult = matchesList
+                                        GoTo exitfun
+                                    Else
+                                        Dim pOne As Long: pOne = InStr(1, sourceStr, CStr(searchArg), vbBinaryCompare)
+                                        If pOne = 0 Then
+                                            tmpResult = Empty
+                                        Else
+                                            tmpResult = Array(mid$(sourceStr, pOne, Len(CStr(searchArg))))
+                                        End If
+                                        GoTo exitfun
+                                    End If
+                                Else
+                                    ' regex path
+                                    Dim pat2 As String, f2 As String
+                                    VM_ParseSlashRegex CStr(searchArg), pat2, f2
+                                    Dim fi_i As Boolean: fi_i = (InStr(f2, "i") > 0)
+                                    Dim fi_m As Boolean: fi_m = (InStr(f2, "m") > 0)
+                                    Dim fi_s As Boolean: fi_s = (InStr(f2, "s") > 0)
+                                    Dim fi_g As Boolean: fi_g = (InStr(f2, "g") > 0)
+                            
+                                    Dim r2 As New ASF_RegexEngine
+                                    r2.Init pat2, fi_i, GLOBALS_.re.MaxMatchSteps, fi_m, fi_s
+                            
+                                    If LCase$(propN) = "matchall" Or fi_g Then
+                                        ' produce an array of simple matches (string) for global
+                                        Dim outMatches() As Variant: ReDim outMatches(1 To 0)
+                                        Dim sPos As Long: sPos = 1
+                                        Dim idxOut As Long: idxOut = 0
+                                        Dim L2 As Long: L2 = Len(sourceStr)
+                                        Do While sPos <= L2
+                                            Dim caps2 As Collection
+                                            Dim sTry As Long
+                                            Dim foundAt2 As Long: foundAt2 = 0
+                                            For sTry = sPos To L2
+                                                Set caps2 = r2.ExecAt(sourceStr, sTry)
+                                                If Not (caps2 Is Nothing) Then
+                                                    foundAt2 = sTry: Exit For
+                                                End If
+                                            Next sTry
+                                            If foundAt2 = 0 Then Exit Do
+                                            idxOut = idxOut + 1
+                                            ReDim Preserve outMatches(1 To idxOut)
+                                            outMatches(idxOut) = CStr(caps2.item(1))
+                                            Dim fLen As Long: fLen = Len(caps2.item(1))
+                                            If fLen = 0 Then
+                                                sPos = sPos + 1
+                                            Else
+                                                sPos = foundAt2 + fLen
+                                            End If
+                                        Loop
+                                        tmpResult = outMatches
+                                        GoTo exitfun
+                                    Else
+                                        ' non-global: return array of full match + groups (like JS match)
+                                        Dim caps3 As Collection
+                                        Set caps3 = r2.Exec(sourceStr)
+                                        If caps3 Is Nothing Then
+                                            tmpResult = Empty
+                                        Else
+                                            tmpResult = VM_CapturesToArray(caps3)
+                                        End If
+                                        GoTo exitfun
+                                    End If
+                                End If
                             Case "padend"
                                 Dim pePadStr As String
                                 Dim tpeLen As Long
@@ -2268,61 +2400,176 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                     tmpResult = CStr(baseValLocal)
                                     GoTo exitfun
                                 End If
-
+                            
                                 Dim rawSearch As Variant: vAssignment rawSearch, evaluated(1)
-                                Dim searchStr As String: searchStr = CStr(rawSearch)
-
-                                ' empty search -> no-op (avoid infinite insertion)
-                                If Len(searchStr) = 0 Then
-                                    tmpResult = CStr(baseValLocal)
-                                    GoTo exitfun
-                                End If
-
+                                Dim isRegex As Boolean: isRegex = VM_IsSlashRegexString(rawSearch)
+                            
+                                Dim src As String: src = CStr(baseValLocal)
                                 Dim replRaw As Variant
                                 If evaluated.count >= 2 Then vAssignment replRaw, evaluated(2) Else replRaw = Empty
-
-                                Dim src As String: src = CStr(baseValLocal)
-                                Dim outRepStr As String
-                                Dim pos As Long: pos = 1
-                                Dim foundPos As Long
-                                Dim isGlobal As Boolean: isGlobal = (LCase$(propN) = "replaceall")
-                                Dim matchCount As Long: matchCount = 0
-
-                                ' For replace (first match) behave like JS: only first occurrence
-                                If Not isGlobal Then
-                                    foundPos = InStr(pos, src, searchStr, vbBinaryCompare)
-                                    If foundPos = 0 Then
-                                        tmpResult = src: GoTo exitfun
+                            
+                                Dim isGlobal As Boolean: isGlobal = (propN = "replaceall")
+                            
+                                If isRegex Then
+                                    Dim pattern As String, flags As String
+                                    VM_ParseSlashRegex CStr(rawSearch), pattern, flags
+                                    Dim flag_i As Boolean: flag_i = (InStr(flags, "i") > 0)
+                                    Dim flag_m As Boolean: flag_m = (InStr(flags, "m") > 0)
+                                    Dim flag_s As Boolean: flag_s = (InStr(flags, "s") > 0)
+                                    Dim flag_g As Boolean: flag_g = (InStr(flags, "g") > 0)
+    
+                                    Dim doGlobal As Boolean: doGlobal = flag_g Or isGlobal
+    
+                                    With GLOBALS_.re
+                                        ' Init with flags (ignoreCase, maxSteps, multiline, dotAll)
+                                        .Init pattern, flag_i, .MaxMatchSteps, flag_m, flag_s
+    
+                                        Dim outRepStr As String: outRepStr = vbNullString
+                                        Dim L As Long: L = Len(src)
+                                        Dim searchPos As Long: searchPos = 1
+                                        Dim foundAny As Boolean: foundAny = False
+    
+                                        Do While searchPos <= L
+                                            Dim caps As Collection
+                                            Dim startTry As Long
+                                            Dim foundAt As Long: foundAt = 0
+    
+                                            ' locate the next match by trying ExecAt at increasing start positions
+                                            For startTry = searchPos To L
+                                                Set caps = .ExecAt(src, startTry)
+                                                If Not (caps Is Nothing) Then
+                                                    foundAt = startTry
+                                                    Exit For
+                                                End If
+                                            Next startTry
+    
+                                            If foundAt = 0 Then
+                                                ' append remainder and break
+                                                outRepStr = outRepStr & mid$(src, searchPos)
+                                                Exit Do
+                                            Else
+                                                foundAny = True
+                                                Dim fullMatch As String: fullMatch = CStr(caps.item(1))
+                                                Dim matchLen As Long: matchLen = Len(fullMatch)
+                                                Dim matchStart As Long: matchStart = foundAt
+                                                Dim matchEnd As Long: matchEnd = matchStart + matchLen - 1
+    
+                                                ' Safety: avoid infinite loop for zero-length matches
+                                                If matchLen = 0 Then
+                                                    ' append the next char (if any) and advance
+                                                    If searchPos <= L Then outRepStr = outRepStr & mid$(src, searchPos, 1)
+                                                    searchPos = searchPos + 1
+                                                    If searchPos > L Then Exit Do
+                                                    If Not doGlobal Then
+                                                        ' single replacement only -> append remainder and exit
+                                                        outRepStr = outRepStr & mid$(src, searchPos)
+                                                        Exit Do
+                                                    Else
+                                                        ' continue global
+                                                        GoTo ContinueDo
+                                                    End If
+                                                End If
+    
+                                                ' append chunk before match
+                                                If matchStart > searchPos Then outRepStr = outRepStr & mid$(src, searchPos, matchStart - searchPos)
+    
+                                                ' compute replacement text
+                                                Dim replacedText As String: replacedText = vbNullString
+    
+                                                ' --- replacement is a function/closure? ---
+                                                If Not IsEmpty(replRaw) And (IsObject(replRaw) Or TypeName(replRaw) = "ASF_Map") Then
+                                                    Set argColl = New Collection
+                                                    argColl.Add fullMatch
+                                                    Dim gi As Long
+                                                    For gi = 2 To caps.count
+                                                        argColl.Add CStr(caps.item(gi))
+                                                    Next gi
+                                                    ' offset - JS uses zero-based
+                                                    argColl.Add (matchStart - 1)
+                                                    argColl.Add src
+                                                    vAssignment tmpMapObj, replRaw
+                                                    Dim cbRes As Variant
+                                                    vAssignment cbRes, CallClosure(tmpMapObj, argColl)
+                                                    If IsObject(cbRes) Then
+                                                        replacedText = ValueToStringForPrint(cbRes)
+                                                    ElseIf IsNull(cbRes) Then
+                                                        replacedText = "null"
+                                                    ElseIf IsEmpty(cbRes) Then
+                                                        replacedText = vbNullString
+                                                    Else
+                                                        replacedText = CStr(cbRes)
+                                                    End If
+    
+                                                Else
+                                                    ' replacement is a string: expand $ sequences (JS-like)
+                                                    Dim replStr As String: replStr = ""
+                                                    If Not IsEmpty(replRaw) Then replStr = CStr(replRaw)
+                                                    replacedText = VM_ExpandReplacementFromCapturesJS(caps, replStr, src, matchStart, matchEnd)
+                                                End If
+    
+                                                outRepStr = outRepStr & replacedText
+    
+                                                ' advance search position according to global / single replacement
+                                                searchPos = matchEnd + 1
+                                                If Not doGlobal Then
+                                                    ' append remainder and exit
+                                                    If searchPos <= L Then outRepStr = outRepStr & mid$(src, searchPos)
+                                                    Exit Do
+                                                End If
+                                            End If
+ContinueDo:
+                                        Loop
+    
+                                        vAssignment tmpResult, outRepStr
+                                        GoTo exitfun
+                                    End With
+                                Else
+                                    ' empty search -> no-op (avoid infinite insertion)
+                                    Dim searchStr As String: searchStr = CStr(rawSearch)
+                                    If Len(searchStr) = 0 Then
+                                        tmpResult = CStr(baseValLocal)
+                                        GoTo exitfun
                                     End If
-                                    Dim beforePart As String: beforePart = left$(src, foundPos - 1)
-                                    Dim afterPart As String: afterPart = mid$(src, foundPos + Len(searchStr))
-                                    Dim replacementText As String
-                                    replacementText = VM_StringReplacementText(replRaw, mid$(src, foundPos, Len(searchStr)), foundPos - 1, src)
-                                    tmpResult = beforePart & replacementText & afterPart
+                                    Dim pos As Long: pos = 1
+                                    Dim foundPos As Long
+                                    Dim matchCount As Long: matchCount = 0
+    
+                                    ' For replace (first match) behave like JS: only first occurrence
+                                    If Not isGlobal Then
+                                        foundPos = InStr(pos, src, searchStr, vbBinaryCompare)
+                                        If foundPos = 0 Then
+                                            tmpResult = src: GoTo exitfun
+                                        End If
+                                        Dim beforePart As String: beforePart = left$(src, foundPos - 1)
+                                        Dim afterPart As String: afterPart = mid$(src, foundPos + Len(searchStr))
+                                        Dim replacementText As String
+                                        replacementText = VM_StringReplacementText(replRaw, mid$(src, foundPos, Len(searchStr)), foundPos - 1, src)
+                                        tmpResult = beforePart & replacementText & afterPart
+                                        GoTo exitfun
+                                    End If
+    
+                                    ' replaceAll loop
+                                    Do
+                                        foundPos = InStr(pos, src, searchStr, vbBinaryCompare)
+                                        If foundPos = 0 Then
+                                            ' append tail and exit
+                                            outRepStr = outRepStr & mid$(src, pos)
+                                            Exit Do
+                                        End If
+                                        ' append portion before match
+                                        If foundPos > pos Then outRepStr = outRepStr & mid$(src, pos, foundPos - pos)
+                                        ' compute replacement
+                                        Dim repTxt As String
+                                        repTxt = VM_StringReplacementText(replRaw, mid$(src, foundPos, Len(searchStr)), foundPos - 1, src)
+                                        outRepStr = outRepStr & repTxt
+                                        matchCount = matchCount + 1
+                                        ' advance pos after this match (prevent overlapping infinite loops)
+                                        pos = foundPos + Len(searchStr)
+                                        ' continue searching
+                                    Loop
+                                    tmpResult = outRepStr
                                     GoTo exitfun
                                 End If
-
-                                ' replaceAll loop
-                                Do
-                                    foundPos = InStr(pos, src, searchStr, vbBinaryCompare)
-                                    If foundPos = 0 Then
-                                        ' append tail and exit
-                                        outRepStr = outRepStr & mid$(src, pos)
-                                        Exit Do
-                                    End If
-                                    ' append portion before match
-                                    If foundPos > pos Then outRepStr = outRepStr & mid$(src, pos, foundPos - pos)
-                                    ' compute replacement
-                                    Dim repTxt As String
-                                    repTxt = VM_StringReplacementText(replRaw, mid$(src, foundPos, Len(searchStr)), foundPos - 1, src)
-                                    outRepStr = outRepStr & repTxt
-                                    matchCount = matchCount + 1
-                                    ' advance pos after this match (prevent overlapping infinite loops)
-                                    pos = foundPos + Len(searchStr)
-                                    ' continue searching
-                                Loop
-                                tmpResult = outRepStr
-                                GoTo exitfun
                             Case "slice"
                                 nidx = NormalizeIndex(CLng(evaluated(1)), Len(baseValLocal), strOB) + 1
                                 Select Case evaluated.count
@@ -2582,6 +2829,10 @@ namedFunctions:
                     vAssignment tmpResult, arrVal
                     GoTo exitfun
                 End If
+                If nameLcase = "regex" Then
+                    Set tmpResult = New ASF_RegexEngine
+                    GoTo exitfun
+                End If
                 ' --- end builtins ---
             End If
             If Not hasCalleeExpr Then
@@ -2773,21 +3024,21 @@ Private Function IsBoolean(ByRef expression As String) As Boolean
     If Not IsBoolean Then IsBoolean = (LCase(expression) = "false")
 End Function
 
-Private Function SafeAdd(a As Variant, b As Variant) As Variant
-    If IsNumeric(a) And IsNumeric(b) Then SafeAdd = a + b Else SafeAdd = CStr(a) & CStr(b)
+Private Function SafeAdd(A As Variant, b As Variant) As Variant
+    If IsNumeric(A) And IsNumeric(b) Then SafeAdd = A + b Else SafeAdd = CStr(A) & CStr(b)
 End Function
 
-Private Function lshift(a As Variant, b As Variant) As Variant 'a<<b
-    If IsNumeric(a) And IsNumeric(b) Then
-        lshift = Floor(Floor(a) * (2 ^ Abs(Floor(b))))
+Private Function lshift(A As Variant, b As Variant) As Variant 'a<<b
+    If IsNumeric(A) And IsNumeric(b) Then
+        lshift = Floor(Floor(A) * (2 ^ Abs(Floor(b))))
     Else
         Exit Function
     End If
 End Function
 
-Private Function rshift(a As Variant, b As Variant) As Variant 'a>>b
-    If IsNumeric(a) And IsNumeric(b) Then
-        rshift = Floor(Floor(a) / (2 ^ Abs(Floor(b))))
+Private Function rshift(A As Variant, b As Variant) As Variant 'a>>b
+    If IsNumeric(A) And IsNumeric(b) Then
+        rshift = Floor(Floor(A) / (2 ^ Abs(Floor(b))))
     Else
         Exit Function
     End If
@@ -2999,7 +3250,7 @@ End Function
 ' - If the object is a Map-like (has Keys and GetValue), will attempt to treat it As ASF_Map.
 ' - Else TypeName + simple to-string
 Private Function ObjectToString(obj As Variant, visited As Collection, depth As Long) As String
-    On Error GoTo Fallback
+    On Error GoTo fallback
     Dim tn As String: tn = TypeName(obj)
 
     ' Attempt Map-like duck typing: presence of Keys and GetValue
@@ -3022,11 +3273,11 @@ Private Function ObjectToString(obj As Variant, visited As Collection, depth As 
 
 Fallback2:
     ' Not a Map-like object: try default string
-    On Error GoTo Fallback
+    On Error GoTo fallback
     ObjectToString = "<" & tn & ">"
     Exit Function
 
-Fallback:
+fallback:
     ObjectToString = "<object>"
     err.Clear
 End Function
@@ -3902,8 +4153,8 @@ Private Function builtin_typeof(v As Variant) As String
         ' if it's an ASF_Map, look inside for "type" = "Closure"
         If TypeName(v) = "ASF_Map" Then
             If v.Exists("type") Then
-                Dim tp As Variant: tp = v.GetValue("type")
-                If CStr(tp) = "Closure" Then
+                Dim tP As Variant: tP = v.GetValue("type")
+                If CStr(tP) = "Closure" Then
                     builtin_typeof = "function"
                     Exit Function
                 End If
@@ -3973,62 +4224,62 @@ Private Function ListToArray(col As Collection, optBase As Long) As Variant
 End Function
 
 ' Deep equality for nested arrays and ASF_Map (objects)
-Private Function DeepEqual(a As Variant, b As Variant) As Boolean
+Private Function DeepEqual(A As Variant, b As Variant) As Boolean
     On Error GoTo notEqual
     ' same reference?
-    If IsObject(a) And IsObject(b) Then
-        If TypeName(a) = "ASF_Map" And TypeName(b) = "ASF_Map" Then
+    If IsObject(A) And IsObject(b) Then
+        If TypeName(A) = "ASF_Map" And TypeName(b) = "ASF_Map" Then
             ' compare keys count and values
-            Dim keysA As Collection: Set keysA = a.keys()
+            Dim keysA As Collection: Set keysA = A.keys()
             Dim keysB As Collection: Set keysB = b.keys()
             If keysA.count <> keysB.count Then GoTo notEqual
             Dim k As Variant
             For Each k In keysA
                 If Not b.Exists(CStr(k)) Then GoTo notEqual
-                If Not DeepEqual(a.GetValue(CStr(k)), b.GetValue(CStr(k))) Then GoTo notEqual
+                If Not DeepEqual(A.GetValue(CStr(k)), b.GetValue(CStr(k))) Then GoTo notEqual
             Next k
             DeepEqual = True
             Exit Function
         Else
             ' fallback to object reference equality
-            DeepEqual = (a Is b)
+            DeepEqual = (A Is b)
             Exit Function
         End If
     End If
 
-    If IsArray(a) And IsArray(b) Then
-        Dim la As Long: la = UBound(a) - LBound(a) + 1
+    If IsArray(A) And IsArray(b) Then
+        Dim la As Long: la = UBound(A) - LBound(A) + 1
         Dim lb As Long: lb = UBound(b) - LBound(b) + 1
         If la <> lb Then GoTo notEqual
         Dim i As Long
-        For i = LBound(a) To UBound(a)
-            If Not DeepEqual(a(i), b(i)) Then GoTo notEqual
+        For i = LBound(A) To UBound(A)
+            If Not DeepEqual(A(i), b(i)) Then GoTo notEqual
         Next i
         DeepEqual = True
         Exit Function
     End If
 
     ' primitive comparison (numbers, strings, booleans)
-    If IsNull(a) And IsNull(b) Then
+    If IsNull(A) And IsNull(b) Then
         DeepEqual = True
         Exit Function
     End If
-    If IsEmpty(a) And IsEmpty(b) Then
+    If IsEmpty(A) And IsEmpty(b) Then
         DeepEqual = True
         Exit Function
     End If
-    If VarType(a) = VarType(b) Then
-        If VarType(a) = vbString Then
-            DeepEqual = (CStr(a) = CStr(b))
-        ElseIf (VarType(a) = vbDouble Or VarType(a) = vbSingle Or VarType(a) = vbInteger Or VarType(a) = vbLong Or VarType(a) = vbCurrency) Then
-            DeepEqual = (CDbl(a) = CDbl(b))
+    If VarType(A) = VarType(b) Then
+        If VarType(A) = vbString Then
+            DeepEqual = (CStr(A) = CStr(b))
+        ElseIf (VarType(A) = vbDouble Or VarType(A) = vbSingle Or VarType(A) = vbInteger Or VarType(A) = vbLong Or VarType(A) = vbCurrency) Then
+            DeepEqual = (CDbl(A) = CDbl(b))
         Else
-            DeepEqual = (a = b)
+            DeepEqual = (A = b)
         End If
         Exit Function
     Else
         ' try string compare fallback
-        DeepEqual = (CStr(a) = CStr(b))
+        DeepEqual = (CStr(A) = CStr(b))
         Exit Function
     End If
 
@@ -4158,14 +4409,14 @@ Private Sub WriteToContainer(ByRef calleeExpr As ASF_Map, ByRef progScope As ASF
     End Select
 End Sub
 ' QS_Compare: returns -1/0/1 using optional closure comparator; fallback to numeric/string compare
-Private Function QS_Compare(ByVal a As Variant, ByVal b As Variant, ByVal comp As Variant, ByVal hasComp As Boolean, ByVal thisVal As Variant) As Long
+Private Function QS_Compare(ByVal A As Variant, ByVal b As Variant, ByVal comp As Variant, ByVal hasComp As Boolean, ByVal thisVal As Variant) As Long
     On Error GoTo fallback_cmp
     Dim cres As Variant
     Dim tmpMapObj As ASF_Map
     
     If hasComp Then
         Dim args_cmp As New Collection
-        args_cmp.Add a
+        args_cmp.Add A
         args_cmp.Add b
         vAssignment tmpMapObj, comp
         vAssignment cres, CallClosure(tmpMapObj, args_cmp, thisVal)
@@ -4193,8 +4444,8 @@ Private Function QS_Compare(ByVal a As Variant, ByVal b As Variant, ByVal comp A
 fallback_cmp:
     err.Clear
     ' default comparator: numeric when possible, otherwise string compare
-    If IsNumeric(a) And IsNumeric(b) Then
-        Dim da As Double: da = CDbl(a)
+    If IsNumeric(A) And IsNumeric(b) Then
+        Dim da As Double: da = CDbl(A)
         Dim db As Double: db = CDbl(b)
         If da < db Then
             QS_Compare = -1
@@ -4204,7 +4455,7 @@ fallback_cmp:
             QS_Compare = 0
         End If
     Else
-        Dim sa As String: sa = CStr(a)
+        Dim sa As String: sa = CStr(A)
         Dim sb As String: sb = CStr(b)
         If sa < sb Then
             QS_Compare = -1
@@ -4323,6 +4574,233 @@ fallback_str:
         VM_StringReplacementText = CStr(replRaw)
     End If
 End Function
+
+' Expand replacement string using JS-like $ sequences:
+' $$ -> $
+' $& -> full match
+' $` -> prefix (text before match)
+' $' -> suffix (text after match)
+' $n or $nn -> nth capture (1-based). If not present -> empty string.
+Private Function VM_ExpandReplacementFromCapturesJS( _
+        ByVal caps As Collection, _
+        ByVal repl As String, _
+        ByVal original As String, _
+        ByVal matchStart As Long, _
+        ByVal matchEnd As Long) As String
+
+    Dim out As String: out = ""
+    Dim i As Long: i = 1
+    Dim Lr As Long: Lr = Len(repl)
+    Dim nCaps As Long: nCaps = 0
+    If Not (caps Is Nothing) Then nCaps = caps.count
+
+    Dim prefix As String: prefix = ""
+    Dim suffix As String: suffix = ""
+    If matchStart > 1 Then prefix = left$(original, matchStart - 1)
+    If matchEnd < Len(original) Then suffix = mid$(original, matchEnd + 1)
+
+    Do While i <= Lr
+        Dim ch As String: ch = mid$(repl, i, 1)
+        If ch = "$" And i < Lr Then
+            Dim nextCh As String: nextCh = mid$(repl, i + 1, 1)
+            Select Case nextCh
+                Case "$"
+                    out = out & "$"
+                    i = i + 2
+                Case "&"
+                    If nCaps >= 1 Then
+                        out = out & CStr(caps.item(1))
+                    End If
+                    i = i + 2
+                Case "`"
+                    out = out & prefix
+                    i = i + 2
+                Case "'"
+                    out = out & suffix
+                    i = i + 2
+                Case "0" To "9"
+                    ' parse up to two digits (JS supports $1..$99)
+                    Dim j As Long: j = i + 1
+                    Dim numStr As String: numStr = ""
+                    Do While j <= Lr And Len(numStr) < 2 And mid$(repl, j, 1) >= "0" And mid$(repl, j, 1) <= "9"
+                        numStr = numStr & mid$(repl, j, 1)
+                        j = j + 1
+                    Loop
+                    If numStr <> "" Then
+                        Dim idx As Long: idx = CLng(numStr)
+                        ' JS: $1 maps to capture group 1 (caps.Item(2) in our caps layout)
+                        If idx >= 1 And idx <= (nCaps - 1) Then
+                            out = out & CStr(caps.item(idx + 1))
+                        Else
+                            ' unknown group -> empty string
+                            out = out & vbNullString
+                        End If
+                        i = i + 1 + Len(numStr)
+                    Else
+                        ' single $ followed by non-digit (shouldn't reach here)
+                        out = out & "$": i = i + 1
+                    End If
+                Case Else
+                    ' Not a recognized sequence -> keep literal $
+                    out = out & "$"
+                    i = i + 1
+            End Select
+        Else
+            out = out & ch
+            i = i + 1
+        End If
+    Loop
+
+    VM_ExpandReplacementFromCapturesJS = out
+End Function
+
+
+' Convert a Collection of captures -> 1-based VBA array (full match then groups)
+Private Function VM_CapturesToArray(ByVal caps As Collection) As Variant
+    If caps Is Nothing Then
+        VM_CapturesToArray = Array()
+        Exit Function
+    End If
+    Dim n As Long: n = caps.count
+    Dim arr() As Variant: ReDim arr(1 To n)
+    Dim i As Long
+    For i = 1 To n
+        arr(i) = caps.item(i)
+    Next i
+    VM_CapturesToArray = arr
+End Function
+
+' Parse a JS-like /pattern/flags string into pattern and flags
+Private Sub VM_ParseSlashRegex(ByVal reSrc As String, ByRef outPattern As String, ByRef outFlags As String)
+    outPattern = ""
+    outFlags = ""
+    If Len(reSrc) < 2 Then Exit Sub
+    If left$(reSrc, 1) <> "/" Then Exit Sub
+    Dim lastSlash As Long: lastSlash = InStrRev(reSrc, "/")
+    If lastSlash <= 1 Then Exit Sub
+    outPattern = mid$(reSrc, 2, lastSlash - 2)
+    If lastSlash < Len(reSrc) Then outFlags = mid$(reSrc, lastSlash + 1)
+End Sub
+
+' Helper: test whether an evaluated search value is a slash-regex string
+Private Function VM_IsSlashRegexString(ByVal v As Variant) As Boolean
+    If Not (VarType(v) = vbString) Then VM_IsSlashRegexString = False: Exit Function
+    If Len(CStr(v)) >= 2 And left$(CStr(v), 1) = "/" And InStrRev(CStr(v), "/") > 1 Then
+        VM_IsSlashRegexString = True
+    Else
+        VM_IsSlashRegexString = False
+    End If
+End Function
+' Convert a Collection of captures (caps) to a Variant containing a 1-D VBA array.
+' - If caps Is Nothing -> returns Empty
+' - If caps.Count = 0 -> returns a Variant containing an empty array (Array())
+' - If any element is a Collection, conversion recurses producing nested arrays.
+Private Function RegexCapsToVariantArray(ByVal caps As Collection) As Variant
+    If caps Is Nothing Then
+        RegexCapsToVariantArray = Empty
+        Exit Function
+    End If
+
+    Dim n As Long: n = caps.count
+    If n = 0 Then
+        RegexCapsToVariantArray = Array() ' empty array inside Variant
+        Exit Function
+    End If
+
+    Dim out() As Variant
+    ReDim out(0 To n - 1)
+
+    Dim i As Long
+    For i = 1 To n
+        Dim v As Variant: v = caps.item(i)
+        If IsObject(v) Then
+            On Error Resume Next
+            Dim tn As String: tn = TypeName(v)
+            On Error GoTo 0
+            If tn = "Collection" Then
+                out(i - 1) = RegexCapsToVariantArray(v) ' recursive
+            Else
+                out(i - 1) = v
+            End If
+        Else
+            out(i - 1) = v
+        End If
+    Next i
+
+    RegexCapsToVariantArray = out
+End Function
+
+' Convert a collection-of-captures (e.g. matchAll result: Collection of Collections)
+' into a Variant containing a 1-D array of 1-D arrays (or nested arrays).
+' Returns Empty when matches Is Nothing.
+Private Function RegexMatchesToVariantArray(ByVal matches As Collection) As Variant
+    If matches Is Nothing Then
+        RegexMatchesToVariantArray = Empty
+        Exit Function
+    End If
+
+    Dim m As Long: m = matches.count
+    If m = 0 Then
+        RegexMatchesToVariantArray = Array()
+        Exit Function
+    End If
+
+    Dim out() As Variant
+    ReDim out(0 To m - 1)
+
+    Dim i As Long
+    For i = 1 To m
+        Dim caps As Collection
+        Set caps = matches.item(i)
+        out(i - 1) = RegexCapsToVariantArray(caps)
+    Next i
+
+    RegexMatchesToVariantArray = out
+End Function
+
+' Convert captures to a string array (forces CStr for each capture; nested collections become nested string arrays).
+Private Function RegexCapsToStringArray(ByVal caps As Collection) As Variant
+    If caps Is Nothing Then
+        RegexCapsToStringArray = Empty
+        Exit Function
+    End If
+
+    Dim n As Long: n = caps.count
+    If n = 0 Then
+        RegexCapsToStringArray = Array()
+        Exit Function
+    End If
+
+    Dim out() As String
+    ReDim out(0 To n - 1)
+
+    Dim i As Long
+    For i = 1 To n
+        Dim v As Variant: v = caps.item(i)
+        If IsObject(v) Then
+            If TypeName(v) = "Collection" Then
+                ' nested collection -> convert to nested string array and store as Variant
+                Dim nested As Variant
+                nested = RegexCapsToStringArray(v)
+                ' we can't store an array in a String() direct; return a Variant array for caller
+                ' so fall back to RegexCapsToVariantArray if nested structure detected
+                RegexCapsToStringArray = RegexCapsToVariantArray(caps)
+                Exit Function
+            Else
+                out(i - 1) = CStr(v)
+            End If
+        ElseIf IsEmpty(v) Then
+            out(i - 1) = vbNullString
+        ElseIf IsNull(v) Then
+            out(i - 1) = "Null"
+        Else
+            out(i - 1) = CStr(v)
+        End If
+    Next i
+
+    RegexCapsToStringArray = out
+End Function
+
 ' ---------------------
 ' End VM class
 ' ---------------------

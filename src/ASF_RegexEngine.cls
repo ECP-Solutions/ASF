@@ -101,12 +101,12 @@ Private Function NodeExists(ByVal node As Collection, ByVal key As String) As Bo
 End Function
 
 ' ---------------- Public API -------------------------------------------
-Public Sub Init(ByVal pattern As String, Optional ByVal ignoreCase As Boolean = False, Optional ByVal maxSteps As Long = DEFAULT_MAX_STEPS, Optional ByVal multiline As Boolean = False, Optional ByVal dotAll As Boolean = False)
+Public Sub Init(ByVal pattern As String, Optional ByVal ignoreCase As Boolean = False, Optional ByVal MaxSteps As Long = DEFAULT_MAX_STEPS, Optional ByVal multiline As Boolean = False, Optional ByVal dotAll As Boolean = False)
     pPattern = pattern
     pIgnoreCase = ignoreCase
     pMultiline = multiline
     pDotAll = dotAll
-    If maxSteps <= 0 Then pMaxMatchSteps = DEFAULT_MAX_STEPS Else pMaxMatchSteps = maxSteps
+    If MaxSteps <= 0 Then pMaxMatchSteps = DEFAULT_MAX_STEPS Else pMaxMatchSteps = MaxSteps
 
     ' Build AST
     Set pAST = CompilePattern(pattern)
@@ -433,13 +433,24 @@ Private Function ParseSequence(ByVal pat As String, ByRef p As Long, ByVal pEnd 
     Set ParseSequence = seq
 End Function
 
-
 Private Function ParseEscapeNode(ByVal ch As String) As Collection
     Dim node As Collection
     Select Case ch
         Case "d": Set node = ParseClassFromSimple("[0-9]")
+        Case "D"
+            ' Non-digit escape: reuse the simple class and mark it negated
+            Set node = ParseClassFromSimple("[0-9]")
+            NodeAdd node, "neg", True
         Case "w": Set node = ParseClassFromSimple("[A-Za-z0-9_]")
+        Case "W"
+            ' Non-word
+            Set node = ParseClassFromSimple("[A-Za-z0-9_]")
+            NodeAdd node, "neg", True
         Case "s": Set node = ParseClassFromSimple("[ " & vbTab & vbLf & vbCr & "]")
+        Case "S"
+            ' Non-space
+            Set node = ParseClassFromSimple("[ " & vbTab & vbLf & vbCr & "]")
+            NodeAdd node, "neg", True
         Case "n": Set node = NewNode("lit"): NodeAdd node, "ch", vbLf
         Case "r": Set node = NewNode("lit"): NodeAdd node, "ch", vbCr
         Case "t": Set node = NewNode("lit"): NodeAdd node, "ch", vbTab
@@ -447,6 +458,7 @@ Private Function ParseEscapeNode(ByVal ch As String) As Collection
     End Select
     Set ParseEscapeNode = node
 End Function
+
 
 ' Parse class and build a 256-byte boolean map for quick matching (ASCII fast-path)
 Private Function ParseClass(ByVal pat As String, ByVal pStart As Long, ByVal pEnd As Long) As Collection
@@ -1801,4 +1813,28 @@ Private Sub DetectUnsupportedCommentSyntax(ByVal pat As String)
 ContinueLoop:
     Next i
 End Sub
+
+' Escape a string so it can be used as a literal regex pattern.
+' Escapes the common regex metacharacters: \ . ^ $ * + ? ( ) [ ] { } | /
+Public Function Escape(ByVal aInput As String) As String
+    Dim specials As String
+    specials = "\.^$*+?()[]{}|/"
+
+    Dim outStr As String: outStr = ""
+    Dim i As Long, ch As String
+
+    For i = 1 To Len(aInput)
+        ch = mid$(aInput, i, 1)
+        If InStr(1, specials, ch, vbBinaryCompare) > 0 Then
+            outStr = outStr & "\" & ch
+        Else
+            If i = 1 Then
+                outStr = outStr & "\" & ch
+            Else
+                outStr = outStr & ch
+            End If
+        End If
+    Next i
+    Escape = outStr
+End Function
 
