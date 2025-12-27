@@ -1,7 +1,7 @@
 
 # ASF — API Reference
 
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/ECP-Solutions/ASF?style=plastic)](https://github.com/ECP-Solutions/ASF/releases/latest) [![Tests](https://img.shields.io/badge/tests-85%2B-green.svg)](.)  
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/ECP-Solutions/ASF?style=plastic)](https://github.com/ECP-Solutions/ASF/releases/latest) [![Tests](https://img.shields.io/badge/tests-200%2B-green.svg)](.)  
 
 This document describes the runtime API exposed by ASF scripts and the VM builtins/methods available to scripts. It summarizes semantics, signatures, error behavior, and examples.
 
@@ -13,9 +13,10 @@ This document describes the runtime API exposed by ASF scripts and the VM builti
 - Globals and program entry
 - Value model
 - Builtin global functions
-- Array methods (exposed as properties)
+- Array and String methods (exposed as properties)
 - Object methods / member behavior
 - [VBA Expressions](https://github.com/ECP-Solutions/VBA-Expressions) integration
+- Regex Object
 - Error & truthiness rules
 - Examples & usage patterns
 
@@ -61,8 +62,10 @@ These are callable as top-level functions or via the helper bridge; some are als
 - `clone(value)` — deep clone for arrays and objects.
 - `IsArray(x)` — returns `true` if `x` is an array.
 - `IsNumeric(x)` — returns `true` if `x` is numeric. 
+- `forEach(arr, fn)` — executes the provided function once for each array element. This method returns the original array, doesn't behave like the javascript alternative.
+- `Regex(pattern?, ignoreCase?, multiline?, dotAll?)` — regex Object constructor. If all arguments are omitted, the regex Object will not initialized. If one argument is given, this is considered the `pattern`; if two arguments are given, `pattern` and `ignoreCase` flag will be set; if three arguments are given, `pattern`, `ignoreCase` and `multiline` flags will be set; when all arguments are givem, also the `dotAll` is set. 
 
-> Many other helpers exist in the VM implementation; these are the main named builtins surfaced for scripts.
+> Those are the current named builtins surfaced for scripts.
 
 ---
 
@@ -168,6 +171,236 @@ Below is a compact table (name — signature — brief behavior — example):
 
 - `with(index, value)`  
   - Returns a shallow copy with `value` set at `index` (non-mutating).
+  
+---
+
+## string methods (exposed as properties — e.g. `str.toLowercase`)
+
+All string indexing in ASF is **zero-based**. String methods that accept negative indexes treat them as offset from the end (like JavaScript `.slice()` / `.at()`).
+
+> Templates and regex patterns must be enclosed by the backtick character "\`".
+
+### Instance methods (call on a string value, e.g. 'hello'.method(...))
+- `length` — `str.length` — Number of UTF-16 code units in the string (like JS `length`). — `'abc'.length -> 3`
+
+- `at(index)` — `str.at(index)` — Return character at `index`. Supports negative indexes (e.g. `-1` is last char). Returns `''` for out-of-range. — `'abc'.at(1) -> 'b'`, `'abc'.at(-1) -> 'c'`
+
+- `charAt(index)` — `str.charAt(index)` — Same as `at(index)` (returns single-character string or `''`). — `'abc'.charAt(2) -> 'c'`
+
+- `charCodeAt(index)` — `str.charCodeAt(index)` — Returns numeric UTF-16 code of character at `index`. If out-of-range returns `Empty` (or implementation-defined numeric error). — `'A'.charCodeAt(0) -> 65`
+
+- `concat(...items)` — `str.concat(item1, item2, ...)` — Return new string by concatenating `str` with provided values (non-strings are coerced). Does **not** mutate. — `'a'.concat('b', 3) -> 'ab3'`
+
+- `endsWith(search, pos?)` — `str.endsWith(search[, length])` — Tests whether string ends with `search` (optionally considering only up to `length` characters). Returns boolean. — `'abc'.endsWith('c') -> True`
+
+- `includes(sub)` — `str.includes(sub)` — `True` if `sub` appears anywhere in `str`. — `'abc'.includes('b') -> True`
+
+- `indexOf(search, pos?)` — `str.indexOf(search[, fromIndex])` — Index of first occurrence; returns `-1` when not found. Negative `fromIndex` treated as `0`. — `'banana'.indexOf('na') -> 2`
+
+- `lastIndexOf(search, pos?)` — `str.lastIndexOf(search[, fromIndex])` — Index of last occurrence <= `fromIndex`. Returns `-1` if none. — `'banana'.lastIndexOf('na') -> 4`
+
+- `localeCompare(other)` — `str.localeCompare(other)` — simple VBA based implementation, does not behave like javascript: returns negative, 0, or positive number like JS. — `'a'.localeCompare('b') -> -1`
+
+- `match(patternOrSlashRegex)` — `str.match(pattern)` — Works two ways:
+  - If `pattern` is a slash-regex string `'/pat/flags'` or a regex object, behaves like JS `match`.
+    - If `g` flag **present** (global), returns an array of **strings** (just the matches; groups ignored).
+    - If `g` flag **absent**, returns an array-like collection: `[fullMatch, group1, group2, ...]` (or `Empty` if no match).
+  - If `pattern` is a plain string, the first occurrence is returned in the array as full match (no groups).
+  - Example: 
+			```js
+			'a1b2'.match(`/\\d/`) /*-> ['1', ...groups? none]*/; 'a1b2'.match(`/\\d/g`) //-> ['1','2']
+			```
+
+- `matchAll(patternOrSlashRegex)` — `str.matchAll(pattern)` — JS-like behavior:
+  - **Requires** the `g` (global) flag on regex (throw/raise error at runtime if omitted).
+  - Returns an array of matches (strings) for global matches (no groups). If you need groups, use `ExecAll` or `regex` object methods.
+  - Example: 
+			```js
+			'a1b2'.matchAll(`/\\d/g`) /*-> ['1','2']*/; 'a1b2'.matchAll(`/\\d/`) // -> **error**
+			```
+
+- `padEnd(targetLength, padString?)` — `str.padEnd(len[, pad])` — Pads on the right to `len` using `pad` (defaults to space). Returns new string. — `'a'.padEnd(3,'-') -> 'a--'`
+
+- `padStart(targetLength, padString?)` — `str.padStart(len[, pad])` — Pads on the left. — `'a'.padStart(3,'0') -> '00a'`
+
+- `repeat(count)` — `str.repeat(count)` — Returns repeated string `count` times. `count` must be non-negative integer. — `'ab'.repeat(2) -> 'abab'`
+
+- `replace(searchValue, replaceValue)` — `str.replace(search, repl)` — Replaces **first** match when `search` is a string, or behavior depends on regex flags:
+  - `search` may be a plain string (literal) or a slash-regex string `'/pattern/flags'` or a regex object.
+  - `replaceValue` may be a string or a function/closure. If string, supports `$`-expansions:
+    - `$&` — full match
+    - `$n` — numbered capture `$1..$99`
+    - ``$` `` — left context (text before match)
+    - `$'` — right context (text after match)
+    - `$$` — literal `$`
+  - If `replaceValue` is a closure/map, it is invoked as `callback(match, p1, p2, ..., offset, originalString)` and its return coerced to string (complex values pretty-printed).
+  - `offset` is **zero-based** (consistent with JavaScript).
+  - Example: 
+			```js
+			'a1b'.replace(`/(\\d)/`, fun(m,p,off,s){ return '[' & p & ']'}) // -> 'a[1]b'
+			```
+
+- `replaceAll(searchValue, replaceValue)` — `str.replaceAll(search, repl)` — Same as `replace` but replaces **all** matches. Accepts slash-regex `g` or will do global if called as `replaceAll` (or if regex flag `g` present). Function replacement, `$` expansions supported. Safeguards for zero-length matches (engine advances one char to avoid infinite loops).
+
+- `slice(start?, end?)` — `str.slice(start?, end?)` — Extracts substring from `start` up to (but not including) `end`. Supports negative indices counted from end. Non-mutating. — `'abcdef'.slice(1,4) -> 'bcd'`
+
+- `split(separator?, limit?)` — `str.split(sep, limit?)` — If `sep` is a slash-regex string or regex object, uses the regex engine (honors `g`/flags). If `sep` is `''`, split into characters. Returns array. `limit` optional. — `'a,b;c'.split('/[;,]/') -> ['a','b','c']`
+
+- `startsWith(search, pos?)` — `str.startsWith(search[, pos])` — Tests whether `str` starts with `search` at optional `pos`. Returns boolean. — `'abc'.startsWith('b',1) -> True`
+
+- `substring(start?, end?)` — `str.substring(start?, end?)` — Returns substring between `start` and `end`. Negative values are treated as `0`. If `start> end` they are swapped (JS behavior). — `'abcd'.substring(2,1) -> 'bc'`
+
+- `toLowercase()` — `str.toLowercase()` — Return lowercased string. (Name: `toLowercase` per ASF naming.) — `'ABC'.toLowercase() -> 'abc'`
+
+- `toUppercase()` — `str.toUppercase()` — Return uppercased string. — `'abc'.toUppercase() -> 'ABC'`
+
+- `trim()` — `str.trim()` — Removes whitespace from both ends. — `'  hi  '.trim() -> 'hi'`
+
+- `trimStart()` — `str.trimStart()` — Removes leading whitespace. — `'  hi'.trimStart() -> 'hi'`
+
+- `trimEnd()` — `str.trimEnd()` — Removes trailing whitespace. — `'hi  '.trimEnd() -> 'hi'`
+
+- `toString()` — `str.toString()` — Identity/primitive string representation. — `('x').toString() -> 'x'`
+
+- `valueOf()` — `str.valueOf()` — Returns primitive string value (alias of `toString`). — `'x'.valueOf() -> 'x'`
+
+---
+
+## Regex Object API
+ASF provides a **native regex engine** exposed through the `regex()` constructor and slash-regex syntax.
+  
+Regex objects are **stateful**, configurable, and reusable, and integrate seamlessly with string methods like `match`, `replace`, `split`, etc.
+
+### Execution & Matching
+- `exec(subject)`
+	- `regex.exec(subject)`
+	- Executes the regex on `subject` and returns **full match + capture groups** as an array.
+	- Returns `Empty` if no match.
+	- Equivalent to JS `RegExp.prototype.exec` (non-global).
+	- Example:
+		```js
+		regex(`(a)(b)`).exec('xab')
+		// -> ['ab', 'a', 'b']
+		```
+- `execAt(subject, position)`
+	- `regex.execAt(subject, pos)`
+	- Attempts a match starting **exactly at** `pos` (1-based index).
+	- Returns full match + groups or `Empty`.
+	- Useful for scanners and parsers.
+	- Example:
+		```js
+		r = regex(`\\d+`)
+		r.execAt('a123', 2)
+		// -> ['123']
+		```
+- `execAll(subject)`
+	- `regex.execAll(subject)`
+	- Returns **all matches** as an array.
+	- Each element is the **full match string only** (groups ignored).
+	- Equivalent to JS global matching.
+	- Example:
+		```js
+		regex(`\\d+`).execAll('a1b22c333')
+		// -> ['1', '22', '333']
+		```
+- `test(subject)`
+	- `regex.test(subject)`
+	- Returns `True` if the regex matches anywhere in `subject`, `False` otherwise.
+	- Example:
+		```js
+		regex(`\d`).test('abc1')
+		// -> True
+		```
+### Replacement & Splitting
+- `replace(subject, replacement)`
+	- `regex.replace(subject, replacement)`
+	- Replaces **all matches** in `subject`.
+	- `replacement` is a string.
+	- Supports `$` expansions:
+		- `$0` full match
+		- `$1..$99` capture groups
+	- Example:
+		```js
+		regex(`(\d+)`).replace('a12b', '[$1]')
+		// -> 'a[12]b'
+		```
+- `split(subject)`
+	- `regex.split(subject)`
+	- Splits the string using the regex as delimiter.
+	- Returns an array of substrings.
+	- Safely handles zero-length matches.
+	- Example:
+		```js
+		regex(`[,;\s]+`).split('apple,orange;banana grape')
+		// -> ['apple','orange','banana','grape']
+		```
+### Utility
+- `escape(text)`
+	- `regex.escape(text)`
+	- Escapes **all regex meta-characters** in `text`.
+	- Safe for building literal patterns dynamically.
+	- Example:
+		```js
+		regex().escape('a+b*c?')
+		// -> '\a\+b\*c\?'
+		```
+### Configuration Methods (Getters / Setters)
+Regex objects are **mutable** and configurable at runtime.
+
+**Pattern**
+- `getPattern()`
+	- Returns the current regex pattern string.
+	- Example: `r.getPattern()`
+- `setPattern(pattern)`
+	- Sets a new pattern (does not reset flags).
+	- Example: 
+		```js
+		r.setPattern(`\d+`)
+		```
+**Flags**
+- `getIgnoreCase()` / `setIgnoreCase(value)`
+	- Controls case-insensitive matching (`i` flag).
+	- Example:
+		```js
+		r.setIgnoreCase(true)
+		```
+- `getMultiline()` / `setMultiline(value)`
+	- Enables multiline mode (`m` flag).
+	- `^` and `$` match line boundaries.
+	- Example:
+		```js
+		r.setMultiline(true)
+		```
+- `getDotAll()` / `setDotAll(value)`
+	- Enables dotAll mode (`s` flag).
+	- `.` matches newline characters.
+	- Example:
+		```js
+		r.setDotAll(true)
+		```
+**Execution Control**
+- `getMaxMatchSteps()` / `setMaxMatchSteps(value)`
+	- Limits internal backtracking steps.
+	- Prevents catastrophic regex behavior.
+	- Example:
+		```js
+		r.setMaxMatchSteps(50000)
+		```
+**Initialization Helper**
+- `init(pattern, ignoreCase?, multiline?, dotAll?)`
+	- Reinitializes the regex object safely.
+	- Returns `True` on success, `False` on error.
+	- Example:
+		```js
+		r.init(`\w+`, true, true, false)
+		```
+---
+
+## String Templates
+
+- Templates are an special type of strings holding expressions and literals: `<literal>${<expression>}<literal>?`.
+- Each `${...}` block is captured as an expression exactly as typed respecting escaping rules inside.
+- The tokenizer allows escape this chars for string Templates: "\`", "/", "\\", "$", "{", "}"
 
 ---
 
@@ -224,4 +457,10 @@ print(from([1,2,3], fun(x,i,arr){ return x + i })); // -> [1,3,5]
 // sort with comparator
 a = [3,1,2];
 a.sort(fun(a,b){ return a - b });
+
+// Advanced replacements
+fun replacer(match, p1, p2, p3, offset, string)
+	{return [p1, p2, p3].join(' - ');};
+newString = 'abc12345#$*%'.replace(`/(\D*)(\d*)(\W*)/`, replacer);
+print(newString);
 ```
