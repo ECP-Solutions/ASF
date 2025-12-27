@@ -104,7 +104,7 @@ Private Function ExecuteStmtNode(node As ASF_Map, progScope As ASF_ScopeStack) A
             Exit Function
 
         Case "ExprStmt"
-            Dim res As Variant: res = EvalExprNode(node.GetValue("expr"), progScope)
+            Dim res As Variant: vAssignment res, EvalExprNode(node.GetValue("expr"), progScope)
             ExecuteStmtNode = ""
             Exit Function
 
@@ -2131,6 +2131,9 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                             Case "exec"
                                 tmpResult = RegexCapsToVariantArray(baseValLocal.Exec(CStr(evaluated(1))))
                                 GoTo exitfun
+                            Case "execall"
+                                tmpResult = RegexMatchesToVariantArray(baseValLocal.ExecAll(CStr(evaluated(1))))
+                                GoTo exitfun
                             Case "execat"
                                 tmpResult = RegexCapsToVariantArray(baseValLocal.ExecAt(CStr(evaluated(1)), CLng(evaluated(2))))
                                 GoTo exitfun
@@ -2156,8 +2159,35 @@ init_Return:
 init_Error_Handler:
                                 tmpResult = False
                                 Resume init_Return
-                            Case "pattern"
+                            Case "getpattern"
                                 tmpResult = baseValLocal.pattern
+                                GoTo exitfun
+                            Case "setpattern"
+                                baseValLocal.pattern = CStr(evaluated(1))
+                                GoTo exitfun
+                            Case "getdotall"
+                                tmpResult = baseValLocal.dotAll
+                                GoTo exitfun
+                            Case "setdotall"
+                                baseValLocal.dotAll = CBool(evaluated(1))
+                                GoTo exitfun
+                            Case "getignorecase"
+                                tmpResult = baseValLocal.ignoreCase
+                                GoTo exitfun
+                            Case "setignorecase"
+                                baseValLocal.ignoreCase = CBool(evaluated(1))
+                                GoTo exitfun
+                            Case "getmaxmatchsteps"
+                                tmpResult = baseValLocal.MaxMatchSteps
+                                GoTo exitfun
+                            Case "setmaxmatchsteps"
+                                baseValLocal.MaxMatchSteps = CLng(evaluated(1))
+                                GoTo exitfun
+                            Case "getmultiline"
+                                tmpResult = baseValLocal.multiline
+                                GoTo exitfun
+                            Case "setmultiline"
+                                baseValLocal.multiline = CBool(evaluated(1))
                                 GoTo exitfun
                             Case "replace"
                                 tmpResult = baseValLocal.Replace(CStr(evaluated(1)), CStr(evaluated(2)))
@@ -2272,7 +2302,7 @@ init_Error_Handler:
                                 If Not isSlashRegex Then
                                     ' treat as plain string -> match: if exact match return array [full] else Nothing / empty
                                     If propN = "matchall" Then
-                                        Dim matchesList() As Variant: ReDim matchesList(1 To 0)
+                                        Dim matchesList() As Variant: ReDim matchesList(1 To 1)
                                         ' naive: find all occurrences of the literal substring
                                         Dim startAt2 As Long: startAt2 = 1
                                         foundIdx = 0
@@ -2297,23 +2327,78 @@ init_Error_Handler:
                                         GoTo exitfun
                                     End If
                                 Else
-                                    ' regex path
                                     Dim pat2 As String, f2 As String
                                     VM_ParseSlashRegex CStr(searchArg), pat2, f2
                                     Dim fi_i As Boolean: fi_i = (InStr(f2, "i") > 0)
                                     Dim fi_m As Boolean: fi_m = (InStr(f2, "m") > 0)
                                     Dim fi_s As Boolean: fi_s = (InStr(f2, "s") > 0)
                                     Dim fi_g As Boolean: fi_g = (InStr(f2, "g") > 0)
-                            
+                                    
                                     Dim r2 As New ASF_RegexEngine
                                     r2.Init pat2, fi_i, GLOBALS_.re.MaxMatchSteps, fi_m, fi_s
-                            
-                                    If LCase$(propN) = "matchall" Or fi_g Then
-                                        ' produce an array of simple matches (string) for global
-                                        Dim outMatches() As Variant: ReDim outMatches(1 To 0)
+                                    
+                                    ' If caller asked for matchAll method
+                                    If LCase$(propN) = "matchall" Then
+                                        ' matchAll requires global flag
+                                        If Not fi_g Then
+                                            err.Raise vbObjectError + 102, "VM", "matchAll requires the 'g' flag on the regular expression"
+                                        End If
+                                    
+                                        ' Collect full match + groups arrays for every non-overlapping match
+                                        Dim resultsColl As New Collection
+                                        Dim sPosA As Long: sPosA = 1
+                                        Dim Lsrc As Long: Lsrc = Len(sourceStr)
+                                        Do While sPosA <= Lsrc
+                                            Dim capsA As Collection
+                                            Dim tryStartA As Long
+                                            Dim foundAtA As Long: foundAtA = 0
+                                            For tryStartA = sPosA To Lsrc
+                                                Set capsA = r2.ExecAt(sourceStr, tryStartA)
+                                                If Not (capsA Is Nothing) Then
+                                                    foundAtA = tryStartA
+                                                    Exit For
+                                                End If
+                                            Next tryStartA
+                                    
+                                            If foundAtA = 0 Then Exit Do
+                                    
+                                            ' Append full match + groups as an array
+                                            resultsColl.Add VM_CapturesToArray(capsA)
+                                    
+                                            Dim fullMatchA As String: fullMatchA = CStr(capsA.item(1))
+                                            Dim fLenA As Long: fLenA = Len(fullMatchA)
+                                            If fLenA = 0 Then
+                                                sPosA = IIf(foundAtA + 1 > Lsrc, Lsrc + 1, foundAtA + 1)
+                                            Else
+                                                sPosA = foundAtA + fLenA
+                                            End If
+                                        Loop
+                                    
+                                        If resultsColl.count = 0 Then
+                                            tmpResult = Empty
+                                        Else
+                                            ' convert Collection-of-arrays to a Variant() array for caller
+                                            Dim outArrA() As Variant
+                                            Dim iA As Long: iA = 0
+                                            Dim itA As Variant
+                                            For Each itA In resultsColl
+                                                iA = iA + 1
+                                                ReDim Preserve outArrA(1 To iA)
+                                                outArrA(iA) = itA
+                                            Next itA
+                                            tmpResult = outArrA
+                                        End If
+                                        GoTo exitfun
+                                    End If
+                                    
+                                    ' Caller did not ask matchAll; determine global (g) behavior
+                                    If fi_g Then
+                                        ' Global match: return array of full-match strings, groups ignored
+                                        Dim outMatches() As Variant
                                         Dim sPos As Long: sPos = 1
-                                        Dim idxOut As Long: idxOut = 0
                                         Dim L2 As Long: L2 = Len(sourceStr)
+                                        Dim idxOut As Long: idxOut = 0
+                                    
                                         Do While sPos <= L2
                                             Dim caps2 As Collection
                                             Dim sTry As Long
@@ -2321,24 +2406,33 @@ init_Error_Handler:
                                             For sTry = sPos To L2
                                                 Set caps2 = r2.ExecAt(sourceStr, sTry)
                                                 If Not (caps2 Is Nothing) Then
-                                                    foundAt2 = sTry: Exit For
+                                                    foundAt2 = sTry
+                                                    Exit For
                                                 End If
                                             Next sTry
+                                    
                                             If foundAt2 = 0 Then Exit Do
+                                    
                                             idxOut = idxOut + 1
                                             ReDim Preserve outMatches(1 To idxOut)
                                             outMatches(idxOut) = CStr(caps2.item(1))
-                                            Dim fLen As Long: fLen = Len(caps2.item(1))
+                                    
+                                            Dim fLen As Long: fLen = Len(outMatches(idxOut))
                                             If fLen = 0 Then
-                                                sPos = sPos + 1
+                                                sPos = IIf(foundAt2 + 1 > L2, L2 + 1, foundAt2 + 1)
                                             Else
                                                 sPos = foundAt2 + fLen
                                             End If
                                         Loop
-                                        tmpResult = outMatches
+                                    
+                                        If idxOut = 0 Then
+                                            tmpResult = Empty
+                                        Else
+                                            tmpResult = outMatches
+                                        End If
                                         GoTo exitfun
                                     Else
-                                        ' non-global: return array of full match + groups (like JS match)
+                                        ' Non-global match: return first full match + groups (array), like JS String.prototype.match without g
                                         Dim caps3 As Collection
                                         Set caps3 = r2.Exec(sourceStr)
                                         If caps3 Is Nothing Then
@@ -2831,6 +2925,9 @@ namedFunctions:
                 End If
                 If nameLcase = "regex" Then
                     Set tmpResult = New ASF_RegexEngine
+                    If evaluated.count Then
+                        tmpResult.Init CStr(evaluated(1))
+                    End If
                     GoTo exitfun
                 End If
                 ' --- end builtins ---

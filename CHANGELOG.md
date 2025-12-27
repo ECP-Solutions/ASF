@@ -2,6 +2,49 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [v1.0.6] - 2025-12-27
+https://github.com/ECP-Solutions/ASF/releases/tag/v1.0.6
+
+## Summary
+
+ASF v1.0.6 now features a powerful native regular expression engine and a large set of JavaScript-style string methods — bringing JavaScript-like text processing and template literals natively to ASF scripts.
+
+---
+
+## Highlights
+
+-  **Added** 
+    - Native regex engine with support for:
+		- Anchors, character classes and ranges, escapes (`\d`, `\D`, `\w`, `\s`, etc.).
+		- Greedy / lazy / **possessive** quantifiers and **atomic groups**.
+		- Lookaheads (`(?=...)`, `(?!...)`) and **fixed-width lookbehinds** (`(?<=...)`, `(?<!...)`) with compile-time rejection of variable-width lookbehind expressions.
+		- Nested groups, captures and safe pretty-printing of capture results.
+		- `RegExp.escape()` functionality (escape an arbitrary string to be used as a literal pattern).
+    - **JS-like String API** methods implemented as ASF builtins:  
+		- `replace`/`replaceAll` support both string and function replacement, and accept `/pattern/flags` slash-regex strings (flags: `g`, `i`, `m`, `s`). Function replacements receive `(match, p1...pn, offset, originalString)` — offset is zero-based.
+		```js
+		fun replacer(match, p1, p2, p3, offset, string){return [p1,p2,p3].join(' - ');} 
+		newString = 'abc12345#$*%'.replace('/(\\D*)(\\d*)(\\W*)/g', replacer);
+		```
+- **Internal core change**:
+	- Parser & compiler:
+		- String templates (backtick syntax) with `${...}` placeholders:
+			- Full expression support inside `${...}`; nested `${...}` supported.
+			- Literal parts preserve escaped characters (outside placeholders): `\` escapes "\`", "/", "\".
+			- Literal parts preserve escaped characters (inside placeholders): `\` **also** escapes `$`, `{`, `}`.
+			- Examples:
+			```js
+			a='Happy! '; return(`I feel ${a.repeat(3)}`);
+			// -> Outputs 'I feel Happy! Happy! Happy! '
+			```
+		- Template tokenizer replaced with a robust `ParseTemplatePartsFromString` that emits a `Collection` of `Array("LITERAL", text)` and `Array("EXPR", text)` parts — each `${...}` is captured as an `EXPR` exactly as typed respecting escaping rules inside.
+		- Recursive-descent expression parser improved so parenthesized expressions consume and allow postfix chaining (member calls, indexing, function calls) after the closing `)`.
+- **Fixed**: 
+	- Template tokenizer: fixed duplicated literal pieces, correct handling of nested ${...} and escaped characters inside literal parts.
+
+---
+**Full Changelog**: https://github.com/ECP-Solutions/ASF/compare/v1.0.5...v1.0.6
+
 ## [v1.0.5] - 2025-12-21
 https://github.com/ECP-Solutions/ASF/releases/tag/v1.0.5
 

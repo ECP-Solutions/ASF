@@ -1396,7 +1396,7 @@ Private Function ComputeMinLen(ByVal node As Collection) As Long
     End Select
 End Function
 
-' ---------------- Public Exec / Replace / Split ---------------------------
+' ---------------- Public Exec / ExecAll / Replace / Split ---------------------------
 ' Exec: find first match anywhere (respects ^ anchor and multiline semantics)
 Public Function Exec(ByVal subj As String) As Collection
     CurSubject = subj
@@ -1445,6 +1445,112 @@ Public Function Exec(ByVal subj As String) As Collection
         If MatchSteps > pMaxMatchSteps Then err.Raise vbObjectError + 1, "RegexEngine", "Match aborted: too many steps"
     Next i
     Set Exec = Nothing
+End Function
+
+' ExecAll: find all non-overlapping matches anywhere in subject
+' Returns a Collection where each item is a Collection of captures (same structure as BuildCaptureCollection)
+Public Function ExecAll(ByVal subj As String) As Collection
+    CurSubject = subj
+    MatchSteps = 0
+
+    If DEBUG_TRACE Then Debug.Print "TRACE ExecAll start subjLen=" & Len(subj) & " anchoredStart=" & CStr(NodeGet(pAST, "anchoredStart")) & " minLen=" & CStr(NodeGet(pAST, "minLen"))
+
+    Dim anchoredStart As Boolean: anchoredStart = NodeGet(pAST, "anchoredStart")
+    Dim L As Long: L = Len(subj)
+    Dim minLen As Long: minLen = NodeGet(pAST, "minLen")
+
+    Dim results As New Collection
+
+    ' --- anchored-start behaviour ---
+    If anchoredStart Then
+        If pMultiline Then
+            ' Try only positions that are start-of-string or immediately after CR/LF
+            Dim tryPos As Long
+            For tryPos = 1 To L
+                If tryPos = 1 Or SafeMid(subj, tryPos - 1, 1) = vbLf Or SafeMid(subj, tryPos - 1, 1) = vbCr Then
+                    If DEBUG_TRACE Then Debug.Print "TRACE ExecAll trying anchored pos=" & tryPos
+                    If Not (ExecAt(subj, tryPos) Is Nothing) Then
+                        ' execAt returns captures in engine globals; BuildCaptureCollection wraps them
+                        Dim matchColl As Collection
+                        Set matchColl = BuildCaptureCollection()
+                        results.Add matchColl
+                        If DEBUG_TRACE Then Debug.Print "TRACE ExecAll anchored matched at " & tryPos & " matchLen=" & (CLng(capsEnd(0)) - CLng(capsStart(0)) + 1)
+                        ' For anchored-start we continue scanning other anchored positions (do not skip to match end)
+                    End If
+                End If
+                If MatchSteps > pMaxMatchSteps Then err.Raise vbObjectError + 1, "RegexEngine", "Match aborted: too many steps"
+            Next tryPos
+
+            If results.count = 0 Then
+                Set ExecAll = Nothing
+            Else
+                Set ExecAll = results
+            End If
+            Exit Function
+
+        Else
+            ' anchored at beginning only
+            If DEBUG_TRACE Then Debug.Print "TRACE ExecAll trying anchored pos=1"
+            If ExecAt(subj, 1) Is Nothing Then
+                Set ExecAll = Nothing
+            Else
+                Dim firstColl As Collection
+                Set firstColl = BuildCaptureCollection()
+                results.Add firstColl
+                Set ExecAll = results
+            End If
+            Exit Function
+        End If
+    End If
+
+    ' --- non-anchored behaviour: scan start positions up to startLimit ---
+    Dim startLimit As Long
+    If minLen > 0 Then startLimit = L - minLen + 1 Else startLimit = L
+    If startLimit < 1 Then startLimit = 1
+
+    Dim pos As Long: pos = 1
+    Do While pos <= startLimit
+        If DEBUG_TRACE Then Debug.Print "TRACE ExecAll trying pos=" & pos & " (startLimit=" & startLimit & ")"
+        If Not (ExecAt(subj, pos) Is Nothing) Then
+            ' match found at pos; Build collection of captures and add
+            Dim col As Collection
+            Set col = BuildCaptureCollection()
+            results.Add col
+
+            ' compute match start/end and length from caps
+            Dim mstart As Long: mstart = CLng(capsStart(0))
+            Dim mend As Long: mend = CLng(capsEnd(0))
+            Dim matchLen As Long: matchLen = mend - mstart + 1
+
+            If DEBUG_TRACE Then Debug.Print "TRACE ExecAll matched at pos=" & pos & " mstart=" & mstart & " mend=" & mend & " len=" & matchLen
+
+            ' guard mstart not before pos
+            If mstart < pos Then mstart = pos
+
+            ' Advance pos after the matched text (non-overlapping)
+            If matchLen <= 0 Then
+                ' zero-length match, advance at least one to avoid infinite loop
+                pos = pos + 1
+            Else
+                pos = mend + 1
+            End If
+
+            ' recompute startLimit if minLen depends on subject length (not necessary here but safe)
+            If minLen > 0 Then startLimit = L - minLen + 1 Else startLimit = L
+            If startLimit < 1 Then startLimit = 1
+        Else
+            ' no match at this start -> advance to next start position
+            pos = pos + 1
+        End If
+
+        If MatchSteps > pMaxMatchSteps Then err.Raise vbObjectError + 1, "RegexEngine", "Match aborted: too many steps"
+    Loop
+
+    If results.count = 0 Then
+        Set ExecAll = Nothing
+    Else
+        Set ExecAll = results
+    End If
 End Function
 
 ' ExecAt: try to match body at absolute position startPos. Returns Collection (captures filled) or Nothing
@@ -1514,52 +1620,130 @@ Public Function ExecAt(ByVal subj As String, ByVal startPos As Long) As Collecti
     End If
 End Function
 
-' Replace and Split now use ExecAt to avoid SafeMid/InStr double-work
 Public Function Replace(ByVal subj As String, ByVal replacement As String) As String
     Dim out As String: out = ""
     Dim pos As Long: pos = 1
     Dim L As Long: L = Len(subj)
+    Dim foundAt As Long
+    Dim cs As Collection
+    Dim startTry As Long
+    Dim mstart As Long
+    Dim mend As Long
+    Dim matchLen As Long
+
+    ' Fast path: empty subject
+    If L = 0 Then
+        Replace = ""
+        Exit Function
+    End If
+
     Do
-        Dim cs As Collection
-        Set cs = ExecAt(subj, pos)
-        If cs Is Nothing Then
+        foundAt = 0
+
+        ' Scan forward to locate the next match by trying ExecAt at increasing start positions
+        For startTry = pos To L
+            Set cs = ExecAt(subj, startTry)
+            If Not (cs Is Nothing) Then
+                foundAt = startTry
+                Exit For
+            End If
+        Next startTry
+
+        If foundAt = 0 Then
+            ' no more matches -> append remainder and finish
             out = out & SafeMid(subj, pos)
             Exit Do
         Else
-            Dim mstart As Long: mstart = capsStart(0)
-            Dim mend As Long: mend = capsEnd(0)
+            mstart = CLng(capsStart(0))
+            mend = CLng(capsEnd(0))
+
+            ' ensure mstart is not before current pos (some engines set capture positions differently)
             If mstart < pos Then mstart = pos
-            out = out & SafeMid(subj, pos, mstart - pos)
+
+            ' append portion before the match (may be empty)
+            If mstart > pos Then
+                out = out & SafeMid(subj, pos, mstart - pos)
+            End If
+
+            ' expand replacement using your helper (ExpandReplacement)
             out = out & ExpandReplacement(cs, replacement)
-            pos = mend + 1
-            If pos > L Then Exit Do
+
+            ' advance position after the matched substring
+            matchLen = mend - mstart + 1
+            If matchLen <= 0 Then
+                ' zero-length match: advance by one to avoid infinite loop
+                If foundAt + 1 > L Then
+                    pos = L + 1
+                Else
+                    pos = foundAt + 1
+                End If
+            Else
+                pos = mend + 1
+            End If
+
+            ' if we've consumed the whole subject, append empty tail and exit
+            If pos > L Then
+                out = out & "" ' explicit - nothing to append
+                Exit Do
+            End If
         End If
     Loop
+
     Replace = out
 End Function
+
 
 Public Function Split(ByVal subj As String) As Collection
     Dim res As New Collection
     Dim pos As Long: pos = 1
     Dim L As Long: L = Len(subj)
+    Dim foundAt As Long
+    Dim cs As Collection
+    Dim startTry As Long
+    Dim mstart As Long
+    Dim mend As Long
+    Dim matchLen As Long
+    
     Do
-        Dim cs As Collection
-        Set cs = ExecAt(subj, pos)
-        If cs Is Nothing Then
+        foundAt = 0
+
+        ' Scan forward to locate next match (try ExecAt at increasing start positions)
+        For startTry = pos To L
+            Set cs = ExecAt(subj, startTry)
+            If Not (cs Is Nothing) Then
+                foundAt = startTry
+                Exit For
+            End If
+        Next startTry
+
+        If foundAt = 0 Then
+            ' no more matches -> append remainder and finish
             res.Add SafeMid(subj, pos)
             Exit Do
         Else
-            Dim mstart As Long: mstart = capsStart(0)
-            Dim mend As Long: mend = capsEnd(0)
+            mstart = CLng(capsStart(0))
+            mend = CLng(capsEnd(0))
+
+            ' ensure mstart is not before current pos
             If mstart < pos Then mstart = pos
             res.Add SafeMid(subj, pos, mstart - pos)
-            pos = mend + 1
+            ' advance position after the matched separator
+            matchLen = mend - mstart + 1
+            If matchLen <= 0 Then
+                ' zero-length match: advance by one to avoid infinite loop
+                pos = IIf(foundAt + 1 > L, L + 1, foundAt + 1)
+            Else
+                pos = mend + 1
+            End If
+
+            ' if we've consumed the whole subject, append empty tail
             If pos > L Then
                 res.Add ""
                 Exit Do
             End If
         End If
     Loop
+
     Set Split = res
 End Function
 

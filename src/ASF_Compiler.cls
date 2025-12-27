@@ -1033,10 +1033,29 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
             Dim rawS As String: rawS = CStr(v)
             ' If this is a template (backtick-wrapped), compile it into a Template AST node
             If Len(rawS) >= 2 And left$(rawS, 1) = "`" And right$(rawS, 1) = "`" Then
-                Dim tplNode As ASF_Map
-                Set tplNode = ParseTemplateStringToNode(rawS)
+                ' Template string -> build Template AST with parts
+                Dim tplParts As Collection
+                Set tplParts = ParseTemplatePartsFromString(rawS)
+        
+                Dim partsNodes As New Collection
+                Dim pi As Long
+                For pi = 1 To tplParts.count
+                    Dim p As Variant: p = tplParts(pi)
+                    If p(0) = "LITERAL" Then
+                        Dim litNode As ASF_Map: Set litNode = MakeNode("Literal")
+                        litNode.SetValue "value", p(1)
+                        partsNodes.Add litNode
+                    ElseIf p(0) = "EXPR" Then
+                        Dim exprNode As ASF_Map
+                        Set exprNode = ParseExprFromStringToNode(CStr(p(1)))
+                        partsNodes.Add exprNode
+                    End If
+                Next pi
+        
+                Dim tnode As ASF_Map: Set tnode = MakeNode("Template")
+                tnode.SetValue "parts", partsNodes
+                Set ParsePrimaryNode = tnode
                 idx = idx + 1
-                Set ParsePrimaryNode = tplNode.Clone
                 Exit Function
             Else
                 Dim sNode As ASF_Map: Set sNode = MakeNode("Literal")
@@ -2747,6 +2766,155 @@ PT_continue:
     Dim tnode As ASF_Map: Set tnode = MakeNode("Template")
     tnode.SetValue "parts", parts
     Set ParseTemplateStringToNode = tnode
+End Function
+
+' ---------- Template parts parser ----------
+' Input: tokenStr is the raw token text starting with backtick, e.g. "`/${regobj.escape(name)}/g`"
+' Output: Collection of Array("LITERAL", text) or Array("EXPR", text)
+Private Function ParseTemplatePartsFromString(ByVal tokenStr As String) As Collection
+    Dim parts As New Collection
+    If Len(tokenStr) = 0 Then
+        Set ParseTemplatePartsFromString = parts
+        Exit Function
+    End If
+    If mid$(tokenStr, 1, 1) <> "`" Then
+        parts.Add Array("LITERAL", tokenStr)
+        Set ParseTemplatePartsFromString = parts: Exit Function
+    End If
+
+    Dim i As Long: i = 2 ' start after opening backtick
+    Dim Ls As Long: Ls = Len(tokenStr)
+    Dim curLit As String: curLit = ""
+    Dim ch As String
+    Dim nx As String
+    Dim curExpr As String
+    Dim depth As Long
+    Dim c2 As String
+    Dim escapedChar As String
+    
+    Do While i <= Ls
+        ch = mid$(tokenStr, i, 1)
+
+        ' Backslash escapes in template literal (outside ${}): unescape `, /, \, $, {, }
+        If ch = "\" Then
+            nx = mid$(tokenStr, i + 1, 1)
+            Select Case nx
+                Case "`", "/", "\", "$", "{", "}"
+                    curLit = curLit & nx
+                    i = i + 2
+                Case Else
+                    ' keep the backslash as-is if it doesn't precede a recognized escape
+                    curLit = curLit & ch
+                    i = i + 1
+            End Select
+            GoTo ContinueMainLoop
+        End If
+
+        ' Placeholder start ${ ... }
+        If ch = "$" And i < Ls And mid$(tokenStr, i + 1, 1) = "{" Then
+            ' flush current literal (outside placeholders)
+            If Len(curLit) > 0 Then
+                parts.Add Array("LITERAL", curLit)
+                curLit = ""
+            End If
+
+            ' consume "${"
+            i = i + 2
+
+            ' Collect placeholder content with escaping and nested-${} support.
+            ' semantics:
+            '  - backslash inside placeholder escapes the next char if equal to '{' or '$' or '}'
+            '  - unescaped "${" starts a nested split: flush current expr (if any) and start collecting nested
+            '  - unescaped "}" closes the *current* placeholder chunk and the collected text is added as an EXPR
+            curExpr = ""
+            depth = 1
+
+            Do While i <= Ls And depth > 0
+                c2 = mid$(tokenStr, i, 1)
+
+                ' escaped char inside placeholder -> take next char literally
+                If c2 = "\" Then
+                    If i < Ls Then
+                        escapedChar = mid$(tokenStr, i + 1, 1)
+                        ' append the escaped character verbatim into the current expr buffer
+                        Select Case escapedChar
+                            Case "$", "{", "}"
+                                curExpr = curExpr & escapedChar
+                                i = i + 2
+                            Case Else
+                                'literal "\"
+                                curExpr = curExpr & c2
+                                i = i + 1
+                        End Select
+                    Else
+                        ' trailing backslash => keep it
+                        curExpr = curExpr & c2
+                        i = i + 1
+                    End If
+                    GoTo ContinuePlaceholderLoop
+                End If
+
+                ' nested unescaped ${ -> split: flush current expr (if any) and continue with a fresh expr for nested part
+                If c2 = "$" And i < Ls And mid$(tokenStr, i + 1, 1) = "{" Then
+                    If Len(curExpr) > 0 Then
+                        parts.Add Array("EXPR", curExpr)
+                        curExpr = ""
+                    End If
+                    ' consume nested "${" and increase depth
+                    depth = depth + 1
+                    i = i + 2
+                    GoTo ContinuePlaceholderLoop
+                End If
+
+                ' unescaped '}' closes current placeholder level
+                If c2 = "}" Then
+                    ' consume closing brace
+                    i = i + 1
+                    depth = depth - 1
+                    ' only add non-empty expression fragments
+                    If Len(curExpr) > 0 Then
+                        parts.Add Array("EXPR", curExpr)
+                        curExpr = ""
+                    End If
+                    ' if depth > 0 we continue collecting outer-level remainder into a new expr (will be added later or at another close)
+                    GoTo ContinuePlaceholderLoop
+                End If
+
+                ' any other char inside placeholder: append literally
+                curExpr = curExpr & c2
+                i = i + 1
+
+ContinuePlaceholderLoop:
+            Loop
+
+            ' If the placeholder wasn't properly closed (unterminated), treat whatever collected as an EXPR
+            If Len(curExpr) > 0 Then
+                parts.Add Array("EXPR", curExpr)
+                curExpr = ""
+            End If
+
+            ' continue scanning main template loop
+            GoTo ContinueMainLoop
+        End If
+
+        ' closing backtick ends template (outside any placeholder)
+        If ch = "`" Then
+            If Len(curLit) > 0 Then parts.Add Array("LITERAL", curLit): curLit = ""
+            i = i + 1 ' consume closing backtick
+            Exit Do
+        End If
+
+        ' normal literal char (outside placeholder)
+        curLit = curLit & ch
+        i = i + 1
+
+ContinueMainLoop:
+    Loop
+
+    ' leftover (unterminated) literal
+    If Len(curLit) > 0 Then parts.Add Array("LITERAL", curLit)
+
+    Set ParseTemplatePartsFromString = parts
 End Function
 
 ' ---------------------

@@ -2097,3 +2097,227 @@ TestFail:
     Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
+
+'@TestMethod("regex_replace_from_string_object")
+Private Sub regex_replace_from_string_object()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return('I think my Dog is cuter than your dog!'.replace(`/dog/i`, 'cat'));"))
+    expected = "I think my cat is cuter than your dog!"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex_replacer_function_from_string_object")
+Private Sub regex_replacer_function_from_string_object()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("fun replacer(match, p1, p2, p3, offset, string)" & _
+                                "{return [p1, p2, p3].join(' - ');};" & _
+                            "newString = 'abc12345#$*%'.replace(`/(\D*)(\d*)(\W*)/`, replacer);" & _
+                            "return(newString);"))
+    expected = "abc - 12345 - #$*%"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex_replace_using_placeholders_from_string_object")
+Private Sub regex_replace_using_placeholders_from_string_object()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return('Maria Cruz'.replace(`/(\w+)\s(\w+)/`, '$2, $1'));"))
+    expected = "Cruz, Maria"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex_editing_matches_from_string_object")
+Private Sub regex_editing_matches_from_string_object()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("fun styleHyphenFormat(propertyName) {" & _
+                                "upperToHyphenLower = fun(match, offset, string) {" & _
+                                    "return (offset > 0 ? ' - ' : '') + match.toLowerCase();" & _
+                                "};" & _
+                            "return propertyName.replace(`/[A-Z]/g`, upperToHyphenLower);" & _
+                            "}; return(styleHyphenFormat('borderTop'));"))
+    expected = "border - top"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex_replace_using_templates_from_string_object")
+Private Sub regex_replace_using_templates_from_string_object()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("fun superSafeRedactName(text, name) {" & _
+                                "return text.replaceAll(`/${regex().escape(name)}/g`, '[REDACTED]');" & _
+                            "};" & _
+                            "report = 'A hacker called acke breached the system.';" & _
+                            "return(superSafeRedactName(report, 'acke')); /* 'A h[REDACTED]r called [REDACTED] breached the system.'*/"))
+    expected = "A h[REDACTED]r called [REDACTED] breached the system."
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex_match_global_from_string_object")
+Private Sub regex_match_from_string_object()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "print('test1test2'.match(`/t(e)(st(\d?))/`));", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 'test1', 'e', 'st1', '1' ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex_match_global_from_string_object")
+Private Sub regex_match_global_from_string_object()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "print('test1test2'.match(`/t(e)(st(\d?))/g`));", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 'test1', 'test2' ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex_matchall_from_string_object")
+Private Sub regex_matchall_from_string_object()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "print('test1test2'.matchAll(`/t(e)(st(\d?))/g`));", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ [ 'test1', 'e', 'st1', '1' ], [ 'test2', 'e', 'st2', '2' ] ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex_object_constructor")
+Private Sub regex_object_constructor()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("re=regex(); return(typeOf(re));"))
+    expected = "object"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex_object_execute_method")
+Private Sub regex_object_execute_method()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "re=regex(); re.init(`(\D*)(\d*)(\W*)`); print(re.exec('abc12345#$*%'));", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 'abc12345#$*%', 'abc', '12345', '#$*%' ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex_object_replace_method")
+Private Sub regex_object_replace_method()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("re=regex(); re.init(`(foo)(bar)`); return(re.replace('foobar', '$2-$1'));"))
+    expected = "bar-foo"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex_object_split_method")
+Private Sub regex_object_split_method()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "re=regex(); re.init(`[,;\.\s]+`); print(re.split('apple,orange;banana grape.strawberry'));", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 'apple', 'orange', 'banana', 'grape', 'strawberry' ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex_object_executeAll_method")
+Private Sub regex_object_executeAll_method()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "re=regex(); re.init(`[,;\.\s]+`); print(re.ExecAll('apple,orange;banana grape.strawberry'));", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ [ ',' ], [ ';' ], [ ' ' ], [ '.' ] ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex_object_set_flag_property")
+Private Sub regex_object_test_method_with_flag_property()
+    On Error GoTo TestFail
+    actual = CBool(GetResult("re=regex(); re.init(`[a-z]`); re.setignorecase(False); return(re.Test('A'));"))
+    expected = False
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub

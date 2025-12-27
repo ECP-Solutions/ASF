@@ -17,6 +17,7 @@ This project provides a production-proven compiler and VM plus a complete test-s
 - **Seamless bridge** between VBA codebases and modern scripting paradigms.
 - **No external runtime** — runs on top of VBA using a compact AST interpreter.
 - **Powerful features** not found in any other VBA tool: shared-write closures, expression-level anonymous functions, nested arrays & objects, array helpers, VBExpressions integration, method chaining, and more.
+- **Native regex engine** a pure VBA class module that supports lookarounds, multiline, atomic groups, back reference replace method with placeholders, non-capturing groups and more!.
 - **Tested** — the comprehensive [Rubberduck](https://github.com/rubberduck-vba/Rubberduck)  test-suite passes across arithmetic, flow control, functions, closures, array/object manipulation and builtin methods.
 - **Unmatched expressiveness:** Implement complex logic with concise scripts and enrich them with heavyweight VBA code.
 - **Safe interoperability:** Delegate numeric and domain-specific work to your existing VBA functions via `@(...)`, we already have [VBA-expressions](https://github.com/ECP-Solutions/VBA-Expressions) embedded!
@@ -33,6 +34,7 @@ This project provides a production-proven compiler and VM plus a complete test-s
 - First-class functions + anonymous functions + closures.
 - Control flow: `if` / `elseif` / `else`, `for`, `while`, `switch`, `try/catch`, `break` / `continue`.
 - Map / Filter / Reduce / Slice / Push / Pop as array methods
+- indexOf / Pad* / Repeat / Replace / Match and many more string object methods
 - Builtin helpers: `range`, `flatten`, `clone`, `IsArray`, `IsNumeric`, etc.
 - Method chaining: `a.filter(...).reduce(...)`
 - `print(...)` convenience for quick debugging.
@@ -145,11 +147,20 @@ m = {a:1, b:2}; vals=[]; for (v of m) { vals.push(v) }; print(vals);
 // expect: [1,2]
 ```
 
+- Regex replace with helper function
+
+```js
+fun replacer(match, p1, p2, p3, offset, string)
+    {return [p1, p2, p3].join(' - ');
+};
+newString = 'abc12345#$*%'.replace(`/(\D*)(\d*)(\W*)/`, replacer);
+print(newString); // --> 'abc - 12345 - #$*%'
+```
 ---
 
 ## Examples & Patterns
 
-Explore `examples/` (suggested) with scripts converting rules, workflows, or automation into ASF scripts. The test-suite provides dozens of ready-to-run scenarios.
+Explore [`examples/`](/examples/) (suggested) with scripts converting rules, workflows, or automation into ASF scripts. The test-suite provides dozens of ready-to-run scenarios.
 
 ---
 
