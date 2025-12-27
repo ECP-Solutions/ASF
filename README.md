@@ -166,7 +166,7 @@ Explore [`examples/`](/examples/) (suggested) with scripts converting rules, wor
 
 ## Running the Test Suite
 
-1. Import `tests/TestRunner.bas` Rubberduck test module, or open the `ASF v1.0.3.xlsm` workbook.
+1. Import `tests/TestRunner.bas` Rubberduck test module, or open the `ASF v1.0.6.xlsm` workbook.
 2. Ensure [`Rubberduck`](https://rubberduckvba.com/) add-in is available.
 3. Run the test module — all canonical tests should pass.
 
