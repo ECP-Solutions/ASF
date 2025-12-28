@@ -1103,6 +1103,28 @@ TestFail:
     Resume TestExit
 End Sub
 
+'@TestMethod("variables_injection")
+Private Sub variables_injection()
+    On Error GoTo TestFail
+    Dim engine As ASF
+    Dim pidx As Long
+
+    Set engine = New ASF
+    With engine
+        .InjectVariable "a", Array(1, 2, 3)
+        pidx = .Compile("s = 0; a.forEach(fun(x){ s = s + x }); return(s);")
+        .Run pidx
+        actual = CStr(.OUTPUT_)
+    End With
+    expected = "6"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
 '@TestMethod("foreach_passes_index_and_array")
 Private Sub foreach_passes_index_and_array()
     On Error GoTo TestFail
