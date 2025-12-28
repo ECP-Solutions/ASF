@@ -2265,7 +2265,7 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
     End If
     Dim expr As ASF_Map
     Dim left_ As ASF_Map
-    Dim A As ASF_Map
+    Dim a As ASF_Map
     Dim r As ASF_Map
     Dim newExpr As ASF_Map
     Dim ns As ASF_Map
@@ -2326,13 +2326,13 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
                         Set left_ = expr.GetValue("left")
                         If Not left_ Is Nothing Then
                             If IsAssignableNode(left_) Then
-                                A.Add "type", "Assign"
-                                A.SetValue "left", left_
+                                a.Add "type", "Assign"
+                                a.SetValue "left", left_
                                 ' right: normalize recursively as expression
                                 Set r = NormalizeExprNodeRecursive(expr.GetValue("right"))
                                 If r Is Nothing Then Set r = expr.GetValue("right")
-                                A.SetValue "right", r
-                                Set NormalizeNodeRecursive = A
+                                a.SetValue "right", r
+                                Set NormalizeNodeRecursive = a
                                 Exit Function
                             End If
                         End If

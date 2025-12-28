@@ -230,7 +230,7 @@ Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As
 ErrHandler:
     ' Preserve existing explicit map-access errors; convert other unexpected errors to Empty.
     If err.Number = (vbObjectError + 5007) Then
-        err.Raise err.Number, err.Source, err.Description
+        err.Raise err.Number, err.source, err.Description
     Else
         err.Clear
         vAssignment EvalMemberNode, Empty
@@ -711,13 +711,13 @@ Private Function ExecSwitchNode(node As ASF_Map, progScope As ASF_ScopeStack) As
     Dim switchVal As Variant: switchVal = EvalExprNode(node.GetValue("expr"), progScope)
     Dim cases As Collection: Set cases = node.GetValue("cases")
     Dim i As Long
-    Dim match As Boolean
+    Dim Match As Boolean
     For i = 1 To cases.count
         Dim pair As Collection: Set pair = cases(i)
         Dim caseExpr As ASF_Map: Set caseExpr = pair(1)
         Dim blockStmts As Collection: Set blockStmts = pair(2)
-        match = (EvalExprNode(caseExpr, progScope) = switchVal)
-        If match Then
+        Match = (EvalExprNode(caseExpr, progScope) = switchVal)
+        If Match Then
             Dim s As Long
             For s = 1 To blockStmts.count
                 Dim ctrl As String: ctrl = ExecuteStmtNode(blockStmts(s), progScope)
@@ -726,7 +726,7 @@ Private Function ExecSwitchNode(node As ASF_Map, progScope As ASF_ScopeStack) As
             Next s
         End If
     Next i
-    If Not match Then
+    If Not Match Then
         Dim defBlk As Collection: Set defBlk = node.GetValue("default")
         If Not defBlk Is Nothing Then
             Dim d As Long
@@ -2925,9 +2925,20 @@ namedFunctions:
                 End If
                 If nameLcase = "regex" Then
                     Set tmpResult = New ASF_RegexEngine
-                    If evaluated.count Then
-                        tmpResult.Init CStr(evaluated(1))
-                    End If
+                    Select Case evaluated.count
+                        Case 1
+                            ' pattern
+                            tmpResult.Init CStr(evaluated(1))
+                        Case Is <= 2
+                            ' pattern, ignoreCase
+                            tmpResult.Init CStr(evaluated(1)), CBool(evaluated(2))
+                        Case Is <= 3
+                            ' pattern, ignoreCase flag, multiline flag
+                            tmpResult.Init CStr(evaluated(1)), CBool(evaluated(2)), , CBool(evaluated(3))
+                        Case Is <= 4
+                            ' pattern, ignoreCase flag, multiline flag, dotAll flag
+                            tmpResult.Init CStr(evaluated(1)), CBool(evaluated(2)), , CBool(evaluated(3)), CBool(evaluated(4))
+                    End Select
                     GoTo exitfun
                 End If
                 ' --- end builtins ---
@@ -3121,21 +3132,21 @@ Private Function IsBoolean(ByRef expression As String) As Boolean
     If Not IsBoolean Then IsBoolean = (LCase(expression) = "false")
 End Function
 
-Private Function SafeAdd(A As Variant, b As Variant) As Variant
-    If IsNumeric(A) And IsNumeric(b) Then SafeAdd = A + b Else SafeAdd = CStr(A) & CStr(b)
+Private Function SafeAdd(a As Variant, b As Variant) As Variant
+    If IsNumeric(a) And IsNumeric(b) Then SafeAdd = a + b Else SafeAdd = CStr(a) & CStr(b)
 End Function
 
-Private Function lshift(A As Variant, b As Variant) As Variant 'a<<b
-    If IsNumeric(A) And IsNumeric(b) Then
-        lshift = Floor(Floor(A) * (2 ^ Abs(Floor(b))))
+Private Function lshift(a As Variant, b As Variant) As Variant 'a<<b
+    If IsNumeric(a) And IsNumeric(b) Then
+        lshift = Floor(Floor(a) * (2 ^ Abs(Floor(b))))
     Else
         Exit Function
     End If
 End Function
 
-Private Function rshift(A As Variant, b As Variant) As Variant 'a>>b
-    If IsNumeric(A) And IsNumeric(b) Then
-        rshift = Floor(Floor(A) / (2 ^ Abs(Floor(b))))
+Private Function rshift(a As Variant, b As Variant) As Variant 'a>>b
+    If IsNumeric(a) And IsNumeric(b) Then
+        rshift = Floor(Floor(a) / (2 ^ Abs(Floor(b))))
     Else
         Exit Function
     End If
@@ -4213,7 +4224,7 @@ Private Function map_apply_recursive(value As Variant, mapper As ASF_Map, _
 
 ErrHandler:
     ' On mapper errors propagate as runtime error so calling code can handle (consistent with earlier semantics)
-    err.Raise err.Number, err.Source, err.Description
+    err.Raise err.Number, err.source, err.Description
 End Function
 
 Private Function builtin_typeof(v As Variant) As String
@@ -4321,62 +4332,62 @@ Private Function ListToArray(col As Collection, optBase As Long) As Variant
 End Function
 
 ' Deep equality for nested arrays and ASF_Map (objects)
-Private Function DeepEqual(A As Variant, b As Variant) As Boolean
+Private Function DeepEqual(a As Variant, b As Variant) As Boolean
     On Error GoTo notEqual
     ' same reference?
-    If IsObject(A) And IsObject(b) Then
-        If TypeName(A) = "ASF_Map" And TypeName(b) = "ASF_Map" Then
+    If IsObject(a) And IsObject(b) Then
+        If TypeName(a) = "ASF_Map" And TypeName(b) = "ASF_Map" Then
             ' compare keys count and values
-            Dim keysA As Collection: Set keysA = A.keys()
+            Dim keysA As Collection: Set keysA = a.keys()
             Dim keysB As Collection: Set keysB = b.keys()
             If keysA.count <> keysB.count Then GoTo notEqual
             Dim k As Variant
             For Each k In keysA
                 If Not b.Exists(CStr(k)) Then GoTo notEqual
-                If Not DeepEqual(A.GetValue(CStr(k)), b.GetValue(CStr(k))) Then GoTo notEqual
+                If Not DeepEqual(a.GetValue(CStr(k)), b.GetValue(CStr(k))) Then GoTo notEqual
             Next k
             DeepEqual = True
             Exit Function
         Else
             ' fallback to object reference equality
-            DeepEqual = (A Is b)
+            DeepEqual = (a Is b)
             Exit Function
         End If
     End If
 
-    If IsArray(A) And IsArray(b) Then
-        Dim la As Long: la = UBound(A) - LBound(A) + 1
+    If IsArray(a) And IsArray(b) Then
+        Dim la As Long: la = UBound(a) - LBound(a) + 1
         Dim lb As Long: lb = UBound(b) - LBound(b) + 1
         If la <> lb Then GoTo notEqual
         Dim i As Long
-        For i = LBound(A) To UBound(A)
-            If Not DeepEqual(A(i), b(i)) Then GoTo notEqual
+        For i = LBound(a) To UBound(a)
+            If Not DeepEqual(a(i), b(i)) Then GoTo notEqual
         Next i
         DeepEqual = True
         Exit Function
     End If
 
     ' primitive comparison (numbers, strings, booleans)
-    If IsNull(A) And IsNull(b) Then
+    If IsNull(a) And IsNull(b) Then
         DeepEqual = True
         Exit Function
     End If
-    If IsEmpty(A) And IsEmpty(b) Then
+    If IsEmpty(a) And IsEmpty(b) Then
         DeepEqual = True
         Exit Function
     End If
-    If VarType(A) = VarType(b) Then
-        If VarType(A) = vbString Then
-            DeepEqual = (CStr(A) = CStr(b))
-        ElseIf (VarType(A) = vbDouble Or VarType(A) = vbSingle Or VarType(A) = vbInteger Or VarType(A) = vbLong Or VarType(A) = vbCurrency) Then
-            DeepEqual = (CDbl(A) = CDbl(b))
+    If VarType(a) = VarType(b) Then
+        If VarType(a) = vbString Then
+            DeepEqual = (CStr(a) = CStr(b))
+        ElseIf (VarType(a) = vbDouble Or VarType(a) = vbSingle Or VarType(a) = vbInteger Or VarType(a) = vbLong Or VarType(a) = vbCurrency) Then
+            DeepEqual = (CDbl(a) = CDbl(b))
         Else
-            DeepEqual = (A = b)
+            DeepEqual = (a = b)
         End If
         Exit Function
     Else
         ' try string compare fallback
-        DeepEqual = (CStr(A) = CStr(b))
+        DeepEqual = (CStr(a) = CStr(b))
         Exit Function
     End If
 
@@ -4506,14 +4517,14 @@ Private Sub WriteToContainer(ByRef calleeExpr As ASF_Map, ByRef progScope As ASF
     End Select
 End Sub
 ' QS_Compare: returns -1/0/1 using optional closure comparator; fallback to numeric/string compare
-Private Function QS_Compare(ByVal A As Variant, ByVal b As Variant, ByVal comp As Variant, ByVal hasComp As Boolean, ByVal thisVal As Variant) As Long
+Private Function QS_Compare(ByVal a As Variant, ByVal b As Variant, ByVal comp As Variant, ByVal hasComp As Boolean, ByVal thisVal As Variant) As Long
     On Error GoTo fallback_cmp
     Dim cres As Variant
     Dim tmpMapObj As ASF_Map
     
     If hasComp Then
         Dim args_cmp As New Collection
-        args_cmp.Add A
+        args_cmp.Add a
         args_cmp.Add b
         vAssignment tmpMapObj, comp
         vAssignment cres, CallClosure(tmpMapObj, args_cmp, thisVal)
@@ -4541,8 +4552,8 @@ Private Function QS_Compare(ByVal A As Variant, ByVal b As Variant, ByVal comp A
 fallback_cmp:
     err.Clear
     ' default comparator: numeric when possible, otherwise string compare
-    If IsNumeric(A) And IsNumeric(b) Then
-        Dim da As Double: da = CDbl(A)
+    If IsNumeric(a) And IsNumeric(b) Then
+        Dim da As Double: da = CDbl(a)
         Dim db As Double: db = CDbl(b)
         If da < db Then
             QS_Compare = -1
@@ -4552,7 +4563,7 @@ fallback_cmp:
             QS_Compare = 0
         End If
     Else
-        Dim sa As String: sa = CStr(A)
+        Dim sa As String: sa = CStr(a)
         Dim sb As String: sb = CStr(b)
         If sa < sb Then
             QS_Compare = -1
