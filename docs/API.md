@@ -14,9 +14,9 @@ This document describes the runtime API exposed by ASF scripts and the VM builti
 - Value model
 - Builtin global functions
 - Array and String methods (exposed as properties)
+- Regex Object 
 - Object methods / member behavior
 - [VBA Expressions](https://github.com/ECP-Solutions/VBA-Expressions) integration
-- Regex Object
 - Error & truthiness rules
 - Examples & usage patterns
 
