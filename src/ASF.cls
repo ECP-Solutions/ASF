@@ -31,6 +31,9 @@ End Function
 Public Function SetGlobals(aGlobals As ASF_Globals)
     Set GLOBALS_ = aGlobals
 End Function
+Public Sub InjectVariable(varName As String, varValue As Variant)
+    VM_.InjectVariable varName, varValue
+End Sub
 Private Sub INIT_()
     Set GLOBALS_ = New ASF_Globals
     GLOBALS_.ASF_InitGlobals

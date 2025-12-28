@@ -17,12 +17,19 @@ Private Const VTP_MAX_ITEMS_INLINE As Long = 8 ' prefer inline for small contain
 Private VERBOSE_ As Boolean
 Private GLOBALS_ As ASF_Globals
 Private OUTPUT__ As Variant
+Private INJECTED_VARIABLES_ As Collection
 
 ' Executes AST nodes produced by Compiler (AST).
 ' Uses Map node types and ScopeStack. Logs to gRuntimeLog.
 
 Public Sub SetGlobals(aGlobals As ASF_Globals)
     Set GLOBALS_ = aGlobals
+End Sub
+Public Sub InjectVariable(varName As String, varValue As Variant)
+    If INJECTED_VARIABLES_ Is Nothing Then
+        Set INJECTED_VARIABLES_ = New Collection
+    End If
+    INJECTED_VARIABLES_.Add Array(varName, varValue)
 End Sub
 Public Property Get OUTPUT_() As Variant
     vAssignment OUTPUT_, OUTPUT__
@@ -53,6 +60,14 @@ Public Sub RunProgramByIndex(idx As Long)
     progScope.LoadRaw rawScope
 '    progScope.SetValue "__option_base", optionBase
     progScope.SetValue "__option_base", 1 'Enforce option base=1
+    
+    ' Variables injection
+    If Not INJECTED_VARIABLES_ Is Nothing Then
+        Dim elm As Variant
+        For Each elm In INJECTED_VARIABLES_
+            progScope.SetValue CStr(elm(LBound(elm))), elm(UBound(elm))
+        Next elm
+    End If
     progScope.Push
     If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "RUN Program: " & progName
     Dim i As Long
@@ -3417,9 +3432,9 @@ Private Function EvalVBExpressionWithScope(expr As String, progScope As ASF_Scop
              For Each key In keyCol
                  vAssignment tmpVal, m.GetValue(CStr(key))
                  If IsArray(tmpVal) Then
-                    .VarValue(CStr(key)) = .ArrayToString(tmpVal)
+                    .varValue(CStr(key)) = .ArrayToString(tmpVal)
                  Else
-                    .VarValue(CStr(key)) = CStr(tmpVal)
+                    .varValue(CStr(key)) = CStr(tmpVal)
                 End If
              Next key
          Next frame
