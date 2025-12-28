@@ -41,6 +41,7 @@ Attribute VB_Exposed = False
 '     + Performance: atomic groups and lookarounds use snapshots. Possessive quantifiers will
 '       often be faster (no backtracking), but atomic groups may make some matches irreversible.
 Option Explicit
+Option Base 0
 
 ' ---------------- Public config -----------------------------------------
 Private Const DEFAULT_MAX_STEPS As Long = 200000
@@ -1602,7 +1603,7 @@ Private Function ExpandReplacement(ByVal caps As Collection, ByVal repl As Strin
                         If Not IsMissing(namedColl) And Not namedColl Is Nothing Then
                             On Error Resume Next
                             If NodeExists(namedColl, nm) Then
-                                out = out & CStr(namedColl(nm))
+                                out = out & CStr(namedColl(nm)(1))
                             Else
                                 ' missing named capture yields empty string
                                 out = out & ""
@@ -2507,7 +2508,7 @@ Private Sub UpdateNamedCapturesFromAST()
                 End If
             End If
         End If
-        pNamedCaptures.Add val, gname
+        pNamedCaptures.Add (Array(gname, val)), gname
     Next i
 End Sub
 
