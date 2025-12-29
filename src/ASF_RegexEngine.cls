@@ -421,7 +421,7 @@ Private Function ParseSequence(pat As String, ByRef p As Long, pEnd As Long, _
                                         Next kch
                                         If Len(normFlags) > 0 Then
                                             NodeAdd gnodeF, "flags_on", normFlags
-                                            TraverseForFlags innerFlagged, normFlags
+                                            PropagateFlags innerFlagged, normFlags
                                         End If
                                         NodeAdd gnodeF, "child", innerFlagged
                                         Set node = gnodeF
@@ -535,6 +535,39 @@ Private Function ParseSequence(pat As String, ByRef p As Long, pEnd As Long, _
 
     Set ParseSequence = seq
 End Function
+
+Private Sub PropagateFlags(ByVal node As Variant, ByRef flags As String)
+    If node Is Nothing Then Exit Sub
+    On Error GoTo err_
+    
+    If TypeName(node) = "Collection" Then
+        Dim t As String
+        Dim elm As Variant
+        For Each elm In node
+            If TypeName(elm) = "Collection" Then
+                If NodeExists(elm, "type") Then t = NodeGet(elm, "type")
+                Select Case t
+                    Case "lit", "dot"
+                        Dim tmpNode As Collection
+                        Set tmpNode = elm
+                        NodeAdd tmpNode, "flags_on", flags
+                End Select
+                If NodeExists(elm, "child") Then
+                    PropagateFlags NodeGet(elm, "child"), flags
+                Else
+                    PropagateFlags elm, flags
+                End If
+            End If
+        Next elm
+    End If
+exit_:
+    Exit Sub
+err_:
+    ' Be defensive in production: clear error and continue (or rethrow in debug).
+    Debug.Print "PropagateFlags error: "; err.Number; err.Description
+    err.Clear
+    Resume exit_
+End Sub
 
 ' ---------- Helper: Find matching ] for a class starting at startPos (where pat[startPos] = "[") ----------
 Private Function FindClassEnd(ByVal pat As String, ByVal startPos As Long, ByVal pEnd As Long) As Long
@@ -797,38 +830,6 @@ err_:
     Resume exit_
 End Sub
 
-Private Sub TraverseForFlags(ByVal node As Variant, ByRef flags As String)
-    If node Is Nothing Then Exit Sub
-    On Error GoTo err_
-    
-    If TypeName(node) = "Collection" Then
-        Dim t As String
-        Dim elm As Variant
-        For Each elm In node
-            If TypeName(elm) = "Collection" Then
-                If NodeExists(elm, "type") Then t = NodeGet(elm, "type")
-                If t = "lit" Then
-                    Dim tmpCol As Collection
-                    Set tmpCol = elm
-                    NodeAdd tmpCol, "flags_on", flags
-                End If
-                If NodeExists(elm, "child") Then
-                    TraverseForFlags NodeGet(elm, "child"), flags
-                Else
-                    TraverseForFlags elm, flags
-                End If
-            End If
-        Next elm
-    End If
-exit_:
-    Exit Sub
-err_:
-    ' Be defensive in production: clear error and continue (or rethrow in debug).
-    Debug.Print "TraverseForFlags error: "; err.Number; err.Description
-    err.Clear
-    Resume exit_
-End Sub
-
 Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal pos As Long, Optional ByRef outEnd As Variant) As Boolean
     If DEBUG_TRACE Then Debug.Print "TRACE MatchNode ENTER type=" & CStr(NodeGet(node, "type")) & " pos=" & pos & " caps0=[" & capsStart(0) & "," & capsEnd(0) & "]"
     MatchSteps = MatchSteps + 1
@@ -837,7 +838,8 @@ Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal
     Dim t As String: t = CStr(NodeGet(node, "type"))
     Dim res As Boolean: res = False
     Dim localEnd As Variant: localEnd = Empty
-
+    Dim inlineFlags As String
+    
     Select Case t
         Case "seq"
             res = MatchSequence(NodeGet(node, "child"), subj, pos, localEnd)
@@ -848,7 +850,6 @@ Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal
             Else
                 Dim ch As String: ch = NodeGet(node, "ch")
                 Dim sc As String: sc = SafeMid(subj, pos, 1)
-                Dim inlineFlags As String
                 Dim iCase As Boolean
                 Dim tOffCase As Boolean
                 If pIgnoreCase Then
@@ -883,8 +884,15 @@ Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal
             If pos > Len(subj) Then
                 res = False
             Else
+                Dim dAll As Boolean
+                If NodeExists(node, "flags_on") Then
+                    inlineFlags = NodeGet(node, "flags_on")
+                    tOffCase = (InStrB(1, inlineFlags, "-s") > 0)
+                    dAll = InStrB(1, inlineFlags, "s") And (InStrB(1, inlineFlags, "-s") = 0)
+                End If
+                If pDotAll And tOffCase Then dAll = False
                 Dim dch As String: dch = SafeMid(subj, pos, 1)
-                If (dch = vbLf Or dch = vbCr) And Not pDotAll Then
+                If (dch = vbLf Or dch = vbCr) And Not dAll Then
                     res = False
                 Else
                     localEnd = pos: res = True
@@ -1860,6 +1868,9 @@ Private Function ComputeMinLen(ByVal node As Collection) As Long
         Case Else: ComputeMinLen = 0
     End Select
 End Function
+Private Function ReplaceNewLines(subj As String) As String
+    ReplaceNewLines = VBA.Replace(VBA.Replace(subj, "\n", vbLf), "\r", vbCr)
+End Function
 
 ' ---------------- Public Exec / ExecAll / Replace / Split ---------------------------
 ' Exec: find first match anywhere (respects ^ anchor and multiline semantics)
@@ -1870,7 +1881,8 @@ Public Function Exec(ByVal subj As String) As Collection
     Dim L As Long: L = Len(subj)
     Dim minLen As Long
     minLen = NodeGet(pAST, "minLen")
-
+    
+    subj = ReplaceNewLines(subj)
     ' Anchored start: if multiline, try positions that are start-of-string or immediately after a newline (CR or LF)
     If anchoredStart Then
         If pMultiline Then
