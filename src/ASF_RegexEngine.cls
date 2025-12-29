@@ -365,13 +365,13 @@ Private Function ParseSequence(pat As String, ByRef p As Long, pEnd As Long, _
                                 Else
                                     Dim condText As String: condText = mid$(pat, condStart, condEnd - condStart + 1)
                                     p = p + 1 ' consume ')'
-                                    Dim yesNode As Collection: Set yesNode = ParseSequence(pat, p, pEnd, groupCounter, True)
+                                    Dim yesNode As Collection: Set yesNode = ParseSequence(pat, p, foundClose - 1, groupCounter, True)
                                     Dim noNode As Collection: Set noNode = Nothing
                                     If p <= pEnd And SafeMid(pat, p, 1) = "|" Then
                                         p = p + 1
-                                        Set noNode = ParseSequence(pat, p, pEnd, groupCounter, True)
+                                        Set noNode = ParseSequence(pat, p, foundClose - 1, groupCounter, True)
                                     End If
-                                    If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
+                                    If foundClose <= pEnd Then p = foundClose + 1
                                     Dim condNode As Collection: Set condNode = newNode("cond")
                                     NodeAdd condNode, "cond", condText
                                     NodeAdd condNode, "yes", yesNode
@@ -413,14 +413,17 @@ Private Function ParseSequence(pat As String, ByRef p As Long, pEnd As Long, _
                                         Set innerFlagged = ParseSequence(pat, p, foundClose - 1, groupCounter)
                                         If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
                                         Dim gnodeF As Collection: Set gnodeF = newNode("group")
-                                        NodeAdd gnodeF, "child", innerFlagged
                                         Dim normFlags As String: normFlags = ""
                                         Dim kch As Long
                                         For kch = 1 To Len(flagsStr)
                                             Dim fc As String: fc = LCase$(mid$(flagsStr, kch, 1))
-                                            If fc = "i" Or fc = "m" Or fc = "s" Then normFlags = normFlags & fc
+                                            If fc = "i" Or fc = "m" Or fc = "s" Or fc = "-" Then normFlags = normFlags & fc
                                         Next kch
-                                        If Len(normFlags) > 0 Then NodeAdd gnodeF, "flags_on", normFlags
+                                        If Len(normFlags) > 0 Then
+                                            NodeAdd gnodeF, "flags_on", normFlags
+                                            TraverseForFlags innerFlagged, normFlags
+                                        End If
+                                        NodeAdd gnodeF, "child", innerFlagged
                                         Set node = gnodeF
                                     Else
                                         err.Raise vbObjectError + 101, "RegexEngine", "Inline flags without ':' are not supported at compile time (use (?i:...) for group-scoped flags)."
@@ -763,8 +766,7 @@ Private Function GetGroupCount(ByVal ast As Collection) As Long
     GetGroupCount = maxIdx
 End Function
 
-' Robust traversal for capturing maximum group index in an AST node tree.
-' Non-destructive; handles Collection and array nodes returned by NodeGet.
+' Deterministic traversal for capturing maximum group index in an AST node tree.
 Private Sub TraverseForGroups(ByVal node As Variant, ByRef maxIdx As Long)
     If node Is Nothing Then Exit Sub
     On Error GoTo err_
@@ -795,6 +797,38 @@ err_:
     Resume exit_
 End Sub
 
+Private Sub TraverseForFlags(ByVal node As Variant, ByRef flags As String)
+    If node Is Nothing Then Exit Sub
+    On Error GoTo err_
+    
+    If TypeName(node) = "Collection" Then
+        Dim t As String
+        Dim elm As Variant
+        For Each elm In node
+            If TypeName(elm) = "Collection" Then
+                If NodeExists(elm, "type") Then t = NodeGet(elm, "type")
+                If t = "lit" Then
+                    Dim tmpCol As Collection
+                    Set tmpCol = elm
+                    NodeAdd tmpCol, "flags_on", flags
+                End If
+                If NodeExists(elm, "child") Then
+                    TraverseForFlags NodeGet(elm, "child"), flags
+                Else
+                    TraverseForFlags elm, flags
+                End If
+            End If
+        Next elm
+    End If
+exit_:
+    Exit Sub
+err_:
+    ' Be defensive in production: clear error and continue (or rethrow in debug).
+    Debug.Print "TraverseForFlags error: "; err.Number; err.Description
+    err.Clear
+    Resume exit_
+End Sub
+
 Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal pos As Long, Optional ByRef outEnd As Variant) As Boolean
     If DEBUG_TRACE Then Debug.Print "TRACE MatchNode ENTER type=" & CStr(NodeGet(node, "type")) & " pos=" & pos & " caps0=[" & capsStart(0) & "," & capsEnd(0) & "]"
     MatchSteps = MatchSteps + 1
@@ -814,10 +848,34 @@ Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal
             Else
                 Dim ch As String: ch = NodeGet(node, "ch")
                 Dim sc As String: sc = SafeMid(subj, pos, 1)
+                Dim inlineFlags As String
+                Dim iCase As Boolean
+                Dim tOffCase As Boolean
                 If pIgnoreCase Then
-                    If LCase$(sc) = LCase$(ch) Then localEnd = pos: res = True
+                    'Inline flags
+                    If NodeExists(node, "flags_on") Then
+                        inlineFlags = NodeGet(node, "flags_on")
+                        tOffCase = InStrB(1, inlineFlags, "-i")
+                    End If
+                    If Not tOffCase Then
+                        If LCase$(sc) = LCase$(ch) Then localEnd = pos: res = True
+                    Else
+                        ' Case sentitive
+                        If sc = ch Then localEnd = pos: res = True
+                    End If
                 Else
-                    If sc = ch Then localEnd = pos: res = True
+                    If NodeExists(node, "flags_on") Then
+                        inlineFlags = NodeGet(node, "flags_on")
+                        iCase = InStrB(1, inlineFlags, "i") And (InStrB(1, inlineFlags, "-i") = 0)
+                        If iCase Then
+                            ' Case insensitive
+                            If LCase$(sc) = LCase$(ch) Then localEnd = pos: res = True
+                        Else
+                            If sc = ch Then localEnd = pos: res = True
+                        End If
+                    Else
+                        If sc = ch Then localEnd = pos: res = True
+                    End If
                 End If
             End If
 
@@ -839,12 +897,12 @@ Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal
             Else
                 If MatchCharClassNode(node, SafeMid(subj, pos, 1)) Then localEnd = pos: res = True
             End If
-
+        
         Case "group"
             ' Handle both capturing and non-capturing groups.
             Dim hasIdx As Boolean: hasIdx = NodeExists(node, "idx")
             Dim gidx As Long
-            If hasIdx Then gidx = CLng(NodeGet(node, "idx"))
+            If hasIdx Then gidx = CLng(NodeGet(node, "idx")) Else gidx = 0
 
             ' Support group-scoped inline flags (flags_on) during the child match.
             Dim flagsApplied As Boolean: flagsApplied = False
@@ -861,21 +919,22 @@ Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal
             End If
 
             Dim prevStart As Long, prevEnd As Long
-            If hasIdx Then
+            If gidx >= 1 Then
                 prevStart = capsStart(gidx)
                 prevEnd = capsEnd(gidx)
                 capsStart(gidx) = pos
+            Else
+                ' ensure prevStart/prevEnd have safe defaults (not used when gidx<1)
+                prevStart = 0: prevEnd = -1
             End If
 
             Dim childEnd As Variant
             If MatchNode(NodeGet(node, "child"), subj, pos, childEnd) Then
-                If hasIdx Then
-                    capsEnd(gidx) = CLng(childEnd)
-                End If
+                If gidx >= 1 Then capsEnd(gidx) = CLng(childEnd)
                 localEnd = childEnd
                 res = True
             Else
-                If hasIdx Then
+                If gidx >= 1 Then
                     capsStart(gidx) = prevStart
                     capsEnd(gidx) = prevEnd
                 End If
@@ -888,7 +947,7 @@ Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal
                 pMultiline = savedMultiline
                 pDotAll = savedDotAll
             End If
-
+        
         Case "alt"
             Dim altChild As Variant
             For Each altChild In NodeGet(node, "child")
@@ -1371,22 +1430,31 @@ ContinueFor:
             If DEBUG_TRACE Then Debug.Print "TRACE  quant exhausted all k options -> fail"
             RestoreCaps seqSnap
             MatchSequence = False: Exit Function
-
+            
         ElseIf nodeType = "group" Then
-            Dim gidx As Long: gidx = NodeGet(node, "idx")
-            If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " group idx=" & gidx & " set start=" & curPos
-            capsStart(gidx) = curPos
             Dim childEnd As Variant
+            Dim gidx As Long
+            ' guard: some group nodes may have idx=0 (non-capturing wrapper) — only touch capture arrays for idx>=1
+            If NodeExists(node, "idx") Then
+                gidx = CLng(NodeGet(node, "idx"))
+            Else
+                gidx = 0
+            End If
+
+            If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " group idx=" & gidx & " set start=" & curPos
+
+            If gidx >= 1 Then capsStart(gidx) = curPos
+
             If Not MatchNode(NodeGet(node, "child"), subj, curPos, childEnd) Then
                 If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " group FAILED, restoring seqSnap"
+                ' restore everything (seqSnap contains the capture arrays)
                 RestoreCaps seqSnap
                 MatchSequence = False: Exit Function
             Else
                 If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " group OK nodeEnd=" & childEnd
-                capsEnd(gidx) = childEnd
+                If gidx >= 1 Then capsEnd(gidx) = childEnd
                 curPos = CLng(childEnd) + 1
             End If
-
         Else
             If Not MatchNode(node, subj, curPos, nodeEnd) Then
                 If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " node FAILED, restoring seqSnap"
@@ -2231,7 +2299,7 @@ Private Sub AnnotateLookbehinds(ByVal node As Collection)
             For Each ch In NodeGet(node, "child")
                 AnnotateLookbehinds ch
             Next
-        Case "group", "atomic", "lookahead_pos", "lookahead_neg", "lookbehind_pos", "lookbehind_neg"
+        Case "group", "atomic", "lookahead_pos", "lookahead_neg", "lookbehind_pos", "lookbehind_neg", "recurse"
             If NodeExists(node, "child") Then
                 AnnotateLookbehinds NodeGet(node, "child")
             End If
