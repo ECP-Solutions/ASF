@@ -2512,16 +2512,14 @@ Private Function FindGroupIndexByName(ByVal ast As Collection, ByVal name As Str
     On Error GoTo ExitHere
     If Not NodeExists(ast, "groupNodes") Then Exit Function
     Dim gnodes As Collection: Set gnodes = NodeGet(ast, "groupNodes")
-
+    Dim LB As Long
+    
     Dim it As Variant
     For Each it In gnodes
-        If NodeExists(it, "name") Then
-            If CStr(NodeGet(it, "name")) = name Then
-                If NodeExists(it, "idx") Then
-                    FindGroupIndexByName = CLng(NodeGet(it, "idx"))
-                    Exit Function
-                End If
-            End If
+        LB = LBound(it)
+        If it(LB) = name Then
+            FindGroupIndexByName = CLng(it(LB + 1))
+            Exit Function
         End If
     Next it
 
