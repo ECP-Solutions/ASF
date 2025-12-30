@@ -1214,7 +1214,7 @@ Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal
             If targ = 0 Then
                 ' recurse into whole root AST (pAST)
                 Dim snapR() As Long: snapR = CopyCaps()
-                If MatchNode(pAST, subj, pos, recEnd) Then
+                If MatchNode(pAST(4), subj, pos, recEnd) Then
                     recOk = True: localEnd = recEnd
                 Else
                     RestoreCaps snapR: recOk = False
