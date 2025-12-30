@@ -1274,7 +1274,8 @@ End Function
 
 Private Function MatchSequence(ByVal children As Collection, ByVal subj As String, ByVal pos As Long, Optional ByRef outEnd As Variant) As Boolean
     If DEBUG_TRACE Then Debug.Print "TRACE MatchSequence start pos=" & pos & " children=" & children.count
-    Dim seqSnap() As Long: seqSnap = CopyCaps()
+    Dim seqSnap() As Long
+    Dim grpSnap() As Long
     Dim tmpSnaps() As Long
     Dim curPos As Long: curPos = pos
     Dim i As Long
@@ -1437,7 +1438,7 @@ Private Function MatchSequence(ByVal children As Collection, ByVal subj As Strin
             End If
             
             ' save sequence baseline snapshot
-            seqSnap = CopyCaps()
+            grpSnap = CopyCaps()
             
             If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " group idx=" & gidx & " set start=" & curPos
 
@@ -1446,7 +1447,7 @@ Private Function MatchSequence(ByVal children As Collection, ByVal subj As Strin
             If Not MatchNode(NodeGet(node, "child"), subj, curPos, childEnd) Then
                 If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " group FAILED, restoring seqSnap"
                 ' restore everything (seqSnap contains the capture arrays)
-                RestoreCaps seqSnap
+                RestoreCaps grpSnap
                 MatchSequence = False: Exit Function
             Else
                 If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " group OK nodeEnd=" & childEnd
@@ -1456,7 +1457,7 @@ Private Function MatchSequence(ByVal children As Collection, ByVal subj As Strin
         Else
             If Not MatchNode(node, subj, curPos, nodeEnd) Then
                 If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " node FAILED, restoring seqSnap"
-                RestoreCaps seqSnap
+                RestoreCaps grpSnap
                 MatchSequence = False: Exit Function
             Else
                 If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " node OK nodeEnd=" & nodeEnd
