@@ -1212,9 +1212,9 @@ Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal
             Dim recEnd As Variant
         
             If targ = 0 Then
-                ' recurse into whole root AST (pAST)
+                ' (?R) -> recurse into whole root AST
                 Dim snapR() As Long: snapR = CopyCaps()
-                If MatchNode(pAST(4), subj, pos, recEnd) Then
+                If MatchNode(NodeGet(pAST, "body"), subj, pos, recEnd) Then
                     recOk = True: localEnd = recEnd
                 Else
                     RestoreCaps snapR: recOk = False
@@ -1275,6 +1275,7 @@ End Function
 Private Function MatchSequence(ByVal children As Collection, ByVal subj As String, ByVal pos As Long, Optional ByRef outEnd As Variant) As Boolean
     If DEBUG_TRACE Then Debug.Print "TRACE MatchSequence start pos=" & pos & " children=" & children.count
     Dim seqSnap() As Long
+    Dim rootSnap() As Long: rootSnap = CopyCaps()
     Dim grpSnap() As Long
     Dim tmpSnaps() As Long
     Dim curPos As Long: curPos = pos
@@ -1457,7 +1458,7 @@ Private Function MatchSequence(ByVal children As Collection, ByVal subj As Strin
         Else
             If Not MatchNode(node, subj, curPos, nodeEnd) Then
                 If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " node FAILED, restoring seqSnap"
-                RestoreCaps grpSnap
+                RestoreCaps rootSnap
                 MatchSequence = False: Exit Function
             Else
                 If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " node OK nodeEnd=" & nodeEnd
@@ -2505,13 +2506,13 @@ Private Function FindGroupIndexByName(ByVal ast As Collection, ByVal name As Str
     On Error GoTo ExitHere
     If Not NodeExists(ast, "groupNodes") Then Exit Function
     Dim gnodes As Collection: Set gnodes = NodeGet(ast, "groupNodes")
-    Dim LB As Long
+    Dim lb As Long
     
     Dim it As Variant
     For Each it In gnodes
-        LB = LBound(it)
-        If it(LB) = name Then
-            FindGroupIndexByName = CLng(it(LB + 1))
+        lb = LBound(it)
+        If it(lb) = name Then
+            FindGroupIndexByName = CLng(it(lb + 1))
             Exit Function
         End If
     Next it
@@ -2524,14 +2525,14 @@ Private Function FindGroupIndexByOrdinal(ByVal ast As Collection, ByVal ordinal 
     On Error GoTo ExitHere
     If Not NodeExists(ast, "groupNodes") Then Exit Function
     Dim gnodes As Collection: Set gnodes = NodeGet(ast, "groupNodes")
-    Dim LB As Long
+    Dim lb As Long
     Dim cIdx As Long
     
     Dim it As Variant
     For Each it In gnodes
-        LB = LBound(it)
+        lb = LBound(it)
         cIdx = cIdx + 1
-        If it(LB + 1) = ordinal Then
+        If it(lb + 1) = ordinal Then
             FindGroupIndexByOrdinal = cIdx
             Exit Function
         End If
@@ -2665,4 +2666,6 @@ Private Sub UpdateNamedCapturesFromAST()
         pNamedCaptures.Add (Array(gname, val)), gname
     Next i
 End Sub
+
+
 
