@@ -29,8 +29,123 @@ Public Sub InjectVariable(varName As String, varValue As Variant)
     If INJECTED_VARIABLES_ Is Nothing Then
         Set INJECTED_VARIABLES_ = New Collection
     End If
-    INJECTED_VARIABLES_.Add Array(varName, varValue)
+    INJECTED_VARIABLES_.Add Array(varName, CastInjectedVar(varValue))
 End Sub
+Private Function CastInjectedVar(varValue As Variant) As Variant
+    If IsArray(varValue) Then
+        CastInjectedVar = ArrayToASF(varValue)
+    ElseIf TypeName(varValue) = "Collection" Then
+        CastInjectedVar = CollToASF(varValue)
+    ElseIf IsObject(varValue) Then
+        CastInjectedVar = TypeName(varValue)
+    Else
+        CastInjectedVar = CastType(varValue)
+    End If
+End Function
+Private Function CastType(aValue As Variant) As Variant
+    If TypeName(aValue) = "String" Then
+        CastType = CStr(aValue)
+    ElseIf TypeName(aValue) = "Boolean" Then
+        CastType = CBool(aValue)
+    ElseIf IsNumeric(aValue) Then
+        CastType = CDbl(aValue)
+    Else
+        CastType = aValue
+    End If
+End Function
+' Convert native VBA array -> ASF one-based internal array representation
+Private Function ArrayToASF(arr As Variant) As Variant
+    On Error GoTo ErrHandler
+    Dim lb As Long, ub As Long
+    Dim tmpResult() As Variant
+    lb = LBound(arr): ub = UBound(arr)
+    Dim n As Long: n = ub - lb + 1
+    If n <= 0 Then ArrayToASF = Array(): Exit Function
+    Dim i As Long
+    ReDim tmpResult(1 To n)
+    If Is2Darray(arr) Then
+        Dim ii As Long
+        Dim lb2 As Long, ub2 As Long
+        lb2 = LBound(arr, 2): ub2 = UBound(arr, 2)
+        Dim tmpElm() As Variant
+        For i = lb To ub
+            ReDim tmpElm(1 To ub2 - lb2 + 1)
+            For ii = lb2 To ub2
+                If IsArray(arr(i, ii)) Then
+                    tmpElm(1 + ii - lb2) = ArrayToASF(arr(i, ii))
+                ElseIf TypeName(arr(i, ii)) = "Collection" Then
+                    tmpElm(1 + ii - lb2) = CollToASF(arr(i, ii))(1)
+                ElseIf IsObject(arr(i, ii)) Then
+                    tmpElm(1 + ii - lb2) = TypeName(arr(i, ii))
+                Else
+                    tmpElm(1 + ii - lb2) = CastType(arr(i, ii))
+                End If
+            Next ii
+            tmpResult(1 + i - lb) = tmpElm
+        Next i
+    Else
+        For i = lb To ub
+            If IsArray(arr(i)) Then
+                tmpResult(1 + i - lb) = ArrayToASF(arr(i))
+            ElseIf TypeName(arr(i)) = "Collection" Then
+                tmpResult(1 + i - lb) = CollToASF(arr(i))(1)
+            ElseIf IsObject(arr(i)) Then
+                tmpResult(1 + i - lb) = TypeName(arr(i))
+            Else
+                tmpResult(1 + i - lb) = CastType(arr(i))
+            End If
+        Next i
+    End If
+    ArrayToASF = tmpResult
+    Exit Function
+
+ErrHandler:
+    ArrayToASF = Array("[<error>]")
+    err.Clear
+End Function
+' Convert native VBA Collection -> ASF one-based internal array representation
+Private Function CollToASF(coll As Variant) As Variant
+    On Error GoTo ErrHandler
+    Dim tmpResult() As Variant
+    If coll.count = 0 Then CollToASF = Array(): Exit Function
+    Dim i As Long
+    ReDim tmpResult(1 To coll.count)
+    For i = 1 To coll.count
+        If IsArray(coll(i)) Then
+            tmpResult(i) = ArrayToASF(coll(i))
+        ElseIf TypeName(coll(i)) = "Collection" Then
+            tmpResult(i) = CollToASF(coll(i))
+        ElseIf TypeName(coll(i)) = "String" Then
+            tmpResult(i) = CStr(coll(i))
+        ElseIf TypeName(coll(i)) = "Boolean" Then
+            tmpResult(i) = CBool(coll(i))
+        ElseIf IsNumeric(coll(i)) Then
+            tmpResult(i) = CDbl(coll(i))
+        Else
+            If Not IsObject(coll(i)) Then
+                tmpResult(i) = coll(i)
+            Else
+                tmpResult(i) = TypeName(coll(i))
+            End If
+        End If
+    Next i
+    CollToASF = tmpResult
+    Exit Function
+
+ErrHandler:
+    CollToASF = Array("[<error>]")
+    err.Clear
+End Function
+Private Function Is2Darray(arr As Variant) As Boolean
+    Dim d As Long
+    
+    On Error GoTo err_handler
+    d = UBound(arr, 2)
+    Is2Darray = True
+    Exit Function
+err_handler:
+    Is2Darray = False
+End Function
 Public Property Get OUTPUT_() As Variant
     vAssignment OUTPUT_, OUTPUT__
 End Property
