@@ -46,7 +46,9 @@ Private Function GetResult(script As String, Optional verbose As Boolean = False
         GetResult = .OUTPUT_
     End With
 End Function
-
+Private Function ConvertNewLines(aStr As String) As String
+    ConvertNewLines = VBA.Replace(VBA.Replace(aStr, vbLf, "\n"), vbCr, "\r")
+End Function
 '@TestMethod("arith_simple")
 Private Sub arith_simple()
     On Error GoTo TestFail
@@ -1117,6 +1119,30 @@ Private Sub variables_injection()
         actual = CStr(.OUTPUT_)
     End With
     expected = "6"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("variables_injection_collection")
+Private Sub variables_injection_collection()
+    On Error GoTo TestFail
+    Dim engine As ASF
+    Dim pidx As Long
+    Dim coll As New Collection
+    
+    Set engine = New ASF
+    coll.Add "We ": coll.Add "can do ": coll.Add "more with ": coll.Add "ASF!"
+    With engine
+        .InjectVariable "a", coll
+        pidx = .Compile("txt = ''; a.forEach(fun(x){ txt += x }); return(txt);")
+        .Run pidx
+        actual = CStr(.OUTPUT_)
+    End With
+    expected = "We can do more with ASF!"
     Assert.AreEqual expected, actual
 TestExit:
     Exit Sub
@@ -2317,7 +2343,7 @@ End Sub
 Private Sub regex_object_executeAll_method()
     On Error GoTo TestFail
     Dim globals As ASF_Globals
-    GetResult "re=regex(); re.init(`[,;\.\s]+`); print(re.ExecAll('apple,orange;banana grape.strawberry'));", True
+    GetResult "re=regex(`[,;\.\s]+`); print(re.ExecAll('apple,orange;banana grape.strawberry'));", True
     Set globals = scriptEngine.GetGlobals
     With globals
         actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
@@ -2334,8 +2360,138 @@ End Sub
 '@TestMethod("regex_object_set_flag_property")
 Private Sub regex_object_test_method_with_flag_property()
     On Error GoTo TestFail
-    actual = CBool(GetResult("re=regex(); re.init(`[a-z]`); re.setignorecase(False); return(re.Test('A'));"))
+    actual = CBool(GetResult("re=regex(`[a-z]`); re.setignorecase(False); return(re.Test('A'));"))
     expected = False
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex_object_named_captures")
+Private Sub regex_object_named_captures()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("re=regex(`(?<nonDigits>\D*)(?<digits>\d+)(?<nonWords>\W*)`);" _
+                            & "return(re.Replace('abc123#$', '[$<nonWords>]|[$<digits>]|[$<nonDigits>]'));"))
+    expected = "[#$]|[123]|[abc]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex_object_conditional_simple")
+Private Sub regex_object_conditional_simple()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "re=regex(`(?:(a)|(b))(?(1)(X)|(Y))`); print(re.Exec('aX'));", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 'aX', 'a', 'X' ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex_object_conditional_inline_flags")
+Private Sub regex_object_conditional_inline_flags()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "re=regex(`(?:(a)|(b))(?(1)(?i:x)|(?i:y))`); print(re.Exec('aaaX'));", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 'aX', 'a' ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex_object_conditional_inline_flags_off")
+Private Sub regex_object_conditional_inline_flags_off()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "re=regex(`(?:(a)|(b))(?(1)(?-i:x)|y)`, True); print(re.Exec('bbBY'));", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 'BY', 'B' ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex_object_inline_dotAll_flags")
+Private Sub regex_object_inline_dotAll_flags()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "re=regex(`(?:(a)|(b))(?(1)(?s:.))`); print(re.Exec('a\n'));", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = ConvertNewLines(CStr(.gRuntimeLog(.gRuntimeLog.count)))
+    End With
+    expected = "PRINT:[ 'a\n', 'a' ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex_object_inline_dotAll_flags_off")
+Private Sub regex_object_inline_dotAll_flags_off()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("re=regex(`(?:(a)|(b))(?(1)(?-s:.))`); return(re.Exec('a\n'));"))
+    expected = ""
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex_object_Named_Conditionals")
+Private Sub regex_object_Named_Conditionals()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "re=regex(`(?:(?<A>a)|(?<B>b))(?(A)X|Y)`); print(re.Exec('bY'));", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = ConvertNewLines(CStr(.gRuntimeLog(.gRuntimeLog.count)))
+    End With
+    expected = "PRINT:[ 'bY', 'b' ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex_object_Named_Conditionals_NO_Match")
+Private Sub regex_object_Named_Conditionals_NO_Match()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("re=regex(`(?:(?<A>a)|(?<B>b))(?(A)X|Y)`); print(re.Exec('aY'));"))
+    expected = ""
     Assert.AreEqual expected, actual
 TestExit:
     Exit Sub
