@@ -19,7 +19,7 @@ This project provides a production-proven compiler and VM plus a complete test-s
 - **No external runtime** — runs on top of VBA using a compact AST interpreter.
 - **Powerful features** not found in any other VBA tool: shared-write closures, expression-level anonymous functions, nested arrays & objects, array helpers, VBExpressions integration, method chaining, and more.
 - **Native regex engine** a pure VBA class module that supports lookarounds, multiline, atomic groups, back reference replace method with placeholders, non-capturing groups and more!.
-- **Tested** — the comprehensive [Rubberduck](https://github.com/rubberduck-vba/Rubberduck)  test-suite passes across arithmetic, flow control, functions, closures, array/object manipulation and builtin methods.
+- **Tested** — the comprehensive [Rubberduck](https://github.com/rubberduck-vba/Rubberduck)  test-suite passes across arithmetic, flow control, functions, closures, array/object manipulation, builtin methods, regular expressions, variables injection.
 - **Unmatched expressiveness:** Implement complex logic with concise scripts and enrich them with heavyweight VBA code.
 - **Safe interoperability:** Delegate numeric and domain-specific work to your existing VBA functions via `@(...)`, we already have [VBA-expressions](https://github.com/ECP-Solutions/VBA-Expressions) embedded!
 - **Readable, debuggable AST-first design.** The Compiler emits Map-based ASTs (human-inspectable). The VM executes those ASTs directly so you can step through behavior and trace problems — no opaque bytecode black box.
