@@ -1,7 +1,7 @@
 
 # ASF — API Reference
 
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/ECP-Solutions/ASF?style=plastic)](https://github.com/ECP-Solutions/ASF/releases/latest) [![Tests](https://img.shields.io/badge/tests-200%2B-green.svg)](.)  
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/ECP-Solutions/ASF?style=plastic)](https://github.com/ECP-Solutions/ASF/releases/latest) [![Tests](https://img.shields.io/badge/tests-290%2B-green.svg)](.)  
 
 This document describes the runtime API exposed by ASF scripts and the VM builtins/methods available to scripts. It summarizes semantics, signatures, error behavior, and examples.
 
