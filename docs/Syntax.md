@@ -1,6 +1,6 @@
 # ASF — Syntax Reference
 
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/ECP-Solutions/ASF?style=plastic)](https://github.com/ECP-Solutions/ASF/releases/latest) [![Tests](https://img.shields.io/badge/tests-85%2B-green.svg)](.)  
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/ECP-Solutions/ASF?style=plastic)](https://github.com/ECP-Solutions/ASF/releases/latest) [![Tests](https://img.shields.io/badge/tests-290%2B-green.svg)](.)  
 
 This document defines the concrete syntax supported by the Advanced Scripting Framework (ASF) and contains a compact BNF grammar, operator precedence, and examples.
 
@@ -139,6 +139,14 @@ From highest precedence to lowest:
 - Array: `[1, 2, [3], 'x']`
 - Object: `{ k: 1, s: 'x' }`
 - VBExpression: `@({1;0;4})` — raw block passed to VBA-expressions evaluator
+
+---
+
+## Constructors
+
+- Array: `[]`
+- String: `''`
+- Regular Expressions: `regex(<params>?)`
 
 ---
 

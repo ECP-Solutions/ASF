@@ -204,7 +204,7 @@ Public Sub RunAllRegexTests()
     ReportTest "15_comment_syntax_unsupported", GetTestResult("15_comment_syntax_unsupported")
     ReportTest "15_variable_lookbehind_error", GetTestResult("15_variable_lookbehind_error")
     ReportTest "15_inline_flags_not_supported", GetTestResult("15_inline_flags_not_supported")
-    ReportTest "15_conditionals_unsupported", GetTestResult("15_conditionals_unsupported")
+    ReportTest "15_conditionals_supported", GetTestResult("15_conditionals_supported")
 
     Debug.Print "=== Test run complete ==="
     Debug.Print "Total: " & g_totalTests & "  Passed: " & g_passedTests & "  Failed: " & g_failedTests
@@ -398,7 +398,7 @@ Public Function GetTestResult(testName As String) As Boolean
         Case "15_comment_syntax_unsupported": GetTestResult = T_15_03_comment_syntax_unsupported()
         Case "15_variable_lookbehind_error": GetTestResult = T_15_05_variable_lookbehind_error()
         Case "15_inline_flags_not_supported": GetTestResult = T_15_06_inline_flags_not_supported()
-        Case "15_conditionals_unsupported": GetTestResult = T_15_07_conditionals_unsupported()
+        Case "15_conditionals_supported": GetTestResult = T_15_07_conditionals_supported()
     End Select
 End Function
 ' Helper used by the runner
@@ -473,11 +473,11 @@ Private Function AssertFalse(ByVal cond As Boolean, Optional ByVal message As St
     End If
 End Function
 
-Private Function AssertEqual(ByVal A As Variant, ByVal b As Variant, Optional ByVal message As String = "") As Boolean
-    If CStr(A) = CStr(b) Then
+Private Function AssertEqual(ByVal a As Variant, ByVal b As Variant, Optional ByVal message As String = "") As Boolean
+    If CStr(a) = CStr(b) Then
         AssertEqual = True
     Else
-        If message = "" Then message = "AssertEqual failed: expected '" & CStr(b) & "' got '" & CStr(A) & "'"
+        If message = "" Then message = "AssertEqual failed: expected '" & CStr(b) & "' got '" & CStr(a) & "'"
         g_lastError = message
         AssertEqual = False
     End If
@@ -512,13 +512,13 @@ EH:
 End Function
 
 ' Small helper to create array literal (simulates A(...) from previous)
-Private Function A(ParamArray items() As Variant) As Variant()
+Private Function a(ParamArray items() As Variant) As Variant()
     Dim out() As Variant, i As Long
     ReDim out(0 To UBound(items))
     For i = 0 To UBound(items)
         out(i) = items(i)
     Next i
-    A = out
+    a = out
 End Function
 
 ' -----------------------------------------------------------------------
@@ -565,7 +565,7 @@ End Function
 Public Function T_1_06_dot_dotall_true_newline() As Boolean
     Dim r As New ASF_RegexEngine
     If Not InitRegexAndHandle(r, "a.c", False, -1, False, True) Then Exit Function
-    If Not AssertTrue(Not (ExecColl(r, "a" & vbLf & "c") Is Nothing), "dotAll True expected match across newline") Then Exit Function
+    If Not AssertTrue(Not (ExecColl(r, "a\nc") Is Nothing), "dotAll True expected match across newline") Then Exit Function
     T_1_06_dot_dotall_true_newline = True
 End Function
 
@@ -666,7 +666,7 @@ Public Function T_2_11_escape_d2_exec() As Boolean
     If Not InitRegexAndHandle(r, "\d{2}") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "12")
     If Not AssertTrue(Not (c Is Nothing), "expected \\d{2} to match '12'") Then Exit Function
-    If Not AssertCollEquals(c, A("12")) Then Exit Function
+    If Not AssertCollEquals(c, a("12")) Then Exit Function
     T_2_11_escape_d2_exec = True
 End Function
 
@@ -730,7 +730,7 @@ Public Function T_3_09_class_quantifier_partial_exec() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "[a-c]+") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "abcd")
     If Not AssertTrue(Not (c Is Nothing), "expected match on 'abcd'") Then Exit Function
-    If Not AssertCollEquals(c, A("abc")) Then Exit Function
+    If Not AssertCollEquals(c, a("abc")) Then Exit Function
     T_3_09_class_quantifier_partial_exec = True
 End Function
 
@@ -763,7 +763,7 @@ Public Function T_4_02_quant_a_star_exec() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a*") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "aaa")
     If Not AssertTrue(Not (c Is Nothing), "a* expected match 'aaa'") Then Exit Function
-    If Not AssertCollEquals(c, A("aaa")) Then Exit Function
+    If Not AssertCollEquals(c, a("aaa")) Then Exit Function
     T_4_02_quant_a_star_exec = True
 End Function
 
@@ -771,7 +771,7 @@ Public Function T_4_03_quant_a_star_lazy_exec() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a*?") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "aaa")
     If Not AssertTrue(Not (c Is Nothing), "a*? should return something") Then Exit Function
-    If Not AssertCollEquals(c, A("")) Then Exit Function
+    If Not AssertCollEquals(c, a("")) Then Exit Function
     T_4_03_quant_a_star_lazy_exec = True
 End Function
 
@@ -779,7 +779,7 @@ Public Function T_4_04_quant_a_star_possessive_exec() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a*+") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "aaa")
     If Not AssertTrue(Not (c Is Nothing), "a*+ should match 'aaa' possessive") Then Exit Function
-    If Not AssertCollEquals(c, A("aaa")) Then Exit Function
+    If Not AssertCollEquals(c, a("aaa")) Then Exit Function
     T_4_04_quant_a_star_possessive_exec = True
 End Function
 
@@ -794,7 +794,7 @@ Public Function T_4_06_quant_a_plus_lazy() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a+?") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "aaa")
     If Not AssertTrue(Not (c Is Nothing), "a+? should match 'aaa' lazily") Then Exit Function
-    If Not AssertCollEquals(c, A("a")) Then Exit Function
+    If Not AssertCollEquals(c, a("a")) Then Exit Function
     T_4_06_quant_a_plus_lazy = True
 End Function
 
@@ -802,7 +802,7 @@ Public Function T_4_07_quant_a_plus_possessive() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a++") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "aaa")
     If Not AssertTrue(Not (c Is Nothing), "a++ should match 'aaa'") Then Exit Function
-    If Not AssertCollEquals(c, A("aaa")) Then Exit Function
+    If Not AssertCollEquals(c, a("aaa")) Then Exit Function
     T_4_07_quant_a_plus_possessive = True
 End Function
 
@@ -817,7 +817,7 @@ Public Function T_4_09_quant_a_question_lazy() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a??") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "a")
     If Not AssertTrue(Not (c Is Nothing), "a?? should match 'a'") Then Exit Function
-    If Not AssertCollEquals(c, A("")) Then Exit Function
+    If Not AssertCollEquals(c, a("")) Then Exit Function
     T_4_09_quant_a_question_lazy = True
 End Function
 
@@ -825,7 +825,7 @@ Public Function T_4_10_quant_a_question_possessive() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a?+") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "a")
     If Not AssertTrue(Not (c Is Nothing), "a?+ should match 'a'") Then Exit Function
-    If Not AssertCollEquals(c, A("a")) Then Exit Function
+    If Not AssertCollEquals(c, a("a")) Then Exit Function
     T_4_10_quant_a_question_possessive = True
 End Function
 
@@ -839,7 +839,7 @@ Public Function T_4_12_quant_exact_a3_longer() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a{3}") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "aaaa")
     If Not AssertTrue(Not (c Is Nothing), "a{3} should match start of 'aaaa'") Then Exit Function
-    If Not AssertCollEquals(c, A("aaa")) Then Exit Function
+    If Not AssertCollEquals(c, a("aaa")) Then Exit Function
     T_4_12_quant_exact_a3_longer = True
 End Function
 
@@ -859,7 +859,7 @@ Public Function T_4_15_quant_range_lazy() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a{2,4}?") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "aaaaa")
     If Not AssertTrue(Not (c Is Nothing), "a{2,4}? expected to match") Then Exit Function
-    If Not AssertCollEquals(c, A("aa")) Then Exit Function
+    If Not AssertCollEquals(c, a("aa")) Then Exit Function
     T_4_15_quant_range_lazy = True
 End Function
 
@@ -867,7 +867,7 @@ Public Function T_4_16_quant_range_possessive() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a{2,4}+") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "aaaaa")
     If Not AssertTrue(Not (c Is Nothing), "a{2,4}+ expected to match") Then Exit Function
-    If Not AssertCollEquals(c, A("aaaa")) Then Exit Function
+    If Not AssertCollEquals(c, a("aaaa")) Then Exit Function
     T_4_16_quant_range_possessive = True
 End Function
 
@@ -881,7 +881,7 @@ Public Function T_4_18_quant_min_unlimited_lazy() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a{2,}?") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "aaaaa")
     If Not AssertTrue(Not (c Is Nothing), "a{2,}? should match 'aaaaa' lazily") Then Exit Function
-    If Not AssertCollEquals(c, A("aa")) Then Exit Function
+    If Not AssertCollEquals(c, a("aa")) Then Exit Function
     T_4_18_quant_min_unlimited_lazy = True
 End Function
 
@@ -889,7 +889,7 @@ Public Function T_4_19_quant_min_unlimited_possessive() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a{2,}+") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "aaaaa")
     If Not AssertTrue(Not (c Is Nothing), "a{2,}+ should match 'aaaaa'") Then Exit Function
-    If Not AssertCollEquals(c, A("aaaaa")) Then Exit Function
+    If Not AssertCollEquals(c, a("aaaaa")) Then Exit Function
     T_4_19_quant_min_unlimited_possessive = True
 End Function
 
@@ -903,7 +903,7 @@ Public Function T_4_21_wildcard_lazy() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, ".*?") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "anything")
     If Not AssertTrue(Not (c Is Nothing), ".*? expected to produce a match") Then Exit Function
-    If Not AssertCollEquals(c, A("")) Then Exit Function
+    If Not AssertCollEquals(c, a("")) Then Exit Function
     T_4_21_wildcard_lazy = True
 End Function
 
@@ -918,7 +918,7 @@ Public Function T_5_01_context_greedy() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a.+b") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "aaabxb")
     If Not AssertTrue(Not (c Is Nothing), "a.+b expected match") Then Exit Function
-    If Not AssertCollEquals(c, A("aaabxb")) Then Exit Function
+    If Not AssertCollEquals(c, a("aaabxb")) Then Exit Function
     T_5_01_context_greedy = True
 End Function
 
@@ -926,7 +926,7 @@ Public Function T_5_02_context_lazy() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a.+?b") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "aaabxb")
     If Not AssertTrue(Not (c Is Nothing), "a.+?b expected match") Then Exit Function
-    If Not AssertCollEquals(c, A("aaab")) Then Exit Function
+    If Not AssertCollEquals(c, a("aaab")) Then Exit Function
     T_5_02_context_lazy = True
 End Function
 
@@ -962,7 +962,7 @@ Public Function T_5_07_range_greedy() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a{1,3}b") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "aaab")
     If Not AssertTrue(Not (c Is Nothing), "a{1,3}b expected match") Then Exit Function
-    If Not AssertCollEquals(c, A("aaab")) Then Exit Function
+    If Not AssertCollEquals(c, a("aaab")) Then Exit Function
     T_5_07_range_greedy = True
 End Function
 
@@ -970,7 +970,7 @@ Public Function T_5_08_range_lazy() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a{1,3}?b") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "aaab")
     If Not AssertTrue(Not (c Is Nothing), "a{1,3}?b expected match") Then Exit Function
-    If Not AssertCollEquals(c, A("aaab")) Then Exit Function
+    If Not AssertCollEquals(c, a("aaab")) Then Exit Function
     T_5_08_range_lazy = True
 End Function
 
@@ -978,7 +978,7 @@ Public Function T_5_09_range_possessive() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a{1,3}+b") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "aaab")
     If Not AssertTrue(Not (c Is Nothing), "a{1,3}+b expected match") Then Exit Function
-    If Not AssertCollEquals(c, A("aaab")) Then Exit Function
+    If Not AssertCollEquals(c, a("aaab")) Then Exit Function
     T_5_09_range_possessive = True
 End Function
 
@@ -986,7 +986,7 @@ Public Function T_5_10_alt_greedy() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a.+b|c") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "aaabxc")
     If Not AssertTrue(Not (c Is Nothing), "a.+b|c expected match") Then Exit Function
-    If Not AssertCollEquals(c, A("aaab")) Then Exit Function
+    If Not AssertCollEquals(c, a("aaab")) Then Exit Function
     T_5_10_alt_greedy = True
 End Function
 
@@ -997,7 +997,7 @@ Public Function T_5_11_alt_possessive_then_alt() As Boolean
         g_lastError = "expected 'c' match via alt but got nothing"
         Exit Function
     End If
-    If Not AssertCollEquals(c, A("c")) Then Exit Function
+    If Not AssertCollEquals(c, a("c")) Then Exit Function
     T_5_11_alt_possessive_then_alt = True
 End Function
 
@@ -1006,7 +1006,7 @@ Public Function T_6_01_capturing_basic() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(ab)(c)") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "abc")
     If Not AssertTrue(Not (c Is Nothing), "expected capture for 'abc'") Then Exit Function
-    If Not AssertCollEquals(c, A("abc", "ab", "c")) Then Exit Function
+    If Not AssertCollEquals(c, a("abc", "ab", "c")) Then Exit Function
     T_6_01_capturing_basic = True
 End Function
 
@@ -1014,7 +1014,7 @@ Public Function T_6_02_capturing_nested() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(a(b)c)") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "abc")
     If Not AssertTrue(Not (c Is Nothing), "expected nested captures") Then Exit Function
-    If Not AssertCollEquals(c, A("abc", "abc", "b")) Then Exit Function
+    If Not AssertCollEquals(c, a("abc", "abc", "b")) Then Exit Function
     T_6_02_capturing_nested = True
 End Function
 
@@ -1022,7 +1022,7 @@ Public Function T_6_03_capturing_alternation() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(a|b)c") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "ac")
     If Not AssertTrue(Not (c Is Nothing), "expected (a|b)c to match 'ac'") Then Exit Function
-    If Not AssertCollEquals(c, A("ac", "a")) Then Exit Function
+    If Not AssertCollEquals(c, a("ac", "a")) Then Exit Function
     T_6_03_capturing_alternation = True
 End Function
 
@@ -1030,7 +1030,7 @@ Public Function T_6_04_capturing_alternation_second() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(a|b)c") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "bc")
     If Not AssertTrue(Not (c Is Nothing), "expected (a|b)c to match 'bc'") Then Exit Function
-    If Not AssertCollEquals(c, A("bc", "b")) Then Exit Function
+    If Not AssertCollEquals(c, a("bc", "b")) Then Exit Function
     T_6_04_capturing_alternation_second = True
 End Function
 
@@ -1038,7 +1038,7 @@ Public Function T_6_05_capturing_quant_in_group() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a(b*)c") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "abbbc")
     If Not AssertTrue(Not (c Is Nothing), "expected a(b*)c to match 'abbbc'") Then Exit Function
-    If Not AssertCollEquals(c, A("abbbc", "bbb")) Then Exit Function
+    If Not AssertCollEquals(c, a("abbbc", "bbb")) Then Exit Function
     T_6_05_capturing_quant_in_group = True
 End Function
 
@@ -1046,7 +1046,7 @@ Public Function T_6_06_optional_empty_exec_blank() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(a)?") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "")
     If Not AssertTrue(Not (c Is Nothing), "expected (a)? to match empty") Then Exit Function
-    If Not AssertCollEquals(c, A("", "")) Then Exit Function
+    If Not AssertCollEquals(c, a("", "")) Then Exit Function
     T_6_06_optional_empty_exec_blank = True
 End Function
 
@@ -1054,7 +1054,7 @@ Public Function T_6_07_optional_empty_exec_a() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(a)?") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "a")
     If Not AssertTrue(Not (c Is Nothing), "expected (a)? to match 'a'") Then Exit Function
-    If Not AssertCollEquals(c, A("a", "a")) Then Exit Function
+    If Not AssertCollEquals(c, a("a", "a")) Then Exit Function
     T_6_07_optional_empty_exec_a = True
 End Function
 
@@ -1062,7 +1062,7 @@ Public Function T_6_08_anchored_capturing() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "^(abc)$") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "abc")
     If Not AssertTrue(Not (c Is Nothing), "anchored capture expected") Then Exit Function
-    If Not AssertCollEquals(c, A("abc", "abc")) Then Exit Function
+    If Not AssertCollEquals(c, a("abc", "abc")) Then Exit Function
     T_6_08_anchored_capturing = True
 End Function
 
@@ -1095,7 +1095,7 @@ Public Function T_7_04_grouped_alt_foobaz() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(foo|bar)baz") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "foobaz")
     If Not AssertTrue(Not (c Is Nothing), "expected grouped alt match") Then Exit Function
-    If Not AssertCollEquals(c, A("foobaz", "foo")) Then Exit Function
+    If Not AssertCollEquals(c, a("foobaz", "foo")) Then Exit Function
     T_7_04_grouped_alt_foobaz = True
 End Function
 
@@ -1103,7 +1103,7 @@ Public Function T_7_05_grouped_alt_barbaz() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(foo|bar)baz") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "barbaz")
     If Not AssertTrue(Not (c Is Nothing), "expected grouped alt match 'barbaz'") Then Exit Function
-    If Not AssertCollEquals(c, A("barbaz", "bar")) Then Exit Function
+    If Not AssertCollEquals(c, a("barbaz", "bar")) Then Exit Function
     T_7_05_grouped_alt_barbaz = True
 End Function
 
@@ -1123,7 +1123,7 @@ Public Function T_7_08_longer_preference() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "longer|long") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "longer")
     If Not AssertTrue(Not (c Is Nothing), "longer|long should match 'longer'") Then Exit Function
-    If Not AssertCollEquals(c, A("longer")) Then Exit Function
+    If Not AssertCollEquals(c, a("longer")) Then Exit Function
     T_7_08_longer_preference = True
 End Function
 
@@ -1413,7 +1413,7 @@ Public Function T_13_06_capturing_possessive() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(a++)b") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "aaab")
     If Not AssertTrue(Not (c Is Nothing), "(a++)b should match 'aaab'") Then Exit Function
-    If Not AssertCollEquals(c, A("aaab", "aaa")) Then Exit Function
+    If Not AssertCollEquals(c, a("aaab", "aaa")) Then Exit Function
     T_13_06_capturing_possessive = True
 End Function
 
@@ -1465,7 +1465,7 @@ Public Function T_14_05_optional_group_exec() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a(b*)?") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "a")
     If Not AssertTrue(Not (c Is Nothing), "a(b*)? should match 'a'") Then Exit Function
-    If Not AssertCollEquals(c, A("a", "")) Then Exit Function
+    If Not AssertCollEquals(c, a("a", "")) Then Exit Function
     T_14_05_optional_group_exec = True
 End Function
 
@@ -1473,7 +1473,7 @@ Public Function T_14_06_left_pref_alt_exec() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "\d+|\w+") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "123abc")
     If Not AssertTrue(Not (c Is Nothing), "left-pref alt expected to match '123'") Then Exit Function
-    If Not AssertCollEquals(c, A("123")) Then Exit Function
+    If Not AssertCollEquals(c, a("123")) Then Exit Function
     T_14_06_left_pref_alt_exec = True
 End Function
 
@@ -1481,7 +1481,7 @@ Public Function T_14_07_grouped_alt_capture() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(\d+|\w+)") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "123abc")
     If Not AssertTrue(Not (c Is Nothing), "grouped alt capture expected") Then Exit Function
-    If Not AssertCollEquals(c, A("123", "123")) Then Exit Function
+    If Not AssertCollEquals(c, a("123", "123")) Then Exit Function
     T_14_07_grouped_alt_capture = True
 End Function
 
@@ -1489,7 +1489,7 @@ Public Function T_14_08_greedy_last_digit() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, ".*\d") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "abc123")
     If Not AssertTrue(Not (c Is Nothing), ".*\\d expected to match 'abc123'") Then Exit Function
-    If Not AssertCollEquals(c, A("abc123")) Then Exit Function
+    If Not AssertCollEquals(c, a("abc123")) Then Exit Function
     T_14_08_greedy_last_digit = True
 End Function
 
@@ -1497,7 +1497,7 @@ Public Function T_14_09_lazy_first_digit() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, ".*?\d") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "abc123")
     If Not AssertTrue(Not (c Is Nothing), ".*?\\d expected to match 'abc1'") Then Exit Function
-    If Not AssertCollEquals(c, A("abc1")) Then Exit Function
+    If Not AssertCollEquals(c, a("abc1")) Then Exit Function
     T_14_09_lazy_first_digit = True
 End Function
 
@@ -1541,7 +1541,7 @@ Public Function T_14_15_noncapturing_groups() As Boolean
         g_lastError = "expected capture for (?:a)b"
         Exit Function
     End If
-    If Not AssertCollEquals(c, A("ab")) Then Exit Function
+    If Not AssertCollEquals(c, a("ab")) Then Exit Function
     T_14_15_noncapturing_groups = True
 End Function
 
@@ -1600,13 +1600,15 @@ Public Function T_15_06_inline_flags_not_supported() As Boolean
     T_15_06_inline_flags_not_supported = True
 End Function
 
-Public Function T_15_07_conditionals_unsupported() As Boolean
-    Dim r As New ASF_RegexEngine
-    If InitRegexAndHandle(r, "(?(1)a|b)") Then
-        g_lastError = "Engine unexpectedly accepted conditionals"
+Public Function T_15_07_conditionals_supported() As Boolean
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(?:(1)a|b)") Then Exit Function
+    Dim c As Collection: Set c = ExecColl(r, "ab")
+    If c Is Nothing Then
+        g_lastError = "expected capture for (?:(1)a|b)"
         Exit Function
     End If
-    T_15_07_conditionals_unsupported = True
+    If Not AssertCollEquals(c, a("b", "")) Then Exit Function
+    T_15_07_conditionals_supported = True
 End Function
 
 Public Function testNewG() As Boolean

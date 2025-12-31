@@ -41,6 +41,7 @@ Attribute VB_Exposed = False
 '     + Performance: atomic groups and lookarounds use snapshots. Possessive quantifiers will
 '       often be faster (no backtracking), but atomic groups may make some matches irreversible.
 Option Explicit
+Option Base 0
 
 ' ---------------- Public config -----------------------------------------
 Private Const DEFAULT_MAX_STEPS As Long = 200000
@@ -62,12 +63,16 @@ Private capsStart() As Long
 Private capsEnd() As Long
 Private atomicLocks() As Boolean
 Private MatchSteps As Long
+Private pNamedCaptures As Collection
 
+Public Property Get LastNamedCaptures() As Collection
+    Set LastNamedCaptures = pNamedCaptures
+End Property
 ' ---------------- Node helpers ------------------------------------------
-Private Function NewNode(ByVal typ As String) As Collection
+Private Function newNode(ByVal typ As String) As Collection
     Dim c As New Collection
     c.Add typ, "type"
-    Set NewNode = c
+    Set newNode = c
 End Function
 
 Private Sub NodeAdd(ByRef node As Collection, ByVal key As String, ByVal value As Variant)
@@ -110,6 +115,9 @@ Public Sub Init(ByVal pattern As String, Optional ByVal ignoreCase As Boolean = 
 
     ' Build AST
     Set pAST = CompilePattern(pattern)
+    If Not pAST Is Nothing Then
+        If Not NodeExists(pAST, "groupNodes") Then BuildGroupNodesFromAST pAST
+    End If
 
     ' Run annotate/validation pass (will raise vbObjectError + 10 on invalid lookbehinds)
     AnnotateLookbehinds pAST
@@ -177,7 +185,7 @@ Private Function ParseAlternation(ByVal pat As String, ByRef p As Long, ByVal pE
         Exit Function
     End If
 
-    Dim altNode As Collection: Set altNode = NewNode("alt")
+    Dim altNode As Collection: Set altNode = newNode("alt")
     Dim alts As New Collection
     alts.Add firstSeq
 
@@ -188,173 +196,271 @@ Private Function ParseAlternation(ByVal pat As String, ByRef p As Long, ByVal pE
         alts.Add nextSeq
     Loop
 
-    NodeAdd altNode, "children", alts
+    NodeAdd altNode, "child", alts
     Set ParseAlternation = altNode
 End Function
 
-Private Function ParseSequence(ByVal pat As String, ByRef p As Long, ByVal pEnd As Long, ByRef groupCounter As Long) As Collection
-    Dim seq As Collection: Set seq = NewNode("seq")
+Private Function ParseSequence(pat As String, ByRef p As Long, pEnd As Long, _
+                            ByRef groupCounter As Long, Optional stopAtPipeOrParen As Boolean = False) As Collection
+    Dim seq As Collection: Set seq = newNode("seq")
     Dim children As New Collection
+    Dim thisIdx As Long
+    Dim ch As String
+    Dim node As Collection
+
     Do While p <= pEnd
-        Dim ch As String: ch = SafeMid(pat, p, 1)
+        ch = SafeMid(pat, p, 1)
         If ch = ")" Or ch = "|" Then Exit Do
-        Dim node As Collection: Set node = Nothing
+        Set node = Nothing
+
         If ch = "\" Then
             p = p + 1
             If p > pEnd Then Exit Do
             Set node = ParseEscapeNode(SafeMid(pat, p, 1))
             p = p + 1
+
         ElseIf ch = "." Then
-            Set node = NewNode("dot")
+            Set node = newNode("dot")
             p = p + 1
+
         ElseIf ch = "[" Then
             Dim clsEnd As Long: clsEnd = FindClassEnd(pat, p, pEnd)
             If clsEnd = -1 Then
-                Set node = NewNode("lit"): NodeAdd node, "ch", "[": p = p + 1
+                Set node = newNode("lit"): NodeAdd node, "ch", "[": p = p + 1
             Else
                 Set node = ParseClass(pat, p + 1, clsEnd - 1)
                 p = clsEnd + 1
             End If
+
         ElseIf ch = "(" Then
-            p = p + 1
-            ' Special group or plain group?
-            If p <= pEnd And SafeMid(pat, p, 1) = "?" Then
+            ' locate matching ')' deterministically
+            Dim foundClose As Long
+            foundClose = FindGroupEnd(pat, p, pEnd)
+            If foundClose = -1 Then
+                ' malformed -> treat '(' as literal
+                Set node = newNode("lit"): NodeAdd node, "ch", "("
                 p = p + 1
-                If p <= pEnd Then
-                    Dim nextCh As String: nextCh = SafeMid(pat, p, 1)
-                    Select Case nextCh
-                        Case "=" ' (?= ) positive lookahead
-                            p = p + 1
-                            Dim innerLA As Collection
-                            Set innerLA = ParseSequence(pat, p, pEnd, groupCounter)
-                            If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
-                            Dim laNode As Collection: Set laNode = NewNode("lookahead_pos")
-                            NodeAdd laNode, "child", innerLA
-                            Set node = laNode
-
-                        Case "!" ' (?! ) negative lookahead
-                            p = p + 1
-                            Dim innerNL As Collection
-                            Set innerNL = ParseSequence(pat, p, pEnd, groupCounter)
-                            If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
-                            Dim nlaNode As Collection: Set nlaNode = NewNode("lookahead_neg")
-                            NodeAdd nlaNode, "child", innerNL
-                            Set node = nlaNode
-
-                        Case "<" ' (?<= or (?<! ) lookbehinds
-                            p = p + 1
-                            If p <= pEnd Then
-                                Dim sbch As String: sbch = SafeMid(pat, p, 1)
-                                If sbch = "=" Then
-                                    p = p + 1
-                                    Dim innerLB As Collection
-                                    Set innerLB = ParseSequence(pat, p, pEnd, groupCounter)
-                                    If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
-                                    Dim lbNode As Collection: Set lbNode = NewNode("lookbehind_pos")
-                                    NodeAdd lbNode, "child", innerLB
-                                    Set node = lbNode
-                                ElseIf sbch = "!" Then
-                                    p = p + 1
-                                    Dim innerLBN As Collection
-                                    Set innerLBN = ParseSequence(pat, p, pEnd, groupCounter)
-                                    If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
-                                    Dim lbnNode As Collection: Set lbnNode = NewNode("lookbehind_neg")
-                                    NodeAdd lbnNode, "child", innerLBN
-                                    Set node = lbnNode
-                                Else
-                                    ' Unknown (?<... ) construct -> treat as literal fallback
-                                    Set node = NewNode("lit"): NodeAdd node, "ch", "("
-                                End If
-                            Else
-                                Set node = NewNode("lit"): NodeAdd node, "ch", "("
-                            End If
-
-                        Case ">" ' (?> ) atomic group
-                            p = p + 1
-                            Dim innerAtomic As Collection
-                            Set innerAtomic = ParseSequence(pat, p, pEnd, groupCounter)
-                            If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
-                            Dim atomicNode As Collection: Set atomicNode = NewNode("atomic")
-                            NodeAdd atomicNode, "child", innerAtomic
-                            Set node = atomicNode
-
-                        Case ":" ' (?: ) TRUE non-capturing group (do NOT allocate capture)
-                            p = p + 1
-                            Dim innerNC As Collection
-                            Set innerNC = ParseSequence(pat, p, pEnd, groupCounter)
-                            If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
-                            Dim ncNode As Collection: Set ncNode = NewNode("group") ' keep node type 'group' but no "idx"
-                            NodeAdd ncNode, "child", innerNC
-                            NodeAdd ncNode, "noncap_syntax", True
-                            Set node = ncNode
-
-                        Case "("
-                            ' Conditional constructs like (?(cond)yes|no) are not supported.
-                            ' Fail fast at compile time so Init returns an error (InitRegexAndHandle will catch it).
-                            err.Raise vbObjectError + 1000, "RegexEngine", "Conditional constructs '(?(...)...)' are not supported"
-
-                        Case Else
-                            ' Could be inline flags (group-scoped) like (?i:...), or unsupported (?i) form.
-                            ' Parse a sequence of flag letters [ims] possibly combined, ending on ':' (group scoped).
-                            Dim flagsStart As Long: flagsStart = p
-                            Dim flagsStr As String: flagsStr = ""
-                            Do While p <= pEnd
-                                Dim fch As String: fch = SafeMid(pat, p, 1)
-                                If fch >= "a" And fch <= "z" Or fch >= "A" And fch <= "Z" Or fch = "-" Then
-                                    flagsStr = flagsStr & fch
-                                    p = p + 1
-                                Else
-                                    Exit Do
-                                End If
-                            Loop
-                            If p <= pEnd And SafeMid(pat, p, 1) = ":" Then
-                                ' group-scoped flags: (?flags: inner )
-                                p = p + 1 ' consume ':'
-                                Dim innerFlagged As Collection
-                                Set innerFlagged = ParseSequence(pat, p, pEnd, groupCounter)
-                                If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
-                                Dim gnodeF As Collection: Set gnodeF = NewNode("group")
-                                NodeAdd gnodeF, "child", innerFlagged
-                                ' normalize flagsStr: only keep i,m,s letters (lowercase)
-                                Dim normFlags As String: normFlags = ""
-                                Dim kch As Long
-                                For kch = 1 To Len(flagsStr)
-                                    Dim fc As String: fc = LCase$(mid$(flagsStr, kch, 1))
-                                    If fc = "i" Or fc = "m" Or fc = "s" Then normFlags = normFlags & fc
-                                Next kch
-                                If Len(normFlags) > 0 Then NodeAdd gnodeF, "flags_on", normFlags
-                                Set node = gnodeF
-                            Else
-                                ' Bare flags (e.g. (?i) ) — **not supported** as a global toggle here.
-                                ' Fail init: raise a compile-time error so tests expecting failure will pass.
-                                err.Raise vbObjectError + 101, "RegexEngine", "Inline flags without ':' are not supported at compile time (use (?i:...) for group-scoped flags)."
-                            End If
-                    End Select
-                Else
-                    Set node = NewNode("lit"): NodeAdd node, "ch", "("
-                End If
             Else
-                ' normal capturing group (allocate index)
-                groupCounter = groupCounter + 1
-                Dim thisIdx As Long: thisIdx = groupCounter
-                Dim inner As Collection
-                Set inner = ParseSequence(pat, p, pEnd, groupCounter)
-                If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
-                Dim gnode As Collection: Set gnode = NewNode("group")
-                NodeAdd gnode, "idx", thisIdx
-                NodeAdd gnode, "child", inner
-                Set node = gnode
+                ' consume '('
+                p = p + 1
+                If p <= pEnd And SafeMid(pat, p, 1) = "?" Then
+                    p = p + 1
+                    If p > pEnd Then
+                        Set node = newNode("lit"): NodeAdd node, "ch", "("
+                    Else
+                        Dim nextCh As String: nextCh = SafeMid(pat, p, 1)
+                        Select Case nextCh
+                            Case "="
+                                p = p + 1
+                                Dim innerLA As Collection
+                                Set innerLA = ParseSequence(pat, p, foundClose - 1, groupCounter)
+                                If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
+                                Dim laNode As Collection: Set laNode = newNode("lookahead_pos")
+                                NodeAdd laNode, "child", innerLA
+                                Set node = laNode
+
+                            Case "!"
+                                p = p + 1
+                                Dim innerNL As Collection
+                                Set innerNL = ParseSequence(pat, p, foundClose - 1, groupCounter)
+                                If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
+                                Dim nlaNode As Collection: Set nlaNode = newNode("lookahead_neg")
+                                NodeAdd nlaNode, "child", innerNL
+                                Set node = nlaNode
+
+                            Case "<"
+                                p = p + 1
+                                If p <= pEnd Then
+                                    Dim sbch As String: sbch = SafeMid(pat, p, 1)
+                                    If sbch = "=" Then
+                                        p = p + 1
+                                        Dim innerLB As Collection
+                                        Set innerLB = ParseSequence(pat, p, foundClose - 1, groupCounter)
+                                        If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
+                                        Dim lbNode As Collection: Set lbNode = newNode("lookbehind_pos")
+                                        NodeAdd lbNode, "child", innerLB
+                                        Set node = lbNode
+                                    ElseIf sbch = "!" Then
+                                        p = p + 1
+                                        Dim innerLBN As Collection
+                                        Set innerLBN = ParseSequence(pat, p, foundClose - 1, groupCounter)
+                                        If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
+                                        Dim lbnNode As Collection: Set lbnNode = newNode("lookbehind_neg")
+                                        NodeAdd lbnNode, "child", innerLBN
+                                        Set node = lbnNode
+                                    Else
+                                        ' named capture form (?<name>...)
+                                        Dim nameBuf As String: nameBuf = ""
+                                        Do While p <= pEnd
+                                            Dim nc As String: nc = SafeMid(pat, p, 1)
+                                            If nc = ">" Then Exit Do
+                                            If (nc >= "a" And nc <= "z") Or (nc >= "A" And nc <= "Z") Or (nc >= "0" And nc <= "9") Or nc = "_" Or nc = "-" Then
+                                                nameBuf = nameBuf & nc
+                                                p = p + 1
+                                            Else
+                                                Exit Do
+                                            End If
+                                        Loop
+                                        If p <= pEnd And SafeMid(pat, p, 1) = ">" And Len(nameBuf) > 0 Then
+                                            p = p + 1 ' consume '>'
+                                            groupCounter = groupCounter + 1
+                                            thisIdx = groupCounter
+                                            Dim innerNamed As Collection
+                                            Set innerNamed = ParseSequence(pat, p, foundClose - 1, groupCounter)
+                                            If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
+                                            Dim gnodeNamed As Collection: Set gnodeNamed = newNode("group")
+                                            NodeAdd gnodeNamed, "idx", thisIdx
+                                            NodeAdd gnodeNamed, "child", innerNamed
+                                            NodeAdd gnodeNamed, "name", nameBuf
+                                            Set node = gnodeNamed
+                                            If DEBUG_TRACE Then Debug.Print "TRACE PARSE named-group -> name=" & nameBuf & " idx=" & thisIdx
+                                        Else
+                                            Set node = newNode("lit"): NodeAdd node, "ch", "("
+                                        End If
+                                    End If
+                                Else
+                                    Set node = newNode("lit"): NodeAdd node, "ch", "("
+                                End If
+
+                            Case ">"
+                                p = p + 1
+                                Dim innerAtomic As Collection
+                                Set innerAtomic = ParseSequence(pat, p, foundClose - 1, groupCounter)
+                                If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
+                                Dim atomicNode As Collection: Set atomicNode = newNode("atomic")
+                                NodeAdd atomicNode, "child", innerAtomic
+                                Set node = atomicNode
+
+                            Case ":"
+                                p = p + 1
+                                Dim innerNC As Collection
+                                Set innerNC = ParseSequence(pat, p, foundClose - 1, groupCounter)
+                                If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
+                                Dim ncNode As Collection: Set ncNode = newNode("group")
+                                NodeAdd ncNode, "child", innerNC
+                                NodeAdd ncNode, "noncap_syntax", True
+                                Set node = ncNode
+
+                            Case "R"
+                                p = p + 1
+                                If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
+                                Dim rnode As Collection: Set rnode = newNode("recurse")
+                                NodeAdd rnode, "target", 0
+                                Set node = rnode
+
+                            Case "("
+                                ' conditional (?(cond)yes|no)
+                                p = p + 1
+                                Dim condStart As Long: condStart = p
+                                Dim condEnd As Long: condEnd = -1
+                                Do While p <= pEnd
+                                    If SafeMid(pat, p, 1) = ")" Then
+                                        condEnd = p - 1
+                                        Exit Do
+                                    End If
+                                    p = p + 1
+                                Loop
+                                If condEnd = -1 Then
+                                    Set node = newNode("lit"): NodeAdd node, "ch", "("
+                                Else
+                                    Dim condText As String: condText = mid$(pat, condStart, condEnd - condStart + 1)
+                                    p = p + 1 ' consume ')'
+                                    Dim yesNode As Collection: Set yesNode = ParseSequence(pat, p, foundClose - 1, groupCounter, True)
+                                    Dim noNode As Collection: Set noNode = Nothing
+                                    If p <= pEnd And SafeMid(pat, p, 1) = "|" Then
+                                        p = p + 1
+                                        Set noNode = ParseSequence(pat, p, foundClose - 1, groupCounter, True)
+                                    End If
+                                    If foundClose <= pEnd Then p = foundClose + 1
+                                    Dim condNode As Collection: Set condNode = newNode("cond")
+                                    NodeAdd condNode, "cond", condText
+                                    NodeAdd condNode, "yes", yesNode
+                                    If Not (noNode Is Nothing) Then NodeAdd condNode, "no", noNode
+                                    Set node = condNode
+                                End If
+
+                            Case Else
+                                ' recursion by number or inline flags
+                                If SafeMid(pat, p, 1) >= "0" And SafeMid(pat, p, 1) <= "9" Then
+                                    Dim ds As String: ds = ""
+                                    Do While p <= pEnd
+                                        Dim dc As String: dc = SafeMid(pat, p, 1)
+                                        If dc >= "0" And dc <= "9" Then
+                                            ds = ds & dc
+                                            p = p + 1
+                                        Else
+                                            Exit Do
+                                        End If
+                                    Loop
+                                    If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
+                                    Dim rn As Collection: Set rn = newNode("recurse")
+                                    NodeAdd rn, "target", CLng(ds)
+                                    Set node = rn
+                                Else
+                                    Dim flagsStr As String: flagsStr = ""
+                                    Do While p <= pEnd
+                                        Dim fch As String: fch = SafeMid(pat, p, 1)
+                                        If (fch >= "a" And fch <= "z") Or (fch >= "A" And fch <= "Z") Or fch = "-" Then
+                                            flagsStr = flagsStr & fch
+                                            p = p + 1
+                                        Else
+                                            Exit Do
+                                        End If
+                                    Loop
+                                    If p <= pEnd And SafeMid(pat, p, 1) = ":" Then
+                                        p = p + 1
+                                        Dim innerFlagged As Collection
+                                        Set innerFlagged = ParseSequence(pat, p, foundClose - 1, groupCounter)
+                                        If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
+                                        Dim gnodeF As Collection: Set gnodeF = newNode("group")
+                                        NodeAdd gnodeF, "noncap_syntax", True
+                                        Dim normFlags As String: normFlags = ""
+                                        Dim kch As Long
+                                        For kch = 1 To Len(flagsStr)
+                                            Dim fc As String: fc = LCase$(mid$(flagsStr, kch, 1))
+                                            If fc = "i" Or fc = "m" Or fc = "s" Or fc = "-" Then normFlags = normFlags & fc
+                                        Next kch
+                                        If Len(normFlags) > 0 Then
+                                            NodeAdd gnodeF, "flags_on", normFlags
+                                            PropagateFlags innerFlagged, normFlags
+                                        End If
+                                        NodeAdd gnodeF, "child", innerFlagged
+                                        Set node = gnodeF
+                                    Else
+                                        err.Raise vbObjectError + 101, "RegexEngine", "Inline flags without ':' are not supported at compile time (use (?i:...) for group-scoped flags)."
+                                    End If
+                                End If
+                        End Select
+                    End If
+                Else
+                    ' normal capturing group
+                    groupCounter = groupCounter + 1
+                    thisIdx = groupCounter
+                    Dim inner As Collection
+                    Set inner = ParseSequence(pat, p, foundClose - 1, groupCounter)
+                    If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
+                    Dim gnode As Collection: Set gnode = newNode("group")
+                    NodeAdd gnode, "idx", thisIdx
+                    NodeAdd gnode, "child", inner
+                    Set node = gnode
+                End If
+
+                ' defensive: if inner parsing didn't advance to foundClose, jump past it
+                If foundClose <> -1 Then
+                    If p <= foundClose And SafeMid(pat, p, 1) <> ")" Then p = foundClose + 1
+                End If
             End If
+
         Else
-            Set node = NewNode("lit"): NodeAdd node, "ch", ch
+            Set node = newNode("lit"): NodeAdd node, "ch", ch
             p = p + 1
         End If
 
-        ' quantifier (supports possessive + after quantifier)
-        If p <= pEnd Then
+        ' quantifier (same semantics as original)
+        If Not node Is Nothing And p <= pEnd Then
             Dim qch As String: qch = SafeMid(pat, p, 1)
             If qch = "*" Or qch = "+" Or qch = "?" Or qch = "{" Then
-                Dim qnode As Collection: Set qnode = NewNode("quant")
+                Dim qnode As Collection: Set qnode = newNode("quant")
                 NodeAdd qnode, "child", node
                 NodeAdd qnode, "possessive", False
                 If qch = "*" Then
@@ -385,7 +491,7 @@ Private Function ParseSequence(ByVal pat As String, ByRef p As Long, ByVal pEnd 
                         p = p + 1
                     End If
                 End If
-                ' lazy or possessive flag
+
                 If p <= pEnd Then
                     Dim nextQ As String: nextQ = SafeMid(pat, p, 1)
                     If nextQ = "?" Then
@@ -401,36 +507,150 @@ Private Function ParseSequence(ByVal pat As String, ByRef p As Long, ByVal pEnd 
                 Else
                     NodeAdd qnode, "lazy", False
                 End If
+
                 Set node = qnode
             End If
         End If
 
-        children.Add node
+        If Not node Is Nothing Then children.Add node
     Loop
 
-    ' Build seq node for the parsed children
-    NodeAdd seq, "children", children
+    NodeAdd seq, "child", children
 
-    ' If the current char is '|' then construct an alternation containing this seq and subsequent seqs
-    If p <= pEnd And SafeMid(pat, p, 1) = "|" Then
-        Dim altNode As Collection: Set altNode = NewNode("alt")
-        Dim altChildren As New Collection
-        ' add the seq we just parsed as first alternative
-        altChildren.Add seq
-        ' iterate over remaining alternatives
-        Do While p <= pEnd And SafeMid(pat, p, 1) = "|"
-            p = p + 1 ' consume '|'
-            Dim nextSeq As Collection
-            Set nextSeq = ParseSequence(pat, p, pEnd, groupCounter)
-            ' if the nextSeq is empty sequence, ensure it's still a seq node (could be empty)
-            altChildren.Add nextSeq
-        Loop
-        NodeAdd altNode, "children", altChildren
-        Set ParseSequence = altNode
-        Exit Function
+    If Not stopAtPipeOrParen Then
+        If p <= pEnd And SafeMid(pat, p, 1) = "|" Then
+            Dim altNode As Collection: Set altNode = newNode("alt")
+            Dim altChildren As New Collection
+            altChildren.Add seq
+            Do While p <= pEnd And SafeMid(pat, p, 1) = "|"
+                p = p + 1
+                Dim nextSeq As Collection
+                Set nextSeq = ParseSequence(pat, p, pEnd, groupCounter)
+                altChildren.Add nextSeq
+            Loop
+            NodeAdd altNode, "child", altChildren
+            Set ParseSequence = altNode
+            Exit Function
+        End If
     End If
 
     Set ParseSequence = seq
+End Function
+
+Private Sub PropagateFlags(ByVal node As Variant, ByRef flags As String)
+    If node Is Nothing Then Exit Sub
+    On Error GoTo err_
+    
+    If TypeName(node) = "Collection" Then
+        Dim t As String
+        Dim elm As Variant
+        For Each elm In node
+            If TypeName(elm) = "Collection" Then
+                If NodeExists(elm, "type") Then t = NodeGet(elm, "type")
+                Select Case t
+                    Case "lit", "dot"
+                        Dim tmpNode As Collection
+                        Set tmpNode = elm
+                        NodeAdd tmpNode, "flags_on", flags
+                End Select
+                If NodeExists(elm, "child") Then
+                    PropagateFlags NodeGet(elm, "child"), flags
+                Else
+                    PropagateFlags elm, flags
+                End If
+            End If
+        Next elm
+    End If
+exit_:
+    Exit Sub
+err_:
+    ' Be defensive in production: clear error and continue (or rethrow in debug).
+    Debug.Print "PropagateFlags error: "; err.Number; err.Description
+    err.Clear
+    Resume exit_
+End Sub
+
+' ---------- Helper: Find matching ] for a class starting at startPos (where pat[startPos] = "[") ----------
+Private Function FindClassEnd(ByVal pat As String, ByVal startPos As Long, ByVal pEnd As Long) As Long
+    Dim pos As Long: pos = startPos
+    Dim escaped As Boolean: escaped = False
+    Dim ch As String
+    ' We expect pat(startPos) = "["
+    pos = pos + 1
+    Do While pos <= pEnd
+        ch = SafeMid(pat, pos, 1)
+        If escaped Then
+            escaped = False
+            pos = pos + 1
+            GoTo ContinueDo
+        End If
+        If ch = "\" Then
+            escaped = True
+            pos = pos + 1
+            GoTo ContinueDo
+        End If
+        If ch = "]" Then
+            FindClassEnd = pos
+            Exit Function
+        End If
+        pos = pos + 1
+ContinueDo:
+    Loop
+    FindClassEnd = -1
+End Function
+
+' ---------- Helper: Find matching ) for a group starting at startPos (where pat[startPos] = "(") ----------
+Private Function FindGroupEnd(ByVal pat As String, ByVal startPos As Long, ByVal pEnd As Long) As Long
+    Dim pos As Long: pos = startPos
+    Dim depth As Long: depth = 0
+    Dim inClass As Boolean: inClass = False
+    Dim escaped As Boolean: escaped = False
+    Dim ch As String
+
+    ' start scanning after the '('
+    pos = pos + 1
+    Do While pos <= pEnd
+        ch = SafeMid(pat, pos, 1)
+        If escaped Then
+            escaped = False
+            pos = pos + 1
+            GoTo ContinueDo
+        End If
+        If ch = "\" Then
+            escaped = True
+            pos = pos + 1
+            GoTo ContinueDo
+        End If
+        If inClass Then
+            If ch = "]" Then inClass = False
+            pos = pos + 1
+            GoTo ContinueDo
+        End If
+        If ch = "[" Then
+            inClass = True
+            pos = pos + 1
+            GoTo ContinueDo
+        End If
+        If ch = "(" Then
+            depth = depth + 1
+            pos = pos + 1
+            GoTo ContinueDo
+        End If
+        If ch = ")" Then
+            If depth = 0 Then
+                FindGroupEnd = pos
+                Exit Function
+            Else
+                depth = depth - 1
+                pos = pos + 1
+                GoTo ContinueDo
+            End If
+        End If
+        pos = pos + 1
+ContinueDo:
+    Loop
+
+    FindGroupEnd = -1
 End Function
 
 Private Function ParseEscapeNode(ByVal ch As String) As Collection
@@ -451,10 +671,10 @@ Private Function ParseEscapeNode(ByVal ch As String) As Collection
             ' Non-space
             Set node = ParseClassFromSimple("[ " & vbTab & vbLf & vbCr & "]")
             NodeAdd node, "neg", True
-        Case "n": Set node = NewNode("lit"): NodeAdd node, "ch", vbLf
-        Case "r": Set node = NewNode("lit"): NodeAdd node, "ch", vbCr
-        Case "t": Set node = NewNode("lit"): NodeAdd node, "ch", vbTab
-        Case Else: Set node = NewNode("lit"): NodeAdd node, "ch", ch
+        Case "n": Set node = newNode("lit"): NodeAdd node, "ch", vbLf
+        Case "r": Set node = newNode("lit"): NodeAdd node, "ch", vbCr
+        Case "t": Set node = newNode("lit"): NodeAdd node, "ch", vbTab
+        Case Else: Set node = newNode("lit"): NodeAdd node, "ch", ch
     End Select
     Set ParseEscapeNode = node
 End Function
@@ -462,7 +682,7 @@ End Function
 
 ' Parse class and build a 256-byte boolean map for quick matching (ASCII fast-path)
 Private Function ParseClass(ByVal pat As String, ByVal pStart As Long, ByVal pEnd As Long) As Collection
-    Dim node As Collection: Set node = NewNode("class")
+    Dim node As Collection: Set node = newNode("class")
     Dim chars As New Collection
     Dim neg As Boolean: neg = False
     Dim i As Long: i = pStart
@@ -529,7 +749,7 @@ End Function
 
 
 Private Function ParseClassFromSimple(ByVal spec As String) As Collection
-    Dim node As Collection: Set node = NewNode("class")
+    Dim node As Collection: Set node = newNode("class")
     Dim chars As New Collection
     Dim i As Long: i = 2
     Do While i <= Len(spec) - 1
@@ -580,25 +800,47 @@ Private Function GetGroupCount(ByVal ast As Collection) As Long
     GetGroupCount = maxIdx
 End Function
 
-Private Sub TraverseForGroups(ByVal node As Collection, ByRef maxIdx As Long)
-    Dim t As String: t = NodeGet(node, "type")
-    Select Case t
-        Case "seq"
-            Dim ch As Variant
-            For Each ch In NodeGet(node, "children")
-                TraverseForGroups ch, maxIdx
-            Next
-        Case "group"
-            If NodeExists(node, "idx") Then If NodeGet(node, "idx") > maxIdx Then maxIdx = NodeGet(node, "idx")
-            TraverseForGroups NodeGet(node, "child"), maxIdx
-        Case "quant"
-            TraverseForGroups NodeGet(node, "child"), maxIdx
-        Case "alt"
-            Dim altc As Variant
-            For Each altc In NodeGet(node, "children")
-                TraverseForGroups altc, maxIdx
-            Next
-    End Select
+' Deterministic traversal for capturing maximum group index in an AST node tree.
+Private Sub TraverseForGroups(ByVal node As Variant, ByRef maxIdx As Long)
+    If node Is Nothing Then Exit Sub
+    On Error GoTo err_
+    
+    If TypeName(node) = "Collection" Then
+        Dim t As String
+        Dim elm As Variant
+        Dim tmpIdx As Long
+        
+        If NodeExists(node, "type") Then t = NodeGet(node, "type")
+        If t = "group" Then
+            If NodeExists(node, "idx") Then
+                tmpIdx = NodeGet(node, "idx")
+                If tmpIdx > maxIdx Then maxIdx = tmpIdx
+            End If
+        End If
+        For Each elm In node
+            If TypeName(elm) = "Collection" Then
+                If NodeExists(elm, "type") Then t = NodeGet(elm, "type")
+                If t = "group" Then
+                    If NodeExists(elm, "idx") Then
+                        tmpIdx = NodeGet(elm, "idx")
+                        If tmpIdx > maxIdx Then maxIdx = tmpIdx
+                    End If
+                End If
+                If NodeExists(elm, "child") Then
+                    TraverseForGroups NodeGet(elm, "child"), maxIdx
+                Else
+                    TraverseForGroups elm, maxIdx
+                End If
+            End If
+        Next elm
+    End If
+exit_:
+    Exit Sub
+err_:
+    ' Be defensive in production: clear error and continue (or rethrow in debug).
+    If DEBUG_TRACE Then Debug.Print "TraverseForGroups error: "; err.Number; err.Description
+    err.Clear
+    Resume exit_
 End Sub
 
 Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal pos As Long, Optional ByRef outEnd As Variant) As Boolean
@@ -609,10 +851,11 @@ Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal
     Dim t As String: t = CStr(NodeGet(node, "type"))
     Dim res As Boolean: res = False
     Dim localEnd As Variant: localEnd = Empty
-
+    Dim inlineFlags As String
+    
     Select Case t
         Case "seq"
-            res = MatchSequence(NodeGet(node, "children"), subj, pos, localEnd)
+            res = MatchSequence(NodeGet(node, "child"), subj, pos, localEnd)
 
         Case "lit"
             If pos > Len(subj) Then
@@ -620,10 +863,33 @@ Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal
             Else
                 Dim ch As String: ch = NodeGet(node, "ch")
                 Dim sc As String: sc = SafeMid(subj, pos, 1)
+                Dim iCase As Boolean
+                Dim tOffCase As Boolean
                 If pIgnoreCase Then
-                    If LCase$(sc) = LCase$(ch) Then localEnd = pos: res = True
+                    'Inline flags
+                    If NodeExists(node, "flags_on") Then
+                        inlineFlags = NodeGet(node, "flags_on")
+                        tOffCase = InStrB(1, inlineFlags, "-i")
+                    End If
+                    If Not tOffCase Then
+                        If LCase$(sc) = LCase$(ch) Then localEnd = pos: res = True
+                    Else
+                        ' Case sentitive
+                        If sc = ch Then localEnd = pos: res = True
+                    End If
                 Else
-                    If sc = ch Then localEnd = pos: res = True
+                    If NodeExists(node, "flags_on") Then
+                        inlineFlags = NodeGet(node, "flags_on")
+                        iCase = InStrB(1, inlineFlags, "i") And (InStrB(1, inlineFlags, "-i") = 0)
+                        If iCase Then
+                            ' Case insensitive
+                            If LCase$(sc) = LCase$(ch) Then localEnd = pos: res = True
+                        Else
+                            If sc = ch Then localEnd = pos: res = True
+                        End If
+                    Else
+                        If sc = ch Then localEnd = pos: res = True
+                    End If
                 End If
             End If
 
@@ -631,8 +897,19 @@ Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal
             If pos > Len(subj) Then
                 res = False
             Else
+                Dim dAll As Boolean
+                If NodeExists(node, "flags_on") Then
+                    inlineFlags = NodeGet(node, "flags_on")
+                    tOffCase = (InStrB(1, inlineFlags, "-s") > 0)
+                    dAll = InStrB(1, inlineFlags, "s") And (InStrB(1, inlineFlags, "-s") = 0)
+                End If
+                If pDotAll And tOffCase Then
+                    dAll = False
+                Else
+                    If Not dAll Then dAll = pDotAll
+                End If
                 Dim dch As String: dch = SafeMid(subj, pos, 1)
-                If (dch = vbLf Or dch = vbCr) And Not pDotAll Then
+                If (dch = vbLf Or dch = vbCr) And Not dAll Then
                     res = False
                 Else
                     localEnd = pos: res = True
@@ -645,59 +922,55 @@ Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal
             Else
                 If MatchCharClassNode(node, SafeMid(subj, pos, 1)) Then localEnd = pos: res = True
             End If
-
+            
         Case "group"
             ' Handle both capturing and non-capturing groups.
             Dim hasIdx As Boolean: hasIdx = NodeExists(node, "idx")
-            Dim gIdx As Long
-            If hasIdx Then gIdx = CLng(NodeGet(node, "idx"))
-
+            Dim gidx As Long
+            If hasIdx Then gidx = CLng(NodeGet(node, "idx")) Else gidx = 0
+        
             ' Support group-scoped inline flags (flags_on) during the child match.
             Dim flagsApplied As Boolean: flagsApplied = False
             Dim savedIgnore As Boolean, savedMultiline As Boolean, savedDotAll As Boolean
             If NodeExists(node, "flags_on") Then
                 flagsApplied = True
                 savedIgnore = pIgnoreCase
-                savedMultiline = IIf(NodeExists(Me, "pMultiline"), pMultiline, False) ' defensive read if not present
+                savedMultiline = IIf(NodeExists(Me, "pMultiline"), pMultiline, False)
                 savedDotAll = IIf(NodeExists(Me, "pDotAll"), pDotAll, False)
                 Dim fstr As String: fstr = CStr(NodeGet(node, "flags_on"))
                 If InStr(fstr, "i") > 0 Then pIgnoreCase = True
                 If InStr(fstr, "m") > 0 Then pMultiline = True
                 If InStr(fstr, "s") > 0 Then pDotAll = True
             End If
-
-            Dim prevStart As Long, prevEnd As Long
-            If hasIdx Then
-                prevStart = capsStart(gIdx)
-                prevEnd = capsEnd(gIdx)
-                capsStart(gIdx) = pos
+        
+            ' --- FULL snapshot before touching ANY capture slots ---
+            Dim snapGroup() As Long: snapGroup = CopyCaps()
+        
+            ' set group's start (only after we took full snapshot)
+            If gidx >= 1 Then
+                capsStart(gidx) = pos
             End If
-
+        
             Dim childEnd As Variant
             If MatchNode(NodeGet(node, "child"), subj, pos, childEnd) Then
-                If hasIdx Then
-                    capsEnd(gIdx) = CLng(childEnd)
-                End If
+                If gidx >= 1 Then capsEnd(gidx) = CLng(childEnd)
                 localEnd = childEnd
                 res = True
             Else
-                If hasIdx Then
-                    capsStart(gIdx) = prevStart
-                    capsEnd(gIdx) = prevEnd
-                End If
+                ' restore entire capture state (safer than just restoring this group's two slots)
+                RestoreCaps snapGroup
                 res = False
             End If
-
-            ' restore flags if applied
+        
+            ' restore flags if applied (always do this after child path)
             If flagsApplied Then
                 pIgnoreCase = savedIgnore
                 pMultiline = savedMultiline
                 pDotAll = savedDotAll
             End If
-
         Case "alt"
             Dim altChild As Variant
-            For Each altChild In NodeGet(node, "children")
+            For Each altChild In NodeGet(node, "child")
                 Dim snapAlt() As Long: snapAlt = CopyCaps()
                 Dim altEnd As Variant
                 If MatchNode(altChild, subj, pos, altEnd) Then
@@ -872,6 +1145,113 @@ Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal
                 RestoreCaps beforeSnap
                 res = False
             End If
+        Case "cond"
+            ' Conditional node: fields "cond" (string like "1" or "name"), "yes" (node), optional "no" (node)
+            If Not NodeExists(node, "cond") Then
+                MatchNode = False: Exit Function
+            End If
+        
+            Dim condText As String: condText = CStr(NodeGet(node, "cond"))
+            Dim condSatisfied As Boolean: condSatisfied = False
+        
+            ' numeric?
+            If IsNumeric(condText) Then
+                Dim cIdx As Long: cIdx = CLng(condText)
+                If cIdx >= 0 And cIdx <= UBound(capsEnd) Then
+                    If capsEnd(cIdx) <> -1 Then condSatisfied = True
+                End If
+            Else
+                ' named: find index by name
+                Dim resolvedIdx As Long: resolvedIdx = FindGroupIndexByName(pAST, condText)
+                If resolvedIdx <> -1 Then
+                    If resolvedIdx >= 0 And resolvedIdx <= UBound(capsEnd) Then
+                        If capsEnd(resolvedIdx) <> -1 Then condSatisfied = True
+                    End If
+                Else
+                    condSatisfied = False
+                End If
+            End If
+        
+            ' Branch selection
+            If condSatisfied Then
+                If NodeExists(node, "yes") Then
+                    Dim yesNode As Variant: vAssignVar yesNode, NodeGet(node, "yes")
+                    Dim yesEnd As Variant
+                    Dim snapY() As Long: snapY = CopyCaps()
+                    If MatchNode(yesNode, subj, pos, yesEnd) Then
+                        localEnd = yesEnd: res = True
+                    Else
+                        RestoreCaps snapY: res = False
+                    End If
+                Else
+                    res = False
+                End If
+            Else
+                If NodeExists(node, "no") Then
+                    Dim noNode As Variant: vAssignVar noNode, NodeGet(node, "no")
+                    Dim noEnd As Variant
+                    Dim snapN() As Long: snapN = CopyCaps()
+                    If MatchNode(noNode, subj, pos, noEnd) Then
+                        localEnd = noEnd: res = True
+                    Else
+                        RestoreCaps snapN: res = False
+                    End If
+                Else
+                    ' No 'no' branch -> treat as failure (consistent with your earlier choice)
+                    res = False
+                End If
+            End If
+        
+        Case "recurse"
+            If Not NodeExists(node, "target") Then
+                MatchNode = False: Exit Function
+            End If
+        
+            Dim targ As Long: targ = CLng(NodeGet(node, "target"))
+            Dim recOk As Boolean: recOk = False
+            Dim recEnd As Variant
+        
+            If targ = 0 Then
+                ' (?R) -> recurse into whole root AST
+                Dim snapR() As Long: snapR = CopyCaps()
+                If MatchNode(NodeGet(pAST, "body"), subj, pos, recEnd) Then
+                    recOk = True: localEnd = recEnd
+                Else
+                    RestoreCaps snapR: recOk = False
+                End If
+            Else
+                ' recurse into group node child (if available)
+                If NodeExists(pAST, "groupNodes") Then
+                    Dim gnodes As Collection: Set gnodes = NodeGet(pAST, "groupNodes")
+                    Dim rIdx As Long: rIdx = FindGroupIndexByOrdinal(pAST, targ)
+                    On Error Resume Next
+                    Dim targetNode As Variant
+                    targetNode = gnodes(rIdx) ' index collection access
+                    If err.Number <> 0 Then
+                        err.Clear
+                        targetNode = Empty
+                    End If
+                    On Error GoTo 0
+        
+                    If Not IsEmpty(targetNode) Then
+                        If TypeName(targetNode(UBound(targetNode))) = "Collection" Then
+                            Dim childNode As Collection: Set childNode = targetNode(UBound(targetNode))
+                            Dim snapG() As Long: snapG = CopyCaps()
+                            If MatchNode(childNode, subj, pos, recEnd) Then
+                                recOk = True: localEnd = recEnd
+                            Else
+                                RestoreCaps snapG: recOk = False
+                            End If
+                        End If
+                    End If
+                End If
+            End If
+        
+            If recOk Then
+                res = True
+            Else
+                res = False
+            End If
 
         Case Else
             res = False
@@ -894,13 +1274,15 @@ End Function
 
 Private Function MatchSequence(ByVal children As Collection, ByVal subj As String, ByVal pos As Long, Optional ByRef outEnd As Variant) As Boolean
     If DEBUG_TRACE Then Debug.Print "TRACE MatchSequence start pos=" & pos & " children=" & children.count
-    Dim seqSnap() As Long: seqSnap = CopyCaps()
+    Dim seqSnap() As Long
+    Dim rootSnap() As Long: rootSnap = CopyCaps()
+    Dim grpSnap() As Long
+    Dim tmpSnaps() As Long
     Dim curPos As Long: curPos = pos
     Dim i As Long
 
     For i = 1 To children.count
         Dim node As Collection: Set node = children(i)
-        Dim nodeSnap() As Long: nodeSnap = CopyCaps()
         Dim nodeEnd As Variant
         Dim nodeType As String: nodeType = NodeGet(node, "type")
 
@@ -921,6 +1303,7 @@ Private Function MatchSequence(ByVal children As Collection, ByVal subj As Strin
         
             ' collect all possible end positions by repeatedly matching child
             Dim occEnds() As Long
+            Dim occSnaps() As Variant   ' store snapshots (each an array of Long) after each successful occurrence
             Dim occCount As Long: occCount = 0
             Dim scanPos As Long: scanPos = curPos
             Do While occCount < mx
@@ -930,6 +1313,10 @@ Private Function MatchSequence(ByVal children As Collection, ByVal subj As Strin
                     occCount = occCount + 1
                     ReDim Preserve occEnds(1 To occCount)
                     occEnds(occCount) = CLng(ndEnd)
+                    ' capture snapshot AFTER the successful match so we can deterministically restore it later
+                    Dim afterSnap() As Long: afterSnap = CopyCaps()
+                    ReDim Preserve occSnaps(1 To occCount)
+                    occSnaps(occCount) = afterSnap
                     If DEBUG_TRACE Then Debug.Print "TRACE  quant matched occ " & occCount & " nodeEnd=" & ndEnd
                     scanPos = CLng(ndEnd) + 1
                 Else
@@ -952,28 +1339,10 @@ Private Function MatchSequence(ByVal children As Collection, ByVal subj As Strin
                 ' attempt remainder only with k = occCount
                 If DEBUG_TRACE Then Debug.Print "TRACE  quant possessive trying k=" & occCount & " (mn=" & mn & " occCount=" & occCount & ")"
                 RestoreCaps seqSnap
-                Dim posTryP As Long: posTryP = curPos
-                Dim tP As Long
-                Dim okAllP As Boolean: okAllP = True
-                For tP = 1 To occCount
-                    Dim snapTmpP() As Long: snapTmpP = CopyCaps()
-                    Dim ndEndP As Variant
-                    If MatchNode(childNode, subj, posTryP, ndEndP) Then
-                        posTryP = CLng(ndEndP) + 1
-                    Else
-                        RestoreCaps snapTmpP
-                        okAllP = False
-                        Exit For
-                    End If
-                Next tP
-        
-                If Not okAllP Then
-                    If DEBUG_TRACE Then Debug.Print "TRACE  quant possessive failed while building occurrences"
-                    RestoreCaps seqSnap
-                    MatchSequence = False: Exit Function
-                End If
-        
-                ' Now attempt remainder once
+                ' restore capture state corresponding to occCount (if >0)
+                tmpSnaps = occSnaps(occCount)
+                If occCount >= 1 Then RestoreCaps tmpSnaps
+                Dim posTryP As Long: posTryP = IIf(occCount >= 1, occEnds(occCount) + 1, curPos)
                 Dim remSuccessP As Boolean: remSuccessP = True
                 Dim jP As Long
                 Dim nxtEndP As Variant
@@ -1016,29 +1385,18 @@ Private Function MatchSequence(ByVal children As Collection, ByVal subj As Strin
                 ' restore sequence baseline before attempting this k
                 RestoreCaps seqSnap
         
-                ' apply k repetitions of child to set captures accordingly
-                Dim posTry As Long: posTry = curPos
-                Dim t As Long
-                Dim okAll As Boolean: okAll = True
-                For t = 1 To k
-                    Dim snapTmp() As Long: snapTmp = CopyCaps()
-                    Dim ndEnd2 As Variant
-                    If MatchNode(childNode, subj, posTry, ndEnd2) Then
-                        posTry = CLng(ndEnd2) + 1
-                    Else
-                        RestoreCaps snapTmp
-                        okAll = False
-                        Exit For
-                    End If
-                Next t
-        
-                If Not okAll Then
-                    If DEBUG_TRACE Then Debug.Print "TRACE  quant k=" & k & " failed while building occurrences"
-                    ' try next k
-                    GoTo ContinueFor
+                ' If k>0 restore the saved snapshot for exactly k occurrences (deterministic)
+                Dim posTry As Long
+                If k >= 1 Then
+                    ' restore the capture state after k occurrences
+                    tmpSnaps = occSnaps(k)
+                    RestoreCaps tmpSnaps
+                    posTry = occEnds(k) + 1
+                Else
+                    posTry = curPos
                 End If
         
-                ' Now match the remainder *inline* (avoid building a separate 'rest' and recursing)
+                ' Now match the remainder *inline*
                 Dim remSuccess As Boolean: remSuccess = True
                 Dim j As Long
                 Dim nxtEnd As Variant
@@ -1063,33 +1421,44 @@ Private Function MatchSequence(ByVal children As Collection, ByVal subj As Strin
                     If DEBUG_TRACE Then Debug.Print "TRACE  quant k=" & k & " remainder failed; will try next k"
                     ' continue to next k (seqSnap will be restored at loop top)
                 End If
-ContinueFor:
             Next k
         
             ' none of the k choices worked; restore seq baseline and fail
             If DEBUG_TRACE Then Debug.Print "TRACE  quant exhausted all k options -> fail"
             RestoreCaps seqSnap
             MatchSequence = False: Exit Function
-
+            
         ElseIf nodeType = "group" Then
-            Dim gIdx As Long: gIdx = NodeGet(node, "idx")
-            If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " group idx=" & gIdx & " set start=" & curPos
-            capsStart(gIdx) = curPos
             Dim childEnd As Variant
+            Dim gidx As Long
+            ' guard: some group nodes may have idx=0 (non-capturing wrapper) — only touch capture arrays for idx>=1
+            If NodeExists(node, "idx") Then
+                gidx = CLng(NodeGet(node, "idx"))
+            Else
+                gidx = 0
+            End If
+            
+            ' save sequence baseline snapshot
+            grpSnap = CopyCaps()
+            
+            If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " group idx=" & gidx & " set start=" & curPos
+
+            If gidx >= 1 Then capsStart(gidx) = curPos
+
             If Not MatchNode(NodeGet(node, "child"), subj, curPos, childEnd) Then
                 If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " group FAILED, restoring seqSnap"
-                RestoreCaps seqSnap
+                ' restore everything (seqSnap contains the capture arrays)
+                RestoreCaps grpSnap
                 MatchSequence = False: Exit Function
             Else
                 If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " group OK nodeEnd=" & childEnd
-                capsEnd(gIdx) = childEnd
+                If gidx >= 1 Then capsEnd(gidx) = childEnd
                 curPos = CLng(childEnd) + 1
             End If
-
         Else
             If Not MatchNode(node, subj, curPos, nodeEnd) Then
                 If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " node FAILED, restoring seqSnap"
-                RestoreCaps seqSnap
+                RestoreCaps rootSnap
                 MatchSequence = False: Exit Function
             Else
                 If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " node OK nodeEnd=" & nodeEnd
@@ -1190,59 +1559,61 @@ End Function
 
 
 ' ---------------- Captures snapshot utilities -----------------------------
+' Return a fresh, self-contained snapshot of the capture arrays.
+' Snapshot layout (0-based):
+'  indices 0 .. tot        => capsStart(0..tot)
+'  indices tot+1 .. 2*(tot+1)-1 => capsEnd(0..tot)
 Private Function CopyCaps() As Long()
     Dim tot As Long: tot = pGroupCount
-    Dim slots As Long: slots = tot + 1
-    Dim res() As Long
-    ReDim res(0 To slots * 2 - 1)
+    Dim snap() As Long
+    ReDim snap(0 To 2 * tot + 1)    ' 2*(tot+1) elements
     Dim i As Long
     For i = 0 To tot
-        res(i) = capsStart(i)
-        res(i + slots) = capsEnd(i)
+        snap(i) = capsStart(i)
+        snap(i + tot + 1) = capsEnd(i)
     Next i
-    If DEBUG_TRACE Then
-        Dim s As String: s = "TRACE CopyCaps -> ["
-        For i = 0 To tot
-            s = s & " s" & i & "=" & CStr(res(i)) & " e" & i & "=" & CStr(res(i + slots))
-            If i < tot Then s = s & " |"
-        Next i
-        s = s & " ]"
-        Debug.Print s
-    End If
-    CopyCaps = res
+    CopyCaps = snap
 End Function
 
+' Restore capture arrays from a snapshot produced by CopyCaps.
+' This routine is defensive: if the current pGroupCount differs from the
+' snapshot's pGroupCount, it restores as many slots as possible and
+' initializes any new slots to sensible defaults.
 Private Sub RestoreCaps(ByRef snapshot() As Long)
-    Dim slots As Long: slots = (UBound(snapshot) + 1) \ 2
-    Dim tot As Long: tot = slots - 1
-    Dim i As Long
-    If DEBUG_TRACE Then
-        Dim before As String: before = "TRACE RestoreCaps (before) -> ["
-        For i = 0 To tot
-            before = before & " s" & i & "=" & CStr(capsStart(i)) & " e" & i & "=" & CStr(capsEnd(i))
-            If i < tot Then before = before & " |"
-        Next i
-        before = before & " ]"
-        Debug.Print before
-    End If
+    On Error GoTo bad_snapshot
+    If (Not (IsArray(snapshot))) Then Exit Sub
 
-    For i = 0 To tot
-        ' If atomicLocks(i) true, skip restoring this capture index to preserve atomic group side-effects
-        If Not atomicLocks(i) Then
+    Dim ub As Long: ub = UBound(snapshot)
+    If ub < 0 Then Exit Sub
+
+    ' compute snapshot tot: (UB - 1) \ 2
+    Dim snapTot As Long
+    snapTot = (ub - 1) \ 2
+    Dim snapOff As Long: snapOff = snapTot + 1
+
+    Dim curTot As Long: curTot = pGroupCount
+
+    Dim i As Long
+    For i = 0 To curTot
+        If i <= snapTot Then
             capsStart(i) = snapshot(i)
-            capsEnd(i) = snapshot(i + slots)
+            capsEnd(i) = snapshot(i + snapOff)
+        Else
+            ' slot not present in snapshot -> reset to default
+            capsStart(i) = 0
+            capsEnd(i) = -1
         End If
     Next i
 
-    If DEBUG_TRACE Then
-        Dim after As String: after = "TRACE RestoreCaps (after)  -> ["
-        For i = 0 To tot
-            after = after & " s" & i & "=" & CStr(capsStart(i)) & " e" & i & "=" & CStr(capsEnd(i))
-            If i < tot Then after = after & " |"
-        Next i
-        after = after & " ]"
-        Debug.Print after
-    End If
+    ' harmless cleanup: attempt to free snapshot memory
+    On Error Resume Next
+    Erase snapshot
+    Exit Sub
+
+bad_snapshot:
+    ' Defensive fallback: if snapshot was bogus, do nothing but avoid crashing.
+    On Error Resume Next
+    err.Clear
 End Sub
 
 ' ---------------- Char class matching with precomputed map -----------------
@@ -1305,67 +1676,163 @@ Private Function MatchCharClassNode(ByVal node As Collection, ByVal ch As String
     If NodeGet(node, "neg") Then MatchCharClassNode = Not matched2 Else MatchCharClassNode = matched2
 End Function
 ' ---------------- Replacement helpers -----------------------------------
-Private Function ExpandReplacement(ByVal caps As Collection, ByVal repl As String) As String
+Private Function ExpandReplacement(ByVal caps As Collection, ByVal repl As String, Optional ByVal namedColl As Collection = Nothing) As String
     Dim out As String: out = ""
     Dim i As Long: i = 1
-    Do While i <= Len(repl)
-        Dim ch As String: ch = SafeMid(repl, i, 1)
+    Dim L As Long: L = Len(repl)
+
+    If caps Is Nothing Then
+        ExpandReplacement = repl: Exit Function
+    End If
+
+    Dim mstart As Long: mstart = -1
+    Dim mend As Long: mend = -1
+    Dim ch As String
+    Dim nextCh As String
+    Dim j As Long
+    Dim nm As String
+    Dim c2 As String
+    Dim numStr As String
+    Dim k As Long
+    Dim cc As String
+    Dim useIdx As Long
+    Dim try2 As Long
+    Dim tryOne As Long
+    Dim capIndex As Long
+
+    On Error Resume Next
+    mstart = CLng(capsStart(0))
+    mend = CLng(capsEnd(0))
+    On Error GoTo 0
+
+    Do While i <= L
+        ch = SafeMid(repl, i, 1)
         If ch = "$" Then
-            Dim j As Long: j = i + 1
-            Dim num As String: num = ""
-            Do While j <= Len(repl) And SafeMid(repl, j, 1) >= "0" And SafeMid(repl, j, 1) <= "9"
-                num = num & SafeMid(repl, j, 1)
-                j = j + 1
-            Loop
-            If num <> "" Then
-                Dim idx As Long: idx = CLng(num)
-                If idx >= 0 And idx <= caps.count - 1 Then out = out & caps.item(idx + 1)
-                i = j
-            Else
-                out = out & "$": i = i + 1
+            If i = L Then
+                out = out & "$": i = i + 1: GoTo ContinueLoop
             End If
+            nextCh = SafeMid(repl, i + 1, 1)
+            Select Case nextCh
+                Case "$"
+                    out = out & "$": i = i + 2: GoTo ContinueLoop
+                Case "&"
+                    If caps.count >= 1 Then out = out & CStr(caps.item(1))
+                    i = i + 2: GoTo ContinueLoop
+                Case "`"
+                    If mstart >= 1 Then
+                        If mstart > 1 Then out = out & SafeMid(CurSubject, 1, mstart - 1) Else out = out & ""
+                    Else
+                        out = out & ""
+                    End If
+                    i = i + 2: GoTo ContinueLoop
+                Case "'"
+                    If mend >= 1 Then
+                        If mend < Len(CurSubject) Then out = out & SafeMid(CurSubject, mend + 1) Else out = out & ""
+                    Else
+                        out = out & ""
+                    End If
+                    i = i + 2: GoTo ContinueLoop
+                Case "<"
+                    ' Named capture syntax $<name>
+                    j = i + 2
+                    nm = ""
+                    Do While j <= L
+                        c2 = SafeMid(repl, j, 1)
+                        If c2 = ">" Then Exit Do
+                        nm = nm & c2
+                        j = j + 1
+                    Loop
+                    If j <= L And SafeMid(repl, j, 1) = ">" Then
+                        ' found close '>'
+                        If Not IsMissing(namedColl) And Not namedColl Is Nothing Then
+                            On Error Resume Next
+                            If NodeExists(namedColl, nm) Then
+                                out = out & CStr(namedColl(nm)(1))
+                            Else
+                                ' missing named capture yields empty string
+                                out = out & ""
+                            End If
+                            On Error GoTo 0
+                        Else
+                            ' no namedColl provided -> try to find in caps by numeric fallback (not possible) -> empty
+                            out = out & ""
+                        End If
+                        i = j + 1
+                        GoTo ContinueLoop
+                    Else
+                        ' no closing '>' - treat literally as "$<..."
+                        out = out & "$<": i = i + 2: GoTo ContinueLoop
+                    End If
+                Case "0" To "9"
+                    ' numeric capture: greedy 2-digit then fallback
+                    numStr = ""
+                    k = i + 1
+                    Do While k <= L And Len(numStr) < 2
+                        cc = SafeMid(repl, k, 1)
+                        If cc >= "0" And cc <= "9" Then
+                            numStr = numStr & cc
+                            k = k + 1
+                        Else
+                            Exit Do
+                        End If
+                    Loop
+                    useIdx = -1
+                    If Len(numStr) = 2 Then
+                        try2 = CLng(numStr)
+                        If try2 >= 0 And try2 <= caps.count - 1 Then
+                            useIdx = try2
+                            i = i + 3
+                        Else
+                            Dim try1 As Long: try1 = CLng(left$(numStr, 1))
+                            If try1 >= 0 And try1 <= caps.count - 1 Then useIdx = try1
+                            i = i + 2
+                        End If
+                    ElseIf Len(numStr) = 1 Then
+                        tryOne = CLng(numStr)
+                        If tryOne >= 0 And tryOne <= caps.count - 1 Then useIdx = tryOne
+                        i = i + 2
+                    Else
+                        out = out & "$": i = i + 1
+                    End If
+                    If useIdx >= 0 Then
+                        capIndex = useIdx + 1
+                        If capIndex >= 1 And capIndex <= caps.count Then out = out & CStr(caps.item(capIndex)) Else out = out & ""
+                    End If
+                    GoTo ContinueLoop
+                Case Else
+                    out = out & "$": i = i + 1: GoTo ContinueLoop
+            End Select
         Else
             out = out & ch: i = i + 1
         End If
+ContinueLoop:
     Loop
     ExpandReplacement = out
 End Function
-
+' This implementation only returns empty matches for non-multiple groups or subjects
 Private Function BuildCaptureCollection() As Collection
     Dim col As New Collection
     If capsStart(0) >= 1 And capsEnd(0) >= capsStart(0) Then
         col.Add SafeMid(CurSubject, capsStart(0), capsEnd(0) - capsStart(0) + 1)
     Else
-        col.Add ""
+        If col.count = 0 Then
+            col.Add ""
+        End If
     End If
     Dim i As Long
     For i = 1 To pGroupCount
         If capsStart(i) >= 1 And capsEnd(i) >= capsStart(i) Then
             col.Add SafeMid(CurSubject, capsStart(i), capsEnd(i) - capsStart(i) + 1)
         Else
-            col.Add ""
+            If pGroupCount = 1 Then
+                col.Add ""
+            End If
         End If
     Next i
     Set BuildCaptureCollection = col
 End Function
 
 ' ---------------- Utilities ------------------------------------------------
-Private Function FindClassEnd(ByVal pat As String, ByVal p As Long, ByVal pEnd As Long) As Long
-    Dim i As Long
-    Dim esc As Boolean: esc = False
-    For i = p To pEnd
-        Dim ch As String: ch = SafeMid(pat, i, 1)
-        If esc Then
-            esc = False
-        ElseIf ch = "\" Then
-            esc = True
-        ElseIf ch = "]" Then
-            FindClassEnd = i: Exit Function
-        End If
-    Next i
-    FindClassEnd = -1
-End Function
-
 Private Function ComputeMinLen(ByVal node As Collection) As Long
     Dim t As String: t = NodeGet(node, "type")
     Select Case t
@@ -1373,7 +1840,7 @@ Private Function ComputeMinLen(ByVal node As Collection) As Long
         Case "seq"
             Dim sum As Long: sum = 0
             Dim ch As Variant
-            For Each ch In NodeGet(node, "children")
+            For Each ch In NodeGet(node, "child")
                 sum = sum + ComputeMinLen(ch)
             Next
             ComputeMinLen = sum
@@ -1386,7 +1853,7 @@ Private Function ComputeMinLen(ByVal node As Collection) As Long
         Case "alt"
             Dim minv As Long: minv = -1
             Dim chAlt As Variant
-            For Each chAlt In NodeGet(node, "children")
+            For Each chAlt In NodeGet(node, "child")
                 Dim vAlt As Long: vAlt = ComputeMinLen(chAlt)
                 If minv = -1 Or vAlt < minv Then minv = vAlt
             Next
@@ -1394,6 +1861,9 @@ Private Function ComputeMinLen(ByVal node As Collection) As Long
             ComputeMinLen = minv
         Case Else: ComputeMinLen = 0
     End Select
+End Function
+Private Function ReplaceNewLines(subj As String) As String
+    ReplaceNewLines = VBA.Replace(VBA.Replace(subj, "\n", vbLf), "\r", vbCr)
 End Function
 
 ' ---------------- Public Exec / ExecAll / Replace / Split ---------------------------
@@ -1405,7 +1875,8 @@ Public Function Exec(ByVal subj As String) As Collection
     Dim L As Long: L = Len(subj)
     Dim minLen As Long
     minLen = NodeGet(pAST, "minLen")
-
+    
+    subj = ReplaceNewLines(subj)
     ' Anchored start: if multiline, try positions that are start-of-string or immediately after a newline (CR or LF)
     If anchoredStart Then
         If pMultiline Then
@@ -1414,6 +1885,7 @@ Public Function Exec(ByVal subj As String) As Collection
                 If tryPos = 1 Or SafeMid(subj, tryPos - 1, 1) = vbLf Or SafeMid(subj, tryPos - 1, 1) = vbCr Then
                     If Not (ExecAt(subj, tryPos) Is Nothing) Then
                         Set Exec = BuildCaptureCollection()
+                        Call UpdateNamedCapturesFromAST    ' <- keep named captures in sync
                         Exit Function
                     End If
                 End If
@@ -1426,6 +1898,7 @@ Public Function Exec(ByVal subj As String) As Collection
                 Set Exec = Nothing
             Else
                 Set Exec = BuildCaptureCollection()
+                Call UpdateNamedCapturesFromAST    ' <- keep named captures in sync
             End If
             Exit Function
         End If
@@ -1440,6 +1913,7 @@ Public Function Exec(ByVal subj As String) As Collection
             ' no match at this start
         Else
             Set Exec = BuildCaptureCollection()
+            Call UpdateNamedCapturesFromAST    ' <- keep named captures in sync
             Exit Function
         End If
         If MatchSteps > pMaxMatchSteps Then err.Raise vbObjectError + 1, "RegexEngine", "Match aborted: too many steps"
@@ -1485,6 +1959,7 @@ Public Function ExecAll(ByVal subj As String) As Collection
                 Set ExecAll = Nothing
             Else
                 Set ExecAll = results
+                Call UpdateNamedCapturesFromAST    ' <- keep named captures in sync
             End If
             Exit Function
 
@@ -1498,6 +1973,7 @@ Public Function ExecAll(ByVal subj As String) As Collection
                 Set firstColl = BuildCaptureCollection()
                 results.Add firstColl
                 Set ExecAll = results
+                Call UpdateNamedCapturesFromAST    ' <- keep named captures in sync
             End If
             Exit Function
         End If
@@ -1550,6 +2026,7 @@ Public Function ExecAll(ByVal subj As String) As Collection
         Set ExecAll = Nothing
     Else
         Set ExecAll = results
+        Call UpdateNamedCapturesFromAST    ' <- keep named captures in sync
     End If
 End Function
 
@@ -1614,6 +2091,7 @@ Public Function ExecAt(ByVal subj As String, ByVal startPos As Long) As Collecti
 
         If DEBUG_TRACE Then Debug.Print "TRACE ExecAt returning captures caps0=[" & capsStart(0) & "," & capsEnd(0) & "]"
         Set ExecAt = BuildCaptureCollection()
+        Call UpdateNamedCapturesFromAST    ' <- keep named captures in sync
     Else
         If DEBUG_TRACE Then Debug.Print "TRACE ExecAt MatchNode returned False -> no match"
         Set ExecAt = Nothing
@@ -1666,7 +2144,7 @@ Public Function Replace(ByVal subj As String, ByVal replacement As String) As St
             End If
 
             ' expand replacement using your helper (ExpandReplacement)
-            out = out & ExpandReplacement(cs, replacement)
+            out = out & ExpandReplacement(cs, replacement, pNamedCaptures)
 
             ' advance position after the matched substring
             matchLen = mend - mstart + 1
@@ -1763,7 +2241,7 @@ Private Function ComputeMaxLen(ByVal node As Collection) As Long
         Case "seq"
             Dim sum As Long: sum = 0
             Dim ch As Variant
-            For Each ch In NodeGet(node, "children")
+            For Each ch In NodeGet(node, "child")
                 Dim m As Long: m = ComputeMaxLen(ch)
                 If m = -1 Then
                     ComputeMaxLen = -1: Exit Function
@@ -1776,7 +2254,7 @@ Private Function ComputeMaxLen(ByVal node As Collection) As Long
         Case "alt"
             Dim mx As Long: mx = 0
             Dim itm As Variant
-            For Each itm In NodeGet(node, "children")
+            For Each itm In NodeGet(node, "child")
                 Dim vm As Long: vm = ComputeMaxLen(itm)
                 If vm = -1 Then
                     mx = -1: Exit For
@@ -1824,10 +2302,10 @@ Private Sub AnnotateLookbehinds(ByVal node As Collection)
     Select Case t
         Case "seq"
             Dim ch As Variant
-            For Each ch In NodeGet(node, "children")
+            For Each ch In NodeGet(node, "child")
                 AnnotateLookbehinds ch
             Next
-        Case "group", "atomic", "lookahead_pos", "lookahead_neg", "lookbehind_pos", "lookbehind_neg"
+        Case "group", "atomic", "lookahead_pos", "lookahead_neg", "lookbehind_pos", "lookbehind_neg", "recurse"
             If NodeExists(node, "child") Then
                 AnnotateLookbehinds NodeGet(node, "child")
             End If
@@ -1844,7 +2322,7 @@ Private Sub AnnotateLookbehinds(ByVal node As Collection)
             AnnotateLookbehinds NodeGet(node, "child")
         Case "alt"
             Dim it As Variant
-            For Each it In NodeGet(node, "children")
+            For Each it In NodeGet(node, "child")
                 AnnotateLookbehinds it
             Next
     End Select
@@ -1859,7 +2337,7 @@ Private Function ComputeFixedWidth(ByVal node As Collection) As Long
         Case "seq"
             Dim sum As Long: sum = 0
             Dim ch As Variant
-            For Each ch In NodeGet(node, "children")
+            For Each ch In NodeGet(node, "child")
                 Dim w As Long: w = ComputeFixedWidth(ch)
                 If w = -1 Then
                     ComputeFixedWidth = -1: Exit Function
@@ -1893,7 +2371,7 @@ Private Function ComputeFixedWidth(ByVal node As Collection) As Long
             ' alternation: all alternatives must have same fixed width for the alt to be fixed-width
             Dim firstW As Variant: firstW = Empty
             Dim childAlt As Variant
-            For Each childAlt In NodeGet(node, "children")
+            For Each childAlt In NodeGet(node, "child")
                 Dim aw As Long: aw = ComputeFixedWidth(childAlt)
                 If aw = -1 Then
                     ComputeFixedWidth = -1: Exit Function
@@ -1928,7 +2406,7 @@ Private Sub TraverseEnforce(ByVal node As Collection)
     Select Case t
         Case "seq"
             Dim ch As Variant
-            For Each ch In NodeGet(node, "children")
+            For Each ch In NodeGet(node, "child")
                 TraverseEnforce ch
             Next
         Case "group"
@@ -1937,7 +2415,7 @@ Private Sub TraverseEnforce(ByVal node As Collection)
             TraverseEnforce NodeGet(node, "child")
         Case "alt"
             Dim altCh As Variant
-            For Each altCh In NodeGet(node, "children")
+            For Each altCh In NodeGet(node, "child")
                 TraverseEnforce altCh
             Next
         Case "lookbehind_pos", "lookbehind_neg"
@@ -2021,4 +2499,173 @@ Public Function Escape(ByVal aInput As String) As String
     Next i
     Escape = outStr
 End Function
+
+' ---- Regex runtime helper: returns group index (Long) given a name, or -1 if not found ----
+Private Function FindGroupIndexByName(ByVal ast As Collection, ByVal name As String) As Long
+    FindGroupIndexByName = -1
+    On Error GoTo ExitHere
+    If Not NodeExists(ast, "groupNodes") Then Exit Function
+    Dim gnodes As Collection: Set gnodes = NodeGet(ast, "groupNodes")
+    Dim lb As Long
+    
+    Dim it As Variant
+    For Each it In gnodes
+        lb = LBound(it)
+        If it(lb) = name Then
+            FindGroupIndexByName = CLng(it(lb + 1))
+            Exit Function
+        End If
+    Next it
+
+ExitHere:
+    Exit Function
+End Function
+Private Function FindGroupIndexByOrdinal(ByVal ast As Collection, ByVal ordinal As Long) As Long
+    FindGroupIndexByOrdinal = -1
+    On Error GoTo ExitHere
+    If Not NodeExists(ast, "groupNodes") Then Exit Function
+    Dim gnodes As Collection: Set gnodes = NodeGet(ast, "groupNodes")
+    Dim lb As Long
+    Dim cIdx As Long
+    
+    Dim it As Variant
+    For Each it In gnodes
+        lb = LBound(it)
+        cIdx = cIdx + 1
+        If it(lb + 1) = ordinal Then
+            FindGroupIndexByOrdinal = cIdx
+            Exit Function
+        End If
+    Next it
+
+ExitHere:
+    Exit Function
+End Function
+' Build a groupNodes index for the provided AST (collection).
+' Result: a Collection where each element is an Array(name As String, idx As Long, node As Variant)
+' This function will attach the collection to the AST by calling: NodeAdd ast, "groupNodes", groupNodes
+Private Function BuildGroupNodesFromAST(ByVal ast As Collection) As Collection
+    On Error GoTo ErrHandler
+    Dim groupNodes As New Collection
+
+    If ast Is Nothing Then
+        Set BuildGroupNodesFromAST = groupNodes
+        Exit Function
+    End If
+
+    ' Walk AST and collect group nodes that have a "name"
+    Call CollectGroupNodesRecursive(ast, groupNodes)
+
+    ' Attach to AST if not already present (do not overwrite existing)
+    If Not NodeExists(ast, "groupNodes") Then
+        NodeAdd ast, "groupNodes", groupNodes
+    End If
+
+    Set BuildGroupNodesFromAST = groupNodes
+    Exit Function
+
+ErrHandler:
+    ' defensive: return whatever we collected so far
+    Set BuildGroupNodesFromAST = groupNodes
+End Function
+
+
+' Recursive helper that inspects node-like collections and adds named group info to outColl
+Private Sub CollectGroupNodesRecursive(ByVal node As Variant, ByRef outColl As Collection)
+    On Error Resume Next
+    Dim t As String
+
+    If node Is Nothing Then Exit Sub
+
+    If NodeExists(node, "type") Then
+        t = CStr(NodeGet(node, "type"))
+        If t = "group" Then
+            If NodeExists(node, "name") Then
+                Dim nm As String: nm = CStr(NodeGet(node, "name"))
+                Dim idx As Long: idx = 0
+                If NodeExists(node, "idx") Then idx = CLng(NodeGet(node, "idx"))
+                ' store pair (name, idx, nodeRef) — nodeRef kept for debugging/inspection
+                outColl.Add Array(nm, idx, node)
+            End If
+        End If
+    End If
+
+    ' Try to recurse into likely child slots used by AST nodes.
+    ' This covers "child" (Collection of seqs), "child", "base", "index", "left", "right", "body", "cases", etc.
+    If NodeExists(node, "child") Then
+        Dim ch As Variant
+        For Each ch In NodeGet(node, "child")
+            CollectGroupNodesRecursive ch, outColl
+        Next ch
+    End If
+
+    If NodeExists(node, "child") Then CollectGroupNodesRecursive NodeGet(node, "child"), outColl
+    If NodeExists(node, "base") Then CollectGroupNodesRecursive NodeGet(node, "base"), outColl
+    If NodeExists(node, "index") Then CollectGroupNodesRecursive NodeGet(node, "index"), outColl
+    If NodeExists(node, "left") Then CollectGroupNodesRecursive NodeGet(node, "left"), outColl
+    If NodeExists(node, "right") Then CollectGroupNodesRecursive NodeGet(node, "right"), outColl
+    If NodeExists(node, "body") Then CollectGroupNodesRecursive NodeGet(node, "body"), outColl
+    If NodeExists(node, "cases") Then
+        Dim c As Variant
+        For Each c In NodeGet(node, "cases")
+            CollectGroupNodesRecursive c, outColl
+        Next c
+    End If
+End Sub
+' Ensure AST.top has groupNodes built. Returns the collection (newly built or existing).
+Private Function EnsureGroupNodes(ByVal ast As Collection) As Collection
+    If ast Is Nothing Then
+        Dim emptyColl As New Collection
+        Set EnsureGroupNodes = emptyColl
+        Exit Function
+    End If
+
+    If NodeExists(ast, "groupNodes") Then
+        Set EnsureGroupNodes = NodeGet(ast, "groupNodes")
+        Exit Function
+    End If
+
+    Set EnsureGroupNodes = BuildGroupNodesFromAST(ast)
+End Function
+' Rebuild the pNamedCaptures collection using the AST's groupNodes index and current caps arrays.
+Private Sub UpdateNamedCapturesFromAST()
+    On Error Resume Next
+    Set pNamedCaptures = New Collection
+
+    If pAST Is Nothing Then Exit Sub
+    If Not IsArray(capsStart) Then Exit Sub
+
+    ' Ensure index exists
+    Dim gnodes As Collection
+    Set gnodes = EnsureGroupNodes(pAST)
+    If gnodes Is Nothing Then Exit Sub
+
+    Dim i As Long
+    Dim val As String
+    Dim pair As Variant
+    Dim gname As String
+    Dim gidx As Long
+    For i = 1 To gnodes.count
+        pair = gnodes(i) ' Array(name, idx, nodeRef)
+        gname = CStr(pair(0))
+        gidx = CLng(pair(1))
+        Dim sPos As Long
+        Dim ePos As Long
+        val = ""
+        If gidx > 0 Then
+            If gidx <= UBound(capsStart) Then
+                sPos = CLng(capsStart(gidx))
+                ePos = CLng(capsEnd(gidx))
+                If sPos >= 1 And ePos >= sPos Then
+                    val = mid$(CurSubject, sPos, ePos - sPos + 1)
+                Else
+                    val = ""
+                End If
+            End If
+        End If
+        pNamedCaptures.Add (Array(gname, val)), gname
+    Next i
+End Sub
+
+
 
