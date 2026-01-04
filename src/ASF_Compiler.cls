@@ -13,6 +13,7 @@ Attribute VB_Exposed = False
 ' Class Module: Compiler
 Option Explicit
 Private GLOBALS_ As ASF_Globals
+Private emptyVariant As Variant
 
 ' Produces AST (Maps) for program and functions.
 ' Relies on Parser.Tokenize, Map, ScopeStack and globals:
@@ -1091,7 +1092,7 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
                 Exit Function
             ElseIf LCase$(name) = "null" Then
                 Dim vn As ASF_Map: Set vn = MakeNode("Literal")
-                vn.SetValue "value", vbNull
+                vn.SetValue "value", emptyVariant
                 idx = idx + 1
                 Set ParsePrimaryNode = vn
                 Exit Function
