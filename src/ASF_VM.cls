@@ -3158,6 +3158,7 @@ namedFunctions:
                     Case "%": vAssignment tmpResult, lop Mod rop
                     Case "^": vAssignment tmpResult, lop ^ rop
                     Case "&": vAssignment tmpResult, CStr(lop) & CStr(rop)
+                    Case "|": vAssignment tmpResult, lop Or rop
                     Case "==", "=": vAssignment tmpResult, (lop = rop)
                     Case "!=": vAssignment tmpResult, (lop <> rop)
                     Case "<": vAssignment tmpResult, (lop < rop)
