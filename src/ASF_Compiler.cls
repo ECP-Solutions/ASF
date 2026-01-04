@@ -2401,78 +2401,7 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
             If Not outElse Is Nothing Then nif.SetValue "else", outElse
             Set NormalizeNodeRecursive = nif
             Exit Function
-'
-'        Case "For"
-'            ' normalize init/cond/step and body
-'            Set initNode = node.GetValue("init")
-'            Set condNode = node.GetValue("cond")
-'            Set stepNode = node.GetValue("step")
-'            Set body = node.GetValue("body")
-'            If Not initNode Is Nothing Then
-'                If initNode.GetValue("type") = "Binary" And CStr(initNode.GetValue("op")) = "=" Then
-'                    Set L = initNode.GetValue("left")
-'                    If Not L Is Nothing And IsAssignableNode(L) Then
-'                        Set na = New ASF_Map
-'                        na.Add "type", "Assign"
-'                        na.SetValue "left", L
-'                        na.SetValue "right", NormalizeExprNodeRecursive(initNode.GetValue("right"))
-'                        Set nInit = na
-'                    Else
-'                        Set nInit = NormalizeExprNodeRecursive(initNode)
-'                    End If
-'                ElseIf initNode.GetValue("type") = "ExprStmt" Then
-'                    ' exprstmt could wrap a binary expression
-'                    Set e = initNode.GetValue("expr")
-'                    If Not e Is Nothing And e.GetValue("type") = "Binary" And CStr(e.GetValue("op")) = "=" Then
-'                        Set L2 = e.GetValue("left")
-'                        If Not L2 Is Nothing And IsAssignableNode(L2) Then
-'                            Set na2 = New ASF_Map
-'                            na2.Add "type", "Assign"
-'                            na2.SetValue "left", L2
-'                            na2.SetValue "right", NormalizeExprNodeRecursive(e.GetValue("right"))
-'                            Set nInit = na2
-'                        Else
-'                            Set nInit = NormalizeExprNodeRecursive(e)
-'                        End If
-'                    Else
-'                        Set nInit = NormalizeExprNodeRecursive(e)
-'                    End If
-'                Else
-'                    Set nInit = NormalizeExprNodeRecursive(initNode)
-'                End If
-'            End If
-'            If Not condNode Is Nothing Then Set nCond = NormalizeExprNodeRecursive(condNode)
-'            If Not stepNode Is Nothing Then
-'                If stepNode.GetValue("type") = "Binary" And CStr(stepNode.GetValue("op")) = "=" Then
-'                    Set SL = stepNode.GetValue("left")
-'                    If Not SL Is Nothing And IsAssignableNode(SL) Then
-'                        Set na3 = New ASF_Map
-'                        na3.Add "type", "Assign"
-'                        na3.SetValue "left", SL
-'                        na3.SetValue "right", NormalizeExprNodeRecursive(stepNode.GetValue("right"))
-'                        Set nStep = na3
-'                    Else
-'                        Set nStep = NormalizeExprNodeRecursive(stepNode)
-'                    End If
-'                Else
-'                    Set nStep = NormalizeExprNodeRecursive(stepNode)
-'                End If
-'            End If
-'            Set newBody = New Collection
-'            If Not body Is Nothing Then
-'                Dim bidx As Long
-'                For bidx = 1 To body.count
-'                    newBody.Add NormalizeNodeRecursive(body(bidx))
-'                Next bidx
-'            End If
-'            Set nf = New ASF_Map
-'            nf.Add "type", "For"
-'            If Not nInit Is Nothing Then nf.SetValue "init", nInit
-'            If Not nCond Is Nothing Then nf.SetValue "cond", nCond
-'            If Not nStep Is Nothing Then nf.SetValue "step", nStep
-'            nf.SetValue "body", newBody
-'            Set NormalizeNodeRecursive = nf
-'            Exit Function
+            
         Case "For"
             ' Normalize For nodes.
             ' If node has "kind" => this is a for-in / for-of form: normalize "each" and "iter".
