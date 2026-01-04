@@ -854,6 +854,7 @@ Private Function ExecSwitchNode(node As ASF_Map, progScope As ASF_ScopeStack) As
                 If ctrl = "BREAK" Then ExecSwitchNode = "": Exit Function
                 If ctrl = "RETURN" Or ctrl = "ERR" Then ExecSwitchNode = ctrl: Exit Function
             Next s
+            Exit For
         End If
     Next i
     If Not Match Then
