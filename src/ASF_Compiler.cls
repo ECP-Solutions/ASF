@@ -1867,7 +1867,7 @@ Private Function ParseForAST(stmtTokens As Collection) As ASF_Map
         stepTok.Add stmtTokens(i)
         i = i + 1
     Loop
-    node.SetValue "step", ParseExprTokensToNode(stepTok)
+    node.SetValue "step", ParseStatementTokensToAST(stepTok)
 
     ' find body opening '{'
     Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "{")
@@ -2487,14 +2487,18 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
             If Not condNode Is Nothing Then Set nCond = NormalizeExprNodeRecursive(condNode)
 
             If Not stepNode Is Nothing Then
-                If stepNode.GetValue("type") = "Binary" And CStr(stepNode.GetValue("op")) = "=" Then
-                    Set SL = stepNode.GetValue("left")
-                    If Not SL Is Nothing And IsAssignableNode(SL) Then
-                        Set na3 = New ASF_Map
-                        na3.Add "type", "Assign"
-                        na3.SetValue "left", SL
-                        na3.SetValue "right", NormalizeExprNodeRecursive(stepNode.GetValue("right"))
-                        Set nStep = na3
+                If stepNode.GetValue("type") <> "Assign" Then
+                    If stepNode.GetValue("type") = "Binary" And CStr(stepNode.GetValue("op")) = "=" Then
+                        Set SL = stepNode.GetValue("left")
+                        If Not SL Is Nothing And IsAssignableNode(SL) Then
+                            Set na3 = New ASF_Map
+                            na3.Add "type", "Assign"
+                            na3.SetValue "left", SL
+                            na3.SetValue "right", NormalizeExprNodeRecursive(stepNode.GetValue("right"))
+                            Set nStep = na3
+                        Else
+                            Set nStep = NormalizeExprNodeRecursive(stepNode)
+                        End If
                     Else
                         Set nStep = NormalizeExprNodeRecursive(stepNode)
                     End If
