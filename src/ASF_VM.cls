@@ -336,7 +336,7 @@ Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As
 
     ' If base is an ASF_ScopeStack, try to read property if present
     If TypeName(baseVal) = "ASF_ScopeStack" Then
-        If baseVal.Exists(CStr(prop)) Then
+        If baseVal.Has(CStr(prop)) Then
             vAssignment EvalMemberNode, baseVal.GetValue(CStr(prop))
         Else
             vAssignment EvalMemberNode, Empty
@@ -360,7 +360,7 @@ Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As
 ErrHandler:
     ' Preserve existing explicit map-access errors; convert other unexpected errors to Empty.
     If err.Number = (vbObjectError + 5007) Then
-        err.Raise err.Number, err.source, err.Description
+        err.Raise err.Number, err.Source, err.Description
     Else
         err.Clear
         vAssignment EvalMemberNode, Empty
@@ -4354,7 +4354,7 @@ Private Function map_apply_recursive(value As Variant, mapper As ASF_Map, _
 
 ErrHandler:
     ' On mapper errors propagate as runtime error so calling code can handle (consistent with earlier semantics)
-    err.Raise err.Number, err.source, err.Description
+    err.Raise err.Number, err.Source, err.Description
 End Function
 
 Private Function builtin_typeof(v As Variant) As String
