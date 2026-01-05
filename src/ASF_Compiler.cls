@@ -1096,10 +1096,10 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
                 Set ParsePrimaryNode = vn
                 Exit Function
             ElseIf LCase$(name) = "undefined" Then
-                Dim vn As ASF_Map: Set vn = MakeNode("Literal")
-                vn.SetValue "value", Empty
+                Dim vun As ASF_Map: Set vun = MakeNode("Literal")
+                vun.SetValue "value", Empty
                 idx = idx + 1
-                Set ParsePrimaryNode = vn
+                Set ParsePrimaryNode = vun
                 Exit Function
             End If
 
