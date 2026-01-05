@@ -1380,6 +1380,7 @@ Private Function MatchSequence(ByVal children As Collection, ByVal subj As Strin
             End If
         
             Dim k As Long
+            Dim remChildren As Collection
             For k = kStart To kEnd Step kStep
                 If DEBUG_TRACE Then Debug.Print "TRACE  quant trying k=" & k & " (mn=" & mn & " occCount=" & occCount & ")"
                 ' restore sequence baseline before attempting this k
@@ -1400,17 +1401,24 @@ Private Function MatchSequence(ByVal children As Collection, ByVal subj As Strin
                 Dim remSuccess As Boolean: remSuccess = True
                 Dim j As Long
                 Dim nxtEnd As Variant
-                For j = i + 1 To children.count
-                    Dim nxtNode As Collection: Set nxtNode = children(j)
-                    If DEBUG_TRACE Then Debug.Print "TRACE   quant trying remainder child j=" & j & " at posTry=" & posTry & " type=" & NodeGet(nxtNode, "type")
-                    If Not MatchNode(nxtNode, subj, posTry, nxtEnd) Then
+                If i + 1 <= children.count Then
+                    ' Create a sub-collection for remaining children
+                    Set remChildren = New Collection
+                    For j = i + 1 To children.count
+                        remChildren.Add children(j)
+                    Next j
+                    
+                    ' Match the remainder as a sequence (handles nested quantifiers correctly)
+                    If Not MatchSequence(remChildren, subj, posTry, nxtEnd) Then
                         remSuccess = False
-                        If DEBUG_TRACE Then Debug.Print "TRACE   remainder child j=" & j & " failed at pos=" & posTry
-                        Exit For
                     Else
+                        ' Remainder matched successfully
                         posTry = CLng(nxtEnd) + 1
                     End If
-                Next j
+                Else
+                    ' No remainder children - success
+                    remSuccess = True
+                End If
         
                 If remSuccess Then
                     outEnd = posTry - 1
