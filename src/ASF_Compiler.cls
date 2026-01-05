@@ -313,7 +313,7 @@ ParseInner:
                             i = i + 1
                     
                             ' Peek ahead to the next non-comment token to see whether this
-                            ' closing brace is followed by 'elseif' or 'else'. If so, continue
+                            ' closing brace is followed by 'elseif', 'else' or 'catch'. If so, continue
                             ' collecting tokens into the same stmtTokens (do not finalize yet).
                             Dim nexti As Long: nexti = i
                             Do While nexti <= toks.count And safeTVRetInner(toks, nexti, 0) = "COMMENT"
@@ -323,9 +323,9 @@ ParseInner:
                             If nexti <= toks.count Then
                                 If toks(nexti)(0) = "IDENT" Then
                                     Dim nextKw As String: nextKw = LCase$(safeTVRetInner(toks, nexti, 1))
-                                    If nextKw = "elseif" Or nextKw = "else" Then
+                                    If nextKw = "elseif" Or nextKw = "else" Or nextKw = "catch" Then
                                         ' Don't finalize the statement: continue the inner loop
-                                        ' so the elseif/else tokens will be collected into stmtTokens.
+                                        ' so the elseif/else, catch tokens will be collected into stmtTokens.
                                         GoTo ParseInner
                                     End If
                                 End If
@@ -1973,16 +1973,24 @@ Private Function ParseTryCatchAST(stmtTokens As Collection) As ASF_Map
     Loop
     If i > stmtTokens.count Then Set ParseTryCatchAST = node: Exit Function
     Dim j As Long: j = i + 1
+    Dim n As Long
     Dim depth As Long: depth = 0
     Dim tryTok As Collection
     Set tryTok = New Collection
-    Do While j <= stmtTokens.count
+    n = stmtTokens.count
+    Do While j <= n
         If stmtTokens(j)(0) = "PAREN" Then
             If stmtTokens(j)(1) = "{" Then
                 depth = depth + 1
             ElseIf stmtTokens(j)(1) = "}" Then
                 If depth = 0 Then
-                    Exit Do
+                    If j + 1 <= n Then
+                        If stmtTokens(j + 1)(1) = "catch" Then
+                            Exit Do
+                        End If
+                    Else
+                        Exit Do
+                    End If
                 Else
                     depth = depth - 1
                 End If
@@ -2859,4 +2867,3 @@ End Function
 ' ---------------------
 ' End Compiler class
 ' ---------------------
-
