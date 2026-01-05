@@ -698,7 +698,7 @@ Private Function ParseClass(ByVal pat As String, ByVal pStart As Long, ByVal pEn
                         ' digits
                         chars.Add Array("range", "0", "9")
                     Case "w"
-                        ' word chars: A-Z, a-z, 0-9, _
+                        ' word chars: A-Z, a-z, 0-9, '_'
                         chars.Add Array("range", "A", "Z")
                         chars.Add Array("range", "a", "z")
                         chars.Add Array("range", "0", "9")
@@ -1716,7 +1716,7 @@ Private Function ExpandReplacement(ByVal caps As Collection, ByVal repl As Strin
                 Case "$"
                     out = out & "$": i = i + 2: GoTo ContinueLoop
                 Case "&"
-                    If caps.count >= 1 Then out = out & CStr(caps.item(1))
+                    If caps.count >= 1 Then out = out & CStr(caps.Item(1))
                     i = i + 2: GoTo ContinueLoop
                 Case "`"
                     If mstart >= 1 Then
@@ -1796,7 +1796,7 @@ Private Function ExpandReplacement(ByVal caps As Collection, ByVal repl As Strin
                     End If
                     If useIdx >= 0 Then
                         capIndex = useIdx + 1
-                        If capIndex >= 1 And capIndex <= caps.count Then out = out & CStr(caps.item(capIndex)) Else out = out & ""
+                        If capIndex >= 1 And capIndex <= caps.count Then out = out & CStr(caps.Item(capIndex)) Else out = out & ""
                     End If
                     GoTo ContinueLoop
                 Case Else
