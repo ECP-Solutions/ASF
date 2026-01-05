@@ -1984,13 +1984,7 @@ Private Function ParseTryCatchAST(stmtTokens As Collection) As ASF_Map
                 depth = depth + 1
             ElseIf stmtTokens(j)(1) = "}" Then
                 If depth = 0 Then
-                    If j + 1 <= n Then
-                        If stmtTokens(j + 1)(1) = "catch" Then
-                            Exit Do
-                        End If
-                    Else
-                        Exit Do
-                    End If
+                    Exit Do
                 Else
                     depth = depth - 1
                 End If
