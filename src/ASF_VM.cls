@@ -4362,7 +4362,7 @@ End Function
 Private Function builtin_typeof(v As Variant) As String
     On Error Resume Next
     ' Null / VBA Null
-    If IsEmpty(v) Then
+    If IsNull(v) Then
         builtin_typeof = "null"
         Exit Function
     End If
