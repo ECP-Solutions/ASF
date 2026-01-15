@@ -168,6 +168,12 @@ Compiler_MainLoop:
 
             If i <= toks.count Then i = i + 1 ' skip the trailing '}' if present
             GoTo Compiler_MainLoop
+        ElseIf toks(i)(0) = "IDENT" And LCase$(toks(i)(1)) = "class" Then
+            ' Class definition at top-level
+            Dim classNode As ASF_Map
+            Set classNode = ParseClassDecl(toks, i)
+            stmtsAST.Add classNode
+            GoTo Compiler_MainLoop
         Else
             ' collect a top-level statement tokens (nesting-aware) then parse to AST node
             Dim braceDepth As Long: braceDepth = 0
@@ -1184,7 +1190,67 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
                 Set ParsePrimaryNode = uNode_tf.Clone
                 Exit Function
             End If
-
+            
+            If LCase$(name) = "new" Then
+                idx = idx + 1
+                ' Parse the class name and call expression
+                Dim newTarget As ASF_Map
+                Set newTarget = ParsePrimaryNode(types, vals, n, idx)
+                
+                ' The result should be a Call node - mark it as instantiation
+                If Not newTarget Is Nothing And newTarget.GetValue("type") = "Call" Then
+                    newTarget.SetValue "isNew", True
+                End If
+                
+                Set ParsePrimaryNode = newTarget
+                Exit Function
+            End If
+            If LCase$(name) = "super" Then
+                ' Parse super(args) as a special Call node
+                idx = idx + 1
+                Dim superArgs As Collection: Set superArgs = New Collection
+                
+                If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "(" Then
+                    idx = idx + 1
+                    ' Parse arguments
+                    Do While idx < n And Not (safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = ")")
+                        Dim superArgTok As Collection: Set superArgTok = New Collection
+                        Dim saDepth As Long: saDepth = 0
+                        Do While idx < n
+                            If safeTVRet(types, idx) = "PAREN" Then
+                                Select Case safeTVRet(vals, idx)
+                                    Case "("
+                                        saDepth = saDepth + 1
+                                    Case ")"
+                                        If saDepth = 0 Then Exit Do
+                                        saDepth = saDepth - 1
+                                End Select
+                            ElseIf safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = "," And saDepth = 0 Then
+                                Exit Do
+                            End If
+                            superArgTok.Add Array(safeTVRet(types, idx), safeTVRet(vals, idx))
+                            idx = idx + 1
+                        Loop
+                        
+                        If superArgTok.count > 0 Then
+                            superArgs.Add ParseExprTokensToNode(superArgTok)
+                        End If
+                        
+                        If idx < n And safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = "," Then
+                            idx = idx + 1
+                        End If
+                    Loop
+                    
+                    If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = ")" Then
+                        idx = idx + 1
+                    End If
+                End If
+                
+                Dim superNode As ASF_Map: Set superNode = MakeNode("SuperCall")
+                superNode.SetValue "args", superArgs
+                Set ParsePrimaryNode = superNode
+                Exit Function
+            End If
             ' Collapsed identifiers path (a.b[2].c style, possibly with bracket tokens following the IDENT)
             Set currentNode = Nothing
             If InStr(name, ".") > 0 Or InStr(name, "[") > 0 Then
@@ -1435,9 +1501,9 @@ ContinueParenInner:
 
                     ' Collect tokens for value expression up to comma or closing '}' at top level (support nested constructs)
                     Dim valTok As Collection: Set valTok = New Collection
-                    Dim vdepth As Long: vdepth = 0
+                    Dim vDepth As Long: vDepth = 0
                     Do While idx < n
-                        If vdepth = 0 Then
+                        If vDepth = 0 Then
                             If (safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = ",") _
                                Or (safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "}") Then
                                 Exit Do
@@ -1447,9 +1513,9 @@ ContinueParenInner:
                         If safeTVRet(types, idx) = "PAREN" Then
                             Select Case safeTVRet(vals, idx)
                                 Case "[", "(", "{"
-                                    vdepth = vdepth + 1
+                                    vDepth = vDepth + 1
                                 Case "]", ")", "}"
-                                    If vdepth > 0 Then vdepth = vdepth - 1
+                                    If vDepth > 0 Then vDepth = vDepth - 1
                             End Select
                         End If
                         idx = idx + 1
@@ -2858,6 +2924,284 @@ ContinueMainLoop:
     Set ParseTemplatePartsFromString = parts
 End Function
 
+Private Function ParseClassDecl(toks As Collection, ByRef i As Long) As ASF_Map
+    Dim classNode As ASF_Map: Set classNode = MakeNode("ClassDecl")
+    
+    ' Skip 'class' keyword
+    i = i + 1
+    
+    ' Skip comments
+    Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
+        i = i + 1
+    Loop
+    
+    If i > toks.count Then err.Raise vbObjectError + 1, , "Expected class name"
+    
+    ' Get class name
+    Dim className As String: className = toks(i)(1)
+    classNode.SetValue "name", className
+    i = i + 1
+    
+    ' Skip comments
+    Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
+        i = i + 1
+    Loop
+    
+    ' Check for extends
+    Dim superClass As String: superClass = ""
+    If i <= toks.count And LCase$(toks(i)(1)) = "extends" Then
+        i = i + 1
+        Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
+            i = i + 1
+        Loop
+        If i <= toks.count Then
+            superClass = toks(i)(1)
+            classNode.SetValue "superClass", superClass
+            i = i + 1
+        End If
+    End If
+    
+    ' Skip comments before body
+    Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
+        i = i + 1
+    Loop
+    
+    ' Expect '{'
+    If i > toks.count Or Not (toks(i)(0) = "PAREN" And toks(i)(1) = "{") Then
+        err.Raise vbObjectError + 2, , "Expected class body"
+    End If
+    i = i + 1
+    
+    ' Parse class body
+    Dim fields As Collection: Set fields = New Collection
+    Dim methods As Collection: Set methods = New Collection
+    Dim constructor As ASF_Map
+    Dim depth As Long: depth = 0
+    
+    Do While i <= toks.count
+        ' Skip comments
+        If toks(i)(0) = "COMMENT" Then
+            i = i + 1
+            GoTo ContinueClassBody
+        End If
+        
+        ' Check for closing brace
+        If toks(i)(0) = "PAREN" Then
+            If toks(i)(1) = "{" Then
+                depth = depth + 1
+                i = i + 1
+                GoTo ContinueClassBody
+            ElseIf toks(i)(1) = "}" Then
+                If depth = 0 Then
+                    Exit Do
+                Else
+                    depth = depth - 1
+                    i = i + 1
+                    GoTo ContinueClassBody
+                End If
+            End If
+        End If
+        
+        ' Parse member
+        If toks(i)(0) = "IDENT" Then
+            Dim memberName As String: memberName = LCase$(toks(i)(1))
+            Dim isStatic As Boolean: isStatic = False
+            
+            ' Check for static modifier
+            If memberName = "static" Then
+                isStatic = True
+                i = i + 1
+                ' Skip comments after static
+                Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
+                    i = i + 1
+                Loop
+                If i > toks.count Then GoTo ContinueClassBody
+                memberName = LCase$(toks(i)(1))
+            End If
+            
+            Select Case memberName
+                Case "field"
+                    ' Fields cannot be static
+                    If isStatic Then
+                        err.Raise vbObjectError + 4, , "Fields cannot be static"
+                    End If
+                    ' Parse field declaration: field name1, name2 = defaultValue, name3;
+                    i = i + 1
+                    Dim valToks As Collection
+                    Do While i <= toks.count
+                        If toks(i)(0) = "COMMENT" Then
+                            i = i + 1
+                            GoTo ContinueFieldParse
+                        End If
+                        
+                        ' End of field declaration
+                        If toks(i)(0) = "SEP" And toks(i)(1) = ";" Then
+                            i = i + 1
+                            Exit Do
+                        End If
+                        
+                        ' Get field name
+                        If toks(i)(0) = "IDENT" Then
+                            Dim fieldName As String: fieldName = toks(i)(1)
+                            i = i + 1
+                            
+                            ' Check for default value
+                            Dim defaultVal As ASF_Map
+                            Set defaultVal = Nothing
+                            
+                            If i <= toks.count And toks(i)(0) = "OP" And toks(i)(1) = "=" Then
+                                i = i + 1
+                                ' Collect tokens until comma or semicolon
+                                Set valToks = New Collection
+                                Dim vDepth As Long: vDepth = 0
+                                Do While i <= toks.count
+                                    If toks(i)(0) = "PAREN" Then
+                                        Select Case toks(i)(1)
+                                            Case "(", "[", "{"
+                                                vDepth = vDepth + 1
+                                            Case ")", "]", "}"
+                                                If vDepth > 0 Then vDepth = vDepth - 1
+                                        End Select
+                                    End If
+                                    
+                                    If vDepth = 0 Then
+                                        If (toks(i)(0) = "SEP" And (toks(i)(1) = "," Or toks(i)(1) = ";")) Then
+                                            Exit Do
+                                        End If
+                                    End If
+                                    
+                                    valToks.Add toks(i)
+                                    i = i + 1
+                                Loop
+                                
+                                If valToks.count > 0 Then
+                                    Set defaultVal = ParseExprTokensToNode(valToks)
+                                End If
+                            End If
+                            
+                            ' Add field
+                            Dim fieldNode As ASF_Map: Set fieldNode = MakeNode("Field")
+                            fieldNode.SetValue "name", fieldName
+                            If Not defaultVal Is Nothing Then
+                                fieldNode.SetValue "default", defaultVal
+                            End If
+                            fields.Add fieldNode
+                            
+                            ' Skip comma
+                            If i <= toks.count And toks(i)(0) = "SEP" And toks(i)(1) = "," Then
+                                i = i + 1
+                            End If
+                        End If
+ContinueFieldParse:
+                    Loop
+                    
+                Case "constructor"
+                    ' Constructors cannot be static
+                    If isStatic Then
+                        err.Raise vbObjectError + 5, , "Constructors cannot be static"
+                    End If
+                    ' Parse constructor
+                    Set constructor = ParseMethodDecl(toks, i, True, False)
+                    
+                Case Else
+                    ' Parse method
+                    Dim methodNode As ASF_Map
+                    Set methodNode = ParseMethodDecl(toks, i, False, isStatic)
+                    methods.Add methodNode
+            End Select
+        Else
+            i = i + 1
+        End If
+ContinueClassBody:
+    Loop
+    
+    ' Skip closing brace
+    If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = "}" Then
+        i = i + 1
+    End If
+    
+    ' Build class node
+    classNode.SetValue "fields", fields
+    classNode.SetValue "methods", methods
+    If Not constructor Is Nothing Then
+        classNode.SetValue "constructor", constructor
+    End If
+    
+    Set ParseClassDecl = classNode
+End Function
+
+' Parse method declaration
+Private Function ParseMethodDecl(toks As Collection, ByRef i As Long, isConstructor As Boolean, isStatic As Boolean) As ASF_Map
+    Dim methodNode As ASF_Map: Set methodNode = MakeNode("Method")
+    
+    ' Get method name
+    Dim methodName As String: methodName = toks(i)(1)
+    methodNode.SetValue "name", methodName
+    methodNode.SetValue "isConstructor", isConstructor
+    methodNode.SetValue "isStatic", isStatic
+    i = i + 1
+    
+    ' Skip comments
+    Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
+        i = i + 1
+    Loop
+    
+    ' Parse parameters
+    Dim params As Collection
+    Set params = New Collection
+    If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = "(" Then
+        i = i + 1
+        Do While i <= toks.count And Not (safeTVRetInner(toks, i, 0) = "PAREN" And safeTVRetInner(toks, i, 1) = ")")
+            If toks(i)(0) = "COMMENT" Then
+                i = i + 1
+            Else
+                If toks(i)(0) = "IDENT" Then params.Add toks(i)(1)
+                i = i + 1
+            End If
+        Loop
+        If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = ")" Then i = i + 1
+    End If
+    methodNode.SetValue "params", params
+    
+    ' Skip comments before body
+    Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
+        i = i + 1
+    Loop
+    
+    ' Parse body
+    If i > toks.count Or Not (toks(i)(0) = "PAREN" And toks(i)(1) = "{") Then
+        err.Raise vbObjectError + 3, , "Expected method body"
+    End If
+    i = i + 1
+    
+    Dim bodyTokens As Collection
+    Set bodyTokens = New Collection
+    Dim depth As Long: depth = 0
+    Do While i <= toks.count
+        If toks(i)(0) = "PAREN" Then
+            If toks(i)(1) = "{" Then
+                depth = depth + 1
+            ElseIf toks(i)(1) = "}" Then
+                If depth = 0 Then
+                    Exit Do
+                Else
+                    depth = depth - 1
+                End If
+            End If
+        End If
+        bodyTokens.Add toks(i)
+        i = i + 1
+    Loop
+    
+    ' Skip closing brace
+    If i <= toks.count Then i = i + 1
+    
+    Dim bodyStmts As Collection
+    Set bodyStmts = ParseTokensToAST(bodyTokens)
+    methodNode.SetValue "body", bodyStmts
+    
+    Set ParseMethodDecl = methodNode
+End Function
 ' ---------------------
 ' End Compiler class
 ' ---------------------

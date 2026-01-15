@@ -227,9 +227,6 @@ Private Function ExecuteStmtNode(node As ASF_Map, progScope As ASF_ScopeStack) A
             Dim right As ASF_Map: Set right = node.GetValue("right")
             vAssignment rval, EvalExprNode(right, progScope)
             HandleAssignment left, rval, progScope
-            If left.GetValue("type") = "Variable" Then
-                Dim lName As String: lName = left.GetValue("name")
-            End If
             ExecuteStmtNode = ""
             Exit Function
 
@@ -267,6 +264,9 @@ Private Function ExecuteStmtNode(node As ASF_Map, progScope As ASF_ScopeStack) A
 
         Case "Switch"
             ExecuteStmtNode = ExecSwitchNode(node, progScope)
+            Exit Function
+        Case "ClassDecl"
+            ExecuteStmtNode = ExecClassDecl(node, progScope)
             Exit Function
 
         Case Else
@@ -330,7 +330,20 @@ Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As
 
     ' If base is a Map (object) -> return property value as before
     If TypeName(baseVal) = "ASF_Map" Then
-        vAssignment EvalMemberNode, baseVal.GetValue(prop)
+        'Eval static method on a class
+        If baseVal.GetValue("type") = "Class" Then
+            Dim classMethods As Collection
+            Dim method_ As Variant
+            Set classMethods = baseVal.GetValue("methods")
+            For Each method_ In classMethods
+                If method_.GetValue("name") = prop Then
+                    vAssignment EvalMemberNode, method_
+                    Exit For
+                End If
+            Next method_
+        Else
+            vAssignment EvalMemberNode, baseVal.GetValue(prop)
+        End If
         Exit Function
     End If
 
@@ -1113,6 +1126,46 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
 
             ' Not found — log and return Empty
             If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "VM: Variable '" & vname & "' is undefined or not callable (returned Empty)."
+            vAssignment tmpResult, Empty
+            GoTo exitfun
+        Case "SuperCall"
+            ' super() call - get parent class constructor and execute it
+            Dim superArgs As Collection: Set superArgs = node.GetValue("args")
+            Dim evaluatedSuper As Collection: Set evaluatedSuper = New Collection
+            Dim sa As Long
+            For sa = 1 To superArgs.count
+                evaluatedSuper.Add EvalExprNode(superArgs(sa), progScope)
+            Next sa
+            
+            ' Get 'this' from current scope
+            Dim thisInstance As Variant
+            vAssignment thisInstance, progScope.GetValue("this")
+            
+            If TypeName(thisInstance) = "ASF_Map" And thisInstance.GetValue("type") = "Instance" Then
+                Dim instanceClassName As String: instanceClassName = thisInstance.GetValue("className")
+                
+                ' Get the class definition
+                Dim classDefSuper As Variant
+                vAssignment classDefSuper, progScope.GetValue(instanceClassName)
+                
+                If TypeName(classDefSuper) = "ASF_Map" And classDefSuper.GetValue("type") = "Class" Then
+                    ' Get parent class
+                    If classDefSuper.Exists("superClass") Then
+                        Dim parentClassName As String: parentClassName = classDefSuper.GetValue("superClass")
+                        Dim parentClassDef As Variant
+                        vAssignment parentClassDef, progScope.GetValue(parentClassName)
+                        
+                        If TypeName(parentClassDef) = "ASF_Map" And parentClassDef.Exists("constructor") Then
+                            Dim parentCtor As ASF_Map: Set parentCtor = parentClassDef.GetValue("constructor")
+                            
+                            ' Execute parent constructor with this instance and provided args
+                            vAssignment tmpMapObj, thisInstance
+                            Call ExecuteSuperConstructor(parentCtor, tmpMapObj, evaluatedSuper, progScope)
+                        End If
+                    End If
+                End If
+            End If
+            
             vAssignment tmpResult, Empty
             GoTo exitfun
         Case "Call"
@@ -3096,6 +3149,26 @@ namedFunctions:
                 vAssignment calleeVal, EvalExprNode(calleeExpr, progScope)
                 If TypeName(calleeVal) = "ASF_Map" Then
                     Dim cM As ASF_Map: Set cM = calleeVal
+                    If calleeVal.Exists("type") Then
+                        Dim calleeType As String: calleeType = calleeVal.GetValue("type")
+                        If calleeType = "Class" Then
+                            ' This is a class instantiation with 'new'
+                            vAssignment tmpResult, InstantiateClass(cM, evaluated, progScope)
+                            GoTo exitfun
+                        ElseIf calleeType = "BoundMethod" Then
+                            ' Execute bound method
+                            Dim methodNode2 As ASF_Map: Set methodNode2 = calleeVal.GetValue("method")
+                            Dim boundInstance As ASF_Map: Set boundInstance = calleeVal.GetValue("instance")
+                            
+                            vAssignment tmpResult, ExecuteBoundMethod(methodNode2, boundInstance, evaluated, progScope)
+                            GoTo exitfun
+                        ' Execute static method
+                        ElseIf calleeType = "Method" Then
+                            vAssignment tmpMapObj, calleeVal
+                            vAssignment tmpResult, ExecuteClassMethod(tmpMapObj, evaluated, progScope)
+                            GoTo exitfun
+                        End If
+                    End If
                     If cM.GetValue("type") = "Closure" Then
                         If hasThisVal Then
                             vAssignment tmpResult, CallClosure(cM, evaluated, thisVal)
@@ -3265,7 +3338,7 @@ Private Function IsBoolean(ByRef expression As String) As Boolean
 End Function
 
 Private Function SafeAdd(a As Variant, b As Variant) As Variant
-    If IsNumeric(a) And IsNumeric(b) Then SafeAdd = a + b Else SafeAdd = CStr(a) & CStr(b)
+    If TypeName(a) <> "String" And TypeName(b) <> "String" Then SafeAdd = a + b Else SafeAdd = CStr(a) & CStr(b)
 End Function
 
 Private Function lshift(a As Variant, b As Variant) As Variant 'a<<b
@@ -5040,7 +5113,310 @@ Private Function RegexCapsToStringArray(ByVal caps As Collection) As Variant
 
     RegexCapsToStringArray = out
 End Function
+' Execute class declaration
+Private Function ExecClassDecl(node As ASF_Map, progScope As ASF_ScopeStack) As String
+    Dim className As String: className = node.GetValue("name")
+    
+    ' Create class constructor function
+    Dim classMap As New ASF_Map
+    classMap.Add "type", "Class"
+    classMap.SetValue "name", className
+    classMap.SetValue "fields", node.GetValue("fields")
+    classMap.SetValue "methods", node.GetValue("methods")
+    
+    If node.Exists("constructor") Then
+        classMap.SetValue "constructor", node.GetValue("constructor")
+    End If
+    
+    If node.Exists("superClass") Then
+        classMap.SetValue "superClass", node.GetValue("superClass")
+    End If
+    
+    ' Store class in scope
+    progScope.SetValue className, classMap
+    
+    ExecClassDecl = ""
+End Function
+' Instantiate a class
+Private Function InstantiateClass(classMap As ASF_Map, args As Collection, progScope As ASF_ScopeStack) As Variant
+    On Error GoTo ErrHandler
+    
+    ' Create instance object
+    Dim instance As ASF_Map
+    Set instance = New ASF_Map
+    instance.Add "type", "Instance"
+    instance.SetValue "className", classMap.GetValue("name")
+    
+    ' Handle inheritance - copy parent fields and methods
+    If classMap.Exists("superClass") Then
+        Dim superClassName As String: superClassName = classMap.GetValue("superClass")
+        Dim superClassMap As Variant
+        vAssignment superClassMap, progScope.GetValue(superClassName)
+        
+        If TypeName(superClassMap) = "ASF_Map" And superClassMap.GetValue("type") = "Class" Then
+            ' Initialize parent fields
+            If superClassMap.Exists("fields") Then
+                Call InitializeFields(instance, superClassMap.GetValue("fields"), progScope)
+            End If
+            
+            ' Copy parent methods
+            If superClassMap.Exists("methods") Then
+                Dim parentMethods As Collection: Set parentMethods = superClassMap.GetValue("methods")
+                Dim pm As Variant
+                Dim pmNode As ASF_Map
+                For Each pm In parentMethods
+                    Set pmNode = pm
+                    Dim methodName As String: methodName = pmNode.GetValue("name")
+                    instance.SetValue methodName, CreateBoundMethod(pmNode, instance)
+                Next pm
+            End If
+        End If
+    End If
+    
+    ' Initialize fields with defaults
+    If classMap.Exists("fields") Then
+        Call InitializeFields(instance, classMap.GetValue("fields"), progScope)
+    End If
+    
+    ' Bind methods to instance
+    If classMap.Exists("methods") Then
+        Dim methods As Collection: Set methods = classMap.GetValue("methods")
+        Dim m As Variant
+        For Each m In methods
+            Dim methodNode As ASF_Map: Set methodNode = m
+            Dim mName As String: mName = methodNode.GetValue("name")
+            Dim isStaticMethod As Boolean: isStaticMethod = False
+            If methodNode.Exists("isStatic") Then
+                isStaticMethod = methodNode.GetValue("isStatic")
+            End If
+            
+            ' Only bind non-static methods to instance
+            If Not isStaticMethod Then
+                instance.SetValue mName, CreateBoundMethod(methodNode, instance)
+            End If
+        Next m
+    End If
+    
+    ' Call constructor if exists
+    If classMap.Exists("constructor") Then
+        Dim ctorNode As ASF_Map: Set ctorNode = classMap.GetValue("constructor")
+        Call ExecuteConstructor(ctorNode, instance, args, progScope)
+    ElseIf classMap.Exists("superClass") Then
+        ' Call parent constructor if no constructor defined
+        Dim superClassName2 As String: superClassName2 = classMap.GetValue("superClass")
+        Dim superClassMap2 As Variant
+        vAssignment superClassMap2, progScope.GetValue(superClassName2)
+        
+        If TypeName(superClassMap2) = "ASF_Map" And superClassMap2.Exists("constructor") Then
+            Dim parentCtor As ASF_Map: Set parentCtor = superClassMap2.GetValue("constructor")
+            Call ExecuteConstructor(parentCtor, instance, args, progScope)
+        End If
+    End If
+    
+    vAssignment InstantiateClass, instance
+    Exit Function
+    
+ErrHandler:
+    If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "InstantiateClass error: " & err.Description
+    err.Clear
+    vAssignment InstantiateClass, Empty
+End Function
 
+' Initialize instance fields
+Private Sub InitializeFields(instance As ASF_Map, fields As Collection, progScope As ASF_ScopeStack)
+    Dim f As Variant
+    For Each f In fields
+        Dim fieldNode As ASF_Map: Set fieldNode = f
+        Dim fieldName As String: fieldName = fieldNode.GetValue("name")
+        
+        Dim defaultValue As Variant
+        If fieldNode.Exists("default") Then
+            Dim defaultExpr As ASF_Map: Set defaultExpr = fieldNode.GetValue("default")
+            vAssignment defaultValue, EvalExprNode(defaultExpr, progScope)
+        Else
+            defaultValue = Empty
+        End If
+        
+        instance.SetValue fieldName, defaultValue
+    Next f
+End Sub
+
+' Create a bound method (closure with 'this' bound to instance)
+Private Function CreateBoundMethod(methodNode As ASF_Map, instance As ASF_Map) As ASF_Map
+    Dim boundMethod As New ASF_Map
+    boundMethod.Add "type", "BoundMethod"
+    boundMethod.SetValue "method", methodNode
+    boundMethod.SetValue "instance", instance
+    Set CreateBoundMethod = boundMethod
+End Function
+
+' Execute constructor
+Private Sub ExecuteConstructor(ctorNode As ASF_Map, instance As ASF_Map, args As Collection, progScope As ASF_ScopeStack)
+    ' Create execution scope
+    Dim ctorScope As New ASF_ScopeStack
+    ctorScope.LoadRaw progScope.Raw
+    ctorScope.Push
+    
+    ' Bind 'this' to instance
+    ctorScope.SetLocalValue "this", instance
+    
+    ' Bind parameters
+    If ctorNode.Exists("params") Then
+        Dim params As Collection: Set params = ctorNode.GetValue("params")
+        Dim i As Long
+        For i = 1 To params.count
+            If i <= args.count Then
+                ctorScope.SetLocalValue CStr(params(i)), args(i)
+            Else
+                ctorScope.SetLocalValue CStr(params(i)), Empty
+            End If
+        Next i
+    End If
+    
+    ' Execute body
+    If ctorNode.Exists("body") Then
+        Dim body As Collection: Set body = ctorNode.GetValue("body")
+        Dim j As Long
+        For j = 1 To body.count
+            Dim ctrl As String: ctrl = ExecuteStmtNode(body(j), ctorScope)
+            If ctrl = "RETURN" Or ctrl = "ERR" Then Exit For
+        Next j
+    End If
+    
+    ctorScope.Pop
+End Sub
+' Execute bound method
+Private Function ExecuteBoundMethod(methodNode As ASF_Map, instance As ASF_Map, args As Collection, progScope As ASF_ScopeStack) As Variant
+    On Error GoTo ErrHandler
+    
+    ' Create method scope
+    Dim methodScope As New ASF_ScopeStack
+    methodScope.LoadRaw progScope.Raw
+    methodScope.Push
+    
+    ' Bind 'this' to instance
+    methodScope.SetLocalValue "this", instance
+    
+    ' Bind parameters
+    If methodNode.Exists("params") Then
+        Dim params As Collection: Set params = methodNode.GetValue("params")
+        Dim i As Long
+        For i = 1 To params.count
+            If i <= args.count Then
+                methodScope.SetLocalValue CStr(params(i)), args(i)
+            Else
+                methodScope.SetLocalValue CStr(params(i)), Empty
+            End If
+        Next i
+    End If
+    
+    ' Execute body
+    If methodNode.Exists("body") Then
+        Dim body As Collection: Set body = methodNode.GetValue("body")
+        Dim j As Long
+        For j = 1 To body.count
+            Dim ctrl As String: ctrl = ExecuteStmtNode(body(j), methodScope)
+            If ctrl = "RETURN" Then
+                vAssignment ExecuteBoundMethod, methodScope.GetValue("__return")
+                methodScope.Pop
+                Exit Function
+            ElseIf ctrl = "ERR" Then
+                Exit For
+            End If
+        Next j
+    End If
+    
+    methodScope.Pop
+    vAssignment ExecuteBoundMethod, Empty
+    Exit Function
+    
+ErrHandler:
+    If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "ExecuteBoundMethod error: " & err.Description
+    err.Clear
+    vAssignment ExecuteBoundMethod, Empty
+End Function
+' Execute bound method
+Private Function ExecuteClassMethod(methodNode As ASF_Map, args As Collection, progScope As ASF_ScopeStack) As Variant
+    On Error GoTo ErrHandler
+    
+    ' Create method scope
+    Dim methodScope As New ASF_ScopeStack
+    methodScope.LoadRaw progScope.Raw
+    methodScope.Push
+    
+    ' Bind parameters
+    If methodNode.Exists("params") Then
+        Dim params As Collection: Set params = methodNode.GetValue("params")
+        Dim i As Long
+        For i = 1 To params.count
+            If i <= args.count Then
+                methodScope.SetLocalValue CStr(params(i)), args(i)
+            Else
+                methodScope.SetLocalValue CStr(params(i)), Empty
+            End If
+        Next i
+    End If
+    
+    ' Execute body
+    If methodNode.Exists("body") Then
+        Dim body As Collection: Set body = methodNode.GetValue("body")
+        Dim j As Long
+        For j = 1 To body.count
+            Dim ctrl As String: ctrl = ExecuteStmtNode(body(j), methodScope)
+            If ctrl = "RETURN" Then
+                vAssignment ExecuteClassMethod, methodScope.GetValue("__return")
+                methodScope.Pop
+                Exit Function
+            ElseIf ctrl = "ERR" Then
+                Exit For
+            End If
+        Next j
+    End If
+    
+    methodScope.Pop
+    vAssignment ExecuteClassMethod, Empty
+    Exit Function
+    
+ErrHandler:
+    If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "ExecuteClassMethod error: " & err.Description
+    err.Clear
+    vAssignment ExecuteClassMethod, Empty
+End Function
+' Execute parent constructor (called via super())
+Private Sub ExecuteSuperConstructor(ctorNode As ASF_Map, instance As ASF_Map, args As Collection, progScope As ASF_ScopeStack)
+    ' Create execution scope
+    Dim superScope As New ASF_ScopeStack
+    superScope.LoadRaw progScope.Raw
+    superScope.Push
+    
+    ' Bind 'this' to the SAME instance (important!)
+    superScope.SetLocalValue "this", instance
+    
+    ' Bind parameters
+    If ctorNode.Exists("params") Then
+        Dim params As Collection: Set params = ctorNode.GetValue("params")
+        Dim i As Long
+        For i = 1 To params.count
+            If i <= args.count Then
+                superScope.SetLocalValue CStr(params(i)), args(i)
+            Else
+                superScope.SetLocalValue CStr(params(i)), Empty
+            End If
+        Next i
+    End If
+    
+    ' Execute body
+    If ctorNode.Exists("body") Then
+        Dim body As Collection: Set body = ctorNode.GetValue("body")
+        Dim j As Long
+        For j = 1 To body.count
+            Dim ctrl As String: ctrl = ExecuteStmtNode(body(j), superScope)
+            If ctrl = "RETURN" Or ctrl = "ERR" Then Exit For
+        Next j
+    End If
+    
+    superScope.Pop
+End Sub
 ' ---------------------
 ' End VM class
 ' ---------------------
