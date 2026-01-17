@@ -14,7 +14,7 @@ ASF v2.0.1 is an improvement to the VM when dealing with classes.
 ## Highlights
 
 - **Fixed**: 
-	- VM: fixed out of stack space error when dealing with classes and polymorphism. So, now is same to execute code like this:
+	- VM: fixed out of stack space error when dealing with classes and polymorphism. So, now is safe to execute code like this:
 		```js
 		class Printer {
 			print(doc) { return 'Printing: ' + doc; };
