@@ -75,6 +75,17 @@ Public Function CompileProgram(src As String, Optional progName As String = "@an
     Dim stmtTokens As Collection
     Dim i As Long
     Dim node As ASF_Map
+    Dim fname As String
+    Dim argList As Collection
+    Dim bodyTokens As Collection
+    Dim depth As Long
+    Dim funcIdx As Long
+    Dim pa() As String
+    Dim j As Long
+    Dim classNode As ASF_Map
+    Dim braceDepth As Long
+    Dim parenDepth As Long
+    Dim bracketDepth As Long
     
     GLOBALS_.ASF_InitGlobals
 
@@ -111,13 +122,18 @@ Compiler_MainLoop:
                 i = i + 1
             Loop
             If i > toks.count Then err.Raise vbObjectError + 1, , "Unexpected end after fun"
-            Dim fname As String: fname = toks(i)(1)
+            
+            ' Get function name
+            fname = toks(i)(1)
             i = i + 1
+            
+            ' Skip comments
             Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
                 i = i + 1
             Loop
 
-            Dim argList As New Collection
+            ' Parse parameters
+            Set argList = New Collection
             If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = "(" Then
                 i = i + 1
                 Do While i <= toks.count And Not (safeTVRetInner(toks, i, 0) = "PAREN" And safeTVRetInner(toks, i, 1) = ")")
@@ -131,15 +147,18 @@ Compiler_MainLoop:
                 If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = ")" Then i = i + 1
             End If
 
+            ' Skip comments before body
             Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
                 i = i + 1
             Loop
             If i > toks.count Or Not (toks(i)(0) = "PAREN" And toks(i)(1) = "{") Then
                 err.Raise vbObjectError + 2, , "Expected function body"
             End If
+            
+            ' Collect function body
             i = i + 1
-            Dim depth As Long: depth = 0
-            Dim bodyTokens As New Collection
+            depth = 0
+            Set bodyTokens = New Collection
             Do While i <= toks.count
                 If toks(i)(0) = "PAREN" Then
                     If toks(i)(1) = "{" Then
@@ -156,29 +175,36 @@ Compiler_MainLoop:
                 i = i + 1
             Loop
 
-            Dim funcIdx As Long
+            ' Compile function
             funcIdx = CompileFunctionAST(fname, argList, bodyTokens)
             GLOBALS_.gFuncTable.Add fname, funcIdx
 
-            Dim pa() As String
-            If argList.count > 0 Then ReDim pa(0 To argList.count - 1)
-            Dim j As Long
-            For j = 1 To argList.count: pa(j - 1) = argList(j): Next j
+            ' Store parameters
+            If argList.count > 0 Then
+                ReDim pa(0 To argList.count - 1)
+                For j = 1 To argList.count
+                    pa(j - 1) = argList(j)
+                Next j
+            Else
+                ReDim pa(0 To 0)
+                pa(0) = ""
+            End If
             GLOBALS_.gFuncParams.Add fname, pa
 
-            If i <= toks.count Then i = i + 1 ' skip the trailing '}' if present
+            ' Skip closing brace
+            If i <= toks.count Then i = i + 1
             GoTo Compiler_MainLoop
+            
         ElseIf toks(i)(0) = "IDENT" And LCase$(toks(i)(1)) = "class" Then
             ' Class definition at top-level
-            Dim classNode As ASF_Map
             Set classNode = ParseClassDecl(toks, i)
             stmtsAST.Add classNode
             GoTo Compiler_MainLoop
         Else
             ' collect a top-level statement tokens (nesting-aware) then parse to AST node
-            Dim braceDepth As Long: braceDepth = 0
-            Dim parenDepth As Long: parenDepth = 0
-            Dim bracketDepth As Long: bracketDepth = 0
+            braceDepth = 0
+            parenDepth = 0
+            bracketDepth = 0
             
             Set stmtTokens = New Collection
             
@@ -232,6 +258,7 @@ CollectNextTop:
             GoTo Compiler_MainLoop
         End If
     Loop
+    
     Dim optionBase As Long: optionBase = 1
     Dim filteredStmts As New Collection
     For i = 1 To stmtsAST.count
@@ -255,7 +282,6 @@ CollectNextTop:
 NotBalancedParents:
     err.Raise vbObjectError + 9024, "Compiler.CompileProgram", "Unbalanced opening or closing parentheses."
 End Function
-
 ' Compile a function body (AST) and register it as separate program
 Private Function CompileFunctionAST(fname As String, argList As Collection, bodyTokens As Collection) As Long
     Dim funcScope As ASF_ScopeStack
@@ -3122,7 +3148,7 @@ ContinueClassBody:
     
     ' Build class node
     classNode.SetValue "fields", fields
-    classNode.SetValue "methods", methods
+    classNode.SetValue "classMethods", methods
     If Not constructor Is Nothing Then
         classNode.SetValue "constructor", constructor
     End If
