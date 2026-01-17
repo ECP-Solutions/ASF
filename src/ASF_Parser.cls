@@ -128,14 +128,14 @@ ContinueTemplateLoop:
                 If i < n And mid$(src, i + 1, 1) = "=" Then
                     toks.Add Array("OP", ch & "="): i = i + 2
                 Else
-                    toks.Add Array("OP", ch): i = i + 1
+                    If ch = "&" Then
+                        If i < n And mid$(src, i + 1, 1) = "&" Then toks.Add Array("OP", "&&"): i = i + 2 Else toks.Add Array("OP", "&"): i = i + 1
+                    ElseIf ch = "|" Then
+                        If i < n And mid$(src, i + 1, 1) = "|" Then toks.Add Array("OP", "||"): i = i + 2 Else toks.Add Array("SYM", "|"): i = i + 1
+                    Else
+                        toks.Add Array("OP", ch): i = i + 1
+                    End If
                 End If
-                GoTo Tokenize_SkipToLoopEnd
-            Case "&"
-                If i < n And mid$(src, i + 1, 1) = "&" Then toks.Add Array("OP", "&&"): i = i + 2 Else toks.Add Array("OP", "&"): i = i + 1
-                GoTo Tokenize_SkipToLoopEnd
-            Case "|"
-                If i < n And mid$(src, i + 1, 1) = "|" Then toks.Add Array("OP", "||"): i = i + 2 Else toks.Add Array("SYM", "|"): i = i + 1
                 GoTo Tokenize_SkipToLoopEnd
             Case "!"
                 If i < n And mid$(src, i + 1, 1) = "=" Then toks.Add Array("OP", "!="): i = i + 2 Else toks.Add Array("OP", "!"): i = i + 1
