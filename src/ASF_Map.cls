@@ -172,7 +172,11 @@ Public Function Clone() As ASF_Map
     Dim m As New ASF_Map
     Dim k As Long
     For k = 0 To pKeys.index
-        m.Add CStr(pKeys.Storage(k)), pItems.Storage(k)
+        If TypeName(pItems.Storage(k)) = "ASF_Map" Then
+            m.Add CStr(pKeys.Storage(k)), pItems.Storage(k).Clone
+        Else
+            m.Add CStr(pKeys.Storage(k)), pItems.Storage(k)
+        End If
     Next k
     Set Clone = m
 End Function
