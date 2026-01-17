@@ -17,9 +17,9 @@ This project provides a production-proven compiler and VM plus a complete test-s
 ## Why ASF?
 - **Seamless bridge** between VBA codebases and modern scripting paradigms.
 - **No external runtime** — runs on top of VBA using a compact AST interpreter.
-- **Powerful features** not found in any other VBA tool: shared-write closures, expression-level anonymous functions, nested arrays & objects, array helpers, VBExpressions integration, method chaining, and more.
+- **Powerful features** not found in any other VBA tool: classes, shared-write closures, expression-level anonymous functions, nested arrays & objects, array helpers, VBExpressions integration, method chaining, and more.
 - **Native regex engine** a pure VBA class module that supports lookarounds, multiline, atomic groups, back reference replace method with placeholders, non-capturing groups and more!.
-- **Tested** — the comprehensive [Rubberduck](https://github.com/rubberduck-vba/Rubberduck)  test-suite passes across arithmetic, flow control, functions, closures, array/object manipulation, builtin methods, regular expressions, variables injection.
+- **Tested** — the comprehensive [Rubberduck](https://github.com/rubberduck-vba/Rubberduck)  test-suite passes across arithmetic, flow control, functions, closures, array/object manipulation, builtin methods, regular expressions, variables injection, classes, objects.
 - **Unmatched expressiveness:** Implement complex logic with concise scripts and enrich them with heavyweight VBA code.
 - **Safe interoperability:** Delegate numeric and domain-specific work to your existing VBA functions via `@(...)`, we already have [VBA-expressions](https://github.com/ECP-Solutions/VBA-Expressions) embedded!
 - **Readable, debuggable AST-first design.** The Compiler emits Map-based ASTs (human-inspectable). The VM executes those ASTs directly so you can step through behavior and trace problems — no opaque bytecode black box.
@@ -31,7 +31,7 @@ This project provides a production-proven compiler and VM plus a complete test-s
 ## Highlights / Features
 
 - Full expression language: arithmetic, boolean, ternary, short-circuit logic.
-- Arrays, objects (Map-like), member access, strings manipulation and indexing.
+- Classes, arrays, objects (Map-like), member access, strings manipulation and indexing.
 - First-class functions + anonymous functions + closures.
 - Control flow: `if` / `elseif` / `else`, `for`, `while`, `switch`, `try/catch`, `break` / `continue`.
 - Map / Filter / Reduce / Slice / Push / Pop as array methods
@@ -68,9 +68,39 @@ idx = engine.Compile("a = [1,'x',[2,'y',[3]]];" & _
 "print(b);")
 engine.Run idx '// => [ 3, 'x', [ 6, 'y', [ 9 ] ] ]
 ```
+Classes:
+```js
+class Shape {
+  field x = 0, y = 0, color = 'black';
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+  };
+  getPosition() {
+    return this.x + ',' + this.y;
+  };
+};
+class Circle extends Shape {
+  field radius = 1;
+  constructor(x, y, r) {
+    super(x, y);
+    this.radius = r;
+    this.color = 'red';
+  };
+  getArea() {
+    return 3.14159 * this.radius * this.radius;
+  };
+};
+let circle = new Circle(10, 20, 5);
+print('Position: ' + circle.getPosition()); // => 'Position: 10,20'
+print('Color: ' + circle.color); // => 'Color: red'
+print('Area: ' + circle.getArea()); // => 'Area: 78.53975'
+```
 Chained helpers:
 ```js
 a=[1,2,3,4,5]; return(a.filter(fun(x){ return x > 2 }).reduce(fun(acc,x){ return acc + x }, 0)); // => 12
+o = {a: 1, b: 2, c: 3, d: 4}; result = o.filter(fun(v) { return v > 1 }).map(fun(v) { return v * 10 }); 
+										return result; // => { b: 20, c: 30, d: 40 }
 ```
 String templates:
 ```js
@@ -86,7 +116,7 @@ welcome=fun(string){return string.concat('!')}; return('Hello world'.replace('wo
 
 - Full AST-based compiler and VM implemented in VBA.
 - Function literals (anonymous), named top-level functions, recursion.
-- Arrays, objects and strings with literal syntax and methods helpers.
+- Classes, arrays, objects and strings with literal syntax and methods helpers.
 - Member access, nested indexing, and LValue semantics for assignments.
 - Short-circuit logical operators, ternary operator, compound assignments.
 - VB-expression embedding: reuse your VBA libraries seamlessly.
@@ -167,7 +197,7 @@ Explore [`examples/`](/examples/) (suggested) with scripts converting rules, wor
 
 ## Running the Test Suite
 
-1. Import `tests/TestRunner.bas` Rubberduck test module, or open the `ASF v1.0.6.xlsm` workbook.
+1. Import `tests/TestRunner.bas` Rubberduck test module, or open the `ASF v2.0.0.xlsm` workbook.
 2. Ensure [`Rubberduck`](https://rubberduckvba.com/) add-in is available.
 3. Run the test module — all canonical tests should pass.
 
@@ -183,8 +213,15 @@ Explore [`examples/`](/examples/) (suggested) with scripts converting rules, wor
 
 ## License
 
-MIT — see `LICENSE`.
+MIT
+Copyright 2026 W. García
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. 
 
 ---
 
-For enterprise or integration help, reach out with a short description of your environment and goals — ASF is intentionally lightweight so it adapts quickly to complex legacy codebases.
+>For enterprise or integration help, reach out with a short description of your environment and goals — ASF is intentionally lightweight so it adapts quickly to complex legacy codebases.

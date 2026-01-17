@@ -497,8 +497,8 @@ Private Function AssertCollEquals(ByRef coll As Collection, ByRef expected() As 
     Dim i As Long, idx As Long
     idx = 1
     For i = LBound(expected) To UBound(expected)
-        If CStr(coll.item(idx)) <> CStr(expected(i)) Then
-            g_lastError = "Collection item #" & idx & " mismatch: expected '" & CStr(expected(i)) & "' got '" & CStr(coll.item(idx)) & "'"
+        If CStr(coll.Item(idx)) <> CStr(expected(i)) Then
+            g_lastError = "Collection item #" & idx & " mismatch: expected '" & CStr(expected(i)) & "' got '" & CStr(coll.Item(idx)) & "'"
             AssertCollEquals = False: Exit Function
         End If
         idx = idx + 1

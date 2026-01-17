@@ -21,6 +21,7 @@ Public Function Tokenize(src As String) As Collection
     Dim i As Long, n As Long
     Dim ch As String
     Dim nxt As String
+    Dim tmpIdent As String
     Dim j As Long, jC As Long, jB As Long
     n = Len(src)
     i = 1
@@ -127,14 +128,14 @@ ContinueTemplateLoop:
                 If i < n And mid$(src, i + 1, 1) = "=" Then
                     toks.Add Array("OP", ch & "="): i = i + 2
                 Else
-                    toks.Add Array("OP", ch): i = i + 1
+                    If ch = "&" Then
+                        If i < n And mid$(src, i + 1, 1) = "&" Then toks.Add Array("OP", "&&"): i = i + 2 Else toks.Add Array("OP", "&"): i = i + 1
+                    ElseIf ch = "|" Then
+                        If i < n And mid$(src, i + 1, 1) = "|" Then toks.Add Array("OP", "||"): i = i + 2 Else toks.Add Array("SYM", "|"): i = i + 1
+                    Else
+                        toks.Add Array("OP", ch): i = i + 1
+                    End If
                 End If
-                GoTo Tokenize_SkipToLoopEnd
-            Case "&"
-                If i < n And mid$(src, i + 1, 1) = "&" Then toks.Add Array("OP", "&&"): i = i + 2 Else toks.Add Array("OP", "&"): i = i + 1
-                GoTo Tokenize_SkipToLoopEnd
-            Case "|"
-                If i < n And mid$(src, i + 1, 1) = "|" Then toks.Add Array("OP", "||"): i = i + 2 Else toks.Add Array("SYM", "|"): i = i + 1
                 GoTo Tokenize_SkipToLoopEnd
             Case "!"
                 If i < n And mid$(src, i + 1, 1) = "=" Then toks.Add Array("OP", "!="): i = i + 2 Else toks.Add Array("OP", "!"): i = i + 1
@@ -218,7 +219,10 @@ ContinueDo:
                     Do While j3 <= n And mid$(src, j3, 1) Like "[A-Za-z0-9_.]"
                         j3 = j3 + 1
                     Loop
-                    toks.Add Array("IDENT", mid$(src, i, j3 - i))
+                    tmpIdent = mid$(src, i, j3 - i)
+                    If LCase(tmpIdent) <> "let" Then
+                        toks.Add Array("IDENT", tmpIdent)
+                    End If
                     i = j3
                     GoTo Tokenize_SkipToLoopEnd
                 ' forced VBAexpression: @(...). Capture whole balanced parentheses block as a single VBEXPR token.

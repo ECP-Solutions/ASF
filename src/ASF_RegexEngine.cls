@@ -698,7 +698,7 @@ Private Function ParseClass(ByVal pat As String, ByVal pStart As Long, ByVal pEn
                         ' digits
                         chars.Add Array("range", "0", "9")
                     Case "w"
-                        ' word chars: A-Z, a-z, 0-9, _
+                        ' word chars: A-Z, a-z, 0-9, '_'
                         chars.Add Array("range", "A", "Z")
                         chars.Add Array("range", "a", "z")
                         chars.Add Array("range", "0", "9")
@@ -1380,6 +1380,7 @@ Private Function MatchSequence(ByVal children As Collection, ByVal subj As Strin
             End If
         
             Dim k As Long
+            Dim remChildren As Collection
             For k = kStart To kEnd Step kStep
                 If DEBUG_TRACE Then Debug.Print "TRACE  quant trying k=" & k & " (mn=" & mn & " occCount=" & occCount & ")"
                 ' restore sequence baseline before attempting this k
@@ -1400,17 +1401,24 @@ Private Function MatchSequence(ByVal children As Collection, ByVal subj As Strin
                 Dim remSuccess As Boolean: remSuccess = True
                 Dim j As Long
                 Dim nxtEnd As Variant
-                For j = i + 1 To children.count
-                    Dim nxtNode As Collection: Set nxtNode = children(j)
-                    If DEBUG_TRACE Then Debug.Print "TRACE   quant trying remainder child j=" & j & " at posTry=" & posTry & " type=" & NodeGet(nxtNode, "type")
-                    If Not MatchNode(nxtNode, subj, posTry, nxtEnd) Then
+                If i + 1 <= children.count Then
+                    ' Create a sub-collection for remaining children
+                    Set remChildren = New Collection
+                    For j = i + 1 To children.count
+                        remChildren.Add children(j)
+                    Next j
+                    
+                    ' Match the remainder as a sequence (handles nested quantifiers correctly)
+                    If Not MatchSequence(remChildren, subj, posTry, nxtEnd) Then
                         remSuccess = False
-                        If DEBUG_TRACE Then Debug.Print "TRACE   remainder child j=" & j & " failed at pos=" & posTry
-                        Exit For
                     Else
+                        ' Remainder matched successfully
                         posTry = CLng(nxtEnd) + 1
                     End If
-                Next j
+                Else
+                    ' No remainder children - success
+                    remSuccess = True
+                End If
         
                 If remSuccess Then
                     outEnd = posTry - 1
@@ -1716,7 +1724,7 @@ Private Function ExpandReplacement(ByVal caps As Collection, ByVal repl As Strin
                 Case "$"
                     out = out & "$": i = i + 2: GoTo ContinueLoop
                 Case "&"
-                    If caps.count >= 1 Then out = out & CStr(caps.item(1))
+                    If caps.count >= 1 Then out = out & CStr(caps.Item(1))
                     i = i + 2: GoTo ContinueLoop
                 Case "`"
                     If mstart >= 1 Then
@@ -1796,7 +1804,7 @@ Private Function ExpandReplacement(ByVal caps As Collection, ByVal repl As Strin
                     End If
                     If useIdx >= 0 Then
                         capIndex = useIdx + 1
-                        If capIndex >= 1 And capIndex <= caps.count Then out = out & CStr(caps.item(capIndex)) Else out = out & ""
+                        If capIndex >= 1 And capIndex <= caps.count Then out = out & CStr(caps.Item(capIndex)) Else out = out & ""
                     End If
                     GoTo ContinueLoop
                 Case Else

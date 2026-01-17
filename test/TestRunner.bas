@@ -2499,3 +2499,768 @@ TestFail:
     Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
+
+'@TestMethod("classes_static_method_declarations")
+Private Sub classes_static_method_declarations()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "class A {" & vbCrLf & _
+            "  field x = 1, y = 2;" & vbCrLf & _
+            "  foo() { return this.x + 1 };" & vbCrLf & _
+            "  static greet() { return 'hello' };" & vbCrLf & _
+            "};" & vbCrLf & _
+            "a = new A();" & vbCrLf & _
+            "r1 = a.foo();" & vbCrLf & _
+            "r2 = A.greet();" & vbCrLf & _
+            "print(r1);" & vbCrLf & _
+            "print(r2);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
+                & CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:2, PRINT:'hello'"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("classes_field_declarations")
+Private Sub classes_field_declarations()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "class Animal {" & vbCrLf & _
+            "  field name, age = 0;" & vbCrLf & _
+            "  constructor(n) {" & vbCrLf & _
+            "    this.name = n;" & vbCrLf & _
+            "  };" & vbCrLf & _
+            "  speak() {" & vbCrLf & _
+            "    print('Animal ' + this.name + ' is ' + this.age + ' years old');" & vbCrLf & _
+            "  };" & vbCrLf & _
+            "};" & vbCrLf & _
+            "let animal = new Animal('Lion');" & vbCrLf & _
+            "animal.age = 5;" & vbCrLf & _
+            "animal.speak();", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:'Animal Lion is 5 years old'"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("classes_inheritance_with_fields")
+Private Sub classes_inheritance_with_fields()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "class Shape {" & vbCrLf & _
+           "  field x = 0, y = 0, color = 'black';" & vbCrLf & _
+           "  constructor(x, y) {" & vbCrLf & _
+           "    this.x = x;" & vbCrLf & _
+           "    this.y = y;" & vbCrLf & _
+           "  };" & vbCrLf & _
+           "  getPosition() {" & vbCrLf & _
+           "    return this.x + ',' + this.y;" & vbCrLf & _
+           "  };" & vbCrLf & _
+           "};" & vbCrLf & _
+           "class Circle extends Shape {" & vbCrLf & _
+           "  field radius = 1;" & vbCrLf & _
+           "  constructor(x, y, r) {" & vbCrLf & _
+           "    super(x, y);" & vbCrLf & _
+           "    this.radius = r;" & vbCrLf & _
+           "    this.color = 'red';" & vbCrLf & _
+           "  };" & vbCrLf & _
+           "  getArea() {" & vbCrLf & _
+           "    return 3.14159 * this.radius * this.radius;" & vbCrLf & _
+           "  };" & vbCrLf & _
+           "};" & vbCrLf & _
+           "let circle = new Circle(10, 20, 5);" & vbCrLf & _
+           "print('Position: ' + circle.getPosition());" & vbCrLf & _
+           "print('Color: ' + circle.color);" & vbCrLf & _
+           "print('Area: ' + circle.getArea());", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 2)) & ", " _
+                & CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
+                & CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:'Position: 10,20', PRINT:'Color: red', PRINT:'Area: 78.53975'"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("classes_fields_declarations_with_mixed_syntax")
+Private Sub classes_fields_declarations_with_mixed_syntax()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("class Counter {" & vbCrLf & _
+                            "  field count = 0, step = 1, max = 100;" & vbCrLf & _
+                            "  field name;" & vbCrLf & _
+                            "  constructor(n) {" & vbCrLf & _
+                            "    this.name = n;" & vbCrLf & _
+                            "  };" & vbCrLf & _
+                            "  increment() {" & vbCrLf & _
+                            "    if (this.count < this.max) {" & vbCrLf & _
+                            "      this.count = this.count + this.step;" & vbCrLf & _
+                            "    };" & vbCrLf & _
+                            "  };" & vbCrLf & _
+                            "  getValue() {" & vbCrLf & _
+                            "    return this.name + ': ' + this.count;" & vbCrLf & _
+                            "  };" & vbCrLf & _
+                            "  static create(name, step) {" & vbCrLf & _
+                            "    let c = new Counter(name);" & vbCrLf & _
+                            "    c.step = step;" & vbCrLf & _
+                            "    return c;" & vbCrLf & _
+                            "  };" & vbCrLf & _
+                            "};" & vbCrLf & _
+                            "let counter = Counter.create('MyCounter', 5);" & vbCrLf & _
+                            "counter.increment();" & vbCrLf & _
+                            "counter.increment();" & vbCrLf & _
+                            "return counter.getValue();"))
+    expected = "MyCounter: 10"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("classes_fields_with_complex_initializers")
+Private Sub classes_fields_with_complex_initializers()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "class Vector {" & vbCrLf & _
+            "  field x = 0, y = 0, z = 0;" & vbCrLf & _
+            "  field magnitude = 0;" & vbCrLf & _
+            "  constructor(x, y, z) {" & vbCrLf & _
+            "    this.x = x;" & vbCrLf & _
+            "    this.y = y;" & vbCrLf & _
+            "    this.z = z;" & vbCrLf & _
+            "    this.updateMagnitude();" & vbCrLf & _
+            "  };" & vbCrLf & _
+            "  updateMagnitude() {" & vbCrLf & _
+            "    this.magnitude = (this.x * this.x + this.y * this.y + this.z * this.z) ^ 0.5;" & vbCrLf & _
+            "  };" & vbCrLf & _
+            "  toString() {" & vbCrLf & _
+            "    return '(' + this.x + ', ' + this.y + ', ' + this.z + ')';" & vbCrLf & _
+            "  };" & vbCrLf & _
+            "};" & vbCrLf & _
+            "let v = new Vector(3, 4, 0);" & vbCrLf & _
+            "print('Vector: ' + v.toString());" & vbCrLf & _
+            "print('Magnitude: ' + v.magnitude);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
+                & CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:'Vector: (3, 4, 0)', PRINT:'Magnitude: 5'"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("classes_multiple_instances")
+Private Sub classes_multiple_instances()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "class Counter {" & vbCrLf & _
+            "  field count = 0;" & vbCrLf & _
+            "  increment() {" & vbCrLf & _
+            "    this.count = this.count + 1;" & vbCrLf & _
+            "  };" & vbCrLf & _
+            "  getCount() {" & vbCrLf & _
+            "    return this.count;" & vbCrLf & _
+            "  };" & vbCrLf & _
+            "};" & vbCrLf & _
+            "let c1 = new Counter();" & vbCrLf & _
+            "let c2 = new Counter();" & vbCrLf & _
+            "c1.increment();" & vbCrLf & _
+            "c1.increment();" & vbCrLf & _
+            "c2.increment();" & vbCrLf & _
+            "print('Counter 1: ' + c1.getCount());" & vbCrLf & _
+            "print('Counter 2: ' + c2.getCount());", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
+                & CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:'Counter 1: 2', PRINT:'Counter 2: 1'"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("classes_method_chaining")
+Private Sub classes_method_chaining()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("class Builder {" & vbCrLf & _
+                            "  field value = '';" & vbCrLf & _
+                            "  add(text) {" & vbCrLf & _
+                            "    this.value = this.value + text;" & vbCrLf & _
+                            "    return this;" & vbCrLf & _
+                            "  };" & vbCrLf & _
+                            "  build() {" & vbCrLf & _
+                            "    return this.value;" & vbCrLf & _
+                            "  };" & vbCrLf & _
+                            "};" & vbCrLf & _
+                            "let result = new Builder().add('Hello').add(' ').add('World').build();" & vbCrLf & _
+                            "return result;"))
+    expected = "Hello World"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_keys")
+Private Sub object_keys()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "o = {a: 1, b: 2, c: 3}; print(o.keys());", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 'a', 'b', 'c' ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_values")
+Private Sub object_values()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "o = {a: 1, b: 2, c: 3}; print(o.values());", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 1, 2, 3 ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_entries")
+Private Sub object_entries()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "o = {a: 1, b: 2}; print(o.entries());", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ [ 'a', 1 ], [ 'b', 2 ] ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_size")
+Private Sub object_size()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("o = {a: 1, b: 2, c: 3}; return(o.size());"))
+    expected = "3"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_length")
+Private Sub object_length()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("o = {x: 10, y: 20}; return(o.length());"))
+    expected = "2"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_hasKey_true")
+Private Sub object_hasKey_true()
+    On Error GoTo TestFail
+    actual = CBool(GetResult("o = {a: 1, b: 2}; return(o.hasKey('a'));"))
+    expected = True
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_hasKey_false")
+Private Sub object_hasKey_false()
+    On Error GoTo TestFail
+    actual = CBool(GetResult("o = {a: 1, b: 2}; return(o.hasKey('c'));"))
+    expected = False
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_has_alias")
+Private Sub object_has_alias()
+    On Error GoTo TestFail
+    actual = CBool(GetResult("o = {name: 'John'}; return(o.has('name'));"))
+    expected = True
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_isEmpty_true")
+Private Sub object_isEmpty_true()
+    On Error GoTo TestFail
+    actual = CBool(GetResult("o = {}; return(o.isEmpty());"))
+    expected = True
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_isEmpty_false")
+Private Sub object_isEmpty_false()
+    On Error GoTo TestFail
+    actual = CBool(GetResult("o = {a: 1}; return(o.isEmpty());"))
+    expected = False
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_get_existing_key")
+Private Sub object_get_existing_key()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("o = {a: 1, b: 2}; return(o.get('b'));"))
+    expected = "2"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_get_with_default")
+Private Sub object_get_with_default()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("o = {a: 1}; return(o.get('b', 99));"))
+    expected = "99"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_get_without_default_missing_key")
+Private Sub object_get_without_default_missing_key()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("o = {a: 1}; return(o.get('b'));"))
+    expected = ""
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_set_new_key")
+Private Sub object_set_new_key()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "o = {a: 1}; o.set('b', 2); print(o);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:{ a: 1, b: 2 }"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_set_update_existing")
+Private Sub object_set_update_existing()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("o = {a: 1}; o.set('a', 10); return(o.a);"))
+    expected = "10"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_delete_existing_key")
+Private Sub object_delete_existing_key()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "o = {a: 1, b: 2, c: 3}; o.delete('b'); print(o);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:{ a: 1, c: 3 }"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_remove_alias")
+Private Sub object_remove_alias()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("o = {a: 1, b: 2}; o.remove('a'); return(o.size());"))
+    expected = "1"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_clear")
+Private Sub object_clear()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("o = {a: 1, b: 2, c: 3}; o.clear(); return(o.isEmpty());"))
+    expected = "True"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_clone_simple")
+Private Sub object_clone_simple()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "o = {a: 1, b: 2}; c = o.clone(); c.b = 99; print(o.b); print(c.b);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & _
+                CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:2, PRINT:99"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_clone_nested")
+Private Sub object_clone_nested()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "o = {x: 1, nested: {y: 2}}; c = o.clone(); c.nested.y = 99; print(o.nested.y); print(c.nested.y);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & _
+                CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:2, PRINT:99"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_merge")
+Private Sub object_merge()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "o1 = {a: 1, b: 2}; o2 = {b: 20, c: 3}; o1.merge(o2); print(o1);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:{ a: 1, b: 20, c: 3 }"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_merge_nested")
+Private Sub object_merge_nested()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "o1 = {a: 1, nested: {x: 10}}; o2 = {nested: {y: 20}, b: 2}; o1.merge(o2); print(o1);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:{ a: 1, nested: { y: 20 }, b: 2 }"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_forEach")
+Private Sub object_forEach()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("o = {a: 1, b: 2, c: 3}; s = 0; o.forEach(fun(val, key) { s = s + val }); return(s);"))
+    expected = "6"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_forEach_with_key")
+Private Sub object_forEach_with_key()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("o = {a: 1, b: 2}; result = ''; o.forEach(fun(val, key) { result = result & key & ':' & val & ';' }); return(result);"))
+    expected = "a:1;b:2;"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_map")
+Private Sub object_map()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "o = {a: 1, b: 2, c: 3}; result = o.map(fun(val, key) { return val * 2 }); print(result);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:{ a: 2, b: 4, c: 6 }"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_map_with_key")
+Private Sub object_map_with_key()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "o = {a: 1, b: 2}; result = o.map(fun(val, key) { return key & val }); print(result);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:{ a: 'a1', b: 'b2' }"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_filter")
+Private Sub object_filter()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "o = {a: 1, b: 2, c: 3, d: 4}; result = o.filter(fun(val, key) { return val % 2 == 0 }); print(result);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:{ b: 2, d: 4 }"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_filter_by_key")
+Private Sub object_filter_by_key()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "o = {apple: 10, banana: 20, cherry: 30}; result = o.filter(fun(val, key) { return key.startsWith('a') }); print(result);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:{ apple: 10 }"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_some_true")
+Private Sub object_some_true()
+    On Error GoTo TestFail
+    actual = CBool(GetResult("o = {a: 1, b: 2, c: 3}; return(o.some(fun(val) { return val > 2 }));"))
+    expected = True
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_some_false")
+Private Sub object_some_false()
+    On Error GoTo TestFail
+    actual = CBool(GetResult("o = {a: 1, b: 2}; return(o.some(fun(val) { return val > 10 }));"))
+    expected = False
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_every_true")
+Private Sub object_every_true()
+    On Error GoTo TestFail
+    actual = CBool(GetResult("o = {a: 2, b: 4, c: 6}; return(o.every(fun(val) { return val % 2 == 0 }));"))
+    expected = True
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_every_false")
+Private Sub object_every_false()
+    On Error GoTo TestFail
+    actual = CBool(GetResult("o = {a: 2, b: 3, c: 4}; return(o.every(fun(val) { return val % 2 == 0 }));"))
+    expected = False
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_chaining_methods")
+Private Sub object_chaining_methods()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "o = {a: 1, b: 2, c: 3, d: 4}; result = o.filter(fun(v) { return v > 1 }).map(fun(v) { return v * 10 }); print(result);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:{ b: 20, c: 30, d: 40 }"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_with_nested_arrays")
+Private Sub object_with_nested_arrays()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "o = {a: [1,2], b: [3,4]}; result = o.map(fun(arr) { return arr.reduce(fun(sum, x) { return sum + x }, 0) }); print(result);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:{ a: 3, b: 7 }"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("object_entries_with_forEach")
+Private Sub object_entries_with_forEach()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("o = {x: 10, y: 20}; s = 0; o.entries().forEach(fun(pair) { s = s + pair[2] }); return(s);"))
+    expected = "30"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
