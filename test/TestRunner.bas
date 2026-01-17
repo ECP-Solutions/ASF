@@ -3264,3 +3264,100 @@ TestFail:
     Resume TestExit
 End Sub
 
+'@TestMethod("polymorphism_basic")
+Private Sub polymorphism_basic()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "class Animal {" & _
+                "    field name;" & _
+                "    constructor(n) { this.name = n; }" & _
+                "    speak() { return 'Some sound'; }" & _
+                "};" & _
+                "class Dog extends Animal {" & _
+                "    speak() { return this.name + ' barks'; }" & _
+                "};" & _
+                "class Cat extends Animal {" & _
+                "    speak() { return this.name + ' meows'; }" & _
+                "};" & _
+                "dog = new Dog('Rex');" & _
+                "cat = new Cat('Whiskers');" & _
+                "print(dog.speak());" & _
+                "print(cat.speak());", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & _
+                CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:'Rex barks', PRINT:'Whiskers meows'"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("polymorphism_three_levels")
+Private Sub polymorphism_three_levels()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "class Vehicle {" & _
+                "    move() { return 'moving'; }" & _
+                "};" & _
+                "class Car extends Vehicle {" & _
+                "    move() { return 'driving on road'; }" & _
+                "};" & _
+                "class SportsCar extends Car {" & _
+                "    move() { return 'racing on track'; }" & _
+                "};" & _
+                "v = new Vehicle();" & _
+                "c = new Car();" & _
+                "s = new SportsCar();" & _
+                "print(v.move());" & _
+                "print(c.move());" & _
+                "print(s.move());", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 2)) & ", " & _
+                CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & _
+                CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:'moving', PRINT:'driving on road', PRINT:'racing on track'"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("polymorphism_method_delegation")
+Private Sub polymorphism_method_delegation()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("class Printer {" & _
+                "    print(doc) { return 'Printing: ' + doc; }" & _
+                "};" & _
+                "class ColorPrinter extends Printer {" & _
+                "    print(doc) { return 'Color printing: ' + doc; }" & _
+                "};" & _
+                "class LaserPrinter extends Printer {" & _
+                "    print(doc) { return 'Laser printing: ' + doc; }" & _
+                "};" & _
+                "fun printDocument(printer, doc) {" & _
+                "    return printer.print(doc);" & _
+                "};" & _
+                "p1 = new Printer();" & _
+                "p2 = new ColorPrinter();" & _
+                "p3 = new LaserPrinter();" & _
+                "result = printDocument(p1, 'Doc1') + ' | ' + " & _
+                "         printDocument(p2, 'Doc2') + ' | ' + " & _
+                "         printDocument(p3, 'Doc3');" & _
+                "return(result);"))
+    expected = "Printing: Doc1 | Color printing: Doc2 | Laser printing: Doc3"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub

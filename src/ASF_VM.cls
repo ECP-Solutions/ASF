@@ -5668,7 +5668,7 @@ End Function
 Private Sub ExecuteConstructor(ctorNode As ASF_Map, instance As ASF_Map, args As Collection, progScope As ASF_ScopeStack)
     ' Create execution scope
     Dim ctorScope As New ASF_ScopeStack
-    ctorScope.LoadRaw progScope.Raw
+    ctorScope.LoadRawByRef progScope.RawByRef
     ctorScope.Push
     
     ' Bind 'this' to instance
@@ -5715,7 +5715,7 @@ Private Function ExecuteBoundMethod(methodNode As ASF_Map, instance As ASF_Map, 
     
     ' Create method scope
     Dim methodScope As New ASF_ScopeStack
-    methodScope.LoadRaw progScope.Raw
+    methodScope.LoadRawByRef progScope.RawByRef
     methodScope.Push
     
     ' Bind 'this' to instance
@@ -5776,7 +5776,7 @@ Private Function ExecuteClassMethod(methodNode As ASF_Map, args As Collection, p
     
     ' Create method scope
     Dim methodScope As New ASF_ScopeStack
-    methodScope.LoadRaw progScope.Raw
+    methodScope.LoadRawByRef progScope.RawByRef
     methodScope.Push
     
     ' Bind parameters
@@ -5821,7 +5821,7 @@ End Function
 Private Sub ExecuteSuperConstructor(ctorNode As ASF_Map, instance As ASF_Map, args As Collection, progScope As ASF_ScopeStack)
     ' Create execution scope
     Dim superScope As New ASF_ScopeStack
-    superScope.LoadRaw progScope.Raw
+    superScope.LoadRawByRef progScope.RawByRef
     superScope.Push
     
     ' Bind 'this' to the SAME instance (important!)

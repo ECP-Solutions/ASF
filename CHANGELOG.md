@@ -2,6 +2,186 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [v2.0.1] - 2026-01-17
+https://github.com/ECP-Solutions/ASF/releases/tag/v2.0.1
+
+## Summary
+
+ASF v2.0.1 is an improvement to the VM when dealing with classes.
+
+---
+
+## Highlights
+
+- **Fixed**: 
+	- VM: fixed out of stack space error when dealing with classes and polymorphism. So, now is same to execute code like this:
+		```js
+		class Printer {
+			print(doc) { return 'Printing: ' + doc; };
+		};
+		class ColorPrinter extends Printer {
+			print(doc) { return 'Color printing: ' + doc; };
+		};
+		class LaserPrinter extends Printer {
+			print(doc) { return 'Laser printing: ' + doc; };
+		};
+		fun printDocument(printer, doc) {
+			return printer.print(doc);
+		};
+		p1 = new Printer();
+		p2 = new ColorPrinter();
+		p3 = new LaserPrinter();
+		result = [printDocument(p1, 'Doc1'), printDocument(p2, 'Doc2'), printDocument(p3, 'Doc3')].join(' | ');
+		return result; // => Printing: Doc1 | Color printing: Doc2 | Laser printing: Doc3
+		```
+
+
+---
+**Full Changelog**: https://github.com/ECP-Solutions/ASF/compare/v2.0.0...v2.0.1
+
+## [v2.0.0] - 2026-01-17
+https://github.com/ECP-Solutions/ASF/releases/tag/v2.0.0
+
+## Summary
+
+ASF v2.0.0 is a significant improvement over the previous version. This version adds support for classes, object literal methods, debug tracing, and extends the coverage of the test suite. Also the documentation is now more complete.
+
+---
+
+## Highlights
+
+-  **Added** 
+    - `let` keyword support
+    - Bitwise or (`|`) operator
+    - `undefined` data type
+    - Support for classes:
+		```js
+		class Shape {
+		  field x = 0, y = 0, color = 'black';
+		  constructor(x, y) {
+			this.x = x;
+			this.y = y;
+		  };
+		  getPosition() {
+			return this.x + ',' + this.y;
+		  };
+		};
+		class Circle extends Shape {
+		  field radius = 1;
+		  constructor(x, y, r) {
+			super(x, y);
+			this.radius = r;
+			this.color = 'red';
+		  };
+		  getArea() {
+			return 3.14159 * this.radius * this.radius;
+		  };
+		};
+		let circle = new Circle(10, 20, 5);
+		print('Position: ' + circle.getPosition()); // => 'Position: 10,20'
+		print('Color: ' + circle.color); // => 'Color: red'
+		print('Area: ' + circle.getArea()); // => 'Area: 78.53975'
+		```
+    - Objects methods:
+	```js
+	o = {apple: 10, banana: 20, cherry: 30}; result = o.filter(fun(val, key) { return key.startsWith('a') }); 
+	return result; // => { apple: 10 }
+	```
+    - The `ASF.ReadTextFile` method allows users to get source code from text files.
+    - Language reference documentation.
+
+- **Internal core change**:
+	- **VM**:
+		- Improved `step` in `for` node: now supports compound assignments
+		- Users can now inspect the call stack through debug tracing.
+		
+			```vb
+			Dim ASF_ As New ASF
+			Dim code As String
+			
+			' Enable call tracing
+			ASF_.EnableCallTrace = True
+			
+			code = "fun add(a, b) { return a + b; };" & vbCrLf & _
+				   "fun multiply(a, b) { return a * b; };" & vbCrLf & _
+				   "x = add(3, 4);" & vbCrLf & _
+				   "y = multiply(x, 3);" & vbCrLf & _
+				   "print(y)"
+					
+			Dim idx As Long
+			idx = ASF_.Compile(code)
+			ASF_.Run idx
+			
+			' Print the call stack trace
+			Debug.Print "=== Call Stack Trace ==="
+			Debug.Print ASF_.GetCallStackTrace()
+			
+			' Clear for next run
+			ASF_.ClearCallStack
+			```
+			The above code will print
+			```
+			=== Call Stack Trace ===
+			CALL: add(3, 4) -> 7
+			CALL: multiply(7, 3) -> 21
+			```
+- **Fixed**: 
+	- Compiler: fixed an error that prevented `Collection` variables from initializing correctly, causing a fault at compilation phase.
+	- Compiler: fixed nested try-catch parsing issue.
+	- Compiler: fixed `try` statement requiring a mandatory `catch` block.
+	- Map container: fixed nested maps cloning bug.
+	- Parser: fixed compound assignment bug.
+	- VM: fixed use of non-existent property when accessing `ASF_ScopeStack` keys.
+	- VM: fixed bug in `typeOf` returning numeric types when invoked with `null` values.
+	- VM: fixed switch statement executing all cases even when a match was found.
+	- Regex: fixed line of statements compiled as comment in VBA.
+	- Regex: fixed greedy sub quantifier.
+
+---
+**Full Changelog**: https://github.com/ECP-Solutions/ASF/compare/v1.0.7...v2.0.0
+
+## [v1.0.7] - 2025-12-30
+https://github.com/ECP-Solutions/ASF/releases/tag/v1.0.7
+
+## Summary
+
+This ASF v1.0.7 release is focused in regex engine and ergonomics improvements. 
+
+---
+
+## Highlights
+
+-  **Added** 
+    - Native regex engine support for:
+		- Inline flags (`(?i:...)`, `(?-i:...)`, `(?s:...)`, `(?-s:...)`): only group scoped flags.
+
+- **Internal core change**:
+	- Parser & compiler:
+		- The `regex` constructor now accepts arguments to return an initialized instance:`re=regex(<args>)`
+		- Fix named capture handling: named captures are now stored as arrays with their name and value, and the replacement logic retrieves the value correctly from the array.
+	- **VM**:
+		- Variable injection support: allow dynamic injection of variables into the program scope before execution. This enables external code to set variables that will be available during program runtime. VBA `Collections` are converted to ASF internal array representation. For other type of objects, ASF only store its type.
+		
+			```vb
+			Dim engine As ASF
+			Dim pidx As Long
+			Dim coll As New Collection
+			
+			Set engine = New ASF
+			coll.Add "We ": coll.Add "can do ": coll.Add "more with ": coll.Add "ASF!"
+			With engine
+				.InjectVariable "a", coll
+				pidx = .Compile("txt = ''; a.forEach(fun(x){ txt += x }); return(txt);")
+				.Run pidx
+				actual = CStr(.OUTPUT_) '--> We can do more with ASF!
+			End With
+			```
+- **Fixed**: 
+	- Regex: fixed nested groups error.
+
+---
+**Full Changelog**: https://github.com/ECP-Solutions/ASF/compare/v1.0.6...v1.0.7
+
 ## [v1.0.6] - 2025-12-27
 https://github.com/ECP-Solutions/ASF/releases/tag/v1.0.6
 
