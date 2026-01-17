@@ -18,6 +18,7 @@ Private VERBOSE_ As Boolean
 Private GLOBALS_ As ASF_Globals
 Private OUTPUT__ As Variant
 Private INJECTED_VARIABLES_ As Collection
+Private ENABLE_CALL_TRACE_ As Boolean
 
 ' Executes AST nodes produced by Compiler (AST).
 ' Uses Map node types and ScopeStack. Logs to gRuntimeLog.
@@ -30,6 +31,61 @@ Public Sub InjectVariable(varName As String, varValue As Variant)
         Set INJECTED_VARIABLES_ = New Collection
     End If
     INJECTED_VARIABLES_.Add Array(varName, CastInjectedVar(varValue))
+End Sub
+Public Property Get EnableCallTrace() As Boolean
+    EnableCallTrace = ENABLE_CALL_TRACE_
+End Property
+Public Property Let EnableCallTrace(aValue As Boolean)
+    ENABLE_CALL_TRACE_ = aValue
+End Property
+Public Property Get GetCallStack() As Collection
+    Set GetCallStack = GLOBALS_.gCallStack
+End Property
+Public Function GetCallStackTrace() As String
+    Dim sb As String
+    Dim i As Long
+    
+    For i = 1 To GLOBALS_.gCallStack.count
+        Dim trace As ASF_Map
+        Set trace = GLOBALS_.gCallStack(i)
+        
+        Select Case trace.GetValue("type")
+            Case "CALL"
+                sb = sb & "CALL: " & trace.GetValue("name")
+                
+                ' Show arguments
+                Dim args As Collection
+                Set args = trace.GetValue("args")
+                If args.count > 0 Then
+                    sb = sb & "("
+                    Dim j As Long
+                    For j = 1 To args.count
+                        If j > 1 Then sb = sb & ", "
+                        sb = sb & CStr(args(j))
+                    Next j
+                    sb = sb & ")"
+                Else
+                    sb = sb & "()"
+                End If
+                
+                ' Show return value if available
+                If trace.Exists("returnValue") Then
+                    sb = sb & " -> " & CStr(trace.GetValue("returnValue"))
+                End If
+                
+                sb = sb & vbCrLf
+                
+            Case "ERROR"
+                sb = sb & "ERROR in " & trace.GetValue("name") & ": " & trace.GetValue("error") & vbCrLf
+        End Select
+    Next i
+    
+    GetCallStackTrace = sb
+End Function
+
+' Clear the call stack
+Public Sub ClearCallStack()
+    Set GLOBALS_.gCallStack = New Collection
 End Sub
 Private Function CastInjectedVar(varValue As Variant) As Variant
     If IsArray(varValue) Then
@@ -328,13 +384,12 @@ Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As
     Dim baseVal As Variant
     vAssignment baseVal, EvalExprNode(node.GetValue("base"), progScope)
 
-    ' If base is a Map (object) -> return property value as before
     If TypeName(baseVal) = "ASF_Map" Then
         'Eval static method on a class
-        If baseVal.GetValue("type") = "Class" Then
+        If baseVal.Exists("classMethods") Then
             Dim classMethods As Collection
             Dim method_ As Variant
-            Set classMethods = baseVal.GetValue("methods")
+            Set classMethods = baseVal.GetValue("classMethods")
             For Each method_ In classMethods
                 If method_.GetValue("name") = prop Then
                     vAssignment EvalMemberNode, method_
@@ -2939,6 +2994,316 @@ ContinueDo:
                                 tmpResult = RTrim$(baseValLocal)
                                 GoTo exitfun
                         End Select
+                    ElseIf TypeName(baseValLocal) = "ASF_Map" Then
+                        ' ASF_Map (object) methods
+                        Select Case propN
+                            Case "keys"
+                                ' Return array of object keys
+                                Dim keysCol As Collection: Set keysCol = baseValLocal.keys()
+                                Dim keysArr() As Variant
+                                Dim optBase_keys As Long: optBase_keys = progScope.GetValue("__option_base")
+                                If keysCol.count = 0 Then
+                                    ReDim keysArr(optBase_keys To optBase_keys)
+                                Else
+                                    ReDim keysArr(optBase_keys To optBase_keys + keysCol.count - 1)
+                                    Dim ki As Long
+                                    For ki = 1 To keysCol.count
+                                        keysArr(optBase_keys + ki - 1) = keysCol(ki)
+                                    Next ki
+                                End If
+                                tmpResult = keysArr
+                                GoTo exitfun
+                                
+                            Case "values"
+                                ' Return array of object values
+                                Dim itemsCol As Collection: Set itemsCol = baseValLocal.items()
+                                Dim valsArr() As Variant
+                                Dim optBase_vals As Long: optBase_vals = progScope.GetValue("__option_base")
+                                If itemsCol.count = 0 Then
+                                    ReDim valsArr(optBase_vals To optBase_vals)
+                                Else
+                                    ReDim valsArr(optBase_vals To optBase_vals + itemsCol.count - 1)
+                                    Dim vi As Long
+                                    For vi = 1 To itemsCol.count
+                                        vAssignment valsArr(optBase_vals + vi - 1), itemsCol(vi)
+                                    Next vi
+                                End If
+                                tmpResult = valsArr
+                                GoTo exitfun
+                                
+                            Case "entries"
+                                ' Return array of [key, value] pairs
+                                Dim entriesKeys As Collection: Set entriesKeys = baseValLocal.keys()
+                                Dim entriesItems As Collection: Set entriesItems = baseValLocal.items()
+                                Dim entriesArr() As Variant
+                                Dim optBase_ent As Long: optBase_ent = progScope.GetValue("__option_base")
+                                If entriesKeys.count = 0 Then
+                                    ReDim entriesArr(optBase_ent To optBase_ent)
+                                Else
+                                    ReDim entriesArr(optBase_ent To optBase_ent + entriesKeys.count - 1)
+                                    Dim ei As Long
+                                    For ei = 1 To entriesKeys.count
+                                        Dim pairArr() As Variant
+                                        ReDim pairArr(0 To 1)
+                                        pairArr(0) = entriesKeys(ei)
+                                        vAssignment pairArr(1), entriesItems(ei)
+                                        entriesArr(optBase_ent + ei - 1) = pairArr
+                                    Next ei
+                                End If
+                                tmpResult = entriesArr
+                                GoTo exitfun
+                                
+                            Case "size", "length"
+                                ' Return count of keys in object
+                                tmpResult = baseValLocal.count
+                                GoTo exitfun
+                                
+                            Case "haskey", "has"
+                                ' Check if object has a specific key
+                                If evaluated.count = 0 Then
+                                    tmpResult = False
+                                Else
+                                    tmpResult = baseValLocal.Exists(CStr(evaluated(1)))
+                                End If
+                                GoTo exitfun
+                                
+                            Case "get"
+                                ' Get value for key with optional default
+                                If evaluated.count = 0 Then
+                                    tmpResult = Empty
+                                Else
+                                    Dim getKey As String: getKey = CStr(evaluated(1))
+                                    If baseValLocal.Exists(getKey) Then
+                                        vAssignment tmpResult, baseValLocal.GetValue(getKey)
+                                    Else
+                                        ' Return default value if provided, otherwise Empty
+                                        If evaluated.count >= 2 Then
+                                            vAssignment tmpResult, evaluated(2)
+                                        Else
+                                            tmpResult = Empty
+                                        End If
+                                    End If
+                                End If
+                                GoTo exitfun
+                                
+                            Case "set"
+                                ' Set key-value pair and return the object (for chaining)
+                                If evaluated.count >= 2 Then
+                                    baseValLocal.SetValue CStr(evaluated(1)), evaluated(2)
+                                End If
+                                vAssignment tmpResult, baseValLocal
+                                GoTo exitfun
+                                
+                            Case "delete", "remove"
+                                ' Remove a key and return true/false
+                                If evaluated.count = 0 Then
+                                    tmpResult = False
+                                Else
+                                    Dim delKey As String: delKey = CStr(evaluated(1))
+                                    If baseValLocal.Exists(delKey) Then
+                                        baseValLocal.Remove delKey
+                                        tmpResult = True
+                                    Else
+                                        tmpResult = False
+                                    End If
+                                End If
+                                GoTo exitfun
+                                
+                            Case "clear"
+                                ' Remove all keys
+                                baseValLocal.Clear
+                                vAssignment tmpResult, baseValLocal
+                                GoTo exitfun
+                                
+                            Case "isempty"
+                                ' Check if object has no keys
+                                tmpResult = (baseValLocal.count = 0)
+                                GoTo exitfun
+                                
+                            Case "clone"
+                                ' Create shallow copy of object
+                                vAssignment tmpResult, baseValLocal.Clone()
+                                GoTo exitfun
+                                
+                            Case "merge"
+                                ' Merge another object into this one
+                                If evaluated.count = 0 Then
+                                    vAssignment tmpResult, baseValLocal
+                                Else
+                                    Dim mergeObj As Variant: vAssignment mergeObj, evaluated(1)
+                                    If TypeName(mergeObj) = "ASF_Map" Then
+                                        Dim mergeKeys As Collection: Set mergeKeys = mergeObj.keys()
+                                        Dim mk As Variant
+                                        For Each mk In mergeKeys
+                                            baseValLocal.SetValue CStr(mk), mergeObj.GetValue(CStr(mk))
+                                        Next mk
+                                    End If
+                                    vAssignment tmpResult, baseValLocal
+                                End If
+                                GoTo exitfun
+                                
+                            Case "foreach"
+                                ' Iterate over entries with callback(value, key, object)
+                                If evaluated.count = 0 Then
+                                    vAssignment tmpResult, Empty
+                                    GoTo exitfun
+                                End If
+                                
+                                Dim cb_obj As Variant: vAssignment cb_obj, evaluated(1)
+                                If TypeName(cb_obj) <> "ASF_Map" Or cb_obj.GetValue("type") <> "Closure" Then
+                                    vAssignment tmpResult, Empty
+                                    GoTo exitfun
+                                End If
+                                
+                                Dim foreachKeys As Collection: Set foreachKeys = baseValLocal.keys()
+                                Dim fk As Variant
+                                Dim args_obj As Collection
+                                For Each fk In foreachKeys
+                                    Set args_obj = New Collection
+                                    args_obj.Add baseValLocal.GetValue(CStr(fk))
+                                    args_obj.Add CStr(fk)
+                                    args_obj.Add baseValLocal
+                                    vAssignment tmpMapObj, cb_obj
+                                    Dim tmpRes_obj As Variant
+                                    vAssignment tmpRes_obj, CallClosure(tmpMapObj, args_obj, baseValLocal)
+                                Next fk
+                                
+                                vAssignment tmpResult, baseValLocal
+                                GoTo exitfun
+                                
+                            Case "map"
+                                ' Map over entries, return new object with transformed values
+                                If evaluated.count = 0 Then
+                                    vAssignment tmpResult, Empty
+                                    GoTo exitfun
+                                End If
+                                
+                                Dim cb_map As Variant: vAssignment cb_map, evaluated(1)
+                                If TypeName(cb_map) <> "ASF_Map" Or cb_map.GetValue("type") <> "Closure" Then
+                                    vAssignment tmpResult, Empty
+                                    GoTo exitfun
+                                End If
+                                
+                                Dim newMap As New ASF_Map
+                                Dim mapKeys As Collection: Set mapKeys = baseValLocal.keys()
+                                Dim mapk As Variant
+                                Dim args_map As Collection
+                                For Each mapk In mapKeys
+                                    Set args_map = New Collection
+                                    args_map.Add baseValLocal.GetValue(CStr(mapk))
+                                    args_map.Add CStr(mapk)
+                                    args_map.Add baseValLocal
+                                    vAssignment tmpMapObj, cb_map
+                                    Dim mapRes As Variant
+                                    vAssignment mapRes, CallClosure(tmpMapObj, args_map, baseValLocal)
+                                    newMap.SetValue CStr(mapk), mapRes
+                                Next mapk
+                                
+                                vAssignment tmpResult, newMap
+                                GoTo exitfun
+                                
+                            Case "filter"
+                                ' Filter entries, return new object with entries that pass test
+                                If evaluated.count = 0 Then
+                                    vAssignment tmpResult, Empty
+                                    GoTo exitfun
+                                End If
+                                
+                                Dim cb_filter As Variant: vAssignment cb_filter, evaluated(1)
+                                If TypeName(cb_filter) <> "ASF_Map" Or cb_filter.GetValue("type") <> "Closure" Then
+                                    vAssignment tmpResult, Empty
+                                    GoTo exitfun
+                                End If
+                                
+                                Dim filteredMap As New ASF_Map
+                                Dim filterKeys As Collection: Set filterKeys = baseValLocal.keys()
+                                Dim filterk As Variant
+                                Dim args_filter As Collection
+                                Dim filterRes As Variant
+                                For Each filterk In filterKeys
+                                    Set args_filter = New Collection
+                                    args_filter.Add baseValLocal.GetValue(CStr(filterk))
+                                    args_filter.Add CStr(filterk)
+                                    args_filter.Add baseValLocal
+                                    vAssignment tmpMapObj, cb_filter
+                                    vAssignment filterRes, CallClosure(tmpMapObj, args_filter, baseValLocal)
+                                    If IsTruthy(filterRes) Then
+                                        filteredMap.SetValue CStr(filterk), baseValLocal.GetValue(CStr(filterk))
+                                    End If
+                                Next filterk
+                                
+                                vAssignment tmpResult, filteredMap
+                                GoTo exitfun
+                                
+                            Case "some"
+                                ' Test if at least one entry passes test
+                                If evaluated.count = 0 Then
+                                    tmpResult = False
+                                    GoTo exitfun
+                                End If
+                                
+                                Dim cb_some_obj As Variant: vAssignment cb_some_obj, evaluated(1)
+                                If TypeName(cb_some_obj) <> "ASF_Map" Or cb_some_obj.GetValue("type") <> "Closure" Then
+                                    tmpResult = False
+                                    GoTo exitfun
+                                End If
+                                
+                                Dim someKeys As Collection: Set someKeys = baseValLocal.keys()
+                                Dim somek As Variant
+                                Dim args_some As Collection
+                                For Each somek In someKeys
+                                    Set args_some = New Collection
+                                    args_some.Add baseValLocal.GetValue(CStr(somek))
+                                    args_some.Add CStr(somek)
+                                    args_some.Add baseValLocal
+                                    vAssignment tmpMapObj, cb_some_obj
+                                    Dim someRes As Variant
+                                    vAssignment someRes, CallClosure(tmpMapObj, args_some, baseValLocal)
+                                    If IsTruthy(someRes) Then
+                                        tmpResult = True
+                                        GoTo exitfun
+                                    End If
+                                Next somek
+                                
+                                tmpResult = False
+                                GoTo exitfun
+                                
+                            Case "every"
+                                ' Test if all entries pass test
+                                If evaluated.count = 0 Then
+                                    tmpResult = True
+                                    GoTo exitfun
+                                End If
+                                
+                                Dim cb_every_obj As Variant: vAssignment cb_every_obj, evaluated(1)
+                                If TypeName(cb_every_obj) <> "ASF_Map" Or cb_every_obj.GetValue("type") <> "Closure" Then
+                                    tmpResult = False
+                                    GoTo exitfun
+                                End If
+                                
+                                Dim everyKeys As Collection: Set everyKeys = baseValLocal.keys()
+                                Dim everyk As Variant
+                                Dim args_every As Collection
+                                For Each everyk In everyKeys
+                                    Set args_every = New Collection
+                                    args_every.Add baseValLocal.GetValue(CStr(everyk))
+                                    args_every.Add CStr(everyk)
+                                    args_every.Add baseValLocal
+                                    vAssignment tmpMapObj, cb_every_obj
+                                    Dim everyRes As Variant
+                                    vAssignment everyRes, CallClosure(tmpMapObj, args_every, baseValLocal)
+                                    If Not IsTruthy(everyRes) Then
+                                        tmpResult = False
+                                        GoTo exitfun
+                                    End If
+                                Next everyk
+                                
+                                tmpResult = True
+                                GoTo exitfun
+                                
+                            Case Else
+                                GoTo namedFunctions
+                        End Select
                     End If
                     ' --- end method builtins ---
                 End If
@@ -3142,8 +3507,7 @@ namedFunctions:
                     Dim ct As String: ct = IIf(calleeExpr.Exists("type"), CStr(calleeExpr.GetValue("type")), "")
                     If ct = "Member" Or ct = "Index" Then
                         hasThisVal = True
-                        Set baseExpr = calleeExpr.GetValue("base")
-                        vAssignment thisVal, EvalExprNode(baseExpr, progScope)
+                        vAssignment thisVal, baseValLocal
                     End If
                 End If
                 vAssignment calleeVal, EvalExprNode(calleeExpr, progScope)
@@ -3233,7 +3597,7 @@ namedFunctions:
                     Case "^": vAssignment tmpResult, lop ^ rop
                     Case "&": vAssignment tmpResult, CStr(lop) & CStr(rop)
                     Case "|": vAssignment tmpResult, lop Or rop
-                    Case "==", "=": vAssignment tmpResult, (lop = rop)
+                    Case "==", "=": vAssignment tmpResult, (IIf(IsNull(lop), Empty, lop) = IIf(IsNull(rop), Empty, rop))
                     Case "!=": vAssignment tmpResult, (lop <> rop)
                     Case "<": vAssignment tmpResult, (lop < rop)
                     Case ">": vAssignment tmpResult, (lop > rop)
@@ -3289,6 +3653,10 @@ Private Function CallFuncByIndex_AST(funcIdx As Long, args As Collection) As Var
     callScope.LoadRaw rawScope
     callScope.Push
     Dim fname As String: fname = p(0)
+    
+    ' Trace: Push call
+    PushCallTrace fname, args
+    
     ' set params from gFuncParams
     If GLOBALS_.gFuncParams.Exists(fname) Then
         Dim pa As Variant: pa = GLOBALS_.gFuncParams.GetValue(fname)
@@ -3302,18 +3670,36 @@ Private Function CallFuncByIndex_AST(funcIdx As Long, args As Collection) As Var
     End If
 
     Dim stmts As Collection: Set stmts = p(1)
+    Dim retVal As Variant
+    retVal = Empty
+    
+    On Error GoTo FuncError
+    
     For i = 1 To stmts.count
         Dim ctrl As String: ctrl = ExecuteStmtNode(stmts(i), callScope)
         If ctrl = "RETURN" Then
-            CallFuncByIndex_AST = callScope.GetValue("__return")
+            vAssignment retVal, callScope.GetValue("__return")
+            ' Trace: Pop call with return value
+            PopCallTrace fname, retVal
+            vAssignment CallFuncByIndex_AST, retVal
             callScope.Pop
             Exit Function
         ElseIf ctrl = "ERR" Then
+            TraceError fname, "Error during function execution"
             err.Raise vbObjectError + 3000, "VM.CallFunc", "Error during function execution"
         End If
     Next i
-    CallFuncByIndex_AST = Empty
+    
+    ' Trace: Pop call with empty return
+    PopCallTrace fname, Empty
+    vAssignment CallFuncByIndex_AST, Empty
     callScope.Pop
+    Exit Function
+    
+FuncError:
+    TraceError fname, err.Description
+    callScope.Pop
+    err.Raise err.Number, err.Source, err.Description
 End Function
 
 ' ---------------------
@@ -3338,7 +3724,11 @@ Private Function IsBoolean(ByRef expression As String) As Boolean
 End Function
 
 Private Function SafeAdd(a As Variant, b As Variant) As Variant
-    If TypeName(a) <> "String" And TypeName(b) <> "String" Then SafeAdd = a + b Else SafeAdd = CStr(a) & CStr(b)
+    If TypeName(a) <> "String" And TypeName(b) <> "String" Then
+        SafeAdd = a + b
+    Else
+        SafeAdd = IIf(IsNull(a), a, CStr(a)) & IIf(IsNull(b), b, CStr(b))
+    End If
 End Function
 
 Private Function lshift(a As Variant, b As Variant) As Variant 'a<<b
@@ -3467,7 +3857,7 @@ Private Function MapToString(m As Variant, visited As Collection, depth As Long)
         Dim i As Long
         For i = 1 To kcnt
             Dim key As String: key = CStr(keys(i))
-            Dim val As Variant: val = m.GetValue(key)
+            Dim val As Variant: vAssignment val, m.GetValue(key)
             parts(i) = CStr(key) & ": " & ValueToStringWithCtx(val, visited, depth)
         Next i
         MapToString = "{ " & Join(parts, ", ") & " }"
@@ -3670,64 +4060,88 @@ End Function
 
  ' Create and call closures (closureMap is a Map with keys:
  '  "type" = "Closure", "params" = Collection, "body" = Collection (stmts), "env" = ScopeStack)
- Private Function CallClosure(closureMap As ASF_Map, evaluatedArgs As Collection, Optional thisVal As Variant) As Variant
-     On Error GoTo ErrHandler
-     Dim env As ASF_ScopeStack
-     Set env = closureMap.GetValue("env") ' shared reference (shared-write semantics)
+Private Function CallClosure(closureMap As ASF_Map, evaluatedArgs As Collection, Optional thisVal As Variant) As Variant
+    On Error GoTo ErrHandler
+    
+    ' Get function name for tracing (if available)
+    Dim traceName As String
+    If closureMap.Exists("name") Then
+        traceName = CStr(closureMap.GetValue("name"))
+    Else
+        traceName = "<anonymous>"
+    End If
+    
+    ' Trace: Push call
+    PushCallTrace traceName, evaluatedArgs
+    
+    Dim env As ASF_ScopeStack
+    Set env = closureMap.GetValue("env") ' shared reference (shared-write semantics)
 
-     ' push a new frame for this call
-     env.Push
-     Dim i As Long
-     Dim pa As Variant
-     Dim elm As Variant
-     Dim fc As Boolean
-     
-     vAssignment pa, closureMap.GetValue("params")
-     If IsObject(pa) Then
-        fc = (Not pa Is Nothing)
-     Else
-        fc = Not IsEmpty(pa)
-     End If
-     If fc Then
-         For Each elm In pa
-             i = i + 1
-             If i <= evaluatedArgs.count Then
-                 env.SetLocalValue CStr(elm), evaluatedArgs(i)
-             Else
-                 env.SetLocalValue CStr(elm), Empty
-             End If
-         Next elm
-     End If
+    ' push a new frame for this call
+    env.Push
+    Dim i As Long
+    Dim pa As Variant
+    Dim elm As Variant
+    Dim fc As Boolean
+    
+    vAssignment pa, closureMap.GetValue("params")
+    If IsObject(pa) Then
+       fc = (Not pa Is Nothing)
+    Else
+       fc = Not IsEmpty(pa)
+    End If
+    If fc Then
+        For Each elm In pa
+            i = i + 1
+            If i <= evaluatedArgs.count Then
+                env.SetLocalValue CStr(elm), evaluatedArgs(i)
+            Else
+                env.SetLocalValue CStr(elm), Empty
+            End If
+        Next elm
+    End If
 
-     ' set 'this' if provided
-     If Not IsMissing(thisVal) Then
-         env.SetLocalValue "this", thisVal
-     End If
+    ' set 'this' if provided
+    If Not IsMissing(thisVal) Then
+        env.SetLocalValue "this", thisVal
+    End If
 
-     ' execute body
-     Dim stmts As Collection: Set stmts = closureMap.GetValue("body")
-     Dim ctrl As String
-     Dim stmtIdx As Long
-     For stmtIdx = 1 To stmts.count
-         ctrl = ExecuteStmtNode(stmts(stmtIdx), env)
-         If ctrl = "RETURN" Then
-             vAssignment CallClosure, env.GetValue("__return")
-             env.Pop
-             Exit Function
-         ElseIf ctrl = "ERR" Then
-             err.Raise vbObjectError + 8001, "VM.CallClosure", "Error during closure execution"
-         End If
-     Next stmtIdx
+    ' execute body
+    Dim stmts As Collection: Set stmts = closureMap.GetValue("body")
+    Dim ctrl As String
+    Dim stmtIdx As Long
+    Dim retVal As Variant
+    retVal = Empty
+    
+    For stmtIdx = 1 To stmts.count
+        ctrl = ExecuteStmtNode(stmts(stmtIdx), env)
+        If ctrl = "RETURN" Then
+            vAssignment retVal, env.GetValue("__return")
+            ' Trace: Pop call with return value
+            PopCallTrace traceName, retVal
+            vAssignment CallClosure, retVal
+            env.Pop
+            Exit Function
+        ElseIf ctrl = "ERR" Then
+            TraceError traceName, "Error during closure execution"
+            err.Raise vbObjectError + 8001, "VM.CallClosure", "Error during closure execution"
+        End If
+    Next stmtIdx
 
-     ' normal return -> Empty
-     env.Pop
-     CallClosure = Empty
-     Exit Function
+    ' normal return -> Empty
+    ' Trace: Pop call with empty return
+    PopCallTrace traceName, Empty
+    env.Pop
+    CallClosure = Empty
+    Exit Function
+    
 ErrHandler:
-     If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "CallClosure error: " & err.Description
-     err.Clear
-     CallClosure = Empty
- End Function
+    TraceError traceName, err.Description
+    If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "CallClosure error: " & err.Description
+    err.Clear
+    PopCallTrace traceName, Empty
+    CallClosure = Empty
+End Function
  ' ----------------- LValue resolution and helpers -----------------
 
 Private Sub HandleAssignment(left As ASF_Map, ByVal rval As Variant, progScope As ASF_ScopeStack)
@@ -4487,15 +4901,15 @@ Private Function builtin_typeof(v As Variant) As String
         Exit Function
     End If
 
-    ' Numeric
-    If IsNumeric(v) Then
-        builtin_typeof = "number"
-        Exit Function
-    End If
-
     ' String
     If VarType(v) = vbString Then
         builtin_typeof = "string"
+        Exit Function
+    End If
+    
+    ' Numeric
+    If IsNumeric(v) Then
+        builtin_typeof = "number"
         Exit Function
     End If
 
@@ -5122,7 +5536,7 @@ Private Function ExecClassDecl(node As ASF_Map, progScope As ASF_ScopeStack) As 
     classMap.Add "type", "Class"
     classMap.SetValue "name", className
     classMap.SetValue "fields", node.GetValue("fields")
-    classMap.SetValue "methods", node.GetValue("methods")
+    classMap.SetValue "classMethods", node.GetValue("classMethods")
     
     If node.Exists("constructor") Then
         classMap.SetValue "constructor", node.GetValue("constructor")
@@ -5160,8 +5574,8 @@ Private Function InstantiateClass(classMap As ASF_Map, args As Collection, progS
             End If
             
             ' Copy parent methods
-            If superClassMap.Exists("methods") Then
-                Dim parentMethods As Collection: Set parentMethods = superClassMap.GetValue("methods")
+            If superClassMap.Exists("classMethods") Then
+                Dim parentMethods As Collection: Set parentMethods = superClassMap.GetValue("classMethods")
                 Dim pm As Variant
                 Dim pmNode As ASF_Map
                 For Each pm In parentMethods
@@ -5179,8 +5593,8 @@ Private Function InstantiateClass(classMap As ASF_Map, args As Collection, progS
     End If
     
     ' Bind methods to instance
-    If classMap.Exists("methods") Then
-        Dim methods As Collection: Set methods = classMap.GetValue("methods")
+    If classMap.Exists("classMethods") Then
+        Dim methods As Collection: Set methods = classMap.GetValue("classMethods")
         Dim m As Variant
         For Each m In methods
             Dim methodNode As ASF_Map: Set methodNode = m
@@ -5289,6 +5703,16 @@ End Sub
 Private Function ExecuteBoundMethod(methodNode As ASF_Map, instance As ASF_Map, args As Collection, progScope As ASF_ScopeStack) As Variant
     On Error GoTo ErrHandler
     
+    Dim methodName As String
+    If methodNode.Exists("name") Then
+        methodName = methodNode.GetValue("name")
+    Else
+        methodName = "<method>"
+    End If
+    
+    ' Trace: Push call
+    PushCallTrace methodName, args
+    
     ' Create method scope
     Dim methodScope As New ASF_ScopeStack
     methodScope.LoadRaw progScope.Raw
@@ -5311,31 +5735,42 @@ Private Function ExecuteBoundMethod(methodNode As ASF_Map, instance As ASF_Map, 
     End If
     
     ' Execute body
+    Dim retVal As Variant
+    retVal = Empty
+    
     If methodNode.Exists("body") Then
         Dim body As Collection: Set body = methodNode.GetValue("body")
         Dim j As Long
         For j = 1 To body.count
             Dim ctrl As String: ctrl = ExecuteStmtNode(body(j), methodScope)
             If ctrl = "RETURN" Then
-                vAssignment ExecuteBoundMethod, methodScope.GetValue("__return")
+                vAssignment retVal, methodScope.GetValue("__return")
+                ' Trace: Pop call with return value
+                PopCallTrace methodName, retVal
+                vAssignment ExecuteBoundMethod, retVal
                 methodScope.Pop
                 Exit Function
             ElseIf ctrl = "ERR" Then
+                TraceError methodName, "Error during method execution"
                 Exit For
             End If
         Next j
     End If
     
     methodScope.Pop
-    vAssignment ExecuteBoundMethod, Empty
+    ' Trace: Pop call with empty return
+    PopCallTrace methodName, retVal
+    vAssignment ExecuteBoundMethod, retVal
     Exit Function
     
 ErrHandler:
+    TraceError methodName, err.Description
     If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "ExecuteBoundMethod error: " & err.Description
     err.Clear
+    PopCallTrace methodName, Empty
     vAssignment ExecuteBoundMethod, Empty
 End Function
-' Execute bound method
+
 Private Function ExecuteClassMethod(methodNode As ASF_Map, args As Collection, progScope As ASF_ScopeStack) As Variant
     On Error GoTo ErrHandler
     
@@ -5416,6 +5851,58 @@ Private Sub ExecuteSuperConstructor(ctorNode As ASF_Map, instance As ASF_Map, ar
     End If
     
     superScope.Pop
+End Sub
+' Push a call onto the call stack trace
+Private Sub PushCallTrace(funcName As String, args As Collection)
+    If Not ENABLE_CALL_TRACE_ Then Exit Sub
+    
+    Dim trace As New ASF_Map
+    trace.Add "type", "CALL"
+    trace.Add "name", funcName
+    trace.Add "timestamp", Now
+    
+    ' Store arguments
+    Dim argsList As New Collection
+    If Not args Is Nothing Then
+        Dim i As Long
+        For i = 1 To args.count
+            argsList.Add ValueToStringForPrint(args(i))
+        Next i
+    End If
+    trace.SetValue "args", argsList
+    
+    GLOBALS_.gCallStack.Add trace
+End Sub
+
+' Pop a call from the call stack trace and record return value
+Private Sub PopCallTrace(funcName As String, returnValue As Variant)
+    If Not ENABLE_CALL_TRACE_ Then Exit Sub
+    
+    ' Find the most recent matching call
+    Dim i As Long
+    For i = GLOBALS_.gCallStack.count To 1 Step -1
+        Dim trace As ASF_Map
+        Set trace = GLOBALS_.gCallStack(i)
+        If trace.GetValue("type") = "CALL" And trace.GetValue("name") = funcName Then
+            ' Update with return info
+            trace.SetValue "returned", Now
+            trace.SetValue "returnValue", ValueToStringForPrint(returnValue)
+            Exit Sub
+        End If
+    Next i
+End Sub
+
+' Record an error in the call trace
+Private Sub TraceError(funcName As String, errDesc As String)
+    If Not ENABLE_CALL_TRACE_ Then Exit Sub
+    
+    Dim trace As New ASF_Map
+    trace.Add "type", "ERROR"
+    trace.Add "name", funcName
+    trace.Add "timestamp", Now
+    trace.Add "error", errDesc
+    
+    GLOBALS_.gCallStack.Add trace
 End Sub
 ' ---------------------
 ' End VM class
