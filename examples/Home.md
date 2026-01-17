@@ -6,7 +6,7 @@
 Below is a single-file reference describing the **ASF** scripting language features, usage examples, and the exact syntax rules the compiler/VM expect.
 
 > **Important**: This document follows this ASF compiler/runtime:
-> - `;` is the **statement separator** (mandatory to end statements).
+> - `;` is the **statement separator** (mandatory to end statements, when not precced block closing braces).
 > - `,` is **only** for separating function arguments, array items, and object members.
 > - The engine supports: literals, variables, one top named `fun name(...) { ... }`, expression-level function literals (`fun(...) { ... }`), closures (shared-write semantics), `if`, `for` / `while`, `try/catch`, `return`, `break` / `continue`, arrays `[...]`, objects `{...}`, templates `` `...${...}...` ``, slash-regex strings `"/pattern/flags"` and a `regex()` constructor.
 
@@ -35,7 +35,7 @@ Below is a single-file reference describing the **ASF** scripting language featu
 
 ## 1. Quick syntax rules
 
-- **Statements must end with a semicolon `;`**. Omitting `;` will make the compiler treat tokens as part of the following statement.
+- **Statements must end with a semicolon `;`**. Omitting `;` will make the compiler treat tokens as part of the following statement. This rules doesn't apply to the last statement in a code block where the semicolon isn't allowed. 
 - **Commas `,` are exclusively for**:
   - function call arguments: `f(a, b, c);`
   - array items: `[1, 2, 3]`
@@ -75,7 +75,7 @@ Below is a single-file reference describing the **ASF** scripting language featu
   else { ... }
   ```
 - `return` to return from a named or anonymous function.
-- **Statement terminator**: **every** statement must end with `;`.
+- **Statement terminator**: **every** statement must end with `;`, except for the last one inside code blocks.
 
 ---
 
@@ -91,7 +91,7 @@ Below is a single-file reference describing the **ASF** scripting language featu
 
 - **Function literal**:
   ```js
-  f = fun(x, y) { return x + y; };
+  f = fun(x, y) { return x + y};
   ```
 
 - **Closures** capture the runtime scope by reference (shared-write semantics). Mutations inside closures reflect in the outer scope.
@@ -105,7 +105,7 @@ Below is a single-file reference describing the **ASF** scripting language featu
 
 - C-like `for`:
   ```js
-  for (i = 0; i < 10; i = i + 1) {
+  for (i = 0, i < 10, i = i + 1) {
       ...
   }
   ```
@@ -124,10 +124,10 @@ Below is a single-file reference describing the **ASF** scripting language featu
 - Basic usage:
   ```js
   try {
-    risky();
+    risky()
   } catch (e) {
-    print("err: " + e);
-  }
+    print("err: " + e)
+  };
   ```
 
 ---
@@ -243,7 +243,7 @@ print(b);
 fun main() {
   makeCounter = fun() {
     n = 0;
-    return fun() { n = n + 1; return n; };
+    return fun() { n = n + 1; return n }
   };
   c = makeCounter();
   print(c()); // 1
@@ -262,8 +262,8 @@ nested = `outer ${ inner ${ a } } tail`;
 ### Replace with function
 ```js
 fun replacer(match, p1, p2, p3, offset, s) {
-  return [p1, p2, p3].join(' - ');
-}
+  return [p1, p2, p3].join(' - ')
+};
 newString = 'abc12345#$*%'.replace(`/(\\D*)(\\d*)(\\W*)/g`, replacer);
 print(newString);
 ```
