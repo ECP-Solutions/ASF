@@ -40,6 +40,7 @@ Private Sub INIT_()
     Set Compiler_ = New ASF_Compiler
     Set VM_ = New ASF_VM
     VM_.verbose = False
+    VM_.EnableCallTrace = False
 End Sub
 Public Property Get OUTPUT_() As Variant
     vAssignment OUTPUT_, OUTPUT__
@@ -73,3 +74,33 @@ End Property
 Public Property Let verbose(aValue As Boolean)
     VM_.verbose = aValue
 End Property
+Public Property Get EnableCallTrace() As Boolean
+    EnableCallTrace = VM_.EnableCallTrace
+End Property
+Public Property Let EnableCallTrace(aValue As Boolean)
+    VM_.EnableCallTrace = aValue
+End Property
+Public Property Get GetCallStackTrace() As String
+    GetCallStackTrace = VM_.GetCallStackTrace
+End Property
+Public Property Get GetCallStack() As Collection
+    Set GetCallStack = VM_.GetCallStack
+End Property
+Public Sub ClearCallStack()
+    VM_.ClearCallStack
+End Sub
+Public Function ReadTextFile(FilePath As String) As String
+    Dim EOFile As Long
+    Dim FileHandled As Integer
+    Dim OutputStr As String
+    
+    FileHandled = FreeFile
+    Open FilePath For Binary As #FileHandled
+    EOFile = LOF(FileHandled)
+    OutputStr = Space$(EOFile)
+    Get #FileHandled, , OutputStr
+    Close #FileHandled
+    ReadTextFile = OutputStr
+    OutputStr = vbNullString
+End Function
+
