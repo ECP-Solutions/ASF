@@ -6,7 +6,7 @@
 [![Mentioned in Awesome VBA](https://awesome.re/mentioned-badge.svg)](https://github.com/sancarn/awesome-vba)
 
 > Modern scripting power inside classic VBA. Fast to adopt (**No** COM dependencies) — impossible to ignore due its incredible power. 
-> Turn VBA into a full-featured script host. *ASF brings modern scripting ergonomics (first-class functions, closures, arrays & objects, method chaining, builtin helpers like `map`/`filter`/`reduce`, and even VBExpressions) to classic VBA projects — without leaving the Office ecosystem.*
+> Turn VBA into a full-featured script host. *ASF brings modern scripting ergonomics (classes with polymorphism, first-class functions, closures, arrays & objects, method chaining, builtin helpers like `map`/`filter`/`reduce`, string templates and methods and even VBExpressions) to classic VBA projects — without leaving the Office ecosystem.*
 
 ASF is an embeddable scripting engine written in plain VBA that brings modern language features — first-class functions, anonymous closures, array & object literals, and safe interop with your existing VBA code — to legacy Office apps.
 
