@@ -224,4 +224,4 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ---
 
-For enterprise or integration help, reach out with a short description of your environment and goals — ASF is intentionally lightweight so it adapts quickly to complex legacy codebases.
+>For enterprise or integration help, reach out with a short description of your environment and goals — ASF is intentionally lightweight so it adapts quickly to complex legacy codebases.
