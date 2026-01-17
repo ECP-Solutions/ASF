@@ -17,7 +17,7 @@ This project provides a production-proven compiler and VM plus a complete test-s
 ## Why ASF?
 - **Seamless bridge** between VBA codebases and modern scripting paradigms.
 - **No external runtime** — runs on top of VBA using a compact AST interpreter.
-- **Powerful features** not found in any other VBA tool: classes, shared-write closures, expression-level anonymous functions, nested arrays & objects, array helpers, VBExpressions integration, method chaining, and more.
+- **Powerful features** not found in any other VBA tool: classes with polymorphism, shared-write closures, expression-level anonymous functions, nested arrays & objects, array helpers, VBExpressions integration, method chaining, and more.
 - **Native regex engine** a pure VBA class module that supports lookarounds, multiline, atomic groups, back reference replace method with placeholders, non-capturing groups and more!.
 - **Tested** — the comprehensive [Rubberduck](https://github.com/rubberduck-vba/Rubberduck)  test-suite passes across arithmetic, flow control, functions, closures, array/object manipulation, builtin methods, regular expressions, variables injection, classes, objects.
 - **Unmatched expressiveness:** Implement complex logic with concise scripts and enrich them with heavyweight VBA code.
@@ -31,7 +31,7 @@ This project provides a production-proven compiler and VM plus a complete test-s
 ## Highlights / Features
 
 - Full expression language: arithmetic, boolean, ternary, short-circuit logic.
-- Classes, arrays, objects (Map-like), member access, strings manipulation and indexing.
+- Classes with polymorphism, arrays, objects (Map-like), member access, strings manipulation and indexing.
 - First-class functions + anonymous functions + closures.
 - Control flow: `if` / `elseif` / `else`, `for`, `while`, `switch`, `try/catch`, `break` / `continue`.
 - Map / Filter / Reduce / Slice / Push / Pop as array methods
@@ -95,6 +95,26 @@ let circle = new Circle(10, 20, 5);
 print('Position: ' + circle.getPosition()); // => 'Position: 10,20'
 print('Color: ' + circle.color); // => 'Color: red'
 print('Area: ' + circle.getArea()); // => 'Area: 78.53975'
+```
+Polymorphism:
+```js
+class Printer {
+    print(doc) { return 'Printing: ' + doc; };
+};
+class ColorPrinter extends Printer {
+    print(doc) { return 'Color printing: ' + doc; };
+};
+class LaserPrinter extends Printer {
+    print(doc) { return 'Laser printing: ' + doc; };
+};
+fun printDocument(printer, doc) {
+    return printer.print(doc);
+};
+p1 = new Printer();
+p2 = new ColorPrinter();
+p3 = new LaserPrinter();
+result = [printDocument(p1, 'Doc1'), printDocument(p2, 'Doc2'), printDocument(p3, 'Doc3')].join(' | ');
+return result; // => Printing: Doc1 | Color printing: Doc2 | Laser printing: Doc3
 ```
 Chained helpers:
 ```js
