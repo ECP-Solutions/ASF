@@ -6,9 +6,9 @@
 Below is a single-file reference describing the **ASF** scripting language features, usage examples, and the exact syntax rules the compiler/VM expect.
 
 > **Important**: This document follows this ASF compiler/runtime:
-> - `;` is the **statement separator** (mandatory to end statements, when not precced block closing braces).
+> - `;` is the **statement separator** (mandatory to end statements, and optional for some code blocks).
 > - `,` is **only** for separating function arguments, array items, and object members.
-> - The engine supports: literals, variables, one top named `fun name(...) { ... }`, expression-level function literals (`fun(...) { ... }`), closures (shared-write semantics), `if`, `for` / `while`, `try/catch`, `return`, `break` / `continue`, arrays `[...]`, objects `{...}`, templates `` `...${...}...` ``, slash-regex strings `"/pattern/flags"` and a `regex()` constructor.
+> - The engine supports: literals, variables, top named functions `fun name(...) { ... }`, classes with inheritance, expression-level function literals (`fun(...) { ... }`), closures (shared-write semantics), `if`, `for` / `while`, `try/catch`, `return`, `break` / `continue`, arrays `[...]`, objects `{...}`, templates `` `...${...}...` ``, slash-regex strings `"/pattern/flags"` and a `regex()` constructor.
 
 ---
 
@@ -35,7 +35,7 @@ Below is a single-file reference describing the **ASF** scripting language featu
 
 ## 1. Quick syntax rules
 
-- **Statements must end with a semicolon `;`**. Omitting `;` will make the compiler treat tokens as part of the following statement. This rules doesn't apply to the last statement in a code block where the semicolon isn't allowed. 
+- **Statements must end with a semicolon `;`**. Omitting `;` will make the compiler treat tokens as part of the following statement. This rules doesn't apply to the last statement in a script. We also recommend semicolon at the end of code blocks. 
 - **Commas `,` are exclusively for**:
   - function call arguments: `f(a, b, c);`
   - array items: `[1, 2, 3]`
@@ -81,13 +81,13 @@ Below is a single-file reference describing the **ASF** scripting language featu
 
 ## 5. Functions and closures
 
-- **Named top-level function**:
+- **Named top-level functions**:
   ```js
   fun main() {
     print("top-level main");
   }
   ```
-  Only **one** named top-level `fun` is supported by the program loader.
+  Users can define multiple named top-level `fun`. 
 
 - **Function literal**:
   ```js
@@ -276,6 +276,24 @@ caps = r.exec('aaab');
 if (caps) {
   print(caps.item(1));
 }
+```
+### Classes
+```js
+class Vehicle {
+    move() { return 'moving'; };
+};
+class Car extends Vehicle {
+    move() { return 'driving on road'; };
+};
+class SportsCar extends Car {
+    move() { return 'racing on track'; };
+};
+v = new Vehicle();
+c = new Car();
+s = new SportsCar();
+print(v.move());
+print(c.move());
+print(s.move());
 ```
 
 ---
