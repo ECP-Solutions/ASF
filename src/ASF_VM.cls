@@ -5106,34 +5106,38 @@ Private Sub WriteToContainer(ByRef calleeExpr As ASF_Map, ByRef progScope As ASF
     Dim propKey As String
     
     Set rp = ResolvePath(calleeExpr.GetValue("base"), progScope, True)
-    Select Case rp.GetValue("kind")
-        Case "scopeVar"
-            progScope.SetValue CStr(rp.GetValue("key")), tValue
-        Case "prop"
-            vAssignment cont, ResolveProp(rp)
-            propKey = CStr(rp.GetValue("key"))
-            If IsObject(cont) Then
-                Select Case TypeName(cont)
-                    Case "ASF_Map"
-                        ' set property on map
-                        cont.SetValue propKey, tValue
-                    Case "ASF_ScopeStack"
-                        ' set named variable in scope stack
-                        cont.SetValue propKey, tValue
-                    Case Else
-                        ' try a late-bound SetValue, otherwise fallback to current progScope assignment
-                        On Error Resume Next
-                        cont.SetValue propKey, tValue
-                        If err.Number <> 0 Then
-                            err.Clear
-                            progScope.SetValue propKey, tValue
-                        End If
-                End Select
-            Else
-                ' couldn't resolve a container object — fall back to storing in current scope
-                progScope.SetValue propKey, tValue
-            End If
-    End Select
+    If rp.Exists("kind") Then
+        Select Case rp.GetValue("kind")
+            Case "scopeVar"
+                progScope.SetValue CStr(rp.GetValue("key")), tValue
+            Case "prop"
+                vAssignment cont, ResolveProp(rp)
+                propKey = CStr(rp.GetValue("key"))
+                If IsObject(cont) Then
+                    Select Case TypeName(cont)
+                        Case "ASF_Map"
+                            ' set property on map
+                            cont.SetValue propKey, tValue
+                        Case "ASF_ScopeStack"
+                            ' set named variable in scope stack
+                            cont.SetValue propKey, tValue
+                        Case Else
+                            ' try a late-bound SetValue, otherwise fallback to current progScope assignment
+                            On Error Resume Next
+                            cont.SetValue propKey, tValue
+                            If err.Number <> 0 Then
+                                err.Clear
+                                progScope.SetValue propKey, tValue
+                            End If
+                    End Select
+                Else
+                    ' couldn't resolve a container object — fall back to storing in current scope
+                    progScope.SetValue propKey, tValue
+                End If
+        End Select
+    Else
+        'On the fly value without variable
+    End If
 End Sub
 ' QS_Compare: returns -1/0/1 using optional closure comparator; fallback to numeric/string compare
 Private Function QS_Compare(ByVal a As Variant, ByVal b As Variant, ByVal comp As Variant, ByVal hasComp As Boolean, ByVal thisVal As Variant) As Long
@@ -5197,9 +5201,9 @@ End Function
 ' QS_Swap: swap two elements in a Variant array
 Private Sub QS_Swap(ByRef arr() As Variant, ByVal i As Long, ByVal j As Long)
     Dim tmp As Variant
-    tmp = arr(i)
-    arr(i) = arr(j)
-    arr(j) = tmp
+    vAssignment tmp, arr(i)
+    vAssignment arr(i), arr(j)
+    vAssignment arr(j), tmp
 End Sub
 
 ' QS_QuickSort: in-place quicksort (Hoare-style partition)
@@ -5209,8 +5213,8 @@ Private Sub QS_QuickSort(ByRef arr() As Variant, ByVal low As Long, ByVal high A
 
     i = low
     j = high
-    Dim mid As Long: mid = (low + high) \ 2
-    Dim pivot As Variant: pivot = arr(mid)
+    Dim mid As Long: vAssignment mid, (low + high) \ 2
+    Dim pivot As Variant: vAssignment pivot, arr(mid)
 
     Do While i <= j
         Do While QS_Compare(arr(i), pivot, comp, hasComp, thisVal) < 0
