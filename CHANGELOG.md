@@ -2,6 +2,25 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [v2.0.2] - 2026-01-19
+https://github.com/ECP-Solutions/ASF/releases/tag/v2.0.2
+
+## Summary
+
+ASF v2.0.2 is a hot fix for the VM.
+
+---
+
+## Highlights
+
+- **Fixed**: 
+	- VM: fixed LValue resolution for mutating array methods.
+	- VM: fixed QuickSort can not sort array of objects.
+
+
+---
+**Full Changelog**: https://github.com/ECP-Solutions/ASF/compare/v2.0.1...v2.0.2
+
 ## [v2.0.1] - 2026-01-17
 https://github.com/ECP-Solutions/ASF/releases/tag/v2.0.1
 

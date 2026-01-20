@@ -3335,13 +3335,13 @@ End Sub
 Private Sub polymorphism_method_delegation()
     On Error GoTo TestFail
     actual = CStr(GetResult("class Printer {" & _
-                "    print(doc) { return 'Printing: ' + doc; }" & _
+                "    print(doc) { return 'Printing: ' + doc; };" & _
                 "};" & _
                 "class ColorPrinter extends Printer {" & _
-                "    print(doc) { return 'Color printing: ' + doc; }" & _
+                "    print(doc) { return 'Color printing: ' + doc; };" & _
                 "};" & _
                 "class LaserPrinter extends Printer {" & _
-                "    print(doc) { return 'Laser printing: ' + doc; }" & _
+                "    print(doc) { return 'Laser printing: ' + doc; };" & _
                 "};" & _
                 "fun printDocument(printer, doc) {" & _
                 "    return printer.print(doc);" & _
@@ -3349,10 +3349,10 @@ Private Sub polymorphism_method_delegation()
                 "p1 = new Printer();" & _
                 "p2 = new ColorPrinter();" & _
                 "p3 = new LaserPrinter();" & _
-                "result = printDocument(p1, 'Doc1') + ' | ' + " & _
-                "         printDocument(p2, 'Doc2') + ' | ' + " & _
-                "         printDocument(p3, 'Doc3');" & _
-                "return(result);"))
+                "result = [printDocument(p1, 'Doc1'), " & _
+                "         printDocument(p2, 'Doc2'), " & _
+                "         printDocument(p3, 'Doc3')].join(' | ');" & _
+                "return result;"))
     expected = "Printing: Doc1 | Color printing: Doc2 | Laser printing: Doc3"
     Assert.AreEqual expected, actual
 TestExit:
@@ -3361,3 +3361,40 @@ TestFail:
     Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
+
+'@TestMethod("sort_chain_on_objects")
+Private Sub sort_chain_on_objects()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    Dim jsonResponse As String
+    jsonResponse = _
+        "{" & _
+        "  users: [" & _
+        "    { id: 1, name: 'Alice', sales: 15000, active: true }," & _
+        "    { id: 2, name: 'Bob', sales: 8000, active: false }," & _
+        "    { id: 3, name: 'Charlie', sales: 22000, active: true }" & _
+        "  ]" & _
+        "};"
+    GetResult "let response = " & jsonResponse & _
+        "let topSellers = response.users" & _
+        "  .filter(fun(u) { return u.active && u.sales > 10000 })" & _
+        "  .map(fun(u) { return { name: u.name, bonus: u.sales * 0.1 } })" & _
+        "  .sort(fun(a, b) {" & _
+        "    if (a.bonus > b.bonus) { return -1 };" & _
+        "    if (a.bonus < b.bonus) { return 1 };" & _
+        "    return 0;" & _
+        "  });" & _
+        "print(topSellers);", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ { name: 'Charlie', bonus: 2200 }, { name: 'Alice', bonus: 1500 } ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
