@@ -16,6 +16,10 @@ Private GLOBALS_ As ASF_Globals
 Public Sub SetGlobals(ByRef aGlobals As ASF_Globals)
     Set GLOBALS_ = aGlobals
 End Sub
+Private Function ReplaceDQuotes(src As String) As String
+    ReplaceDQuotes = Replace(src, ChrW(34), "'")
+End Function
+
 Public Function Tokenize(src As String) As Collection
     Dim toks As New Collection
     Dim i As Long, n As Long
@@ -23,40 +27,41 @@ Public Function Tokenize(src As String) As Collection
     Dim nxt As String
     Dim tmpIdent As String
     Dim j As Long, jC As Long, jB As Long
-    n = Len(src)
+    Dim sourceCode As String: sourceCode = ReplaceDQuotes(src)
+    n = Len(sourceCode)
     i = 1
 
 Tokenize_MainLoop:
     Do While i <= n
         If i > n Then Exit Do ' FIX: Bounds
-        ch = mid$(src, i, 1)
+        ch = mid$(sourceCode, i, 1)
         ' comments and slash handling
         If ch = "/" And i < n Then
-            nxt = mid$(src, i + 1, 1)
+            nxt = mid$(sourceCode, i + 1, 1)
             If nxt = "/" Then
                 jC = i + 2
-                Do While jC <= n And mid$(src, jC, 1) <> vbCr And mid$(src, jC, 1) <> vbLf
+                Do While jC <= n And mid$(sourceCode, jC, 1) <> vbCr And mid$(sourceCode, jC, 1) <> vbLf
                     jC = jC + 1
                 Loop
-                toks.Add Array("COMMENT", mid$(src, i + 2, jC - i - 2))
+                toks.Add Array("COMMENT", mid$(sourceCode, i + 2, jC - i - 2))
                 i = jC
                 GoTo Tokenize_SkipToLoopEnd
             ElseIf nxt = "*" Then
                 jB = i + 2
                 Dim foundClose As Boolean: foundClose = False
                 Do While jB <= n - 1
-                    If mid$(src, jB, 2) = "*/" Then
+                    If mid$(sourceCode, jB, 2) = "*/" Then
                         foundClose = True
                         Exit Do
                     End If
                     jB = jB + 1
                 Loop
                 If foundClose Then
-                    toks.Add Array("COMMENT", mid$(src, i + 2, jB - i - 2))
+                    toks.Add Array("COMMENT", mid$(sourceCode, i + 2, jB - i - 2))
                     i = jB + 2
                     GoTo Tokenize_SkipToLoopEnd
                 Else
-                    toks.Add Array("COMMENT", mid$(src, i + 2))
+                    toks.Add Array("COMMENT", mid$(sourceCode, i + 2))
                     i = n + 1
                     GoTo Tokenize_SkipToLoopEnd
                 End If
@@ -65,10 +70,10 @@ Tokenize_MainLoop:
 
         If ch = "#" Then
             Dim jH As Long: jH = i + 1
-            Do While jH <= n And mid$(src, jH, 1) <> vbCr And mid$(src, jH, 1) <> vbLf
+            Do While jH <= n And mid$(sourceCode, jH, 1) <> vbCr And mid$(sourceCode, jH, 1) <> vbLf
                 jH = jH + 1
             Loop
-            toks.Add Array("COMMENT", mid$(src, i + 1, jH - i - 1))
+            toks.Add Array("COMMENT", mid$(sourceCode, i + 1, jH - i - 1))
             i = jH
             GoTo Tokenize_SkipToLoopEnd
         End If
@@ -89,13 +94,13 @@ Tokenize_MainLoop:
                 Dim c As String
                 
                 Do While i <= Ls
-                    c = mid$(src, i, 1)
+                    c = mid$(sourceCode, i, 1)
             
                     ' escape sequences - keep them as raw characters in the literal
                     ' if not succeeded by the backtick (`) or the slash (/) symbol
                     ' or the scape character itself (\)
                     If c = "\" Then
-                        nxt = mid$(src, i + 1, 1)
+                        nxt = mid$(sourceCode, i + 1, 1)
                         If nxt = "`" Or nxt = "/" Or nxt = "\" Then
                             curLit = curLit & nxt
                             i = i + 2
@@ -125,29 +130,29 @@ ContinueTemplateLoop:
                 toks.Add Array("PAREN", ch): i = i + 1: GoTo Tokenize_SkipToLoopEnd
             Case "+", "-", "*", "/", "^", "%", "&", "|"
                 ' support +=, -=, *=, /=, ^=, %=, &=, |=
-                If i < n And mid$(src, i + 1, 1) = "=" Then
+                If i < n And mid$(sourceCode, i + 1, 1) = "=" Then
                     toks.Add Array("OP", ch & "="): i = i + 2
                 Else
                     If ch = "&" Then
-                        If i < n And mid$(src, i + 1, 1) = "&" Then toks.Add Array("OP", "&&"): i = i + 2 Else toks.Add Array("OP", "&"): i = i + 1
+                        If i < n And mid$(sourceCode, i + 1, 1) = "&" Then toks.Add Array("OP", "&&"): i = i + 2 Else toks.Add Array("OP", "&"): i = i + 1
                     ElseIf ch = "|" Then
-                        If i < n And mid$(src, i + 1, 1) = "|" Then toks.Add Array("OP", "||"): i = i + 2 Else toks.Add Array("SYM", "|"): i = i + 1
+                        If i < n And mid$(sourceCode, i + 1, 1) = "|" Then toks.Add Array("OP", "||"): i = i + 2 Else toks.Add Array("SYM", "|"): i = i + 1
                     Else
                         toks.Add Array("OP", ch): i = i + 1
                     End If
                 End If
                 GoTo Tokenize_SkipToLoopEnd
             Case "!"
-                If i < n And mid$(src, i + 1, 1) = "=" Then toks.Add Array("OP", "!="): i = i + 2 Else toks.Add Array("OP", "!"): i = i + 1
+                If i < n And mid$(sourceCode, i + 1, 1) = "=" Then toks.Add Array("OP", "!="): i = i + 2 Else toks.Add Array("OP", "!"): i = i + 1
                 GoTo Tokenize_SkipToLoopEnd
             Case "<", ">"
                 Dim two As String
                 Dim three As String
-                If i < n Then two = mid$(src, i, 2) Else two = ""
+                If i < n Then two = mid$(sourceCode, i, 2) Else two = ""
                 If two = ">=" Or two = "<=" Then
                     toks.Add Array("OP", two): i = i + 2
                 Else
-                    If i < n Then three = mid$(src, i, 3) Else three = ""
+                    If i < n Then three = mid$(sourceCode, i, 3) Else three = ""
                     If three = "<<=" Or three = ">>=" Then 'Support for compound shift assignment
                         toks.Add Array("OP", three): i = i + 3
                     Else
@@ -160,7 +165,7 @@ ContinueTemplateLoop:
                 End If
                 GoTo Tokenize_SkipToLoopEnd
             Case "="
-                If i < n And mid$(src, i + 1, 1) = "=" Then toks.Add Array("OP", "=="): i = i + 2 Else toks.Add Array("OP", "="): i = i + 1
+                If i < n And mid$(sourceCode, i + 1, 1) = "=" Then toks.Add Array("OP", "=="): i = i + 2 Else toks.Add Array("OP", "="): i = i + 1
                 GoTo Tokenize_SkipToLoopEnd
             Case "?"
                 toks.Add Array("OP", ch): i = i + 1: GoTo Tokenize_SkipToLoopEnd
@@ -170,10 +175,10 @@ ContinueTemplateLoop:
                 j = i + 1
                 Dim sb As String: sb = ""
                 Do While j <= n
-                    Dim cj As String: cj = mid$(src, j, 1)
+                    Dim cj As String: cj = mid$(sourceCode, j, 1)
                     If cj = "\" Then
                         If j + 1 <= n Then
-                            Dim nx As String: nx = mid$(src, j + 1, 1)
+                            Dim nx As String: nx = mid$(sourceCode, j + 1, 1)
                             Select Case nx
                                 Case "'": sb = sb & "'": j = j + 2: GoTo ContinueDo
                                 Case "\": sb = sb & "\": j = j + 2: GoTo ContinueDo
@@ -195,7 +200,7 @@ ContinueTemplateLoop:
                     End If
 ContinueDo:
                 Loop
-                If j <= n And mid$(src, j, 1) = "'" Then
+                If j <= n And mid$(sourceCode, j, 1) = "'" Then
                     toks.Add Array("STRING", sb)
                     i = j + 1
                     GoTo Tokenize_SkipToLoopEnd
@@ -208,30 +213,30 @@ ContinueDo:
             Case Else
                 If ch Like "[0-9]" Then
                     Dim j2 As Long: j2 = i
-                    Do While j2 <= n And mid$(src, j2, 1) Like "[0-9.]"
+                    Do While j2 <= n And mid$(sourceCode, j2, 1) Like "[0-9.]"
                         j2 = j2 + 1
                     Loop
-                    toks.Add Array("NUMBER", mid$(src, i, j2 - i))
+                    toks.Add Array("NUMBER", mid$(sourceCode, i, j2 - i))
                     i = j2
                     GoTo Tokenize_SkipToLoopEnd
                 ElseIf ch Like "[A-Za-z_]" Then
                     Dim j3 As Long: j3 = i
-                    Do While j3 <= n And mid$(src, j3, 1) Like "[A-Za-z0-9_.]"
+                    Do While j3 <= n And mid$(sourceCode, j3, 1) Like "[A-Za-z0-9_.]"
                         j3 = j3 + 1
                     Loop
-                    tmpIdent = mid$(src, i, j3 - i)
+                    tmpIdent = mid$(sourceCode, i, j3 - i)
                     If LCase(tmpIdent) <> "let" Then
                         toks.Add Array("IDENT", tmpIdent)
                     End If
                     i = j3
                     GoTo Tokenize_SkipToLoopEnd
                 ' forced VBAexpression: @(...). Capture whole balanced parentheses block as a single VBEXPR token.
-                ElseIf ch = "@" And i < n And mid$(src, i + 1, 1) = "(" Then
+                ElseIf ch = "@" And i < n And mid$(sourceCode, i + 1, 1) = "(" Then
                     Dim jvb As Long: jvb = i + 2
                     Dim depthVB As Long: depthVB = 1
                     Dim vbContent As String: vbContent = ""
                     Do While jvb <= n And depthVB > 0
-                        Dim cjvb As String: cjvb = mid$(src, jvb, 1)
+                        Dim cjvb As String: cjvb = mid$(sourceCode, jvb, 1)
                         If cjvb = "(" Then
                             depthVB = depthVB + 1
                             vbContent = vbContent & cjvb
