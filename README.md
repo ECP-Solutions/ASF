@@ -654,7 +654,7 @@ Sub ProcessAPIResponse()
         "print(topSellers); return topSellers;"
     
     engine.Run engine.Compile(script)
-    ' Output to worksheet
+    ' Output for further processing
     Dim result As Variant
     result = engine.OUTPUT_
     ' result => [{ name: 'Charlie', bonus: 2200 }, { name: 'Alice', bonus: 1500 }]
