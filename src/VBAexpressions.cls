@@ -2126,7 +2126,6 @@ End Function
 
 Private Function Circumcircle_(PointA() As Double, PointB() As Double, PointC() As Double) As Variant
     Dim hk() As Double
-    Dim intersectP() As Double
     Dim result2D(0 To 1, 0 To 1) As Double
     Dim Radius As Double
     
@@ -2429,7 +2428,6 @@ Private Function CholeskySolve(ByRef expression As String, ByRef fname As String
     Select Case argsCount
         Case 3, 4
             Dim aArray() As Double
-            Dim eqCount As Long
             Dim iCounter As Long
             Dim includeNames As Boolean
             Dim mLB As Long
@@ -2445,7 +2443,6 @@ Private Function CholeskySolve(ByRef expression As String, ByRef fname As String
             mLB = LBound(aArray)
             mUB = UBound(aArray)
             
-            eqCount = mUB - mLB + 1
             Cholesky aArray(), cholDec
             If IsArrayAllocated(cholDec) Then
                 CholeskySolve_ cholDec, bArray, xArray
@@ -2547,7 +2544,7 @@ End Function
 
 Private Function Chr_(ByRef expression As String, ByRef fname As String) As String
     On Error GoTo err_handler
-    Chr_ = ToLiteralString(ChrW(CLng(expression))) 'Expected numeric value
+    Chr_ = ToLiteralString(ChrW$(CLng(expression))) 'Expected numeric value
     Exit Function
 err_handler:
     Chr_ = e_ValueError
@@ -3750,7 +3747,7 @@ Private Function FormatNumeredInteractions(ByRef strPredictorsInterList As Strin
     n = UBound(tmpData) - LBound(tmpData) + 1
     For i = 0 To n - 1
         If Not tmpData(i) Like "[Xx]*#:[Xx]*#" Then Exit Function
-        tmpPredict = Split(tmpData(i), ChrW(58))
+        tmpPredict = Split(tmpData(i), ChrW$(58))
         u = MidB(tmpPredict(0), 3)
         v = MidB(tmpPredict(1), 3)
         If Not IsNumeric(u) Or Not IsNumeric(v) Then Exit Function
@@ -3760,7 +3757,7 @@ Private Function FormatNumeredInteractions(ByRef strPredictorsInterList As Strin
             tmpElem = tmpPredict(0)
             tmpPredict(0) = tmpPredict(1)
             tmpPredict(1) = tmpElem
-            tmpData(i) = Join(tmpPredict, ChrW(58))
+            tmpData(i) = Join(tmpPredict, ChrW$(58))
         End If
     Next i
     FormatNumeredInteractions = ToLiteralString(Join(tmpData, P_SEPARATORCHAR))
@@ -4849,7 +4846,7 @@ Private Function GetPredInterArr(ByRef strPredictorsInterList As String, n As Lo
     If fInteractions = vbNullString Then Exit Function 'Syntax error or missed req. argument
     tmpData = Split(FormatLiteralString(fInteractions, True), P_SEPARATORCHAR)
     For m = LBound(tmpData) To UBound(tmpData)
-        tmpPredict = Split(tmpData(m), ChrW(58))
+        tmpPredict = Split(tmpData(m), ChrW$(58))
         idx1 = CLng(MidB(tmpPredict(LBound(tmpPredict)), 3))
         idx2 = CLng(MidB(tmpPredict(LBound(tmpPredict) + 1), 3))
         s = 0
@@ -5077,7 +5074,6 @@ Private Function GetSubTreeData(ByRef expression As String) As String()
     If opCount > 0 Then
         ReDim PSerial(0 To opCount - 1)
         Dim tgOpenP As Long
-        Dim tgClosedP As Long
         Dim bMark As Long
         Dim eMark As Long
         Dim tmpTK As String
@@ -5085,7 +5081,6 @@ Private Function GetSubTreeData(ByRef expression As String) As String()
         Dim tmpKey As String
         
         tgOpenP = opCount
-        tgClosedP = 1
         Uspace = LBound(PSerial)
         Do
             bMark = GetLParentPos(expression, tgOpenP) + 2
@@ -5990,7 +5985,6 @@ Private Function IsSavedPredictorName(ByRef aName As String, ByRef aNamesList() 
 End Function
 
 Private Function IsSymbolInLiteralString(ByRef expression As String, SymbolPos As Long) As Boolean
-    Dim tmpPos As Long
     Dim literalGap() As Long
     
     literalGap() = GetLiteralStringGap(1, expression)
@@ -6085,7 +6079,7 @@ End Function
 
 Private Function LCase_(ByRef expression As String, ByRef fname As String) As String
     On Error GoTo err_handler
-    LCase_ = ToLiteralString(LCase(expression))
+    LCase_ = ToLiteralString(LCase$(expression))
     Exit Function
 err_handler:
     LCase_ = e_ValueError
@@ -6544,7 +6538,6 @@ Private Function LUsolve(ByRef expression As String, ByRef fname As String) As S
     Select Case argsCount
         Case 3, 4
             Dim aArray() As Double
-            Dim eqCount As Long
             Dim iCounter As Long
             Dim includeNames As Boolean
             Dim mLB As Long
@@ -6558,7 +6551,7 @@ Private Function LUsolve(ByRef expression As String, ByRef fname As String) As S
             mLB = LBound(aArray)
             mUB = UBound(aArray)
             
-            eqCount = mUB - mLB + 1
+'            eqCount = mUB - mLB + 1
             LUsolve_ aArray, bArray
             If argsCount = 4 Then
                 xArray() = ArrayFromString(tmpData(lb + 1))
@@ -7964,15 +7957,12 @@ End Function
 Private Function ParallelLine_(aLine() As Double, Point() As Double) As Variant
     Dim aTerm As Double
     Dim bTerm As Double
-    Dim cTerm As Double
     Dim pointArr(0 To 1) As Variant
     Dim tmpArr(0 To 1) As Double
     Dim result2D(0 To 1, 0 To 1) As Double
     
     aTerm = aLine(0, 1) - aLine(1, 1) 'y1-y2
     bTerm = aLine(1, 0) - aLine(0, 0) 'x2-x1
-    cTerm = aLine(0, 0) * aLine(1, 1) _
-            - aLine(1, 0) * aLine(0, 1) 'x1*y2-x2*y1
     pointArr(0) = Point
     If aTerm <> 0 And bTerm <> 0 Then
         tmpArr(0) = 0
@@ -8139,7 +8129,6 @@ Private Function PolyFit_(ByRef samplesArr() As Double, pDegree As Long, _
     Dim responseArray() As Double
     Dim pDegreesArr() As Long
     Dim SolverResult() As Double
-    Dim k As Long
     
     mLB = LBound(samplesArr)
     mUB = UBound(samplesArr)
@@ -8161,7 +8150,6 @@ Private Function PolyFit_(ByRef samplesArr() As Double, pDegree As Long, _
     'Add columns of ones
     AddIntersectionCol modelArray
     'Solve linear eq. system
-    k = UBound(modelArray, 2) - LBound(modelArray)
     SolverResult = MLR_(modelArray, responseArray)
     If stringOutput Then
         'Format
@@ -8723,7 +8711,6 @@ Private Function ReplaceImpliedMult(expression As String) As String
     Dim prevChar As String
     Dim reservedChar As Boolean
     Dim tmpChar As String
-    Dim literalGap() As Long
     
     LookupPos = 1
     tmpStr = expression
@@ -9611,7 +9598,6 @@ Private Function CircleTangents_(CenterPoint() As Double, Radius As Double, ExtP
         tmpSegment(1, 1) = k + alpha * dy - beta * dx 'T2y
         rSegments(1) = tmpSegment
     Case 0
-        Dim perpLine As Variant
         Dim cpLine(0 To 1, 0 To 1) As Double
         ReDim rSegments(0 To 0)
         

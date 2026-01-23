@@ -26,11 +26,11 @@ Private ENABLE_CALL_TRACE_ As Boolean
 Public Sub SetGlobals(aGlobals As ASF_Globals)
     Set GLOBALS_ = aGlobals
 End Sub
-Public Sub InjectVariable(varName As String, varValue As Variant)
+Public Sub InjectVariable(varName As String, VarValue As Variant)
     If INJECTED_VARIABLES_ Is Nothing Then
         Set INJECTED_VARIABLES_ = New Collection
     End If
-    INJECTED_VARIABLES_.Add Array(varName, CastInjectedVar(varValue))
+    INJECTED_VARIABLES_.Add Array(varName, CastInjectedVar(VarValue))
 End Sub
 Public Property Get EnableCallTrace() As Boolean
     EnableCallTrace = ENABLE_CALL_TRACE_
@@ -87,15 +87,15 @@ End Function
 Public Sub ClearCallStack()
     Set GLOBALS_.gCallStack = New Collection
 End Sub
-Private Function CastInjectedVar(varValue As Variant) As Variant
-    If IsArray(varValue) Then
-        CastInjectedVar = ArrayToASF(varValue)
-    ElseIf TypeName(varValue) = "Collection" Then
-        CastInjectedVar = CollToASF(varValue)
-    ElseIf IsObject(varValue) Then
-        CastInjectedVar = TypeName(varValue)
+Private Function CastInjectedVar(VarValue As Variant) As Variant
+    If IsArray(VarValue) Then
+        CastInjectedVar = ArrayToASF(VarValue)
+    ElseIf TypeName(VarValue) = "Collection" Then
+        CastInjectedVar = CollToASF(VarValue)
+    ElseIf IsObject(VarValue) Then
+        CastInjectedVar = TypeName(VarValue)
     Else
-        CastInjectedVar = CastType(varValue)
+        CastInjectedVar = CastType(VarValue)
     End If
 End Function
 Private Function CastType(aValue As Variant) As Variant
@@ -153,6 +153,7 @@ Private Function ArrayToASF(arr As Variant) As Variant
         Next i
     End If
     ArrayToASF = tmpResult
+    Erase tmpResult
     Exit Function
 
 ErrHandler:
@@ -186,6 +187,7 @@ Private Function CollToASF(coll As Variant) As Variant
         End If
     Next i
     CollToASF = tmpResult
+    Erase tmpResult
     Exit Function
 
 ErrHandler:
@@ -226,7 +228,7 @@ Public Sub RunProgramByIndex(idx As Long)
     Dim progName As String: progName = p(0)
     Dim stmts As Collection: Set stmts = p(1)
     Dim rawScope As Collection: Set rawScope = p(2)
-    Dim optionBase As Long: optionBase = IIf(UBound(p) >= 3, p(3), 1)
+'    Dim optionBase As Long: optionBase = IIf(UBound(p) >= 3, p(3), 1)
     Dim progScope As ASF_ScopeStack: Set progScope = New ASF_ScopeStack
     progScope.LoadRaw rawScope
 '    progScope.SetValue "__option_base", optionBase
@@ -254,7 +256,7 @@ Public Sub RunProgramByIndex(idx As Long)
     progScope.Pop
 End Sub
 
-' Execute a statement node (Map). Return control signals: "", "BREAK", "CONTINUE", "RETURN", "ERR"
+' Execute a statement node (Map). Return control signals: vbnullstring, "BREAK", "CONTINUE", "RETURN", "ERR"
 Private Function ExecuteStmtNode(node As ASF_Map, progScope As ASF_ScopeStack) As String
     On Error GoTo ErrHandler
     Dim tP As String: tP = node.GetValue("type")
@@ -268,14 +270,14 @@ Private Function ExecuteStmtNode(node As ASF_Map, progScope As ASF_ScopeStack) A
                 Dim v As Variant: vAssignment v, EvalExprNode(args(i), progScope)
                 outParts.Add ValueToStringForPrint(v)
             Next i
-            Dim sb As String: sb = ""
+            Dim sb As String: sb = vbNullString
             For i = 1 To outParts.count
                 If i > 1 Then sb = sb & ", "
                 sb = sb & outParts(i)
             Next i
             If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "PRINT:" & sb
             Debug.Print sb
-            ExecuteStmtNode = ""
+            ExecuteStmtNode = vbNullString
             Exit Function
 
         Case "Assign"
@@ -283,12 +285,12 @@ Private Function ExecuteStmtNode(node As ASF_Map, progScope As ASF_ScopeStack) A
             Dim right As ASF_Map: Set right = node.GetValue("right")
             vAssignment rval, EvalExprNode(right, progScope)
             HandleAssignment left, rval, progScope
-            ExecuteStmtNode = ""
+            ExecuteStmtNode = vbNullString
             Exit Function
 
         Case "ExprStmt"
             Dim res As Variant: vAssignment res, EvalExprNode(node.GetValue("expr"), progScope)
-            ExecuteStmtNode = ""
+            ExecuteStmtNode = vbNullString
             Exit Function
 
         Case "If"
@@ -328,7 +330,7 @@ Private Function ExecuteStmtNode(node As ASF_Map, progScope As ASF_ScopeStack) A
         Case Else
             ' unknown node type
             If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "Unknown statement node: " & tP
-            ExecuteStmtNode = ""
+            ExecuteStmtNode = vbNullString
             Exit Function
     End Select
 
@@ -396,6 +398,7 @@ Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As
                     Exit For
                 End If
             Next method_
+            Set classMethods = Nothing
         Else
             vAssignment EvalMemberNode, baseVal.GetValue(prop)
         End If
@@ -419,6 +422,7 @@ Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As
         tmpNode.SetValue "callee", node
         tmpNode.SetValue "args", tmpArgs
         vAssignment EvalMemberNode, EvalExprNode(tmpNode, progScope)
+        Set tmpArgs = Nothing
         Exit Function
     End If
     ' For any other base type, return Empty (safe fallback).
@@ -469,6 +473,7 @@ Private Function EvalArrayNode(node As ASF_Map, progScope As ASF_ScopeStack) As 
         Next ii
     End If
     vAssignment EvalArrayNode, arr
+    Erase arr
 End Function
 
 Private Function ParsePath(ByVal path As String) As Collection
@@ -479,12 +484,12 @@ Private Function ParsePath(ByVal path As String) As Collection
     While pos <= lenP
         Dim ch As String: ch = mid(path, pos, 1)
         If ch = "." Then
-            If currentPart <> "" Then col.Add currentPart
-            currentPart = ""
+            If currentPart <> vbNullString Then col.Add currentPart
+            currentPart = vbNullString
             pos = pos + 1
         ElseIf ch = "[" Then
-            If currentPart <> "" Then col.Add currentPart
-            currentPart = ""
+            If currentPart <> vbNullString Then col.Add currentPart
+            currentPart = vbNullString
             Dim startB As Long: startB = pos
             pos = pos + 1
             While pos <= lenP And mid(path, pos, 1) <> "]"
@@ -493,14 +498,14 @@ Private Function ParsePath(ByVal path As String) As Collection
             If pos > lenP Then err.Raise vbObjectError + 5003, "VM.ParsePath", "Unmatched bracket in path"
             currentPart = mid(path, startB, pos - startB + 1)
             col.Add currentPart
-            currentPart = ""
+            currentPart = vbNullString
             pos = pos + 1
         Else
             currentPart = currentPart & ch
             pos = pos + 1
         End If
     Wend
-    If currentPart <> "" Then col.Add currentPart
+    If currentPart <> vbNullString Then col.Add currentPart
     Set ParsePath = col
 End Function
 
@@ -624,9 +629,9 @@ Private Function ExecIfNode(node As ASF_Map, progScope As ASF_ScopeStack) As Str
         Dim si As Long
         For si = 1 To thenStmts.count
             Dim ctrl As String: ctrl = ExecuteStmtNode(thenStmts(si), progScope)
-            If ctrl <> "" Then ExecIfNode = ctrl: Exit Function
+            If ctrl <> vbNullString Then ExecIfNode = ctrl: Exit Function
         Next si
-        ExecIfNode = ""
+        ExecIfNode = vbNullString
         Exit Function
     End If
     Dim elseifConds As Collection: Set elseifConds = node.GetValue("elseif_conds")
@@ -638,9 +643,9 @@ Private Function ExecIfNode(node As ASF_Map, progScope As ASF_ScopeStack) As Str
             Dim si2 As Long
             For si2 = 1 To bl.count
                 Dim ctrl2 As String: ctrl2 = ExecuteStmtNode(bl(si2), progScope)
-                If ctrl2 <> "" Then ExecIfNode = ctrl2: Exit Function
+                If ctrl2 <> vbNullString Then ExecIfNode = ctrl2: Exit Function
             Next si2
-            ExecIfNode = ""
+            ExecIfNode = vbNullString
             Exit Function
         End If
     Next idx
@@ -649,10 +654,10 @@ Private Function ExecIfNode(node As ASF_Map, progScope As ASF_ScopeStack) As Str
         Dim ee As Long
         For ee = 1 To els.count
             Dim ctrl3 As String: ctrl3 = ExecuteStmtNode(els(ee), progScope)
-            If ctrl3 <> "" Then ExecIfNode = ctrl3: Exit Function
+            If ctrl3 <> vbNullString Then ExecIfNode = ctrl3: Exit Function
         Next ee
     End If
-    ExecIfNode = ""
+    ExecIfNode = vbNullString
 End Function
 
 ' ---------------------
@@ -688,13 +693,9 @@ Private Function ExecForNode(node As ASF_Map, progScope As ASF_ScopeStack) As St
 
         ' Prepare iterator lists
         Dim keysCol As Collection: Set keysCol = New Collection
-        Dim isArrayIter As Boolean: isArrayIter = False
-        Dim isStringIter As Boolean: isStringIter = False
-        Dim isMapIter As Boolean: isMapIter = False
 
         ' Arrays
         If IsArray(iterVal) Then
-            isArrayIter = True
             Dim lb As Long: lb = LBound(iterVal)
             Dim ub As Long: ub = UBound(iterVal)
             Dim idxA As Long
@@ -709,7 +710,6 @@ Private Function ExecForNode(node As ASF_Map, progScope As ASF_ScopeStack) As St
 
         ' Strings
         ElseIf VarType(iterVal) = vbString Then
-            isStringIter = True
             Dim str As String: str = CStr(iterVal)
             Dim nch As Long: nch = Len(str)
             Dim iChar As Long
@@ -723,7 +723,6 @@ Private Function ExecForNode(node As ASF_Map, progScope As ASF_ScopeStack) As St
 
         ' ASF_Map objects (attempt to obtain keys)
         ElseIf Not IsEmpty(iterVal) And Not IsNull(iterVal) And IsObject(iterVal) And TypeName(iterVal) = "ASF_Map" Then
-            isMapIter = True
             Set keysCol = GetMapKeys(iterVal) ' returns Collection of keys (strings or numeric)
             ' for-of: replace keysCol with values collection
             If kind = "of" Then
@@ -785,7 +784,7 @@ Private Function ExecForNode(node As ASF_Map, progScope As ASF_ScopeStack) As St
         Next iterIndex
 
 ForInEnd:
-        ExecForNode = ""
+        ExecForNode = vbNullString
         Exit Function
     End If
 
@@ -831,7 +830,7 @@ ForStart:
     GoTo ForStart
 
 ForEnd:
-    ExecForNode = ""
+    ExecForNode = vbNullString
     Exit Function
 
 ExecForErr:
@@ -868,7 +867,7 @@ WhileStart:
     GoTo WhileStart
 
 WhileEnd:
-    ExecWhileNode = ""
+    ExecWhileNode = vbNullString
 End Function
 
 ' ---------------------
@@ -886,7 +885,7 @@ Private Function ExecTryCatchNode(node As ASF_Map, progScope As ASF_ScopeStack) 
             Exit Function
         End If
     Next i
-    ExecTryCatchNode = ""
+    ExecTryCatchNode = vbNullString
     Exit Function
 
 TryErr:
@@ -899,7 +898,7 @@ TryErr:
             If cctrl = "RETURN" Or cctrl = "ERR" Then ExecTryCatchNode = cctrl: Exit Function
         Next j
     End If
-    ExecTryCatchNode = ""
+    ExecTryCatchNode = vbNullString
 End Function
 
 ' ---------------------
@@ -919,7 +918,7 @@ Private Function ExecSwitchNode(node As ASF_Map, progScope As ASF_ScopeStack) As
             Dim s As Long
             For s = 1 To blockStmts.count
                 Dim ctrl As String: ctrl = ExecuteStmtNode(blockStmts(s), progScope)
-                If ctrl = "BREAK" Then ExecSwitchNode = "": Exit Function
+                If ctrl = "BREAK" Then ExecSwitchNode = vbNullString: Exit Function
                 If ctrl = "RETURN" Or ctrl = "ERR" Then ExecSwitchNode = ctrl: Exit Function
             Next s
             Exit For
@@ -931,12 +930,12 @@ Private Function ExecSwitchNode(node As ASF_Map, progScope As ASF_ScopeStack) As
             Dim d As Long
             For d = 1 To defBlk.count
                 Dim ctrl2 As String: ctrl2 = ExecuteStmtNode(defBlk(d), progScope)
-                If ctrl2 = "BREAK" Then ExecSwitchNode = "": Exit Function
+                If ctrl2 = "BREAK" Then ExecSwitchNode = vbNullString: Exit Function
                 If ctrl2 = "RETURN" Or ctrl2 = "ERR" Then ExecSwitchNode = ctrl2: Exit Function
             Next d
         End If
     End If
-    ExecSwitchNode = ""
+    ExecSwitchNode = vbNullString
 End Function
 
 Private Sub vAssignment(ByRef var As Variant, ByRef vValue As Variant)
@@ -957,17 +956,12 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
     Dim pi As Long
     Dim funcIdx As Long
     Dim argColl As Collection
-    Dim baseExpr As ASF_Map
     Dim tmpMapObj As ASF_Map
     Dim calleeExpr As ASF_Map
     Dim thisVal As Variant
     Dim fname As String
     Dim optBase As Long
     Dim ii As Long
-    Dim rp As ASF_Map
-    Dim cont As Variant
-    Dim propKey As String
-    Dim av As Variant
     Dim k As Long
     
     Dim sep As String
@@ -975,7 +969,6 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
     Dim parts() As String
     Dim ii_j As Long
     Dim valj As Variant
-    Dim ob_opt As Long
     Dim popped2 As Variant
     Dim newA_s() As Variant
     Dim idx_s As Long, k_s As Long
@@ -1067,7 +1060,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                     ElseIf IsNull(evs) Then
                         outStr = outStr & "null"
                     ElseIf IsEmpty(evs) Then
-                        outStr = outStr & ""
+                        outStr = outStr & vbNullString
                     Else
                         outStr = outStr & CStr(evs)
                     End If
@@ -1233,7 +1226,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
             If node.Exists("name") Then
                 fname = CStr(node.GetValue("name"))
             End If
-            If fname = "" Then
+            If fname = vbNullString Then
                 ' try to derive name from callee expression when callee is a simple Variable node
                 If node.Exists("callee") Then
                     hasCalleeExpr = True
@@ -1650,7 +1643,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                 len_val = IIf(ub_val >= lb_val, ub_val - lb_val + 1, 0)
                                 If len_val <= 0 Then
                                     ' empty -> empty string
-                                    vAssignment tmpResult, ""
+                                    vAssignment tmpResult, vbNullString
                                     GoTo exitfun
                                 End If
                                 ReDim parts(1 To len_val)
@@ -2494,7 +2487,7 @@ init_Error_Handler:
                                 tmpResult = (endStr = ewComStr)
                                 GoTo exitfun
                             Case "fromcharcode"
-                                tmpResult = ChrW(CLng(evaluated(1)))
+                                tmpResult = ChrW$(CLng(evaluated(1)))
                                 GoTo exitfun
                             Case "includes"
                                 Dim icStartPos As Long
@@ -2760,7 +2753,6 @@ init_Error_Handler:
                                         Dim outRepStr As String: outRepStr = vbNullString
                                         Dim L As Long: L = Len(src)
                                         Dim searchPos As Long: searchPos = 1
-                                        Dim foundAny As Boolean: foundAny = False
     
                                         Do While searchPos <= L
                                             Dim caps As Collection
@@ -2781,7 +2773,6 @@ init_Error_Handler:
                                                 outRepStr = outRepStr & mid$(src, searchPos)
                                                 Exit Do
                                             Else
-                                                foundAny = True
                                                 Dim fullMatch As String: fullMatch = CStr(caps.Item(1))
                                                 Dim matchLen As Long: matchLen = Len(fullMatch)
                                                 Dim matchStart As Long: matchStart = foundAt
@@ -2835,7 +2826,7 @@ init_Error_Handler:
     
                                                 Else
                                                     ' replacement is a string: expand $ sequences (JS-like)
-                                                    Dim replStr As String: replStr = ""
+                                                    Dim replStr As String: replStr = vbNullString
                                                     If Not IsEmpty(replRaw) Then replStr = CStr(replRaw)
                                                     replacedText = VM_ExpandReplacementFromCapturesJS(caps, replStr, src, matchStart, matchEnd)
                                                 End If
@@ -3317,10 +3308,10 @@ namedFunctions:
                     End If
                 Else
                     ' check "name" property instead of a callee AST
-                    If node.Exists("name") Then fname = CStr(node.GetValue("name")) Else fname = ""
+                    If node.Exists("name") Then fname = CStr(node.GetValue("name")) Else fname = vbNullString
                 End If
             End If
-            If fname <> "" Then
+            If fname <> vbNullString Then
                 ' --- builtin named functions ---
                 Dim nameLcase As String: nameLcase = LCase$(fname)
                 If nameLcase = "range" Then
@@ -3504,7 +3495,7 @@ namedFunctions:
                 Dim hasThisVal As Boolean: hasThisVal = False
                 ' If callee is a member or index expression, compute base as `this` for method call binding.
                 If Not calleeExpr Is Nothing Then
-                    Dim ct As String: ct = IIf(calleeExpr.Exists("type"), CStr(calleeExpr.GetValue("type")), "")
+                    Dim ct As String: ct = IIf(calleeExpr.Exists("type"), CStr(calleeExpr.GetValue("type")), vbNullString)
                     If ct = "Member" Or ct = "Index" Then
                         hasThisVal = True
                         vAssignment thisVal, baseValLocal
@@ -3712,15 +3703,15 @@ Private Function IsTruthy(v As Variant) As Boolean
     If VarType(v) = vbBoolean Then IsTruthy = CBool(v): Exit Function
     If IsNumeric(v) Then IsTruthy = (CDbl(v) <> 0): Exit Function
     If VarType(v) = vbString Then
-        If IsBoolean(CStr(v)) Then IsTruthy = CBool(v) Else IsTruthy = (CStr(v) <> "")
+        If IsBoolean(CStr(v)) Then IsTruthy = CBool(v) Else IsTruthy = (CStr(v) <> vbNullString)
         Exit Function
     End If
     IsTruthy = True
 End Function
 
 Private Function IsBoolean(ByRef expression As String) As Boolean
-    IsBoolean = (LCase(expression) = "true")
-    If Not IsBoolean Then IsBoolean = (LCase(expression) = "false")
+    IsBoolean = (LCase$(expression) = "true")
+    If Not IsBoolean Then IsBoolean = (LCase$(expression) = "false")
 End Function
 
 Private Function SafeAdd(a As Variant, b As Variant) As Variant
@@ -3771,7 +3762,7 @@ Private Function ValueToStringWithCtx(v As Variant, visited As Collection, depth
         ValueToStringWithCtx = "NULL": Exit Function
     End If
     If IsEmpty(v) Then
-        ValueToStringWithCtx = "": Exit Function
+        ValueToStringWithCtx = vbNullString: Exit Function
     End If
 
     ' Scalars
@@ -3958,10 +3949,7 @@ Private Function ObjectToString(obj As Variant, visited As Collection, depth As 
 
     ' Attempt Map-like duck typing: presence of Keys and GetValue
     ' (use On Error to bail out if methods missing)
-    Dim dummy As Collection
-    Dim tryKeys As Collection
     On Error GoTo Fallback2
-    Set tryKeys = obj.keys
     ' if successful, treat As ASF_Map
     Dim i As Long
     For i = 1 To visited.count
@@ -4012,9 +4000,9 @@ Private Function EvalVBExpressionWithScope(expr As String, progScope As ASF_Scop
              For Each key In keyCol
                  vAssignment tmpVal, m.GetValue(CStr(key))
                  If IsArray(tmpVal) Then
-                    .varValue(CStr(key)) = .ArrayToString(tmpVal)
+                    .VarValue(CStr(key)) = .ArrayToString(tmpVal)
                  Else
-                    .varValue(CStr(key)) = CStr(tmpVal)
+                    .VarValue(CStr(key)) = CStr(tmpVal)
                 End If
              Next key
          Next frame
@@ -4037,7 +4025,6 @@ ErrHandler:
 End Function
 
 Private Function cTypeExprRes(ByRef aResult As Variant) As Variant
-    Dim cTyped As ASF_Map
     Dim tmpArr() As Variant
     On Error GoTo err_handler
     If mid(aResult, 1, 2) = "{{" Then
@@ -4430,7 +4417,7 @@ End Function
 Private Function ResolveProp(ByRef lval) As Variant
     Dim baseVariable As String
     Dim pObject As Variant
-    Dim i As Long
+
     vAssignment pObject, lval("parentObj")
     Do While pObject.Exists("parentObj")
         vAssignment pObject, pObject("parentObj")
@@ -4443,7 +4430,7 @@ Private Function ResolveProp(ByRef lval) As Variant
     vAssignment pObject, container.GetValue(baseVariable)
     vAssignment ResolveProp, pObject
 End Function
- Sub AssignToArrayByName(arrVarName As String, idx As Long, newValue As Variant, progScope As ASF_ScopeStack)
+Private Sub AssignToArrayByName(arrVarName As String, idx As Long, newValue As Variant, progScope As ASF_ScopeStack)
      Dim arrVal As Variant: arrVal = progScope.GetValue(arrVarName)
      If IsEmpty(arrVal) Then
          Dim tmpA() As Variant
@@ -4452,9 +4439,9 @@ End Function
      End If
      Call AssignToArrayValueInPlace(arrVal, idx, newValue)
      progScope.SetValue arrVarName, arrVal
- End Sub
+End Sub
 
- Sub AssignToArrayValueInPlace(ByRef arrVal As Variant, idx As Long, _
+Private Sub AssignToArrayValueInPlace(ByRef arrVal As Variant, idx As Long, _
                                 newValue As Variant, Optional oBase As Long, _
                                 Optional keypath As Collection = Nothing)
      If Not IsArray(arrVal) Then
@@ -4468,7 +4455,6 @@ End Function
      Dim pos As Long
      If Not keypath Is Nothing Then
         Dim tmpsltCopy As Variant
-        Dim tmpsltCopy2 As Variant
         Dim tmpSlot As Variant
         Dim i As Long
         For i = keypath.count - 1 To 1 Step -1
@@ -4531,7 +4517,7 @@ End Function
         End If
         vAssignment arrVal(pos), newValue
     End If
- End Sub
+End Sub
  ' RebaseArray: recursively rebase a Variant (possibly jagged) array so each nested
 ' Variant array uses the given optionBase as its LBound.
 ' - arr: Variant expected to be an array (if not, the function returns arr unchanged)
@@ -4596,7 +4582,7 @@ End Function
 ' Given an Index AST node, resolve the array container and return the actual
 ' element Map stored at the index (creating a Map element if empty).
 '-----------------------------------------------------------------------
-Function GetElementMapFromIndexNode(indexNode As ASF_Map, progScope As ASF_ScopeStack) As ASF_Map
+Private Function GetElementMapFromIndexNode(indexNode As ASF_Map, progScope As ASF_ScopeStack) As ASF_Map
     Dim resolved As Variant
     resolved = ResolveLValue(indexNode, progScope)
     If IsEmpty(resolved) Then
@@ -4865,9 +4851,7 @@ Private Function builtin_typeof(v As Variant) As String
     isArr = False
     If Not IsError(v) Then
         On Error Resume Next
-        Dim lb As Long
-        lb = LBound(v)
-        If err.Number = 0 Then isArr = True Else err.Clear
+        If err.Number = 0 Then isArr = IsArray(v) Else err.Clear
         On Error GoTo 0
     End If
     If isArr Then
@@ -5040,7 +5024,7 @@ End Function
 ' Helper: set element at logical index (resizing if necessary)
 Private Function SetElementAt(ByRef arr As Variant, userIndex As Long, optBase As Long, value As Variant) As Variant
     ' arr passed by reference - ensure bounds
-    Dim baseL As Long, ub As Long, lb As Long
+    Dim ub As Long, lb As Long
     If Not IsArray(arr) Then
         ' create minimal array
         ReDim arr(optBase To optBase)
@@ -5054,7 +5038,6 @@ Private Function SetElementAt(ByRef arr As Variant, userIndex As Long, optBase A
     Dim pos As Long: pos = lb + off
     If pos < lb Then
         ' grow lower bound (rare). Simplest: create new array with same elements shifted.
-        Dim newLen As Long: newLen = ub - pos + 1
         Dim tmp() As Variant
         ReDim tmp(pos To pos + (ub - lb))
         Dim i As Long, j As Long: j = lb
@@ -5266,7 +5249,6 @@ End Function
 
 ' Helper: compute replacement text (supports string or Closure)
 Private Function VM_StringReplacementText(ByVal replRaw As Variant, ByVal matchStr As String, ByVal matchIndexZeroBased As Long, ByVal originalString As String) As String
-    Dim replacementText As String: replacementText = ""
     On Error GoTo fallback_str
 
     If Not IsEmpty(replRaw) And TypeName(replRaw) = "ASF_Map" Then
@@ -5285,7 +5267,7 @@ Private Function VM_StringReplacementText(ByVal replRaw As Variant, ByVal matchS
             ElseIf IsNull(callRes) Then
                 VM_StringReplacementText = "null": Exit Function
             ElseIf IsEmpty(callRes) Then
-                VM_StringReplacementText = "": Exit Function
+                VM_StringReplacementText = vbNullString: Exit Function
             Else
                 VM_StringReplacementText = CStr(callRes): Exit Function
             End If
@@ -5300,7 +5282,7 @@ fallback_str:
     If IsNull(replRaw) Then
         VM_StringReplacementText = "null"
     ElseIf IsEmpty(replRaw) Then
-        VM_StringReplacementText = ""
+        VM_StringReplacementText = vbNullString
     Else
         VM_StringReplacementText = CStr(replRaw)
     End If
@@ -5319,14 +5301,14 @@ Private Function VM_ExpandReplacementFromCapturesJS( _
         ByVal matchStart As Long, _
         ByVal matchEnd As Long) As String
 
-    Dim out As String: out = ""
+    Dim out As String: out = vbNullString
     Dim i As Long: i = 1
     Dim Lr As Long: Lr = Len(repl)
     Dim nCaps As Long: nCaps = 0
     If Not (caps Is Nothing) Then nCaps = caps.count
 
-    Dim prefix As String: prefix = ""
-    Dim suffix As String: suffix = ""
+    Dim prefix As String: prefix = vbNullString
+    Dim suffix As String: suffix = vbNullString
     If matchStart > 1 Then prefix = left$(original, matchStart - 1)
     If matchEnd < Len(original) Then suffix = mid$(original, matchEnd + 1)
 
@@ -5352,12 +5334,12 @@ Private Function VM_ExpandReplacementFromCapturesJS( _
                 Case "0" To "9"
                     ' parse up to two digits (JS supports $1..$99)
                     Dim j As Long: j = i + 1
-                    Dim numStr As String: numStr = ""
+                    Dim numStr As String: numStr = vbNullString
                     Do While j <= Lr And Len(numStr) < 2 And mid$(repl, j, 1) >= "0" And mid$(repl, j, 1) <= "9"
                         numStr = numStr & mid$(repl, j, 1)
                         j = j + 1
                     Loop
-                    If numStr <> "" Then
+                    If numStr <> vbNullString Then
                         Dim idx As Long: idx = CLng(numStr)
                         ' JS: $1 maps to capture group 1 (caps.Item(2) in our caps layout)
                         If idx >= 1 And idx <= (nCaps - 1) Then
@@ -5403,8 +5385,8 @@ End Function
 
 ' Parse a JS-like /pattern/flags string into pattern and flags
 Private Sub VM_ParseSlashRegex(ByVal reSrc As String, ByRef outPattern As String, ByRef outFlags As String)
-    outPattern = ""
-    outFlags = ""
+    outPattern = vbNullString
+    outFlags = vbNullString
     If Len(reSrc) < 2 Then Exit Sub
     If left$(reSrc, 1) <> "/" Then Exit Sub
     Dim lastSlash As Long: lastSlash = InStrRev(reSrc, "/")
@@ -5510,9 +5492,6 @@ Private Function RegexCapsToStringArray(ByVal caps As Collection) As Variant
         Dim v As Variant: v = caps.Item(i)
         If IsObject(v) Then
             If TypeName(v) = "Collection" Then
-                ' nested collection -> convert to nested string array and store as Variant
-                Dim nested As Variant
-                nested = RegexCapsToStringArray(v)
                 ' we can't store an array in a String() direct; return a Variant array for caller
                 ' so fall back to RegexCapsToVariantArray if nested structure detected
                 RegexCapsToStringArray = RegexCapsToVariantArray(caps)
@@ -5553,7 +5532,7 @@ Private Function ExecClassDecl(node As ASF_Map, progScope As ASF_ScopeStack) As 
     ' Store class in scope
     progScope.SetValue className, classMap
     
-    ExecClassDecl = ""
+    ExecClassDecl = vbNullString
 End Function
 ' Instantiate a class
 Private Function InstantiateClass(classMap As ASF_Map, args As Collection, progScope As ASF_ScopeStack) As Variant

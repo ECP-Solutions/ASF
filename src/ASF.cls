@@ -31,8 +31,8 @@ End Function
 Public Function SetGlobals(aGlobals As ASF_Globals)
     Set GLOBALS_ = aGlobals
 End Function
-Public Sub InjectVariable(varName As String, varValue As Variant)
-    VM_.InjectVariable varName, varValue
+Public Sub InjectVariable(varName As String, VarValue As Variant)
+    VM_.InjectVariable varName, VarValue
 End Sub
 Private Sub INIT_()
     Set GLOBALS_ = New ASF_Globals
@@ -89,13 +89,13 @@ End Property
 Public Sub ClearCallStack()
     VM_.ClearCallStack
 End Sub
-Public Function ReadTextFile(FilePath As String) As String
+Public Function ReadTextFile(filePath As String) As String
     Dim EOFile As Long
     Dim FileHandled As Integer
     Dim OutputStr As String
     
     FileHandled = FreeFile
-    Open FilePath For Binary As #FileHandled
+    Open filePath For Binary As #FileHandled
     EOFile = LOF(FileHandled)
     OutputStr = Space$(EOFile)
     Get #FileHandled, , OutputStr

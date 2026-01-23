@@ -187,7 +187,7 @@ Compiler_MainLoop:
                 Next j
             Else
                 ReDim pa(0 To 0)
-                pa(0) = ""
+                pa(0) = vbNullString
             End If
             GLOBALS_.gFuncParams.Add fname, pa
 
@@ -520,7 +520,7 @@ Private Function ParseStatementTokensToAST(stmtTokens As Collection) As ASF_Map
 
     ' assignment: find top-level "=" operator position or compound-assignment like "+=", "-=", "*=", etc.
     Dim assignPos As Long: assignPos = 0
-    Dim compoundOp As String: compoundOp = ""
+    Dim compoundOp As String: compoundOp = vbNullString
     Dim ii As Long
     Dim depthB As Long, depthP As Long, depthBr As Long
     For ii = 1 To stmtTokens.count
@@ -583,7 +583,7 @@ Private Function ParseStatementTokensToAST(stmtTokens As Collection) As ASF_Map
         End If
 
         Dim rhsNode As ASF_Map
-        If compoundOp <> "" Then
+        If compoundOp <> vbNullString Then
             ' For compound assignments like "a += 3" produce:
             ' Assign { left: lhsNode, right: Binary { left: (clone of lhsNode), op: <op>, right: <rhsExpr> } }
             Dim innerOp As String: innerOp = left$(compoundOp, Len(compoundOp) - 1)
@@ -1283,7 +1283,7 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
                 Dim s As String: s = CStr(name)
                 Dim poss As Long: poss = 1
                 Dim L As Long: L = Len(s)
-                Dim ident As String: ident = ""
+                Dim ident As String: ident = vbNullString
                 Dim propName As String
 
                 ' read leading ident
@@ -1301,7 +1301,7 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
                     Dim ch As String: ch = mid$(s, poss, 1)
                     If ch = "." Then
                         poss = poss + 1
-                        propName = ""
+                        propName = vbNullString
                         Do While poss <= L
                             Dim ch2 As String: ch2 = mid$(s, poss, 1)
                             If ch2 = "." Or ch2 = "[" Then Exit Do
@@ -1806,7 +1806,7 @@ Private Function ParseForAST(stmtTokens As Collection) As ASF_Map
 
     ' Try to detect "for (<left> in <right>)" or "for (<left> of <right>)"
     Dim foundPos As Long: foundPos = 0
-    Dim foundKind As String: foundKind = ""
+    Dim foundKind As String: foundKind = vbNullString
     If initTok.count > 0 Then
         Dim depthP As Long: depthP = 0
         Dim depthB As Long: depthB = 0
@@ -2384,7 +2384,6 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
     Dim initNode As ASF_Map
     Dim condNode As ASF_Map
     Dim stepNode As ASF_Map
-    Dim body As Collection
     Dim nInit As ASF_Map, nCond As ASF_Map, nStep As ASF_Map
     Dim na As ASF_Map
     Dim L As ASF_Map
@@ -2739,7 +2738,7 @@ Private Function ParseTemplateStringToNode(ByVal rawBacktickString As String) As
     Dim parts As New Collection
     Dim i As Long: i = 1
     Dim Ls As Long: Ls = Len(inner)
-    Dim curLit As String: curLit = ""
+    Dim curLit As String: curLit = vbNullString
 
     Do While i <= Ls
         Dim ch As String: ch = mid$(inner, i, 1)
@@ -2756,7 +2755,7 @@ Private Function ParseTemplateStringToNode(ByVal rawBacktickString As String) As
                 Dim litNode As ASF_Map: Set litNode = MakeNode("Literal")
                 litNode.SetValue "value", curLit
                 parts.Add litNode
-                curLit = ""
+                curLit = vbNullString
             End If
             ' capture expression until matching brace
             i = i + 2
@@ -2777,7 +2776,7 @@ Private Function ParseTemplateStringToNode(ByVal rawBacktickString As String) As
             Loop
             Dim exprLen As Long: exprLen = i - exprStart - 1
             Dim exprSrc As String
-            If exprLen >= 0 Then exprSrc = mid$(inner, exprStart, exprLen) Else exprSrc = ""
+            If exprLen >= 0 Then exprSrc = mid$(inner, exprStart, exprLen) Else exprSrc = vbNullString
             ' parse expression string to an AST node (reuse existing helper)
             Dim exprNode As ASF_Map: Set exprNode = ParseExprFromStringToNode(exprSrc)
             parts.Add exprNode
@@ -2817,7 +2816,7 @@ Private Function ParseTemplatePartsFromString(ByVal tokenStr As String) As Colle
 
     Dim i As Long: i = 2 ' start after opening backtick
     Dim Ls As Long: Ls = Len(tokenStr)
-    Dim curLit As String: curLit = ""
+    Dim curLit As String: curLit = vbNullString
     Dim ch As String
     Dim nx As String
     Dim curExpr As String
@@ -2848,7 +2847,7 @@ Private Function ParseTemplatePartsFromString(ByVal tokenStr As String) As Colle
             ' flush current literal (outside placeholders)
             If Len(curLit) > 0 Then
                 parts.Add Array("LITERAL", curLit)
-                curLit = ""
+                curLit = vbNullString
             End If
 
             ' consume "${"
@@ -2859,7 +2858,7 @@ Private Function ParseTemplatePartsFromString(ByVal tokenStr As String) As Colle
             '  - backslash inside placeholder escapes the next char if equal to '{' or '$' or '}'
             '  - unescaped "${" starts a nested split: flush current expr (if any) and start collecting nested
             '  - unescaped "}" closes the *current* placeholder chunk and the collected text is added as an EXPR
-            curExpr = ""
+            curExpr = vbNullString
             depth = 1
 
             Do While i <= Ls And depth > 0
@@ -2891,7 +2890,7 @@ Private Function ParseTemplatePartsFromString(ByVal tokenStr As String) As Colle
                 If c2 = "$" And i < Ls And mid$(tokenStr, i + 1, 1) = "{" Then
                     If Len(curExpr) > 0 Then
                         parts.Add Array("EXPR", curExpr)
-                        curExpr = ""
+                        curExpr = vbNullString
                     End If
                     ' consume nested "${" and increase depth
                     depth = depth + 1
@@ -2907,7 +2906,7 @@ Private Function ParseTemplatePartsFromString(ByVal tokenStr As String) As Colle
                     ' only add non-empty expression fragments
                     If Len(curExpr) > 0 Then
                         parts.Add Array("EXPR", curExpr)
-                        curExpr = ""
+                        curExpr = vbNullString
                     End If
                     ' if depth > 0 we continue collecting outer-level remainder into a new expr (will be added later or at another close)
                     GoTo ContinuePlaceholderLoop
@@ -2923,7 +2922,7 @@ ContinuePlaceholderLoop:
             ' If the placeholder wasn't properly closed (unterminated), treat whatever collected as an EXPR
             If Len(curExpr) > 0 Then
                 parts.Add Array("EXPR", curExpr)
-                curExpr = ""
+                curExpr = vbNullString
             End If
 
             ' continue scanning main template loop
@@ -2932,7 +2931,7 @@ ContinuePlaceholderLoop:
 
         ' closing backtick ends template (outside any placeholder)
         If ch = "`" Then
-            If Len(curLit) > 0 Then parts.Add Array("LITERAL", curLit): curLit = ""
+            If Len(curLit) > 0 Then parts.Add Array("LITERAL", curLit): curLit = vbNullString
             i = i + 1 ' consume closing backtick
             Exit Do
         End If
@@ -2974,7 +2973,7 @@ Private Function ParseClassDecl(toks As Collection, ByRef i As Long) As ASF_Map
     Loop
     
     ' Check for extends
-    Dim superClass As String: superClass = ""
+    Dim superClass As String: superClass = vbNullString
     If i <= toks.count And LCase$(toks(i)(1)) = "extends" Then
         i = i + 1
         Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
