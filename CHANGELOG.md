@@ -14,7 +14,7 @@ ASF v2.0.5 represent an improvement for VMs collaboration through variable injec
 ## Highlights
 
 - **Improved**: 
-	- ASF: users can now inject `ASF_Map` and `ASF_RegexEngine` objects an VM time.
+	- ASF: users can now inject `ASF_Map` and `ASF_RegexEngine` objects at VM time.
 
 
 ---
