@@ -2,6 +2,24 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [v2.0.5] - 2026-01-23
+https://github.com/ECP-Solutions/ASF/releases/tag/v2.0.4
+
+## Summary
+
+ASF v2.0.5 represent an improvement for VMs collaboration through variable injection.
+
+---
+
+## Highlights
+
+- **Improved**: 
+	- ASF: users can now inject `ASF_Map` and `ASF_RegexEngine` objects an VM time.
+
+
+---
+**Full Changelog**: https://github.com/ECP-Solutions/ASF/compare/v2.0.4...v2.0.5
+
 ## [v2.0.4] - 2026-01-22
 https://github.com/ECP-Solutions/ASF/releases/tag/v2.0.4
 
