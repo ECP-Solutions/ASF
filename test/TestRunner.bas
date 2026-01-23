@@ -656,7 +656,7 @@ TestFail:
 End Sub
 
 '@TestMethod("calling_native_function")
-Sub calling_native_function()
+Private Sub calling_native_function()
     On Error GoTo TestFail
     Dim asfGlobals As New ASF_Globals
     Dim progIdx  As Long
@@ -683,7 +683,7 @@ TestFail:
 End Sub
 
 '@TestMethod("host_sees_array_mutation")
-Sub host_sees_array_mutation()
+Private Sub host_sees_array_mutation()
     On Error GoTo TestFail
     Dim asfGlobals As New ASF_Globals
     Dim progIdx  As Long
@@ -2460,7 +2460,7 @@ End Sub
 Private Sub regex_object_inline_dotAll_flags_off()
     On Error GoTo TestFail
     actual = CStr(GetResult("re=regex(`(?:(a)|(b))(?(1)(?-s:.))`); return(re.Exec('a\n'));"))
-    expected = ""
+    expected = vbNullString
     Assert.AreEqual expected, actual
 TestExit:
     Exit Sub
@@ -2491,7 +2491,7 @@ End Sub
 Private Sub regex_object_Named_Conditionals_NO_Match()
     On Error GoTo TestFail
     actual = CStr(GetResult("re=regex(`(?:(?<A>a)|(?<B>b))(?(A)X|Y)`); print(re.Exec('aY'));"))
-    expected = ""
+    expected = vbNullString
     Assert.AreEqual expected, actual
 TestExit:
     Exit Sub
@@ -2907,7 +2907,7 @@ End Sub
 Private Sub object_get_without_default_missing_key()
     On Error GoTo TestFail
     actual = CStr(GetResult("o = {a: 1}; return(o.get('b'));"))
-    expected = ""
+    expected = vbNullString
     Assert.AreEqual expected, actual
 TestExit:
     Exit Sub
@@ -3398,3 +3398,47 @@ TestFail:
     Resume TestExit
 End Sub
 
+'@TestMethod("injecting_asf_objects")
+Private Sub injecting_asf_objects()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    Dim engine As ASF: Set engine = New ASF
+    Dim obj As ASF_Map
+    With engine
+        .Run .Compile( _
+        "return {" & _
+        "  users: [" & _
+        "    { 'id': 1, 'name': 'Alice', 'sales': 15000, 'active': true }," & _
+        "    { 'id': 2, 'name': 'Bob', 'sales': 8000, 'active': false }," & _
+        "    { 'id': 3, 'name': 'Charlie', 'sales': 22000, 'active': true }" & _
+        "  ]" & _
+        "};")
+        Set obj = .OUTPUT_
+    End With
+    Set scriptEngine = New ASF
+    With scriptEngine
+        .verbose = True
+        .InjectVariable "response", obj
+        .Run .Compile( _
+        "let topSellers = response.users" & _
+        "  .filter(fun(u) { return u.active && u.sales > 10000 })" & _
+        "  .map(fun(u) { return { name: u.name, bonus: u.sales * 0.1 } })" & _
+        "  .sort(fun(a, b) {" & _
+        "    if (a.bonus > b.bonus) { return -1 };" & _
+        "    if (a.bonus < b.bonus) { return 1 };" & _
+        "    return 0;" & _
+        "  });" & _
+        "print(topSellers);")
+    End With
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ { name: 'Charlie', bonus: 2200 }, { name: 'Alice', bonus: 1500 } ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub

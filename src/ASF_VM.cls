@@ -92,6 +92,10 @@ Private Function CastInjectedVar(VarValue As Variant) As Variant
         CastInjectedVar = ArrayToASF(VarValue)
     ElseIf TypeName(VarValue) = "Collection" Then
         CastInjectedVar = CollToASF(VarValue)
+    ElseIf TypeName(VarValue) = "ASF_Map" Then
+        Set CastInjectedVar = VarValue
+    ElseIf TypeName(VarValue) = "ASF_RegexEngine" Then
+        Set CastInjectedVar = VarValue
     ElseIf IsObject(VarValue) Then
         CastInjectedVar = TypeName(VarValue)
     Else
