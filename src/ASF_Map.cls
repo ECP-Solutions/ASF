@@ -23,7 +23,7 @@ Private tmpBuffer As Variant
 Private Sub Class_Initialize()
     BufferInit
 End Sub
-
+ 
 Private Sub BufferInit()
     pItems.Capacity = 64
     pItems.index = -1

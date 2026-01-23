@@ -290,7 +290,7 @@ Private Function ParseSequence(pat As String, ByRef p As Long, pEnd As Long, _
                                         Set node = lbnNode
                                     Else
                                         ' named capture form (?<name>...)
-                                        Dim nameBuf As String: nameBuf = ""
+                                        Dim nameBuf As String: nameBuf = vbNullString
                                         Do While p <= pEnd
                                             Dim nc As String: nc = SafeMid(pat, p, 1)
                                             If nc = ">" Then Exit Do
@@ -382,7 +382,7 @@ Private Function ParseSequence(pat As String, ByRef p As Long, pEnd As Long, _
                             Case Else
                                 ' recursion by number or inline flags
                                 If SafeMid(pat, p, 1) >= "0" And SafeMid(pat, p, 1) <= "9" Then
-                                    Dim ds As String: ds = ""
+                                    Dim ds As String: ds = vbNullString
                                     Do While p <= pEnd
                                         Dim dc As String: dc = SafeMid(pat, p, 1)
                                         If dc >= "0" And dc <= "9" Then
@@ -397,7 +397,7 @@ Private Function ParseSequence(pat As String, ByRef p As Long, pEnd As Long, _
                                     NodeAdd rn, "target", CLng(ds)
                                     Set node = rn
                                 Else
-                                    Dim flagsStr As String: flagsStr = ""
+                                    Dim flagsStr As String: flagsStr = vbNullString
                                     Do While p <= pEnd
                                         Dim fch As String: fch = SafeMid(pat, p, 1)
                                         If (fch >= "a" And fch <= "z") Or (fch >= "A" And fch <= "Z") Or fch = "-" Then
@@ -414,7 +414,7 @@ Private Function ParseSequence(pat As String, ByRef p As Long, pEnd As Long, _
                                         If p <= pEnd And SafeMid(pat, p, 1) = ")" Then p = p + 1
                                         Dim gnodeF As Collection: Set gnodeF = newNode("group")
                                         NodeAdd gnodeF, "noncap_syntax", True
-                                        Dim normFlags As String: normFlags = ""
+                                        Dim normFlags As String: normFlags = vbNullString
                                         Dim kch As Long
                                         For kch = 1 To Len(flagsStr)
                                             Dim fc As String: fc = LCase$(mid$(flagsStr, kch, 1))
@@ -683,7 +683,7 @@ End Function
 ' Parse class and build a 256-byte boolean map for quick matching (ASCII fast-path)
 Private Function ParseClass(ByVal pat As String, ByVal pStart As Long, ByVal pEnd As Long) As Collection
     Dim node As Collection: Set node = newNode("class")
-    Dim chars As New Collection
+    Dim Chars As New Collection
     Dim neg As Boolean: neg = False
     Dim i As Long: i = pStart
     If i <= pEnd And SafeMid(pat, i, 1) = "^" Then neg = True: i = i + 1
@@ -696,39 +696,39 @@ Private Function ParseClass(ByVal pat As String, ByVal pStart As Long, ByVal pEn
                 Select Case esc
                     Case "d"
                         ' digits
-                        chars.Add Array("range", "0", "9")
+                        Chars.Add Array("range", "0", "9")
                     Case "w"
                         ' word chars: A-Z, a-z, 0-9, '_'
-                        chars.Add Array("range", "A", "Z")
-                        chars.Add Array("range", "a", "z")
-                        chars.Add Array("range", "0", "9")
-                        chars.Add "_"
+                        Chars.Add Array("range", "A", "Z")
+                        Chars.Add Array("range", "a", "z")
+                        Chars.Add Array("range", "0", "9")
+                        Chars.Add "_"
                     Case "s"
                         ' whitespace
-                        chars.Add " "
-                        chars.Add vbTab
-                        chars.Add vbLf
-                        chars.Add vbCr
+                        Chars.Add " "
+                        Chars.Add vbTab
+                        Chars.Add vbLf
+                        Chars.Add vbCr
                     Case Else
                         ' fallback (n, r, t, or literal)
-                        chars.Add ParseEscapeChar(esc)
+                        Chars.Add ParseEscapeChar(esc)
                 End Select
             End If
             i = i + 1
         ElseIf i + 2 <= pEnd And SafeMid(pat, i + 1, 1) = "-" Then
-            chars.Add Array("range", SafeMid(pat, i, 1), SafeMid(pat, i + 2, 1))
+            Chars.Add Array("range", SafeMid(pat, i, 1), SafeMid(pat, i + 2, 1))
             i = i + 3
         Else
-            chars.Add ch
+            Chars.Add ch
             i = i + 1
         End If
     Loop
-    NodeAdd node, "chars", chars
+    NodeAdd node, "chars", Chars
     NodeAdd node, "neg", neg
     ' Precompute ASCII map
     Dim mapArr() As Boolean: ReDim mapArr(0 To 255) As Boolean
     Dim it As Variant
-    For Each it In chars
+    For Each it In Chars
         If IsArray(it) Then
             If it(0) = "range" Then
                 Dim aCode As Long: aCode = AscW(it(1))
@@ -750,24 +750,24 @@ End Function
 
 Private Function ParseClassFromSimple(ByVal spec As String) As Collection
     Dim node As Collection: Set node = newNode("class")
-    Dim chars As New Collection
+    Dim Chars As New Collection
     Dim i As Long: i = 2
     Do While i <= Len(spec) - 1
         Dim ch As String: ch = SafeMid(spec, i, 1)
         If i + 2 <= Len(spec) - 1 And SafeMid(spec, i + 1, 1) = "-" Then
-            chars.Add Array("range", ch, SafeMid(spec, i + 2, 1))
+            Chars.Add Array("range", ch, SafeMid(spec, i + 2, 1))
             i = i + 3
         Else
-            chars.Add ch
+            Chars.Add ch
             i = i + 1
         End If
     Loop
-    NodeAdd node, "chars", chars
+    NodeAdd node, "chars", Chars
     NodeAdd node, "neg", False
     ' build simple map
     Dim mapArr() As Boolean: ReDim mapArr(0 To 255) As Boolean
     Dim it As Variant
-    For Each it In chars
+    For Each it In Chars
         If IsArray(it) Then
             Dim aCode As Long: aCode = AscW(it(1))
             Dim bCode As Long: bCode = AscW(it(2))
@@ -986,11 +986,8 @@ Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal
             ' This path is rarely used now since we handle quantifiers inline in MatchSequence.
             Dim mn As Long: mn = NodeGet(node, "min")
             Dim mx As Long: mx = NodeGet(node, "max")
-            Dim lazy As Boolean: lazy = NodeGet(node, "lazy")
-            Dim poss As Boolean: poss = False
-            If NodeExists(node, "possessive") Then poss = NodeGet(node, "possessive")
             If mx = -1 Then mx = Len(subj) - pos + 1
-            ' Fallback simple behaviour: attempt greedy expansion and accept largest if poss else backtracking handled by MatchSequence
+            ' Attempt greedy expansion and accept largest
             Dim occPos() As Long: ReDim occPos(0 To 0)
             Dim occCount As Long: occCount = 0
             Dim curPos As Long: curPos = pos
@@ -1685,7 +1682,7 @@ Private Function MatchCharClassNode(ByVal node As Collection, ByVal ch As String
 End Function
 ' ---------------- Replacement helpers -----------------------------------
 Private Function ExpandReplacement(ByVal caps As Collection, ByVal repl As String, Optional ByVal namedColl As Collection = Nothing) As String
-    Dim out As String: out = ""
+    Dim out As String: out = vbNullString
     Dim i As Long: i = 1
     Dim L As Long: L = Len(repl)
 
@@ -1728,22 +1725,22 @@ Private Function ExpandReplacement(ByVal caps As Collection, ByVal repl As Strin
                     i = i + 2: GoTo ContinueLoop
                 Case "`"
                     If mstart >= 1 Then
-                        If mstart > 1 Then out = out & SafeMid(CurSubject, 1, mstart - 1) Else out = out & ""
+                        If mstart > 1 Then out = out & SafeMid(CurSubject, 1, mstart - 1) Else out = out & vbNullString
                     Else
-                        out = out & ""
+                        out = out & vbNullString
                     End If
                     i = i + 2: GoTo ContinueLoop
                 Case "'"
                     If mend >= 1 Then
-                        If mend < Len(CurSubject) Then out = out & SafeMid(CurSubject, mend + 1) Else out = out & ""
+                        If mend < Len(CurSubject) Then out = out & SafeMid(CurSubject, mend + 1) Else out = out & vbNullString
                     Else
-                        out = out & ""
+                        out = out & vbNullString
                     End If
                     i = i + 2: GoTo ContinueLoop
                 Case "<"
                     ' Named capture syntax $<name>
                     j = i + 2
-                    nm = ""
+                    nm = vbNullString
                     Do While j <= L
                         c2 = SafeMid(repl, j, 1)
                         If c2 = ">" Then Exit Do
@@ -1758,12 +1755,12 @@ Private Function ExpandReplacement(ByVal caps As Collection, ByVal repl As Strin
                                 out = out & CStr(namedColl(nm)(1))
                             Else
                                 ' missing named capture yields empty string
-                                out = out & ""
+                                out = out & vbNullString
                             End If
                             On Error GoTo 0
                         Else
                             ' no namedColl provided -> try to find in caps by numeric fallback (not possible) -> empty
-                            out = out & ""
+                            out = out & vbNullString
                         End If
                         i = j + 1
                         GoTo ContinueLoop
@@ -1773,7 +1770,7 @@ Private Function ExpandReplacement(ByVal caps As Collection, ByVal repl As Strin
                     End If
                 Case "0" To "9"
                     ' numeric capture: greedy 2-digit then fallback
-                    numStr = ""
+                    numStr = vbNullString
                     k = i + 1
                     Do While k <= L And Len(numStr) < 2
                         cc = SafeMid(repl, k, 1)
@@ -1804,7 +1801,7 @@ Private Function ExpandReplacement(ByVal caps As Collection, ByVal repl As Strin
                     End If
                     If useIdx >= 0 Then
                         capIndex = useIdx + 1
-                        If capIndex >= 1 And capIndex <= caps.count Then out = out & CStr(caps.Item(capIndex)) Else out = out & ""
+                        If capIndex >= 1 And capIndex <= caps.count Then out = out & CStr(caps.Item(capIndex)) Else out = out & vbNullString
                     End If
                     GoTo ContinueLoop
                 Case Else
@@ -1824,7 +1821,7 @@ Private Function BuildCaptureCollection() As Collection
         col.Add SafeMid(CurSubject, capsStart(0), capsEnd(0) - capsStart(0) + 1)
     Else
         If col.count = 0 Then
-            col.Add ""
+            col.Add vbNullString
         End If
     End If
     Dim i As Long
@@ -1833,7 +1830,7 @@ Private Function BuildCaptureCollection() As Collection
             col.Add SafeMid(CurSubject, capsStart(i), capsEnd(i) - capsStart(i) + 1)
         Else
             If pGroupCount = 1 Then
-                col.Add ""
+                col.Add vbNullString
             End If
         End If
     Next i
@@ -1846,12 +1843,12 @@ Private Function ComputeMinLen(ByVal node As Collection) As Long
     Select Case t
         Case "lit", "dot", "class": ComputeMinLen = 1
         Case "seq"
-            Dim sum As Long: sum = 0
+            Dim SUM As Long: SUM = 0
             Dim ch As Variant
             For Each ch In NodeGet(node, "child")
-                sum = sum + ComputeMinLen(ch)
+                SUM = SUM + ComputeMinLen(ch)
             Next
-            ComputeMinLen = sum
+            ComputeMinLen = SUM
         Case "group"
             ComputeMinLen = ComputeMinLen(NodeGet(node, "child"))
         Case "quant"
@@ -2106,8 +2103,8 @@ Public Function ExecAt(ByVal subj As String, ByVal startPos As Long) As Collecti
     End If
 End Function
 
-Public Function Replace(ByVal subj As String, ByVal replacement As String) As String
-    Dim out As String: out = ""
+Public Function Replace(ByVal subj As String, ByVal Replacement As String) As String
+    Dim out As String: out = vbNullString
     Dim pos As Long: pos = 1
     Dim L As Long: L = Len(subj)
     Dim foundAt As Long
@@ -2119,7 +2116,7 @@ Public Function Replace(ByVal subj As String, ByVal replacement As String) As St
 
     ' Fast path: empty subject
     If L = 0 Then
-        Replace = ""
+        Replace = vbNullString
         Exit Function
     End If
 
@@ -2152,7 +2149,7 @@ Public Function Replace(ByVal subj As String, ByVal replacement As String) As St
             End If
 
             ' expand replacement using your helper (ExpandReplacement)
-            out = out & ExpandReplacement(cs, replacement, pNamedCaptures)
+            out = out & ExpandReplacement(cs, Replacement, pNamedCaptures)
 
             ' advance position after the matched substring
             matchLen = mend - mstart + 1
@@ -2169,7 +2166,7 @@ Public Function Replace(ByVal subj As String, ByVal replacement As String) As St
 
             ' if we've consumed the whole subject, append empty tail and exit
             If pos > L Then
-                out = out & "" ' explicit - nothing to append
+                out = out & vbNullString ' explicit - nothing to append
                 Exit Do
             End If
         End If
@@ -2224,7 +2221,7 @@ Public Function Split(ByVal subj As String) As Collection
 
             ' if we've consumed the whole subject, append empty tail
             If pos > L Then
-                res.Add ""
+                res.Add vbNullString
                 Exit Do
             End If
         End If
@@ -2247,16 +2244,16 @@ Private Function ComputeMaxLen(ByVal node As Collection) As Long
     Select Case t
         Case "lit", "dot", "class": ComputeMaxLen = 1
         Case "seq"
-            Dim sum As Long: sum = 0
+            Dim SUM As Long: SUM = 0
             Dim ch As Variant
             For Each ch In NodeGet(node, "child")
                 Dim m As Long: m = ComputeMaxLen(ch)
                 If m = -1 Then
                     ComputeMaxLen = -1: Exit Function
                 End If
-                sum = sum + m
+                SUM = SUM + m
             Next
-            ComputeMaxLen = sum
+            ComputeMaxLen = SUM
         Case "group"
             ComputeMaxLen = ComputeMaxLen(NodeGet(node, "child"))
         Case "alt"
@@ -2271,7 +2268,6 @@ Private Function ComputeMaxLen(ByVal node As Collection) As Long
             Next
             ComputeMaxLen = mx
         Case "quant"
-            Dim mn As Long: mn = NodeGet(node, "min")
             Dim mxChild As Long: mxChild = ComputeMaxLen(NodeGet(node, "child"))
             If mxChild = -1 Then
                 If NodeGet(node, "max") = -1 Then
@@ -2343,16 +2339,16 @@ Private Function ComputeFixedWidth(ByVal node As Collection) As Long
             ComputeFixedWidth = 1
             Exit Function
         Case "seq"
-            Dim sum As Long: sum = 0
+            Dim SUM As Long: SUM = 0
             Dim ch As Variant
             For Each ch In NodeGet(node, "child")
                 Dim w As Long: w = ComputeFixedWidth(ch)
                 If w = -1 Then
                     ComputeFixedWidth = -1: Exit Function
                 End If
-                sum = sum + w
+                SUM = SUM + w
             Next
-            ComputeFixedWidth = sum
+            ComputeFixedWidth = SUM
             Exit Function
         Case "group"
             ComputeFixedWidth = ComputeFixedWidth(NodeGet(node, "child"))
@@ -2490,7 +2486,7 @@ Public Function Escape(ByVal aInput As String) As String
     Dim specials As String
     specials = "\.^$*+?()[]{}|/"
 
-    Dim outStr As String: outStr = ""
+    Dim outStr As String: outStr = vbNullString
     Dim i As Long, ch As String
 
     For i = 1 To Len(aInput)
@@ -2659,7 +2655,7 @@ Private Sub UpdateNamedCapturesFromAST()
         gidx = CLng(pair(1))
         Dim sPos As Long
         Dim ePos As Long
-        val = ""
+        val = vbNullString
         If gidx > 0 Then
             If gidx <= UBound(capsStart) Then
                 sPos = CLng(capsStart(gidx))
@@ -2667,7 +2663,7 @@ Private Sub UpdateNamedCapturesFromAST()
                 If sPos >= 1 And ePos >= sPos Then
                     val = mid$(CurSubject, sPos, ePos - sPos + 1)
                 Else
-                    val = ""
+                    val = vbNullString
                 End If
             End If
         End If

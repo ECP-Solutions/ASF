@@ -17,7 +17,7 @@ Public Sub SetGlobals(ByRef aGlobals As ASF_Globals)
     Set GLOBALS_ = aGlobals
 End Sub
 Private Function ReplaceDQuotes(src As String) As String
-    ReplaceDQuotes = Replace(src, ChrW(34), "'")
+    ReplaceDQuotes = Replace(src, ChrW$(34), "'")
 End Function
 
 Public Function Tokenize(src As String) As Collection
@@ -88,7 +88,6 @@ Tokenize_MainLoop:
             Case "`"
                 ' consume opening backtick
                 i = i + 1
-                Dim tplParts As New Collection
                 Dim curLit As String: curLit = "`"
                 Dim Ls As Long: Ls = n
                 Dim c As String
@@ -148,11 +147,11 @@ ContinueTemplateLoop:
             Case "<", ">"
                 Dim two As String
                 Dim three As String
-                If i < n Then two = mid$(sourceCode, i, 2) Else two = ""
+                If i < n Then two = mid$(sourceCode, i, 2) Else two = vbNullString
                 If two = ">=" Or two = "<=" Then
                     toks.Add Array("OP", two): i = i + 2
                 Else
-                    If i < n Then three = mid$(sourceCode, i, 3) Else three = ""
+                    If i < n Then three = mid$(sourceCode, i, 3) Else three = vbNullString
                     If three = "<<=" Or three = ">>=" Then 'Support for compound shift assignment
                         toks.Add Array("OP", three): i = i + 3
                     Else
@@ -173,7 +172,7 @@ ContinueTemplateLoop:
                 toks.Add Array("OP", ch): i = i + 1: GoTo Tokenize_SkipToLoopEnd
             Case "'"
                 j = i + 1
-                Dim sb As String: sb = ""
+                Dim sb As String: sb = vbNullString
                 Do While j <= n
                     Dim cj As String: cj = mid$(sourceCode, j, 1)
                     If cj = "\" Then
@@ -225,7 +224,7 @@ ContinueDo:
                         j3 = j3 + 1
                     Loop
                     tmpIdent = mid$(sourceCode, i, j3 - i)
-                    If LCase(tmpIdent) <> "let" Then
+                    If LCase$(tmpIdent) <> "let" Then
                         toks.Add Array("IDENT", tmpIdent)
                     End If
                     i = j3
@@ -234,7 +233,7 @@ ContinueDo:
                 ElseIf ch = "@" And i < n And mid$(sourceCode, i + 1, 1) = "(" Then
                     Dim jvb As Long: jvb = i + 2
                     Dim depthVB As Long: depthVB = 1
-                    Dim vbContent As String: vbContent = ""
+                    Dim vbContent As String: vbContent = vbNullString
                     Do While jvb <= n And depthVB > 0
                         Dim cjvb As String: cjvb = mid$(sourceCode, jvb, 1)
                         If cjvb = "(" Then
@@ -293,7 +292,7 @@ End Function
 
 
 Public Function JoinTokens(tokens As Collection) As String
-    Dim s As String: s = ""
+    Dim s As String: s = vbNullString
     Dim i As Long
     For i = 1 To tokens.count
         If tokens(i)(0) = "STRING" Then

@@ -2,6 +2,24 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [v2.0.4] - 2026-01-22
+https://github.com/ECP-Solutions/ASF/releases/tag/v2.0.4
+
+## Summary
+
+ASF v2.0.4 is a code clean-up for the library.
+
+---
+
+## Highlights
+
+- **Improved**: 
+	- Code: Rubberduck code inspection.
+
+
+---
+**Full Changelog**: https://github.com/ECP-Solutions/ASF/compare/v2.0.3...v2.0.4
+
 ## [v2.0.3] - 2026-01-21
 https://github.com/ECP-Solutions/ASF/releases/tag/v2.0.3
 
