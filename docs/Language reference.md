@@ -24,7 +24,7 @@ Version 1.0 | Complete Language Reference
 8. [Functions](#functions)
 9. [Arrays](#arrays)
 10. [Objects](#objects)
-11. [Objects Methods](#objects-methods)
+11. [Object Member Methods](#object-member-methods)
 12. [Classes](#classes)
 13. [Built-in Functions](#built-in-functions)
 14. [String Methods](#string-methods)
