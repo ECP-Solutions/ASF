@@ -3153,13 +3153,13 @@ ContinueDo:
                                 Dim foreachKeys As Collection: Set foreachKeys = baseValLocal.keys()
                                 Dim fk As Variant
                                 Dim args_obj As Collection
+                                Dim tmpRes_obj As Variant
                                 For Each fk In foreachKeys
                                     Set args_obj = New Collection
                                     args_obj.Add baseValLocal.GetValue(CStr(fk))
                                     args_obj.Add CStr(fk)
                                     args_obj.Add baseValLocal
                                     vAssignment tmpMapObj, cb_obj
-                                    Dim tmpRes_obj As Variant
                                     vAssignment tmpRes_obj, CallClosure(tmpMapObj, args_obj, baseValLocal)
                                 Next fk
                                 
@@ -3427,13 +3427,13 @@ namedFunctions:
                     GoTo exitfun
                 End If
                 If nameLcase = "foreach" Then
-                    ' foreach(arr, fn) -> same behavior as method-style forEach
+                    ' foreach(arr, fn) | foreach(obj, fn) -> same behavior as method-style forEach
                     If evaluated.count < 2 Then
                         vAssignment tmpResult, Empty
                         GoTo exitfun
                     End If
                 
-                    Dim arrVal As Variant: vAssignment arrVal, evaluated(1)
+                    Dim feTmpVal As Variant: vAssignment feTmpVal, evaluated(1)
                     Dim cbFn As Variant: vAssignment cbFn, evaluated(2)
                 
                     If TypeName(cbFn) <> "ASF_Map" Or cbFn.GetValue("type") <> "Closure" Then
@@ -3441,30 +3441,45 @@ namedFunctions:
                         GoTo exitfun
                     End If
                 
-                    If Not IsArray(arrVal) Then
+                    If Not IsArray(feTmpVal) And TypeName(feTmpVal) <> "ASF_Map" Then
                         vAssignment tmpResult, Empty
                         GoTo exitfun
                     End If
                 
-                    Dim lb2 As Long: lb2 = LBound(arrVal)
-                    Dim ub2 As Long: ub2 = UBound(arrVal)
-                    Dim optBase2 As Long: optBase2 = progScope.GetValue("__option_base")
-                    Dim idx2 As Long: idx2 = 0
-                    Dim j As Long
-                    Dim callArgs2 As Collection
-                    For j = lb2 To ub2
-                        Set callArgs2 = New Collection
-                        callArgs2.Add arrVal(j)
-                        callArgs2.Add (optBase2 + idx2)
-                        callArgs2.Add arrVal
-                        Dim tmpRc As Variant
-                        vAssignment tmpMapObj, cbFn
-                        vAssignment tmpRc, CallClosure(tmpMapObj, callArgs2, arrVal)
-                        idx2 = idx2 + 1
-                    Next j
-                
-                    ' return original array for convenience
-                    vAssignment tmpResult, arrVal
+                    If TypeName(feTmpVal) = "ASF_Map" Then
+                        Dim foreachKeys2 As Collection: Set foreachKeys2 = feTmpVal.keys()
+                        Dim fk2 As Variant
+                        Dim args_obj2 As Collection
+                        Dim tmpRes_obj2 As Variant
+                        
+                        For Each fk2 In foreachKeys2
+                            Set args_obj2 = New Collection
+                            args_obj2.Add feTmpVal.GetValue(CStr(fk2))
+                            args_obj2.Add CStr(fk2)
+                            args_obj2.Add feTmpVal
+                            vAssignment tmpMapObj, cbFn
+                            vAssignment tmpRes_obj2, CallClosure(tmpMapObj, args_obj2, feTmpVal)
+                        Next fk2
+                    Else
+                        Dim lb2 As Long: lb2 = LBound(feTmpVal)
+                        Dim ub2 As Long: ub2 = UBound(feTmpVal)
+                        Dim optBase2 As Long: optBase2 = progScope.GetValue("__option_base")
+                        Dim idx2 As Long: idx2 = 0
+                        Dim j As Long
+                        Dim callArgs2 As Collection
+                        For j = lb2 To ub2
+                            Set callArgs2 = New Collection
+                            callArgs2.Add feTmpVal(j)
+                            callArgs2.Add (optBase2 + idx2)
+                            callArgs2.Add feTmpVal
+                            Dim tmpRc As Variant
+                            vAssignment tmpMapObj, cbFn
+                            vAssignment tmpRc, CallClosure(tmpMapObj, callArgs2, feTmpVal)
+                            idx2 = idx2 + 1
+                        Next j
+                    End If
+                    ' return original array/object for convenience
+                    vAssignment tmpResult, feTmpVal
                     GoTo exitfun
                 End If
                 If nameLcase = "regex" Then

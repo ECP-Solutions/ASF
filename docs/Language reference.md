@@ -2070,6 +2070,15 @@ foreach(nums, fun(val, idx, arr) {
 });
 ```
 
+Iterate over object:
+
+```javascript
+let scores = {math: 85, english: 92, science: 78};
+foreach(scores, fun(val, key) {
+    s = s + val; c += 1
+}); return('Average: ' + s/c); // Average: 85
+```
+
 ### Regular Expression Helper
 
 #### regex

@@ -2,8 +2,31 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [v2.0.6] - 2026-01-23
+https://github.com/ECP-Solutions/ASF/releases/tag/v2.0.6
+
+## Summary
+
+ASF v2.0.6 represent an improvement for native objects ergonomics.
+
+---
+
+## Highlights
+
+- **Improved**: 
+	- VM: users can now call the `foreach` method over an objet.
+		```js
+		s=0; c=0; 
+		foreach({math: 85, english: 92, science: 78}, fun(val, key){ s = s + val; c += 1 }); 
+		return('Average: ' + s/c); // ==> Average: 85
+		```
+
+
+---
+**Full Changelog**: https://github.com/ECP-Solutions/ASF/compare/v2.0.5...v2.0.6
+
 ## [v2.0.5] - 2026-01-23
-https://github.com/ECP-Solutions/ASF/releases/tag/v2.0.4
+https://github.com/ECP-Solutions/ASF/releases/tag/v2.0.5
 
 ## Summary
 
