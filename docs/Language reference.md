@@ -1,6 +1,6 @@
 ---
 layout: default
-title: Syntax
+title: Language Documentation
 has_children: false
 nav_order: 4
 description: "ASF Language Documentation."

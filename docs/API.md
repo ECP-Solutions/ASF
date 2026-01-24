@@ -1,6 +1,6 @@
 ---
 layout: default
-title: Syntax
+title: API
 has_children: false
 nav_order: 3
 description: "ASF Public API."
