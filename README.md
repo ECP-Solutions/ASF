@@ -38,8 +38,8 @@ Debug.Print engine.OUTPUT_  ' => 12
 
 ## 📚 Documentation
 
-- [API](docs/API.md)
-- [Syntax](docs/Syntax.md)
+- [API](https://ecp-solutions.github.io/ASF/API.html)
+- [Syntax](https://ecp-solutions.github.io/ASF/Syntax.html)
 - [Complete Language Reference](https://ecp-solutions.github.io/ASF/Language%20reference.html)
 - [Object Methods vs JavaScript Comparison](https://ecp-solutions.github.io/ASF/examples/object-methods-comparison.html)
 
