@@ -1,3 +1,11 @@
+---
+layout: default
+title: Syntax
+has_children: false
+nav_order: 2
+description: "ASF syntax."
+---
+
 # ASF — Syntax Reference
 
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/ECP-Solutions/ASF?style=plastic)](https://github.com/ECP-Solutions/ASF/releases/latest) [![Tests](https://img.shields.io/badge/tests-290%2B-green.svg)](.)  

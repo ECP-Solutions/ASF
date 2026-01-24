@@ -1,0 +1,28 @@
+title: Advanced Scripting Framework
+# email: your-email@example.com
+description: >- # this means to ignore newlines until "baseurl:"
+  Modern scripting for VBA: JavaScript-like syntax, classes with inheritance, map/filter/reduce, closures, regex. No COM, works everywhere. Transform Excel automation.
+baseurl: "/ASF" # the subpath of your site, e.g. /blog
+#theme: jekyll-theme-architect
+remote_theme: ws-garcia/just-the-docs
+# Set a path/url to a logo that will be displayed instead of the title
+logo: "/assets/img/ASF logo.png"
+# Back to top link
+back_to_top: true
+back_to_top_text: "Back to top"
+# Enable or disable the site search
+# Supports true (default) or false
+search_enabled: true
+# Enable support for hyphenated search words:
+search_tokenizer_separator: /[\s/]+/
+# Aux links for the upper right navigation
+aux_links:
+  "ASF on GitHub":
+    - "//github.com/ECP-Solutions/ASF"
+# Heading anchor links appear on hover over h1-h6 tags in page content
+# allowing users to deep link to a particular heading on a page.
+#
+# Supports true (default) or false/nil
+heading_anchors: true
+# Color scheme currently only supports "dark" or nil (default)
+color_scheme: nil

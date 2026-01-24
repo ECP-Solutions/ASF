@@ -1,3 +1,11 @@
+---
+layout: default
+title: Syntax
+has_children: false
+nav_order: 4
+description: "ASF Language Documentation."
+---
+
 # ASF Language Documentation
 
 Version 1.0 | Complete Language Reference
