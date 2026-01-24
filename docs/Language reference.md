@@ -34,7 +34,6 @@ Version 1.0 | Complete Language Reference
 18. [Error Handling](#error-handling)
 19. [VBA Integration](#vba-integration)
 20. [Best Practices](#best-practices)
-21. [Examples](#examples)
 
 ---
 
