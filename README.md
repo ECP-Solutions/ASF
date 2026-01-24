@@ -40,7 +40,7 @@ Debug.Print engine.OUTPUT_  ' => 12
 
 - [API](docs/API.md)
 - [Syntax](docs/Syntax.md)
-- [Complete Language Reference](docs/Language reference.md)
+- [Complete Language Reference](docs/Language%20reference.md)
 - [Object Methods vs JavaScript Comparison](docs/object-methods-comparison.html)
 
 ## Why ASF?
