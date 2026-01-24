@@ -21,6 +21,7 @@ Debug.Print engine.OUTPUT_  ' => 12
 
 ## 📋 Table of Contents
 
+- [Documentation](#documentation)
 - [Why ASF?](#why-asf)
 - [When to Use ASF](#when-to-use-asf)
 - [Quick Start (5 Minutes)](#quick-start-5-minutes)
@@ -34,6 +35,13 @@ Debug.Print engine.OUTPUT_  ' => 12
 - [License](#license)
 
 ---
+
+## 📚 Documentation
+
+- [API](docs/API.md)
+- [Syntax](docs/Syntax.md)
+- [Complete Language Reference](docs/Language reference.md)
+- [Object Methods vs JavaScript Comparison](docs/object-methods-comparison.html)
 
 ## Why ASF?
 

@@ -1165,11 +1165,24 @@ TestFail:
     Resume TestExit
 End Sub
 
-'@TestMethod("foreach_builtin_signature")
-Private Sub foreach_builtin_signature()
+'@TestMethod("foreach_builtin_signature_arrays")
+Private Sub foreach_builtin_signature_arrays()
     On Error GoTo TestFail
     actual = CStr(GetResult("s=0; foreach([1,2,3], fun(x){ s = s + x }); return(s);"))
     expected = "6"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("foreach_builtin_signature_objects")
+Private Sub foreach_builtin_signature_objects()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("s=0; c=0; foreach({math: 85, english: 92, science: 78}, fun(val, key){ s = s + val; c += 1 }); return('Average: ' + s/c);"))
+    expected = "85"
     Assert.AreEqual expected, actual
 TestExit:
     Exit Sub
