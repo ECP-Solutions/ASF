@@ -2094,7 +2094,7 @@ foreach(scores, fun(val, key) {
 Create regex engine:
 
 ```javascript
-let re = regex(`/hello/i`);  // Case-insensitive
+let re = regex(`hello`, true);  // Case-insensitive
 let re2 = regex(`\\d+`);      // Matches digits
 ```
 
@@ -2372,14 +2372,6 @@ for (let i = 1, i <= users.length, i += 1) {
 ## Regular Expressions
 
 ### Creating Regex
-
-#### Slash Notation (Recommended)
-
-```javascript
-let re = regex(`/pattern/flags`);
-let digitPattern = regex(`/\\d+/`);
-let caseInsensitive = regex(`/hello/i`);
-```
 
 #### Constructor Notation
 
