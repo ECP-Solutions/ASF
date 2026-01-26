@@ -41,15 +41,37 @@ This BNF uses a mixture of concrete tokens and non-terminals to show the languag
 
 <stmts>          ::= <stmt> ( ';' <stmt> )* [ ';' ]
 
-<stmt>           ::= <if-stmt> | <for-stmt> | <while-stmt> | <try-stmt> | <switch-stmt> | <return-stmt> | <break-stmt> | <continue-stmt> | <expr-stmt>
+<stmt>           ::= <if-stmt>
+                   | <for-stmt>
+                   | <while-stmt>
+                   | <try-stmt>
+                   | <switch-stmt>
+                   | <return-stmt>
+                   | <break-stmt>
+                   | <continue-stmt>
+                   | <expr-stmt>
+                   | <print-stmt>
+                   | <func-decl>
+                   | <class-decl>
+                   | <let-decl>
 
-<if-stmt>        ::= 'if' '(' <expr> ')' <block> ( 'elseif' '(' <expr> ')' <block> )* [ 'else' <block> ]
+<if-stmt>        ::= 'if' '(' <expr> ')' <block>
+                     ( 'elseif' '(' <expr> ')' <block> )*
+                     [ 'else' <block> ]
 
 <for-stmt>       ::= 'for' '(' <expr> ',' <expr> ',' <expr> ')' <block>
+                   | 'for' '(' IDENT 'in' <expr> ')' <block>
+                   | 'for' '(' IDENT 'of' <expr> ')' <block>
 
-<while-stmt>     ::= 'while' '(' <expr> ')' <block> <try-stmt>       ::= 'try' <block> 'catch' <block>
+<while-stmt>     ::= 'while' '(' <expr> ')' <block>
 
-<switch-stmt>    ::= 'switch' '(' <expr> ')' '{' ( 'case' <expr> <block> )* [ 'default' <block> ] '}'
+<try-stmt>       ::= 'try' <block> 'catch' '(' IDENT ')' <block>
+                   | 'try' <block> 'catch' <block>
+
+<switch-stmt>    ::= 'switch' '(' <expr> ')' '{'
+                     ( 'case' <expr> <block> )*
+                     [ 'default' <block> ]
+                     '}'
 
 <return-stmt>    ::= 'return' [ '(' <expr> ')' | <expr> ]
 
@@ -58,10 +80,49 @@ This BNF uses a mixture of concrete tokens and non-terminals to show the languag
 <continue-stmt>  ::= 'continue'
 
 <expr-stmt>      ::= <expr>
+                   | 'super' '(' <arglist> ')'
 
-<block>          ::= '{' <stmts> '}' | <stmt>  -- blocks may be multiline or single statement
+<print-stmt>     ::= 'print' '(' <arglist> ')'
 
-<expr>           ::= <ternary>
+<func-decl>      ::= 'fun' IDENT '(' <paramlist> ')' <block>
+
+<class-decl>     ::= 'class' IDENT [ 'extends' IDENT ] '{' <class-body> '}'
+
+<class-body>     ::= <class-member>*
+
+<class-member>   ::= <field-decl>
+                   | <constructor-decl>
+                   | <method-decl>
+                   | <static-method-decl>
+
+<field-decl>     ::= 'field' <field-list> ';'
+
+<field-list>     ::= <field-item> ( ',' <field-item> )*
+
+<field-item>     ::= IDENT [ '=' <expr> ]
+
+<constructor-decl> ::= 'constructor' '(' <paramlist> ')' <block>
+
+<method-decl>    ::= IDENT '(' <paramlist> ')' <block>
+
+<static-method-decl> ::= 'static' IDENT '(' <paramlist> ')' <block>
+
+<let-decl>       ::= 'let' IDENT [ '=' <expr> ]
+
+<block>          ::= '{' <stmts> '}'
+                   | <stmt>
+
+<expr>           ::= <assignment>
+                   | <ternary>
+
+<assignment>     ::= <postfix> <assign-op> <expr>
+
+<assign-op>      ::= '='
+                   | '+='
+                   | '-='
+                   | '*='
+                   | '/='
+                   | '%='
 
 <ternary>        ::= <logical-or> [ '?' <expr> ':' <expr> ]
 
@@ -83,27 +144,60 @@ This BNF uses a mixture of concrete tokens and non-terminals to show the languag
 
 <add>            ::= <mul> ( ('+'|'-') <mul> )*
 
-<mul>            ::= <unary> ( (''|'/'|'%') <unary> )
+<mul>            ::= <unary> ( ('*'|'/'|'%') <unary> )*
 
-<unary>          ::= ('+'|'-'|'!') <unary> | <power>
+<unary>          ::= ('+' | '-' | '!' | 'typeof') <unary>
+                   | <power>
 
-<power>          ::= <postfix> ( '^' <power> )?   -- right-associative
+<power>          ::= <postfix> ( '^' <power> )?
 
 <postfix>        ::= <primary> { <postfix-op> }*
 
-<postfix-op>     ::= '.' IDENT                      -- member | '[' <expr> ']'                 -- index | '(' <arglist> ')'              -- call
+<postfix-op>     ::= '.' IDENT
+                   | '[' <expr> ']'
+                   | '(' <arglist> ')'
 
-<primary>        ::= NUMBER | STRING | 'true' | 'false' | 'null' | IDENT | '[' <elemlist> ']'             -- array literal | '{' <obj-items> '}'            -- object literal | 'fun' '(' <paramlist> ')' <block>  -- expression-level func literal | '(' <expr> ')' | '@' '(' VBA_EXPR ')'           -- VBExpr raw block
+<primary>        ::= NUMBER
+                   | STRING
+                   | 'true'
+                   | 'false'
+                   | 'null'
+                   | IDENT
+                   | '[' <elemlist> ']'
+                   | '{' <obj-items> '}'
+                   | 'fun' '(' <paramlist> ')' <block>
+                   | '(' <expr> ')'
+                   | '@' '(' VBA_EXPR ')'
+                   | '`' <template-parts>
+                   | 'new' IDENT '(' <arglist> ')'
+                   | 'this'
+                   | 'super'
 
 <arglist>        ::= [ <expr> ( ',' <expr> )* ]
 
 <elemlist>       ::= [ <expr> ( ',' <expr> )* ]
 
-<obj-items>      ::= [ (<IDENT | STRING> ':' <expr>) (',' (<IDENT|STRING> ':' <expr>))* ]
+<obj-items>      ::= [ (<IDENT | STRING> ':' <expr>)
+                       (',' (<IDENT|STRING> ':' <expr>))* ]
 
 <paramlist>      ::= [ IDENT ( ',' IDENT )* ]
 
-IDENT            ::= letter followed by letters/digits/underscore (collapsed forms allowed: e.g. "o.a[2].b" may be emitted as Ident token and expanded)
+<string-escape>  ::= '\\'
+                   | '\''
+                   | '\"'
+                   | '\n'
+                   | '\t'
+                   | '\r'
+
+<comment>        ::= '//' ( any-char-except-newline )* newline
+                   | '/*' ( any-char )* '*/'
+
+<template-parts> ::= ( <template-char>* | '${' <expr> '}' )*
+
+<template-char>  ::= any character except '`' or '$'
+                   | '$' not-followed-by '{'
+
+IDENT            ::= letter followed by letters/digits/underscore
 
 NUMBER           ::= decimal or float
 
