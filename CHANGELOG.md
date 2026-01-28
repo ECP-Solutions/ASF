@@ -2,6 +2,35 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [v2.0.7] - 2026-01-28
+https://github.com/ECP-Solutions/ASF/releases/tag/v2.0.6
+
+## Summary
+
+ASF v2.0.7 is a minor improvement for `ASF` core ergonomic.
+
+---
+
+## Highlights
+
+- **Improved**: 
+	- ASF: the `Run` method now returns the result of the compiled program being executed.
+		```vb
+		Private Sub ForEachTest()
+ 		   Dim result As Variant
+ 		   Dim engine As ASF: Set engine = New ASF
+ 		   
+ 		   With engine
+		        result = .Run(.Compile("o = {x: 10, y: 20}; s = 0; o.forEach(fun(v) { s = s + v }); return(s);"))
+		    End With
+		    Set engine = Nothing
+		End Sub
+		```
+
+
+---
+**Full Changelog**: https://github.com/ECP-Solutions/ASF/compare/v2.0.6...v2.0.7
+
 ## [v2.0.6] - 2026-01-23
 https://github.com/ECP-Solutions/ASF/releases/tag/v2.0.6
 
