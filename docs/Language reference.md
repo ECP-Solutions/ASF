@@ -105,13 +105,8 @@ Sub RunASFCode()
     code = "let x = 10; print(x * 2);"
     
     ' Compile and run
-    Dim idx As Long
-    idx = engine.Compile(code)
-    engine.Run idx
-    
-    ' Get output (if function returns a value)
     Dim result As Variant
-    result = engine.OUTPUT_
+    result = engine.Run(engine.compile(code))
 End Sub
 ```
 

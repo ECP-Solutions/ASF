@@ -45,12 +45,13 @@ End Sub
 Public Property Get OUTPUT_() As Variant
     vAssignment OUTPUT_, OUTPUT__
 End Property
-Public Sub Run(idx As Long)
+Public Function Run(idx As Long) As Variant
     If Not GLOBALS_ Is Nothing Then
         With VM_
             .SetGlobals GLOBALS_
             .RunProgramByIndex idx
             vAssignment OUTPUT__, .OUTPUT_
+            vAssignment Run, .OUTPUT_
                 If .verbose Then
                     Debug.Print "=== Runtime Log ==="
                     Dim elm As Variant
@@ -60,7 +61,7 @@ Public Sub Run(idx As Long)
                 End If
         End With
     End If
-End Sub
+End Function
 Private Sub vAssignment(ByRef var As Variant, ByRef vValue As Variant)
     If IsObject(vValue) Then
         Set var = vValue
