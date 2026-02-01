@@ -330,7 +330,9 @@ Private Function ExecuteStmtNode(node As ASF_Map, progScope As ASF_ScopeStack) A
         Case "ClassDecl"
             ExecuteStmtNode = ExecClassDecl(node, progScope)
             Exit Function
-
+        Case "ArrayDestructuring"
+            ExecuteStmtNode = ExecArrayDestruct(node, progScope)
+            Exit Function
         Case Else
             ' unknown node type
             If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "Unknown statement node: " & tP
@@ -5772,6 +5774,73 @@ Private Function ExecClassDecl(node As ASF_Map, progScope As ASF_ScopeStack) As 
     progScope.SetValue className, classMap
     
     ExecClassDecl = vbNullString
+End Function
+' Execute array destructuring
+Private Function ExecArrayDestruct(node As ASF_Map, progScope As ASF_ScopeStack) As String
+    ' Handle: [a, b, c] = sourceArray or [a, b, ...rest] = sourceArray
+    Dim srcVal As Variant
+    vAssignment srcVal, EvalExprNode(node.GetValue("source"), progScope)
+    
+    If Not IsArray(srcVal) Then
+        err.Raise vbObjectError + 6001, "VM.ExecuteStmtNode", "Cannot destructure non-array value"
+    End If
+    
+    Dim destTargets As Collection: Set destTargets = node.GetValue("targets")
+    Dim srcLB As Long: srcLB = LBound(srcVal)
+    Dim srcUB As Long: srcUB = UBound(srcVal)
+    Dim srcLen As Long: srcLen = srcUB - srcLB + 1
+    Dim optBase As Long: optBase = progScope.GetValue("__option_base")
+    
+    ' Assign to regular targets
+    Dim ti As Long
+    Dim targetNode As ASF_Map
+    Dim targetName As String
+    Dim srcIdx As Long
+    For ti = 1 To destTargets.count
+        Set targetNode = destTargets(ti)
+        targetName = targetNode.GetValue("name")
+        srcIdx = srcLB + (ti - 1)
+        ' Assign value or Empty if out of bounds
+        If srcIdx >= srcLB And srcIdx <= srcUB Then
+            progScope.SetValue targetName, srcVal(srcIdx)
+        Else
+            progScope.SetValue targetName, Empty
+        End If
+    Next ti
+    
+    ' Handle rest element if present
+    If node.Exists("restTarget") Then
+        Dim restName As String: restName = node.GetValue("restTarget")
+        Dim restStartIdx As Long: restStartIdx = destTargets.count
+        
+        ' Calculate how many elements remain for rest
+        Dim remainingCount As Long
+        remainingCount = srcLen - restStartIdx
+        If remainingCount > 0 Then
+            ' Create rest array
+            Dim restArr() As Variant
+            ReDim restArr(optBase To optBase + remainingCount - 1)
+            
+            Dim ri As Long, srcPos As Long
+            srcPos = srcLB + restStartIdx
+            For ri = optBase To optBase + remainingCount - 1
+                If srcPos <= srcUB Then
+                    vAssignment restArr(ri), srcVal(srcPos)
+                    srcPos = srcPos + 1
+                Else
+                    restArr(ri) = Empty
+                End If
+            Next ri
+            
+            progScope.SetValue restName, restArr
+        Else
+            ' No remaining elements, set to empty array
+            Dim emptyRestArr() As Variant
+            ReDim emptyRestArr(-1 To -1)
+            progScope.SetValue restName, emptyRestArr
+        End If
+    End If
+    ExecArrayDestruct = vbNullString
 End Function
 ' Instantiate a class
 Private Function InstantiateClass(classMap As ASF_Map, args As Collection, progScope As ASF_ScopeStack) As Variant
