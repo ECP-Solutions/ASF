@@ -77,7 +77,14 @@ Tokenize_MainLoop:
             i = jH
             GoTo Tokenize_SkipToLoopEnd
         End If
-
+        ' Spread/Rest operator (...)
+        If ch = "." And i + 2 <= n Then
+            If mid$(sourceCode, i, 3) = "..." Then
+                toks.Add Array("SPREAD", "...")
+                i = i + 3
+                GoTo Tokenize_SkipToLoopEnd
+            End If
+        End If
         Select Case ch
             Case " ", vbTab, vbCr, vbLf
                 i = i + 1
