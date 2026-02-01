@@ -638,6 +638,89 @@ Private Function ParseStatementTokensToAST(stmtTokens As Collection) As ASF_Map
         Set lhsT = New Collection: Set rhsT = New Collection
         For t = 1 To assignPos - 1: lhsT.Add stmtTokens(t): Next t
         For t = assignPos + 1 To stmtTokens.count: rhsT.Add stmtTokens(t): Next t
+        
+        ' Check for array destructuring pattern: [ id, id, ... ] = expr
+        Dim isArrayDestructuring As Boolean: isArrayDestructuring = False
+        If lhsT.count >= 3 Then
+            If lhsT(1)(0) = "PAREN" And lhsT(1)(1) = "[" And lhsT(lhsT.count)(0) = "PAREN" And lhsT(lhsT.count)(1) = "]" Then
+                isArrayDestructuring = True
+            End If
+        End If
+        Dim rhsNode As ASF_Map
+        If isArrayDestructuring Then
+            ' Parse array destructuring assignment
+            Dim destNode As ASF_Map: Set destNode = MakeNode("ArrayDestructuring")
+            Dim targets As New Collection
+            Dim hasRestInDest As Boolean: hasRestInDest = False
+            Dim restTargetName As String: restTargetName = vbNullString
+            Dim targetVar As ASF_Map
+            ' Parse elements between [ and ]
+            Dim dt As Long: dt = 2 ' skip opening [
+            Do While dt < lhsT.count
+                If lhsT(dt)(0) = "COMMENT" Then
+                    dt = dt + 1
+                    GoTo ContinueDestParse
+                End If
+                
+                ' Check for rest element (...identifier)
+                If IsSpreadToken(lhsT, dt) Then
+                    dt = dt + 1
+                    ' Skip comments after spread
+                    Do While dt < lhsT.count And lhsT(dt)(0) = "COMMENT"
+                        dt = dt + 1
+                    Loop
+                    
+                    If dt < lhsT.count And lhsT(dt)(0) = "IDENT" Then
+                        If hasRestInDest Then
+                            err.Raise vbObjectError + 9003, "Compiler.ParseStatementTokensToAST", "Multiple rest elements in destructuring"
+                        End If
+                        hasRestInDest = True
+                        restTargetName = lhsT(dt)(1)
+                        dt = dt + 1
+                        
+                        ' Validate rest is last (only closing bracket should follow)
+                        Do While dt < lhsT.count And lhsT(dt)(0) = "COMMENT"
+                            dt = dt + 1
+                        Loop
+                        If dt < lhsT.count And Not (lhsT(dt)(0) = "PAREN" And lhsT(dt)(1) = "]") Then
+                            If lhsT(dt)(0) = "SEP" And lhsT(dt)(1) = "," Then
+                                err.Raise vbObjectError + 9002, "Compiler.ParseStatementTokensToAST", "Rest element must be last in destructuring"
+                            End If
+                        End If
+                    Else
+                        err.Raise vbObjectError + 9004, "Compiler.ParseStatementTokensToAST", "Expected identifier after ... in destructuring"
+                    End If
+                ElseIf lhsT(dt)(0) = "IDENT" Then
+                    ' Regular target identifier
+                    If hasRestInDest Then
+                        err.Raise vbObjectError + 9002, "Compiler.ParseStatementTokensToAST", "Rest element must be last in destructuring"
+                    End If
+                    Set targetVar = MakeNode("Variable")
+                    targetVar.SetValue "name", lhsT(dt)(1)
+                    targets.Add targetVar
+                    dt = dt + 1
+                ElseIf lhsT(dt)(0) = "SEP" And lhsT(dt)(1) = "," Then
+                    ' Skip comma separators
+                    dt = dt + 1
+                Else
+                    ' Unexpected token in destructuring pattern
+                    dt = dt + 1
+                End If
+ContinueDestParse:
+            Loop
+            
+            destNode.SetValue "targets", targets
+            If hasRestInDest Then
+                destNode.SetValue "restTarget", restTargetName
+            End If
+            
+            ' Parse RHS
+            Set rhsNode = ParseExprTokensToNode(rhsT)
+            
+            destNode.SetValue "source", rhsNode
+            Set ParseStatementTokensToAST = destNode
+            Exit Function
+        End If
         Dim lhsNode As ASF_Map
         If lhsT.count = 1 And lhsT(1)(0) = "IDENT" Then
             Dim nm As String: nm = lhsT(1)(1)
@@ -658,7 +741,6 @@ Private Function ParseStatementTokensToAST(stmtTokens As Collection) As ASF_Map
             Set lhsNode = ParseExprTokensToNode(lhsT)
         End If
 
-        Dim rhsNode As ASF_Map
         If compoundOp <> vbNullString Then
             ' For compound assignments like "a += 3" produce:
             ' Assign { left: lhsNode, right: Binary { left: (clone of lhsNode), op: <op>, right: <rhsExpr> } }
@@ -2833,12 +2915,12 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
             Set tryBlk = node.GetValue("try")
             Set catchBlk = node.GetValue("catch")
             Set nt = New Collection: Set nc = New Collection
-            Dim tI As Long
+            Dim ti As Long
             If Not tryBlk Is Nothing Then
-                For tI = 1 To tryBlk.count: nt.Add NormalizeNodeRecursive(tryBlk(tI)): Next tI
+                For ti = 1 To tryBlk.count: nt.Add NormalizeNodeRecursive(tryBlk(ti)): Next ti
             End If
             If Not catchBlk Is Nothing Then
-                For tI = 1 To catchBlk.count: nc.Add NormalizeNodeRecursive(catchBlk(tI)): Next tI
+                For ti = 1 To catchBlk.count: nc.Add NormalizeNodeRecursive(catchBlk(ti)): Next ti
             End If
             Set ntc = New ASF_Map
             ntc.Add "type", "TryCatch"
