@@ -50,6 +50,16 @@ Private Function CloneCollectionOfVariants(src As Variant) As Collection
     Next it
     Set CloneCollectionOfVariants = out
 End Function
+' ---------------------
+' Helper: Check if token is spread operator
+' ---------------------
+Private Function IsSpreadToken(toks As Collection, idx As Long) As Boolean
+    If idx > toks.count Then
+        IsSpreadToken = False
+        Exit Function
+    End If
+    IsSpreadToken = (toks(idx)(0) = "SPREAD" Or toks(idx)(0) = "OP") And toks(idx)(1) = "..."
+End Function
 
 ' ---------------------
 Private Function CheckParents(src As String) As Boolean
@@ -86,6 +96,8 @@ Public Function CompileProgram(src As String, Optional progName As String = "@an
     Dim braceDepth As Long
     Dim parenDepth As Long
     Dim bracketDepth As Long
+    Dim hasRestParam As Boolean
+    Dim restParamName As String
     
     GLOBALS_.ASF_InitGlobals
 
@@ -132,21 +144,58 @@ Compiler_MainLoop:
                 i = i + 1
             Loop
 
-            ' Parse parameters
+            ' Parse parameters (with rest parameter support)
             Set argList = New Collection
+            hasRestParam = False
+            restParamName = vbNullString
+            
             If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = "(" Then
                 i = i + 1
                 Do While i <= toks.count And Not (safeTVRetInner(toks, i, 0) = "PAREN" And safeTVRetInner(toks, i, 1) = ")")
                     If toks(i)(0) = "COMMENT" Then
                         i = i + 1
                     Else
-                        If toks(i)(0) = "IDENT" Then argList.Add toks(i)(1)
-                        i = i + 1
+                        ' Check for rest parameter (...)
+                        If (toks(i)(0) = "SPREAD" Or toks(i)(0) = "OP") And toks(i)(1) = "..." Then
+                            ' Next token should be parameter name
+                            i = i + 1
+                            If i > toks.count Or toks(i)(0) <> "IDENT" Then
+                                err.Raise vbObjectError + 9001, , "Expected parameter name after ..."
+                            End If
+                            
+                            ' Validate rest is last
+                            If hasRestParam Then
+                                err.Raise vbObjectError + 9003, , "Multiple rest parameters not allowed"
+                            End If
+                            
+                            restParamName = toks(i)(1)
+                            hasRestParam = True
+                            i = i + 1
+                            
+                            ' Check there are no more parameters after rest
+                            Dim nextIdx As Long: nextIdx = i
+                            Do While nextIdx <= toks.count And toks(nextIdx)(0) = "COMMENT"
+                                nextIdx = nextIdx + 1
+                            Loop
+                            If nextIdx <= toks.count Then
+                                If Not (toks(nextIdx)(0) = "PAREN" And toks(nextIdx)(1) = ")") Then
+                                    If toks(nextIdx)(0) = "SEP" Then
+                                        err.Raise vbObjectError + 9002, , "Rest parameter must be last parameter"
+                                    End If
+                                End If
+                            End If
+                        Else
+                            ' Regular parameter
+                            If hasRestParam Then
+                                err.Raise vbObjectError + 9002, , "Rest parameter must be last parameter"
+                            End If
+                            If toks(i)(0) = "IDENT" Then argList.Add toks(i)(1)
+                            i = i + 1
+                        End If
                     End If
                 Loop
                 If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = ")" Then i = i + 1
             End If
-
             ' Skip comments before body
             Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
                 i = i + 1
@@ -175,8 +224,12 @@ Compiler_MainLoop:
                 i = i + 1
             Loop
 
-            ' Compile function
-            funcIdx = CompileFunctionAST(fname, argList, bodyTokens)
+            ' Compile function (pass rest parameter info)
+            If hasRestParam Then
+                funcIdx = CompileFunctionASTWithRest(fname, argList, bodyTokens, restParamName)
+            Else
+                funcIdx = CompileFunctionAST(fname, argList, bodyTokens)
+            End If
             GLOBALS_.gFuncTable.Add fname, funcIdx
 
             ' Store parameters
@@ -190,7 +243,6 @@ Compiler_MainLoop:
                 pa(0) = vbNullString
             End If
             GLOBALS_.gFuncParams.Add fname, pa
-
             ' Skip closing brace
             If i <= toks.count Then i = i + 1
             GoTo Compiler_MainLoop
@@ -300,7 +352,31 @@ Private Function CompileFunctionAST(fname As String, argList As Collection, body
     GLOBALS_.gPrograms.Add Array(fname, bodyStmtsAST, funcScope.Raw)
     CompileFunctionAST = idx
 End Function
-
+Private Function CompileFunctionASTWithRest(fname As String, argList As Collection, bodyTokens As Collection, restParam As String) As Long
+    ' Same as CompileFunctionAST but stores rest parameter info in the program entry
+    Dim funcScope As ASF_ScopeStack
+    Dim i As Long
+    Dim bodyStmtsAST As Collection
+    Set funcScope = New ASF_ScopeStack
+    funcScope.Push
+    
+    ' Bind regular parameters to scope
+    For i = 1 To argList.count
+        funcScope.SetValue argList(i), Empty
+    Next i
+    
+    ' Also bind rest parameter (will be array at runtime)
+    funcScope.SetValue restParam, Empty
+    
+    Dim idx As Long
+    Set bodyStmtsAST = ParseTokensToAST(bodyTokens)
+    Set bodyStmtsAST = NormalizeAssignsInStmts(bodyStmtsAST)
+    idx = GLOBALS_.gPrograms.count + 1
+    
+    ' Store with rest parameter info: Array(fname, bodyStmtsAST, funcScope.Raw, restParam)
+    GLOBALS_.gPrograms.Add Array(fname, bodyStmtsAST, funcScope.Raw, restParam)
+    CompileFunctionASTWithRest = idx
+End Function
 ' Parse a list of tokens representing a block into AST statements (returns Collection of Map nodes)
 Private Function ParseTokensToAST(toks As Collection) As Collection
     Dim out As Collection
@@ -970,13 +1046,21 @@ Private Function DoPostfixChaining(ByVal currentNode As ASF_Map, types() As Stri
             indexNode.SetValue "index", idxExprNode
             Set currentNode = indexNode.Clone
 
-        ' function / method call: ( arglist )
+        ' function / method call: ( arglist ) - with spread support
         ElseIf safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "(" Then
             idx = idx + 1
             Dim argNodes As Collection: Set argNodes = New Collection
             Dim argTok As Collection
             Dim argTokDepthParen As Long, argTokDepthBr As Long, argTokDepthB As Long
             Do
+                Dim isSpreadArg As Boolean: isSpreadArg = False
+                
+                ' Check for spread operator before argument
+                If idx < n And ((safeTVRet(types, idx) = "SPREAD") Or (safeTVRet(types, idx) = "OP")) And safeTVRet(vals, idx) = "..." Then
+                    isSpreadArg = True
+                    idx = idx + 1
+                End If
+                
                 Set argTok = New Collection
                 argTokDepthParen = 0: argTokDepthBr = 0: argTokDepthB = 0
                 Do While idx < n
@@ -1003,11 +1087,20 @@ Private Function DoPostfixChaining(ByVal currentNode As ASF_Map, types() As Stri
                 Loop
 
                 If argTok.count > 0 Then
-                    argNodes.Add ParseExprTokensToNode(argTok)
+                    If isSpreadArg Then
+                        ' Create SpreadElement node
+                        Dim spreadArgNode As ASF_Map: Set spreadArgNode = MakeNode("SpreadElement")
+                        spreadArgNode.SetValue "argument", ParseExprTokensToNode(argTok)
+                        argNodes.Add spreadArgNode
+                    Else
+                        argNodes.Add ParseExprTokensToNode(argTok)
+                    End If
                 Else
-                    Dim litEmpty As ASF_Map: Set litEmpty = MakeNode("Literal")
-                    litEmpty.SetValue "value", Empty
-                    argNodes.Add litEmpty.Clone
+                    If Not isSpreadArg Then
+                        Dim litEmpty As ASF_Map: Set litEmpty = MakeNode("Literal")
+                        litEmpty.SetValue "value", Empty
+                        argNodes.Add litEmpty.Clone
+                    End If
                 End If
 
                 If idx < n Then
@@ -1139,10 +1232,36 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
             If LCase$(name) = "fun" Then
                 idx = idx + 1
                 Dim params As Collection: Set params = New Collection
+                Dim hasRestParam_anon As Boolean: hasRestParam_anon = False
+                Dim restParamName_anon As String: restParamName_anon = vbNullString
+                
                 If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "(" Then
                     idx = idx + 1
                     Do While idx < n And Not (safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = ")")
-                        If safeTVRet(types, idx) = "IDENT" Then
+                        ' Check for rest parameter (...)
+                        If (safeTVRet(types, idx) = "SPREAD" Or safeTVRet(types, idx) = "OP") And safeTVRet(vals, idx) = "..." Then
+                            idx = idx + 1
+                            If idx >= n Or safeTVRet(types, idx) <> "IDENT" Then
+                                err.Raise vbObjectError + 9001, , "Expected parameter name after ..."
+                            End If
+                            
+                            If hasRestParam_anon Then
+                                err.Raise vbObjectError + 9003, , "Multiple rest parameters not allowed"
+                            End If
+                            
+                            restParamName_anon = CStr(safeTVRet(vals, idx))
+                            hasRestParam_anon = True
+                            idx = idx + 1
+                            
+                            ' Skip comma if present
+                            If idx < n And safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = "," Then
+                                ' Rest parameter followed by comma means more params - ERROR
+                                err.Raise vbObjectError + 9002, , "Rest parameter must be last parameter"
+                            End If
+                        ElseIf safeTVRet(types, idx) = "IDENT" Then
+                            If hasRestParam_anon Then
+                                err.Raise vbObjectError + 9002, , "Rest parameter must be last parameter"
+                            End If
                             params.Add CStr(safeTVRet(vals, idx))
                             idx = idx + 1
                             If idx < n And safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = "," Then idx = idx + 1
@@ -1178,12 +1297,19 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
                     Dim bodyStmts As Collection: Set bodyStmts = ParseTokensToAST(bodyTok)
                     Dim fnode As ASF_Map: Set fnode = MakeNode("FuncLiteral")
                     fnode.SetValue "params", params
+                    If hasRestParam_anon Then
+                        fnode.SetValue "restParam", restParamName_anon
+                    End If
                     fnode.SetValue "body", bodyStmts
                     Set ParsePrimaryNode = fnode.Clone
                     Exit Function
                 Else
                     Dim fnode2 As ASF_Map: Set fnode2 = MakeNode("FuncLiteral")
                     fnode2.SetValue "params", params
+                    ' Add rest parameter if present
+                    If hasRestParam_anon Then
+                        fnode2.SetValue "restParam", restParamName_anon
+                    End If
                     Dim emptyCol As New Collection
                     fnode2.SetValue "body", emptyCol
                     Set ParsePrimaryNode = fnode2
@@ -1452,7 +1578,7 @@ ContinueParenInner:
                 Exit Function
 
             ElseIf v = "[" Then
-                ' Array literal parsing (existing behavior, kept intact; ensure idx handling consistent)
+                ' Array literal parsing (with spread support)
                 idx = idx + 1
                 Dim arrList As Collection: Set arrList = New Collection
 
@@ -1466,10 +1592,22 @@ ContinueParenInner:
                     Set ParsePrimaryNode = currentNode.Clone
                     Exit Function
                 End If
-
+                Dim spreadNode As ASF_Map
+                Dim elemTok As Collection
+                Dim edepth As Long
+                Dim isSpread As Boolean
                 Do While idx < n And Not (safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "]")
-                    Dim elemTok As Collection: Set elemTok = New Collection
-                    Dim edepth As Long: edepth = 0
+                    Set elemTok = New Collection
+                    edepth = 0
+                    isSpread = False
+                    
+                    ' Check for spread operator
+                    If (safeTVRet(types, idx) = "SPREAD" Or safeTVRet(types, idx) = "OP") And safeTVRet(vals, idx) = "..." Then
+                        isSpread = True
+                        idx = idx + 1
+                    End If
+                    
+                    ' Collect element expression tokens
                     Do While idx < n
                         If edepth = 0 Then
                             If (safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = ",") _
@@ -1488,7 +1626,20 @@ ContinueParenInner:
                         End If
                         idx = idx + 1
                     Loop
-                    arrList.Add ParseExprTokensToNode(elemTok)
+                    
+                    ' Create appropriate node
+                    If isSpread Then
+                        If elemTok.count > 0 Then
+                            Set spreadNode = MakeNode("SpreadElement")
+                            spreadNode.SetValue "argument", ParseExprTokensToNode(elemTok)
+                            arrList.Add spreadNode
+                        End If
+                    Else
+                        If elemTok.count > 0 Then
+                            arrList.Add ParseExprTokensToNode(elemTok)
+                        End If
+                    End If
+                    
                     If idx < n And safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = "," Then idx = idx + 1
                     If idx = n Then Exit Do
                 Loop
@@ -1504,14 +1655,61 @@ ContinueParenInner:
                 Exit Function
 
             ElseIf v = "{" Then
-                ' Object literal parsing: collect key / value pairs; parse value tokens safely so they cannot swallow outside tokens.
+                ' Object literal parsing (with spread support)
                 idx = idx + 1
                 Dim objItems As Collection: Set objItems = New Collection
                 Dim pair As Collection
                 Dim keyTok As String
-
+                Dim valTok As Collection
+                Dim spreadSrcTok As Collection
+                Dim sDepth As Long
+                Dim spreadPropNode As ASF_Map
+                Dim vDepth As Long
+                Dim valNode As ASF_Map
+                
                 Do While idx < n And Not (safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "}")
-                    ' key must be IDENT or STRING
+                    ' Check for spread operator in object
+                    If (safeTVRet(types, idx) = "SPREAD" Or safeTVRet(types, idx) = "OP") And safeTVRet(vals, idx) = "..." Then
+                        idx = idx + 1
+                        
+                        ' Collect expression tokens for the spread source
+                        Set spreadSrcTok = New Collection
+                        sDepth = 0
+                        Do While idx < n
+                            If sDepth = 0 Then
+                                If (safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = ",") _
+                                   Or (safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "}") Then
+                                    Exit Do
+                                End If
+                            End If
+                            spreadSrcTok.Add Array(safeTVRet(types, idx), safeTVRet(vals, idx))
+                            If safeTVRet(types, idx) = "PAREN" Then
+                                Select Case safeTVRet(vals, idx)
+                                    Case "[", "(", "{"
+                                        sDepth = sDepth + 1
+                                    Case "]", ")", "}"
+                                        If sDepth > 0 Then sDepth = sDepth - 1
+                                End Select
+                            End If
+                            idx = idx + 1
+                        Loop
+                        
+                        If spreadSrcTok.count > 0 Then
+                            ' Create SpreadProperty node
+                            Set spreadPropNode = MakeNode("SpreadProperty")
+                            spreadPropNode.SetValue "argument", ParseExprTokensToNode(spreadSrcTok)
+                            
+                            Set pair = New Collection
+                            pair.Add "__SPREAD__"  ' Special marker
+                            pair.Add spreadPropNode
+                            objItems.Add pair
+                        End If
+                        
+                        If idx < n And safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = "," Then idx = idx + 1
+                        GoTo ContinueObjParse
+                    End If
+                    
+                    ' Original key-value parsing
                     If safeTVRet(types, idx) = "IDENT" Or safeTVRet(types, idx) = "STRING" Then
                         keyTok = CStr(safeTVRet(vals, idx))
                         idx = idx + 1
@@ -1525,9 +1723,9 @@ ContinueParenInner:
                         err.Raise vbObjectError + 8003, "Compiler.ParsePrimary", "Expected ':' after object key"
                     End If
 
-                    ' Collect tokens for value expression up to comma or closing '}' at top level (support nested constructs)
-                    Dim valTok As Collection: Set valTok = New Collection
-                    Dim vDepth As Long: vDepth = 0
+                    ' Collect tokens for value expression
+                    Set valTok = New Collection
+                    vDepth = 0
                     Do While idx < n
                         If vDepth = 0 Then
                             If (safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = ",") _
@@ -1546,16 +1744,15 @@ ContinueParenInner:
                         End If
                         idx = idx + 1
                     Loop
-
-                    Dim valNode As ASF_Map
                     Set valNode = ParseExprTokensToNode(valTok)
-
                     Set pair = New Collection
                     pair.Add keyTok
                     pair.Add valNode.Clone
                     objItems.Add pair
 
                     If idx < n And safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = "," Then idx = idx + 1
+
+ContinueObjParse:
                 Loop
 
                 If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "}" Then idx = idx + 1
@@ -3171,22 +3368,52 @@ Private Function ParseMethodDecl(toks As Collection, ByRef i As Long, isConstruc
         i = i + 1
     Loop
     
-    ' Parse parameters
+    ' Parse parameters (with rest support)
     Dim params As Collection
     Set params = New Collection
+    Dim methodHasRest As Boolean: methodHasRest = False
+    Dim methodRestName As String: methodRestName = vbNullString
+    
     If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = "(" Then
         i = i + 1
         Do While i <= toks.count And Not (safeTVRetInner(toks, i, 0) = "PAREN" And safeTVRetInner(toks, i, 1) = ")")
             If toks(i)(0) = "COMMENT" Then
                 i = i + 1
             Else
-                If toks(i)(0) = "IDENT" Then params.Add toks(i)(1)
-                i = i + 1
+                If IsSpreadToken(toks, i) Then
+                    i = i + 1
+                    Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
+                        i = i + 1
+                    Loop
+                    
+                    If i <= toks.count And toks(i)(0) = "IDENT" Then
+                        methodHasRest = True
+                        methodRestName = toks(i)(1)
+                        i = i + 1
+                        Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
+                            i = i + 1
+                        Loop
+                        If i <= toks.count And safeTVRetInner(toks, i, 0) = "SEP" And safeTVRetInner(toks, i, 1) = "," Then
+                            err.Raise vbObjectError + 9002, "Compiler.ParseMethodDecl", "Rest parameter must be last"
+                        End If
+                    End If
+                ElseIf toks(i)(0) = "IDENT" Then
+                    If methodHasRest Then
+                        err.Raise vbObjectError + 9002, "Compiler.ParseMethodDecl", "Rest parameter must be last"
+                    End If
+                    params.Add toks(i)(1)
+                    i = i + 1
+                Else
+                    i = i + 1
+                End If
             End If
         Loop
         If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = ")" Then i = i + 1
     End If
     methodNode.SetValue "params", params
+    If methodHasRest Then
+        methodNode.SetValue "restParam", methodRestName
+    End If
     
     ' Skip comments before body
     Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
