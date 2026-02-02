@@ -395,12 +395,37 @@ let grade = (score >= 90) ? 'A' :
             (score >= 70) ? 'C' : 'F';
 ```
 
+### Spread/rest Operator
+
+```js
+//rest argument
+fun greetAll(greeting, ...names) {
+    result = greeting + ': ';
+    for (name of names) {
+        result = result + name + ', ';
+    };
+    return result.slice(0, -2);
+};
+msg = greetAll('Hello', 'Alice', 'Bob', 'Charlie');
+return msg //=> Hello: Alice, Bob, Charlie
+```
+
+```js
+//spread operator on arrays
+begin = [1]; middle = [2, 3, 4]; end = [5]; combined = [...begin, ...middle, ...end]; 
+print(combined); //=> [ 1, 2, 3, 4, 5 ]
+
+//spread operator on objects
+obj1 = {a: 1, b: 2}; obj2 = {c: 3, ...obj1, d: 4};
+return `${obj2.a}; ${obj2.b}; ${obj2.c}; ${obj2.d}` //=> 1; 2; 3; 4
+```
+
 ### Operator Precedence
 
 From highest to lowest:
 
 1. Parentheses `( )`
-2. Unary `!`, `-`, `typeof`
+2. Unary `!`, `-`, `typeof`, `...`
 3. Exponentiation `^`
 4. Multiplication/Division `*`, `/`, `%`
 5. Addition/Subtraction `+`, `-`
@@ -2907,8 +2932,6 @@ The following words are reserved and cannot be used as variable names:
 
 - No `async/await` support
 - No `Promise` or callback patterns
-- No spread operator (`...`)
-- No destructuring assignment
 - No arrow functions (`=>`)
 - No `const` declaration (use `let`)
 - No `var` (use `let`)
