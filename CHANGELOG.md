@@ -2,8 +2,129 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [v2.0.8] - 2026-02-01
+https://github.com/ECP-Solutions/ASF/releases/tag/v2.0.8
+
+## Summary
+ASF v2.0.8 introduces modern JavaScript-style spread/rest operators (`...`) and array destructuring assignments, significantly enhancing array manipulation capabilities and function parameter handling.
+
+---
+
+## Highlights
+
+- **Added**
+    - Spread/rest operator (`...`) support:
+```javascript
+        // Spread in array literals
+        arr1 = [1, 2, 3];
+        arr2 = [0, ...arr1, 4, 5]; // => [0, 1, 2, 3, 4, 5]
+        
+        // Spread in function calls
+        fun add(a, b, c) { return a + b + c; };
+        numbers = [1, 2, 3];
+        result = add(...numbers); // => 6
+        
+        // Rest parameters in functions
+        fun sum(first, ...rest) {
+            total = first;
+            rest.forEach(fun(n) { total = total + n });
+            return total;
+        };
+        sum(1, 2, 3, 4, 5); // => 15
+        
+        // Spread strings into character arrays
+        chars = [...'hello']; // => ['h', 'e', 'l', 'l', 'o']
+```
+    
+    - Array destructuring assignments:
+```javascript
+        // Basic destructuring
+        [a, b, c] = [1, 2, 3]; // a=1, b=2, c=3
+        
+        // With rest element
+        [first, ...rest] = [1, 2, 3, 4, 5];
+        // first=1, rest=[2, 3, 4, 5]
+        
+        // Fewer targets than elements
+        [x, y] = [10, 20, 30, 40]; // x=10, y=20
+        
+        // More targets than elements (assigns Empty)
+        [p, q, r] = [100, 200]; // p=100, q=200, r=Empty
+        
+        // Practical use cases
+        [a, b] = [b, a]; // Swap variables
+        [head, ...tail] = myArray; // Extract head and tail
+        
+        // Combine spread and destructuring
+        arr1 = [1, 2];
+        arr2 = [3, 4];
+        [first, ...combined] = [...arr1, ...arr2];
+        // first=1, combined=[2, 3, 4]
+```
+
+- **Internal core changes**:
+    - **Parser** (`ASF_Parser.cls`):
+        - Added tokenization for `...` spread/rest operator
+        - New token type: `"SPREAD"` with value `"..."`
+        
+    - **Compiler** (`ASF_Compiler.cls`):
+        - Added `IsSpreadToken()` helper function for spread operator detection
+        - Rest parameter support in function and method definitions
+        - Spread operator handling in array literal compilation (`ParseArrayLiteral`)
+        - Spread operator support in function call argument processing
+        - Array destructuring pattern detection in `ParseStatementTokensToAST`
+        - New AST node type: `"ArrayDestructuring"` with targets collection and optional rest target
+        - Compile-time validation:
+            - Rest parameter must be last in function signatures
+            - Only one rest parameter allowed per function
+            - Rest element must be last in destructuring patterns
+            - Multiple rest elements not allowed in destructuring patterns
+        
+    - **VM** (`ASF_VM.cls`):
+        - Spread operator evaluation in `EvalArrayNode` with type handling
+        - Array expansion for arrays, strings, and scalar values
+        - Spread operator support in function call argument expansion
+        - Rest parameter handling in function calls with automatic array creation
+        - New `"ArrayDestructuring"` case handler in `ExecuteStmtNode`
+
+- **Technical Details**:
+    - **Spread/Rest Token Structure**:
+```
+        Token: ["SPREAD", "..."]
+```
+    
+    - **Rest Parameter AST**:
+```
+        Function/Method node {
+          params: Collection of parameter names
+          restParam: String (optional)
+          ...
+        }
+```
+    
+    - **Array Destructuring AST**:
+```
+        ArrayDestructuring {
+          targets: Collection of Variable nodes
+          restTarget: String (optional)
+          source: Expression node
+        }
+```
+    
+    - **Error Messages**:
+        - `"Rest parameter must be last parameter"` - Rest parameter not in final position
+        - `"Multiple rest parameters not allowed"` - More than one rest parameter in function
+        - `"Rest element must be last in destructuring"` - Rest element not in final position
+        - `"Multiple rest elements in destructuring"` - More than one rest element in pattern
+        - `"Expected identifier after ... in destructuring"` - Invalid rest syntax
+        - `"Cannot destructure non-array value"` - Runtime type validation failure
+
+---
+
+**Full Changelog**: https://github.com/ECP-Solutions/ASF/compare/v2.0.7...v2.0.8
+
 ## [v2.0.7] - 2026-01-28
-https://github.com/ECP-Solutions/ASF/releases/tag/v2.0.6
+https://github.com/ECP-Solutions/ASF/releases/tag/v2.0.7
 
 ## Summary
 
