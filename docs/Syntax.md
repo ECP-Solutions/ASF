@@ -8,7 +8,7 @@ description: "ASF syntax."
 
 # ASF — Syntax Reference
 
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/ECP-Solutions/ASF?style=plastic)](https://github.com/ECP-Solutions/ASF/releases/latest) [![Tests](https://img.shields.io/badge/tests-290%2B-green.svg)](.)  
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/ECP-Solutions/ASF?style=plastic)](https://github.com/ECP-Solutions/ASF/releases/latest) [![Tests](https://img.shields.io/badge/tests-373%2B-green.svg)](.)  
 
 This document defines the concrete syntax supported by the Advanced Scripting Framework (ASF) and contains a compact BNF grammar, operator precedence, and examples.
 
