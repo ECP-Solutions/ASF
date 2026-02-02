@@ -856,6 +856,7 @@ The test suite covers:
 - Arrays & objects (literals, methods, chaining)
 - Classes & inheritance
 - String manipulation
+- Spread/rest operator
 - Regex engine
 - VBA integration
 - Error handling
