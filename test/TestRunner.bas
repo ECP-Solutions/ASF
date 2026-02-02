@@ -3836,4 +3836,69 @@ TestFail:
     Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
+'@TestMethod("array_destructuring_basic")
+Private Sub array_destructuring_basic()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("[a, b, c] = [1, 2, 3];" & _
+                            "return `${a}; ${b}; ${c}`;"))
+    expected = "1; 2; 3"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("array_destructuring_fewer_targets")
+Private Sub array_destructuring_fewer_targets()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("[x, y] = [10, 20, 30, 40];" & _
+                            "return `${x}; ${y}`;"))
+    expected = "10; 20"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("array_destructuring_more_targets")
+Private Sub array_destructuring_more_targets()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("[p, q, r] = [100, 200];" & _
+                            "return typeof r;"))
+    expected = "undefined"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("array_destructuring_with_rest")
+Private Sub array_destructuring_with_rest()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("[first, second, ...rest] = [1, 2, 3, 4, 5];" & _
+                            "return `${rest}`;"))
+    expected = "[ 3, 4, 5 ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("array_destructuring_with_no_remaining_elm")
+Private Sub array_destructuring_with_no_remaining_elm()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("[a, b, ...others] = [10, 20];" & _
+                            "return others.length;"))
+    expected = "0"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
 
