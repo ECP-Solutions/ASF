@@ -69,7 +69,7 @@ Debug.Print engine.OUTPUT_  ' => 12
 | Feature | Native VBA | ASF |
 |---------|-----------|-----|
 | **Array filtering** | Manual loops with counters | `.filter(fun(x) { return x > 10 })` |
-| **Data transformation** | ReDim + index juggling | `.map(fun(x) { return x * 2 })` |
+| **Data transformation** | ReDim + index juggling | `.map(fun(x) { return x * 2 })`. Array destructuring with rest operator support `[first, second, ...rest] = [1, 2, 3, 4, 5]`|
 | **Regex support** | COM + error-prone patterns | Built-in regex engine with lookarounds |
 | **JSON handling** | Parse character-by-character | Object/array literals: `{a: 1, b: [2, 3]}` |
 | **Classes & inheritance** | ❌ Not inheritance support | Full OOP with `extends` and `super` |
@@ -420,6 +420,38 @@ let activeNames = data.users
     .join(', ');
 
 print(activeNames);  // => 'Alice, Charlie'
+```
+
+#### 6. Spread/rest operator support
+
+```js
+//rest argument
+fun greetAll(greeting, ...names) {
+    result = greeting + ': ';
+    for (name of names) {
+        result = result + name + ', ';
+    };
+    return result.slice(0, -2);
+};
+msg = greetAll('Hello', 'Alice', 'Bob', 'Charlie');
+return msg //=> Hello: Alice, Bob, Charlie
+```
+
+```js
+//spread operator on arrays
+begin = [1]; middle = [2, 3, 4]; end = [5]; combined = [...begin, ...middle, ...end]; 
+print(combined); //=> [ 1, 2, 3, 4, 5 ]
+
+//spread operator on objects
+obj1 = {a: 1, b: 2}; obj2 = {c: 3, ...obj1, d: 4};
+return `${obj2.a}; ${obj2.b}; ${obj2.c}; ${obj2.d}` //=> 1; 2; 3; 4
+```
+
+#### 7. Array destructuring
+
+```js
+[first, second, ...rest] = [1, 2, 3, 4, 5];
+return `${rest}` //=> [ 3, 4, 5 ]
 ```
 
 ---
@@ -812,7 +844,7 @@ When reporting issues, please include:
 
 ## Running the Test Suite
 
-1. Open `ASF v2.0.2.xlsm` workbook
+1. Open `ASF [VERSION NAME].xlsm` workbook
 2. Install [Rubberduck VBA](https://rubberduckvba.com/)
 3. In Rubberduck, navigate to the test explorer
 4. Run all tests - they should pass ✅
