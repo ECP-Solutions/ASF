@@ -1182,7 +1182,7 @@ End Sub
 Private Sub foreach_builtin_signature_objects()
     On Error GoTo TestFail
     actual = CStr(GetResult("s=0; c=0; foreach({math: 85, english: 92, science: 78}, fun(val, key){ s = s + val; c += 1 }); return('Average: ' + s/c);"))
-    expected = "85"
+    expected = "Average: 85"
     Assert.AreEqual expected, actual
 TestExit:
     Exit Sub
@@ -2371,7 +2371,7 @@ TestFail:
 End Sub
 
 '@TestMethod("regex_object_set_flag_property")
-Private Sub regex_object_test_method_with_flag_property()
+Private Sub regex_object_method_with_flag_property()
     On Error GoTo TestFail
     actual = CBool(GetResult("re=regex(`[a-z]`); re.setignorecase(False); return(re.Test('A'));"))
     expected = False
@@ -3455,3 +3455,450 @@ TestFail:
     Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
+'@TestMethod("spread_simple")
+Private Sub spread_simple()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "arr1 = [1, 2, 3]; arr2 = [0, ...arr1, 4]; print(arr2)", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 0, 1, 2, 3, 4 ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("spread_multiple")
+Private Sub spread_multiple()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "a = [1, 2]; b = [3, 4]; c = [...a, ...b, 5]; print(c)", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 1, 2, 3, 4, 5 ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("spread_with_empty")
+Private Sub spread_with_empty()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "empty = []; withEmpty = [1, ...empty, 2]; print(withEmpty)", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 1, 2 ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("spread_strings")
+Private Sub spread_strings()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "chars = [...'hello']; print(chars)", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 'h', 'e', 'l', 'l', 'o' ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("spread_mixed_string")
+Private Sub spread_mixed_string()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "result = [1, ...'ab', 2]; print(result)", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 1, 'a', 'b', 2 ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("spread_combined")
+Private Sub spread_combined()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "begin = [1]; middle = [2, 3, 4]; end = [5]; combined = [...begin, ...middle, ...end]; print(combined)", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ 1, 2, 3, 4, 5 ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("spread_nested")
+Private Sub spread_nested()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "nested = [[1, 2], [3, 4]]; spread = [...nested]; print(spread)", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:[ [ 1, 2 ], [ 3, 4 ] ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("spread_shallow_copy")
+Private Sub spread_shallow_copy()
+    On Error GoTo TestFail
+    Dim globals As ASF_Globals
+    GetResult "original = [1, 2, 3]; copy = [...original]; copy[1] = 999; print(original[1]); print(copy[1])", True
+    Set globals = scriptEngine.GetGlobals
+    With globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & _
+                CStr(.gRuntimeLog(.gRuntimeLog.count))
+    End With
+    expected = "PRINT:1, PRINT:999"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("spread_basic_function_call")
+Private Sub spread_basic_function_call()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("fun add(a, b, c) { return a + b + c; }; nums = [1, 2, 3]; result = add(...nums); return result"))
+    expected = "6"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("spread_many_in_function_call")
+Private Sub spread_many_in_function_call()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("fun sum5(a, b, c, d, e) { return a + b + c + d + e; };" & _
+                            "arr1 = [1, 2]; arr2 = [3, 4]; total = sum5(...arr1, ...arr2, 5); return total"))
+    expected = "15"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("spread_objects_basic")
+Private Sub spread_objects_basic()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("obj1 = {a: 1, b: 2}; obj2 = {c: 3, ...obj1, d: 4};" & _
+                            "return `${obj2.a}; ${obj2.b}; ${obj2.c}; ${obj2.d}`"))
+    expected = "1; 2; 3; 4"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("spread_objects_override")
+Private Sub spread_objects_override()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("defaults = {x: 1, y: 2}; override = {...defaults, x: 10};" & _
+                            "return `${override.x}; ${override.y}`"))
+    expected = "10; 2"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("spread_multiple_objects")
+Private Sub spread_multiple_objects()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("obj1 = {a: 1}; obj2 = {a: 2, b: 3}; merged = {...obj1, ...obj2};" & _
+                            "return `${merged.a}; ${merged.b}`"))
+    expected = "2; 3"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("spread_array_in_object")
+Private Sub spread_array_in_object()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("arr = ['x', 'y', 'z']; obj = {...arr};" & _
+                            "return `${obj}`"))
+    expected = "{ 1: 'x', 2: 'y', 3: 'z' }"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("spread_string_in_object")
+Private Sub spread_string_in_object()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("obj = {...'ab'};" & _
+                            "return `${obj}`"))
+    expected = "{ 1: 'a', 2: 'b' }"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("spread_objects_with_primitives")
+Private Sub spread_objects_with_primitives()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("obj1 = {...null}; obj2 = {...undefined}; obj3 = {...42}; obj4 = {...true};" & _
+                            "merged = {a: 1, ...obj1, ...obj2, ...obj3, ...obj4, b: 2}; return `${merged}`"))
+    expected = "{ a: 1, b: 2 }"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("rest_parameter_basic")
+Private Sub rest_parameter_basic()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("fun sum(...numbers) {" & _
+                            "    total = 0;" & _
+                            "    for (n of numbers) {" & _
+                            "        total = total + n;" & _
+                            "    };" & _
+                            "    return total;" & _
+                            "};" & _
+                            "result = sum(1, 2, 3, 4, 5);" & _
+                            "return result"))
+    expected = "15"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("rest_parameter_no_arguments")
+Private Sub rest_parameter_no_arguments()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("fun test(...args) {" & _
+                            "    return args.length();" & _
+                            "};" & _
+                            "result = test();" & _
+                            "return result"))
+    expected = "0"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("rest_parameter_with_regular_parameters")
+Private Sub rest_parameter_with_regular_parameters()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("fun greetAll(greeting, ...names) {" & _
+                            "    result = greeting + ': ';" & _
+                            "    for (name of names) {" & _
+                            "        result = result + name + ', ';" & _
+                            "    };" & _
+                            "    return result.slice(0, -2);" & _
+                            "};" & _
+                            "msg = greetAll('Hello', 'Alice', 'Bob', 'Charlie');" & _
+                            "return msg"))
+    expected = "Hello: Alice, Bob, Charlie"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("rest_parameter_with_single_extra_argument")
+Private Sub rest_parameter_with_single_extra_argument()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("fun test(a, b, ...rest) {" & _
+                            "    return rest;" & _
+                            "};" & _
+                            "result = test(1, 2, 3);" & _
+                            "return `${result}`"))
+    expected = "[ 3 ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("rest_parameter_not_at_end")
+Private Sub rest_parameter_not_at_end()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("fun test(a, ...rest, b) {" & _
+                            "    return rest;" & _
+                            "};" & _
+                            "result = test(1, 2, 3);" & _
+                            "return `${result}`"))
+    expected = ""
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("rest_parameter_with_exact_number_of_arguments")
+Private Sub rest_parameter_with_exact_number_of_arguments()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("fun test(a, b, ...rest) {" & _
+                            "    return rest.length();" & _
+                            "};" & _
+                            "result = test(1, 2);" & _
+                            "return result"))
+    expected = "0"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("rest_parameter_receiving_expread_arguments")
+Private Sub rest_parameter_receiving_expread_arguments()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("fun sumThree(a, b, c) {" & _
+                            "    return a + b + c;" & _
+                            "};" & _
+                            "parts1 = [1];" & _
+                            "parts2 = [2, 3];" & _
+                            "fullArgs = [...parts1, ...parts2];" & _
+                            "return sumThree(...fullArgs)"))
+    expected = "6"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("rest_parameter_and_expread_chain")
+Private Sub rest_parameter_and_expread_chain()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("fun combine(...arrays) {" & _
+                            "    result = [];" & _
+                            "    for (arr of arrays) {" & _
+                            "        result = [...result, ...arr];" & _
+                            "    };" & _
+                            "    return result;" & _
+                            "};" & _
+                            "return `${combine([1, 2], [3, 4], [5, 6])}`;"))
+    expected = "[ 1, 2, 3, 4, 5, 6 ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("array_destructuring_basic")
+Private Sub array_destructuring_basic()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("[a, b, c] = [1, 2, 3];" & _
+                            "return `${a}; ${b}; ${c}`;"))
+    expected = "1; 2; 3"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("array_destructuring_fewer_targets")
+Private Sub array_destructuring_fewer_targets()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("[x, y] = [10, 20, 30, 40];" & _
+                            "return `${x}; ${y}`;"))
+    expected = "10; 20"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("array_destructuring_more_targets")
+Private Sub array_destructuring_more_targets()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("[p, q, r] = [100, 200];" & _
+                            "return typeof r;"))
+    expected = "undefined"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("array_destructuring_with_rest")
+Private Sub array_destructuring_with_rest()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("[first, second, ...rest] = [1, 2, 3, 4, 5];" & _
+                            "return `${rest}`;"))
+    expected = "[ 3, 4, 5 ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("array_destructuring_with_no_remaining_elm")
+Private Sub array_destructuring_with_no_remaining_elm()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("[a, b, ...others] = [10, 20];" & _
+                            "return others.length;"))
+    expected = "0"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+

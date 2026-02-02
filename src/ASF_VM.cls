@@ -330,7 +330,9 @@ Private Function ExecuteStmtNode(node As ASF_Map, progScope As ASF_ScopeStack) A
         Case "ClassDecl"
             ExecuteStmtNode = ExecClassDecl(node, progScope)
             Exit Function
-
+        Case "ArrayDestructuring"
+            ExecuteStmtNode = ExecArrayDestruct(node, progScope)
+            Exit Function
         Case Else
             ' unknown node type
             If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "Unknown statement node: " & tP
@@ -467,15 +469,89 @@ Private Function EvalArrayNode(node As ASF_Map, progScope As ASF_ScopeStack) As 
     Dim items As Collection: Set items = node.GetValue("items")
     Dim arr As Variant
     Dim optionBase As Long: optionBase = progScope.GetValue("__option_base")
+    
     If items Is Nothing Or items.count = 0 Then
         ReDim arr(-1 To -1)
     Else
-        ReDim arr(optionBase To optionBase + items.count - 1)
+        ' First pass: count total elements (accounting for spreads)
+        Dim totalCount As Long: totalCount = 0
         Dim ii As Long
+        Dim itemNode As ASF_Map
+        Dim spreadArr As Variant
+        
         For ii = 1 To items.count
-            vAssignment arr(optionBase + ii - 1), EvalExprNode(items(ii), progScope)
+            Set itemNode = items(ii)
+            If TypeName(itemNode) = "ASF_Map" And itemNode.GetValue("type") = "SpreadElement" Then
+                ' Evaluate the spread argument
+                vAssignment spreadArr, EvalExprNode(itemNode.GetValue("argument"), progScope)
+                
+                ' JavaScript behavior: spread strings into characters
+                If TypeName(spreadArr) = "String" Then
+                    totalCount = totalCount + Len(spreadArr)
+                ElseIf IsArray(spreadArr) Then
+                    Dim spreadLen As Long
+                    If UBound(spreadArr) <> -1 Then
+                        spreadLen = UBound(spreadArr) - LBound(spreadArr) + 1
+                        If spreadLen > 0 Then totalCount = totalCount + spreadLen
+                    End If
+                Else
+                    ' Non-iterable: treat as single element if not empty
+                    If Not IsEmpty(spreadArr) Then
+                        totalCount = totalCount + 1
+                    End If
+                End If
+            Else
+                totalCount = totalCount + 1
+            End If
+        Next ii
+        
+        ' Allocate array
+        If totalCount = 0 Then
+            ReDim arr(optionBase To optionBase)
+        Else
+            ReDim arr(optionBase To optionBase + totalCount - 1)
+        End If
+        
+        ' Second pass: fill array
+        Dim writeIdx As Long: writeIdx = 0
+        Dim jj As Long
+        Dim ci As Long
+        Dim strLen As Long
+        
+        For ii = 1 To items.count
+            Set itemNode = items(ii)
+            If TypeName(itemNode) = "ASF_Map" And itemNode.GetValue("type") = "SpreadElement" Then
+                ' Spread the elements
+                vAssignment spreadArr, EvalExprNode(itemNode.GetValue("argument"), progScope)
+                
+                If TypeName(spreadArr) = "String" Then
+                    ' JavaScript behavior: spread string into individual characters
+                    strLen = Len(spreadArr)
+                    For ci = 1 To strLen
+                        vAssignment arr(optionBase + writeIdx), mid$(spreadArr, ci, 1)
+                        writeIdx = writeIdx + 1
+                    Next ci
+                ElseIf IsArray(spreadArr) Then
+                    ' Spread array elements
+                    If UBound(spreadArr) <> -1 Then
+                        For jj = LBound(spreadArr) To UBound(spreadArr)
+                            vAssignment arr(optionBase + writeIdx), spreadArr(jj)
+                            writeIdx = writeIdx + 1
+                        Next jj
+                    End If
+                Else
+                    ' Non-iterable: add as single element (lenient behavior)
+                    vAssignment arr(optionBase + writeIdx), spreadArr
+                    writeIdx = writeIdx + 1
+                End If
+            Else
+                ' Regular element
+                vAssignment arr(optionBase + writeIdx), EvalExprNode(itemNode, progScope)
+                writeIdx = writeIdx + 1
+            End If
         Next ii
     End If
+    
     vAssignment EvalArrayNode, arr
     Erase arr
 End Function
@@ -949,6 +1025,70 @@ Private Sub vAssignment(ByRef var As Variant, ByRef vValue As Variant)
         var = vValue
     End If
 End Sub
+Private Function EvalObjectNode(node As ASF_Map, progScope As ASF_ScopeStack) As ASF_Map
+    Dim items As Collection: Set items = node.GetValue("items")
+    Dim resultMap As New ASF_Map
+    
+    If items Is Nothing Then
+        Set EvalObjectNode = resultMap
+        Exit Function
+    End If
+    
+    Dim ii As Long
+    Dim pair As Collection
+    Dim elm As Variant
+    Dim keyStr As String
+    Dim valNode As ASF_Map
+    Dim spreadSrc As Variant
+    Dim spreadKeys As Collection
+    Dim jj As Long
+    Dim si As Long
+    
+    For ii = 1 To items.count
+        Set pair = items(ii)
+        keyStr = CStr(pair(1))
+        
+        If keyStr = "__SPREAD__" Then
+            ' This is a spread property
+            Set valNode = pair(2)
+            If valNode.GetValue("type") = "SpreadProperty" Then
+                ' Evaluate the spread source
+                vAssignment spreadSrc, EvalExprNode(valNode.GetValue("argument"), progScope)
+                
+                If TypeName(spreadSrc) = "ASF_Map" Then
+                    ' JavaScript behavior: merge all enumerable properties
+                    Set spreadKeys = spreadSrc.keys()
+                    If spreadKeys.count > 0 Then
+                        For Each elm In spreadKeys
+                            resultMap.SetValue CStr(elm), spreadSrc.GetValue(CStr(elm))
+                        Next elm
+                    End If
+                ElseIf IsArray(spreadSrc) Then
+                    ' JavaScript behavior: array spreads as numeric keys (0-based)
+                    For jj = LBound(spreadSrc) To UBound(spreadSrc)
+                        Dim keyIndex As String
+                        keyIndex = CStr(jj - LBound(spreadSrc) + 1) ' Convert to 1-based  DIFFERS FROM JS
+                        resultMap.SetValue keyIndex, spreadSrc(jj)
+                    Next jj
+                ElseIf TypeName(spreadSrc) = "String" Then
+                    ' JavaScript behavior: string spreads as character index (0-based)
+                    For si = 1 To Len(spreadSrc)
+                        resultMap.SetValue CStr(si), mid$(spreadSrc, si, 1) ' Convert to 1-based  DIFFERS FROM JS
+                    Next si
+                Else
+                    ' JavaScript behavior: primitives (null, undefined, numbers, booleans) are ignored
+                    ' Do nothing - matches JavaScript {...null}, {...undefined}, {...42}, etc.
+                End If
+            End If
+        Else
+            ' Regular property
+            vAssignment valNode, pair(2)
+            resultMap.SetValue keyStr, EvalExprNode(valNode, progScope)
+        End If
+    Next ii
+    
+    Set EvalObjectNode = resultMap
+End Function
 ' ---------------------
 ' Expression evaluator: Evaluate Expr AST nodes to runtime values
 ' ---------------------
@@ -992,6 +1132,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
     Dim insertedItem As Variant
     Dim removedOut() As Variant
     Dim foundIdx As Long
+    Dim si As Long
     
     Select Case tP
         Case "FuncLiteral", "AnonFunc"
@@ -1008,6 +1149,10 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
             Set envCopy = New ASF_ScopeStack
             envCopy.LoadRawByRef progScope.RawByRef
             cmap.SetValue "env", envCopy
+            ' Add rest parameter if present
+            If node.Exists("restParam") Then
+                cmap.SetValue "restParam", node.GetValue("restParam")
+            End If
             vAssignment tmpResult, cmap
             GoTo exitfun
         Case "VBAexpr"
@@ -1017,19 +1162,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
             GoTo exitfun
         Case "Object"
             ' Build and return a Map containing the evaluated properties
-            Set items = node.GetValue("items")
-            Dim om As New ASF_Map
-            Dim valNode As ASF_Map
-            Dim pair As Collection
-            Dim key As String
-            For pi = 1 To items.count
-                Set pair = items(pi)
-                key = CStr(pair(1))
-                Set valNode = pair(2)
-                om.SetValue key, EvalExprNode(valNode, progScope)
-            Next pi
-            ' Return Map object (as Variant holding the object)
-            vAssignment tmpResult, om
+            vAssignment tmpResult, EvalObjectNode(node, progScope)
             GoTo exitfun
         Case "Member"
             vAssignment tmpResult, EvalMemberNode(node, progScope)
@@ -1121,9 +1254,12 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
 
                     ' params: convert stored gFuncParams (likely an array) into a Collection
                     Dim paramsCol As Collection
+                    Dim restParamCol As Collection
                     Set paramsCol = New Collection
+                    Dim paVar As Variant
+                    Dim it As Variant
                     If GLOBALS_.gFuncParams.Exists(vname) Then
-                        Dim paVar As Variant: paVar = GLOBALS_.gFuncParams.GetValue(vname)
+                        paVar = GLOBALS_.gFuncParams.GetValue(vname)
                         If IsArray(paVar) Then
                             If ArrayIsInit(paVar) Then
                                 For pi = LBound(paVar) To UBound(paVar)
@@ -1134,14 +1270,13 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                             End If
                         ElseIf TypeName(paVar) = "Collection" Then
                             ' already a collection — copy it
-                            Dim it As Variant
                             For Each it In paVar
                                 paramsCol.Add it
                             Next it
                         End If
                     End If
                     closureMap.SetValue "params", paramsCol
-
+                    
                     ' body and env come from gPrograms(funcIdx)
                     Dim pinfo As Variant
                     On Error Resume Next
@@ -1170,6 +1305,14 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                     closureMap.SetValue "name", vname
                     closureMap.SetValue "funcIdx", funcIdx
 
+                    ' Add rest parameter if stored (index 3 in pinfo array)
+                    If IsArray(pinfo) Then
+                        If UBound(pinfo) >= 3 Then
+                            If Not IsEmpty(pinfo(3)) Then
+                                closureMap.SetValue "restParam", pinfo(3)
+                            End If
+                        End If
+                    End If
                     vAssignment tmpResult, closureMap
                     GoTo exitfun
                 End If
@@ -1246,8 +1389,37 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
             Dim argsColl As Collection: Set argsColl = node.GetValue("args")
             Dim evaluated As Collection
             Set evaluated = New Collection
+
+            ' Evaluate arguments and expand spreads (JavaScript-compatible)
+            Dim argNode As ASF_Map
+            Dim spreadVal As Variant
+            Dim sci As Long
+
             For k = 1 To argsColl.count
-                evaluated.Add EvalExprNode(argsColl(k), progScope)
+                Set argNode = argsColl(k)
+                
+                If TypeName(argNode) = "ASF_Map" And argNode.GetValue("type") = "SpreadElement" Then
+                    ' Evaluate spread and expand
+                    vAssignment spreadVal, EvalExprNode(argNode.GetValue("argument"), progScope)
+                    
+                    If TypeName(spreadVal) = "String" Then
+                        ' JavaScript behavior: spread string into individual characters
+                        For sci = 1 To Len(spreadVal)
+                            evaluated.Add mid$(spreadVal, sci, 1)
+                        Next sci
+                    ElseIf IsArray(spreadVal) Then
+                        ' Spread array elements
+                        For si = LBound(spreadVal) To UBound(spreadVal)
+                            evaluated.Add spreadVal(si)
+                        Next si
+                    Else
+                        ' Non-iterable: add as single argument (lenient behavior)
+                        evaluated.Add spreadVal
+                    End If
+                Else
+                    ' Regular argument
+                    evaluated.Add EvalExprNode(argNode, progScope)
+                End If
             Next k
             
             If Not hasCalleeExpr Then
@@ -1268,7 +1440,11 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                         ' Array methods (map/filter/reduce/slice/push/pop)
                         Select Case propN
                             Case "length"
-                                tmpResult = UBound(baseValLocal) - LBound(baseValLocal) + 1
+                                If UBound(baseValLocal) <> -1 Then
+                                    tmpResult = UBound(baseValLocal) - LBound(baseValLocal) + 1
+                                Else
+                                    tmpResult = 0
+                                End If
                                 GoTo exitfun
                             Case "map"
                                 ' map(fn) -> return new array with fn applied to each element (recursively tolerates nested arrays)
@@ -1432,7 +1608,6 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                 Else
                                     ReDim outS(ob2 To ob2 + cnt - 1)
                                     Dim pidx As Long: pidx = 0
-                                    Dim si As Long
                                     Dim baseL As Long: baseL = LBound(baseValLocal)
                                     For si = s To e - 1
                                         vAssignment outS(ob2 + pidx), baseValLocal(baseL + si)
@@ -3659,7 +3834,7 @@ Private Function CallFuncByIndex_AST(funcIdx As Long, args As Collection) As Var
     Dim p As Variant: p = GLOBALS_.gPrograms(funcIdx)
     Dim rawScope As Collection: Set rawScope = p(2)
     Dim callScope As New ASF_ScopeStack
-    Dim i As Long
+    Dim i As Long, k As Long
     callScope.LoadRaw rawScope
     callScope.Push
     Dim fname As String: fname = p(0)
@@ -3667,9 +3842,10 @@ Private Function CallFuncByIndex_AST(funcIdx As Long, args As Collection) As Var
     ' Trace: Push call
     PushCallTrace fname, args
     
+    Dim pa As Variant
     ' set params from gFuncParams
     If GLOBALS_.gFuncParams.Exists(fname) Then
-        Dim pa As Variant: pa = GLOBALS_.gFuncParams.GetValue(fname)
+        pa = GLOBALS_.gFuncParams.GetValue(fname)
         For i = LBound(pa) To UBound(pa)
             If i - LBound(pa) + 1 <= args.count Then
                 callScope.SetLocalValue CStr(pa(i)), args(i - LBound(pa) + 1)
@@ -3678,7 +3854,6 @@ Private Function CallFuncByIndex_AST(funcIdx As Long, args As Collection) As Var
             End If
         Next i
     End If
-
     Dim stmts As Collection: Set stmts = p(1)
     Dim retVal As Variant
     retVal = Empty
@@ -4089,6 +4264,7 @@ Private Function CallClosure(closureMap As ASF_Map, evaluatedArgs As Collection,
     Dim pa As Variant
     Dim elm As Variant
     Dim fc As Boolean
+    Dim emptyArgs As Long: emptyArgs = 0
     
     vAssignment pa, closureMap.GetValue("params")
     If IsObject(pa) Then
@@ -4099,6 +4275,7 @@ Private Function CallClosure(closureMap As ASF_Map, evaluatedArgs As Collection,
     If fc Then
         For Each elm In pa
             i = i + 1
+            If CStr(elm) = vbNullString Then emptyArgs = emptyArgs + 1
             If i <= evaluatedArgs.count Then
                 env.SetLocalValue CStr(elm), evaluatedArgs(i)
             Else
@@ -4106,7 +4283,52 @@ Private Function CallClosure(closureMap As ASF_Map, evaluatedArgs As Collection,
             End If
         Next elm
     End If
-
+    
+    ' Handle rest parameters
+    If closureMap.Exists("restParam") Then
+        Dim restParamName As String: restParamName = closureMap.GetValue("restParam")
+        Dim restArr() As Variant
+        Dim regularParamCount As Long
+        
+        ' Count regular parameters
+        If i > 1 Then
+            regularParamCount = i
+        Else
+            regularParamCount = i - emptyArgs
+        End If
+        
+        Dim totalArgCount As Long: totalArgCount = evaluatedArgs.count
+        Dim optBase As Long: optBase = env.GetValue("__option_base")
+        
+        If totalArgCount > regularParamCount Then
+            ' Check for empty params
+            If totalArgCount - regularParamCount = 1 Then
+                If IsEmpty(evaluatedArgs(regularParamCount + 1)) Then
+                    ' Return the empty array
+                    ReDim restArr(-1 To -1)
+                Else
+                    ReDim restArr(optBase To optBase)
+                    vAssignment restArr(optBase), evaluatedArgs(regularParamCount + 1)
+                End If
+            Else
+                ' Collect remaining arguments into rest array
+                Dim restCount As Long: restCount = totalArgCount - regularParamCount
+                ReDim restArr(optBase To optBase + restCount - 1)
+                
+                Dim ri As Long
+                For ri = 0 To restCount - 1
+                    vAssignment restArr(optBase + ri), evaluatedArgs(regularParamCount + 1 + ri)
+                Next ri
+            End If
+        Else
+            ' No extra arguments, create empty array
+            ReDim restArr(-1 To -1)
+        End If
+        
+        ' Bind rest parameter to the rest array
+        env.SetLocalValue restParamName, restArr
+    End If
+    
     ' set 'this' if provided
     If Not IsMissing(thisVal) Then
         env.SetLocalValue "this", thisVal
@@ -5552,6 +5774,73 @@ Private Function ExecClassDecl(node As ASF_Map, progScope As ASF_ScopeStack) As 
     progScope.SetValue className, classMap
     
     ExecClassDecl = vbNullString
+End Function
+' Execute array destructuring
+Private Function ExecArrayDestruct(node As ASF_Map, progScope As ASF_ScopeStack) As String
+    ' Handle: [a, b, c] = sourceArray or [a, b, ...rest] = sourceArray
+    Dim srcVal As Variant
+    vAssignment srcVal, EvalExprNode(node.GetValue("source"), progScope)
+    
+    If Not IsArray(srcVal) Then
+        err.Raise vbObjectError + 6001, "VM.ExecuteStmtNode", "Cannot destructure non-array value"
+    End If
+    
+    Dim destTargets As Collection: Set destTargets = node.GetValue("targets")
+    Dim srcLB As Long: srcLB = LBound(srcVal)
+    Dim srcUB As Long: srcUB = UBound(srcVal)
+    Dim srcLen As Long: srcLen = srcUB - srcLB + 1
+    Dim optBase As Long: optBase = progScope.GetValue("__option_base")
+    
+    ' Assign to regular targets
+    Dim ti As Long
+    Dim targetNode As ASF_Map
+    Dim targetName As String
+    Dim srcIdx As Long
+    For ti = 1 To destTargets.count
+        Set targetNode = destTargets(ti)
+        targetName = targetNode.GetValue("name")
+        srcIdx = srcLB + (ti - 1)
+        ' Assign value or Empty if out of bounds
+        If srcIdx >= srcLB And srcIdx <= srcUB Then
+            progScope.SetValue targetName, srcVal(srcIdx)
+        Else
+            progScope.SetValue targetName, Empty
+        End If
+    Next ti
+    
+    ' Handle rest element if present
+    If node.Exists("restTarget") Then
+        Dim restName As String: restName = node.GetValue("restTarget")
+        Dim restStartIdx As Long: restStartIdx = destTargets.count
+        
+        ' Calculate how many elements remain for rest
+        Dim remainingCount As Long
+        remainingCount = srcLen - restStartIdx
+        If remainingCount > 0 Then
+            ' Create rest array
+            Dim restArr() As Variant
+            ReDim restArr(optBase To optBase + remainingCount - 1)
+            
+            Dim ri As Long, srcPos As Long
+            srcPos = srcLB + restStartIdx
+            For ri = optBase To optBase + remainingCount - 1
+                If srcPos <= srcUB Then
+                    vAssignment restArr(ri), srcVal(srcPos)
+                    srcPos = srcPos + 1
+                Else
+                    restArr(ri) = Empty
+                End If
+            Next ri
+            
+            progScope.SetValue restName, restArr
+        Else
+            ' No remaining elements, set to empty array
+            Dim emptyRestArr() As Variant
+            ReDim emptyRestArr(-1 To -1)
+            progScope.SetValue restName, emptyRestArr
+        End If
+    End If
+    ExecArrayDestruct = vbNullString
 End Function
 ' Instantiate a class
 Private Function InstantiateClass(classMap As ASF_Map, args As Collection, progScope As ASF_ScopeStack) As Variant
