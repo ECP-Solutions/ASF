@@ -231,8 +231,19 @@ ContinueDo:
                         j3 = j3 + 1
                     Loop
                     tmpIdent = mid$(sourceCode, i, j3 - i)
-                    If LCase$(tmpIdent) <> "let" Then
-                        toks.Add Array("IDENT", tmpIdent)
+                    ' Skip/mark reserved keywords
+                    If tmpIdent <> "let" Then
+                        If tmpIdent = "import" Then
+                            toks.Add Array("KEYWORD", "import")
+                        ElseIf tmpIdent = "export" Then
+                            toks.Add Array("KEYWORD", "export")
+                        ElseIf tmpIdent = "default" Then
+                            toks.Add Array("KEYWORD", "default")
+                        ElseIf tmpIdent = "as" Then
+                            toks.Add Array("KEYWORD", "as")
+                        Else
+                            toks.Add Array("IDENT", tmpIdent)
+                        End If
                     End If
                     i = j3
                     GoTo Tokenize_SkipToLoopEnd

@@ -1,0 +1,9 @@
+fun formatName(first, last) {
+    return first + ' ' + last;
+};
+
+fun uppercase(str) {
+    return str.toUpperCase();
+};
+
+export { formatName, uppercase };

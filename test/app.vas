@@ -1,0 +1,4 @@
+scwd(wd);
+import mainFunc, { helper, VERSION } from './lib.vas';
+
+return `${mainFunc()} | ${helper()} | Version: ${VERSION}`;

@@ -7,7 +7,7 @@
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/ECP-Solutions/ASF?style=plastic)](https://github.com/ECP-Solutions/ASF/releases/latest)
 [![Mentioned in Awesome VBA](https://awesome.re/mentioned-badge.svg)](https://github.com/sancarn/awesome-vba)
 
-> **Modern JavaScript-like scripting for VBA projects.** No COM dependencies. No migration required. Just drop in and start using `map`/`filter`/`reduce`, classes with inheritance, closures, regex, and more—all inside your existing Excel, Access, or Office VBA code.
+> **Modern JavaScript-like scripting for VBA projects.** No COM dependencies. No migration required. Just drop in and start using `map`/`filter`/`reduce`, classes with inheritance, closures, regex, modules import/export—all inside your existing Excel, Access, or Office VBA code.
 
 ```vb
 ' Before: 30+ lines of VBA boilerplate with ScriptControl
@@ -452,6 +452,57 @@ return `${obj2.a}; ${obj2.b}; ${obj2.c}; ${obj2.d}` //=> 1; 2; 3; 4
 ```js
 [first, second, ...rest] = [1, 2, 3, 4, 5];
 return `${rest}` //=> [ 3, 4, 5 ]
+```
+
+#### 8. Module system
+
+Starting with `ASFv3.0.0`, users can perform secure, shared script invocation without exposing raw VBA host access through safe `import`/`export` keywords. For example, place this code in a module named `math.vas`
+
+```js
+// Named exports
+fun add(a, b) {
+    return a + b;
+};
+
+fun multiply(a, b) {
+    return a * b;
+};
+
+PI = 3.14159;
+
+export { add, multiply, PI };
+```
+
+In a file named `main_math.vas` place this code
+
+```js
+scwd(wd); 
+import { add, multiply, PI } from './math.vas';
+result = add(5, 3);
+area = PI * multiply(5, 5);
+return `5 + 3 = ${result}, Circle area: ${area}`;// => 78.53975
+```
+
+Next, in the VBA IDE, place this code in a new Excel workbook and save it in the same folder as `math.vas` and `main_math.vas` files
+
+```vb
+Private Sub math_test()
+    Dim wd As String
+    Dim eng As New ASF
+	Dim result As String
+	
+    wd = ThisWorkbook.path
+    With eng
+        .InjectVariable "wd", wd
+        result = CStr(.Execute(wd & "\main_math.vas"))
+    End With
+End Sub
+```
+
+After execution, the code returns
+
+```
+5 + 3 = 8, Circle area: 78.53975
 ```
 
 ---

@@ -1,0 +1,5 @@
+scwd(wd);
+import * as utils from './utils.vas';
+
+name = utils.formatName('John', 'Doe');
+return utils.uppercase(name); // => JOHN DOE

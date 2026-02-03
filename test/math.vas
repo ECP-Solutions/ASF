@@ -1,0 +1,12 @@
+// Named exports
+fun add(a, b) {
+    return a + b;
+};
+
+fun multiply(a, b) {
+    return a * b;
+};
+
+PI = 3.14159;
+
+export { add, multiply, PI };

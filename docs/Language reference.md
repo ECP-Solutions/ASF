@@ -2900,33 +2900,39 @@ print(arr[0]);  // Depends on option base setting
 
 The following words are reserved and cannot be used as variable names:
 
+- `as`
+- `break`
+- `case`
+- `catch`
 - `class`
 - `constructor`
-- `extends`
-- `super`
-- `static`
-- `field`
-- `new`
-- `fun`
-- `return`
-- `if`
+- `continue`
+- `default`
 - `else`
 - `elseif`
-- `for`
-- `while`
-- `switch`
-- `case`
-- `default`
-- `break`
-- `continue`
-- `try`
-- `catch`
-- `typeof`
-- `true`
+- `export`
+- `extends`
 - `false`
-- `null`
+- `field`
+- `for`
+- `from`
+- `fun`
+- `if`
+- `import`
 - `let`
+- `new`
+- `null`
 - `print`
+- `return`
+- `static`
+- `super`
+- `switch`
+- `true`
+- `try`
+- `typeof`
+- `undefined`
+- `while`
+
 
 ### Limitations
 
