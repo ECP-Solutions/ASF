@@ -23,9 +23,12 @@ Private ENABLE_CALL_TRACE_ As Boolean
 ' Executes AST nodes produced by Compiler (AST).
 ' Uses Map node types and ScopeStack. Logs to gRuntimeLog.
 
-Public Sub SetGlobals(aGlobals As ASF_Globals)
+Public Property Set Globals(aGlobals As ASF_Globals)
     Set GLOBALS_ = aGlobals
-End Sub
+End Property
+Public Property Get Globals() As ASF_Globals
+    Set Globals = GLOBALS_
+End Property
 Public Sub InjectVariable(varName As String, VarValue As Variant)
     If INJECTED_VARIABLES_ Is Nothing Then
         Set INJECTED_VARIABLES_ = New Collection
@@ -332,6 +335,12 @@ Private Function ExecuteStmtNode(node As ASF_Map, progScope As ASF_ScopeStack) A
             Exit Function
         Case "ArrayDestructuring"
             ExecuteStmtNode = ExecArrayDestruct(node, progScope)
+            Exit Function
+        Case "Import"
+            ExecuteStmtNode = ExecModImport(node, progScope)
+            Exit Function
+        Case "Export"
+            ExecuteStmtNode = ExecModExport(node, progScope)
             Exit Function
         Case Else
             ' unknown node type
@@ -2607,7 +2616,7 @@ init_Error_Handler:
                                 tmpResult = RegexCapsToVariantArray(baseValLocal.Split(CStr(evaluated(1))))
                                 GoTo exitfun
                             Case "test"
-                                tmpResult = baseValLocal.Test(CStr(evaluated(1)))
+                                tmpResult = baseValLocal.test(CStr(evaluated(1)))
                                 GoTo exitfun
                         End Select
                     ElseIf TypeName(baseValLocal) = "String" Then
@@ -3673,6 +3682,16 @@ namedFunctions:
                             ' pattern, ignoreCase flag, multiline flag, dotAll flag
                             tmpResult.Init CStr(evaluated(1)), CBool(evaluated(2)), , CBool(evaluated(3)), CBool(evaluated(4))
                     End Select
+                    GoTo exitfun
+                End If
+                ' Retrieve the current working directory
+                If nameLcase = "cwd" Then
+                    tmpResult = GLOBALS_.CURRENT_MODULE_PATH
+                    GoTo exitfun
+                End If
+                ' Set the current working directory
+                If nameLcase = "scwd" Then
+                    GLOBALS_.CURRENT_MODULE_PATH = CStr(evaluated(1))
                     GoTo exitfun
                 End If
                 ' --- end builtins ---
@@ -5842,6 +5861,114 @@ Private Function ExecArrayDestruct(node As ASF_Map, progScope As ASF_ScopeStack)
     End If
     ExecArrayDestruct = vbNullString
 End Function
+' Execute module import
+Private Function ExecModImport(node As ASF_Map, progScope As ASF_ScopeStack) As String
+    ' Handle import statement
+    Dim modulePath As String: modulePath = node.GetValue("source")
+    Dim resolvedPath As String: resolvedPath = ResolveModulePath(modulePath)
+    
+    ' Load module if not already loaded
+    Dim moduleObj As ASF_Map
+    Set moduleObj = LoadModule(resolvedPath)
+    
+    ' Import default
+    If node.Exists("defaultImport") Then
+        Dim defaultName As String: defaultName = node.GetValue("defaultImport")
+        If moduleObj.Exists("defaultExport") Then
+            progScope.SetValue defaultName, moduleObj.GetValue("defaultExport")
+        Else
+            progScope.SetValue defaultName, Empty
+        End If
+    End If
+    
+    ' Import namespace
+    If node.Exists("namespaceImport") Then
+        Dim nsName As String: nsName = node.GetValue("namespaceImport")
+        ' Create namespace object with all exports
+        Dim nsObj As New ASF_Map
+        Dim exportsMap As ASF_Map: Set exportsMap = moduleObj.GetValue("exports")
+        Dim expKey As Variant
+        For Each expKey In exportsMap.keys
+            nsObj.SetValue CStr(expKey), exportsMap.GetValue(CStr(expKey))
+        Next expKey
+        progScope.SetValue nsName, nsObj
+    End If
+    
+    ' Import named
+    If node.Exists("namedImports") Then
+        Dim namedImports As Collection: Set namedImports = node.GetValue("namedImports")
+        Dim importSpec As ASF_Map
+        Dim ii As Long
+        For ii = 1 To namedImports.count
+            Set importSpec = namedImports(ii)
+            Dim importedName As String: importedName = importSpec.GetValue("imported")
+            Dim localName As String: localName = importSpec.GetValue("local")
+            
+            Dim exportsMap2 As ASF_Map: Set exportsMap2 = moduleObj.GetValue("exports")
+            If exportsMap2.Exists(importedName) Then
+                progScope.SetValue localName, exportsMap2.GetValue(importedName)
+            Else
+                err.Raise vbObjectError + 9001, "VM.ExecuteStmtNode", "Export '" & importedName & "' not found in module '" & resolvedPath & "'"
+            End If
+        Next ii
+    End If
+    ExecModImport = vbNullString
+End Function
+' Execute module export
+Private Function ExecModExport(node As ASF_Map, progScope As ASF_ScopeStack) As String
+    ' Handle export statement
+    ' Exports are collected during module execution and stored in module object
+    ' Handles the execution-time behavior
+    
+    If node.GetValue("isDefault") Then
+        ' Export default: evaluate expression and store
+        Dim defaultValue As Variant
+        vAssignment defaultValue, EvalExprNode(node.GetValue("expression"), progScope)
+        
+        ' Store in module's export registry (requires module context)
+        If GLOBALS_.gModuleExports.Exists(GLOBALS_.CURRENT_MODULE_PATH) Then
+            Dim modExports As ASF_Map
+            Set modExports = GLOBALS_.gModuleExports.GetValue(GLOBALS_.CURRENT_MODULE_PATH)
+            modExports.SetValue "__default", defaultValue
+        End If
+    Else
+        ' Named exports
+        If node.Exists("namedExports") Then
+            Dim namedExportsList As Collection: Set namedExportsList = node.GetValue("namedExports")
+            Dim exportSpec2 As ASF_Map
+            Dim jj As Long
+            
+            If GLOBALS_.gModuleExports.Exists(GLOBALS_.CURRENT_MODULE_PATH) Then
+                Set modExports = GLOBALS_.gModuleExports.GetValue(GLOBALS_.CURRENT_MODULE_PATH)
+                
+                For jj = 1 To namedExportsList.count
+                    Set exportSpec2 = namedExportsList(jj)
+                    Dim localVarName As String: localVarName = exportSpec2.GetValue("local")
+                    Dim exportedVarName As String: exportedVarName = exportSpec2.GetValue("exported")
+
+                    ' Get value from current scope or gFuncTable
+                    Dim exportVarNode As ASF_Map
+                    Set exportVarNode = MakeNode("Variable")
+                    exportVarNode.SetValue "name", localVarName
+                    Dim exportValue As Variant
+                    vAssignment exportValue, EvalExprNode(exportVarNode, progScope)
+                    modExports.SetValue exportedVarName, exportValue
+                Next jj
+            End If
+        ElseIf node.Exists("declarationType") Then
+            ' Function/class export - the declaration will execute first
+            ' Then we mark it for export
+            Dim declName As String: declName = node.GetValue("declarationName")
+
+            ' Store the declaration name for post-processing
+            If GLOBALS_.gModuleExports.Exists(GLOBALS_.CURRENT_MODULE_PATH) Then
+                Set modExports = GLOBALS_.gModuleExports.GetValue(GLOBALS_.CURRENT_MODULE_PATH)
+                modExports.SetValue "__pending_" & declName, True
+            End If
+        End If
+    End If
+    ExecModExport = vbNullString
+End Function
 ' Instantiate a class
 Private Function InstantiateClass(classMap As ASF_Map, args As Collection, progScope As ASF_ScopeStack) As Variant
     On Error GoTo ErrHandler
@@ -6195,6 +6322,215 @@ Private Sub TraceError(funcName As String, errDesc As String)
     
     GLOBALS_.gCallStack.Add trace
 End Sub
+' ---------------------
+' Module System: Resolve Module Path
+' ---------------------
+Private Function ResolveModulePath(modulePath As String) As String
+    ' Simple resolution: if path starts with ./ or ../ treat as relative
+    ' Otherwise treat as absolute or package name
+
+    Dim cleanPath As String: cleanPath = modulePath
+    If left$(cleanPath, 1) = "'" And right$(cleanPath, 1) = "'" Then
+        cleanPath = mid$(cleanPath, 2, Len(cleanPath) - 2)
+    End If
+    
+    ' For relative paths, resolve against current module directory
+    If left$(cleanPath, 2) = "./" Or left$(cleanPath, 3) = "../" Then
+        Dim currentDir As String
+        If GLOBALS_.CURRENT_MODULE_PATH <> vbNullString Then
+            Dim lastSlash As Long
+            lastSlash = InStrRev(Replace(GLOBALS_.CURRENT_MODULE_PATH, "\", "/"), "/")
+            If lastSlash > 0 Then
+                If lastSlash < Len(GLOBALS_.CURRENT_MODULE_PATH) Then
+                    currentDir = Replace(GLOBALS_.CURRENT_MODULE_PATH, "\", "/") & "/"
+                Else
+                    currentDir = Replace(GLOBALS_.CURRENT_MODULE_PATH, "\", "/")
+                End If
+            Else
+                currentDir = vbNullString
+            End If
+        Else
+            currentDir = vbNullString
+        End If
+        ResolveModulePath = currentDir & mid$(cleanPath, InStr(1, cleanPath, "/") + 1)
+    Else
+        ' Absolute path or module name
+        ResolveModulePath = cleanPath
+    End If
+End Function
+
+' ---------------------
+' Module System: Load Module
+' ---------------------
+Public Function LoadModule(modulePath As String) As ASF_Map
+    ' Check if module is already loaded
+    If GLOBALS_.gModuleRegistry.Exists(modulePath) Then
+        Dim existingModule As ASF_Map
+        Set existingModule = GLOBALS_.gModuleRegistry.GetValue(modulePath)
+        If existingModule.GetValue("loaded") Then
+            Set LoadModule = existingModule
+            Exit Function
+        End If
+    End If
+    
+    ' Check for circular dependency
+    Dim k As Long
+    For k = 1 To GLOBALS_.gLoadingModules.count
+        If CStr(GLOBALS_.gLoadingModules(k)) = modulePath Then
+            err.Raise vbObjectError + 9010, "VM.LoadModule", "Circular dependency detected: " & modulePath
+        End If
+    Next k
+    
+    ' Mark module as currently loading
+    GLOBALS_.gLoadingModules.Add modulePath
+    
+    Dim moduleSource As String
+    On Error Resume Next
+    moduleSource = ReadModuleSource(modulePath)
+    If err.Number <> 0 Then
+        On Error GoTo 0
+        err.Raise vbObjectError + 9011, "VM.LoadModule", "Failed to load module: " & modulePath
+    End If
+    On Error GoTo 0
+    
+    ' Compile module
+    Dim compiler As New ASF_Compiler
+    compiler.SetGlobals GLOBALS_
+    compiler.CurrentModulePath = modulePath
+    compiler.IsModuleMode = True
+    
+    Dim moduleIdx As Long
+    moduleIdx = compiler.CompileProgram(moduleSource, "@module:" & modulePath)
+    
+    ' Create module object
+    Dim moduleObj As New ASF_Map
+    moduleObj.SetValue "path", modulePath
+    moduleObj.SetValue "loaded", False
+    
+    ' Create module exports map
+    Dim moduleExports As New ASF_Map
+    moduleObj.SetValue "exports", moduleExports
+    GLOBALS_.gModuleExports.SetValue modulePath, moduleExports
+    
+    ' Store current module path for execution
+    Dim previousModulePath As String: previousModulePath = GLOBALS_.CURRENT_MODULE_PATH
+    GLOBALS_.CURRENT_MODULE_PATH = modulePath
+    
+    ' Execute module
+    Dim prevProgIdx As Long: prevProgIdx = 0
+    If moduleIdx > 0 And moduleIdx <= GLOBALS_.gPrograms.count Then
+        Dim p As Variant: p = GLOBALS_.gPrograms(moduleIdx)
+        Dim stmts As Collection: Set stmts = p(1)
+        Dim rawScope As Collection: Set rawScope = p(2)
+        
+        Dim moduleScope As New ASF_ScopeStack
+        moduleScope.LoadRaw rawScope
+        moduleScope.SetValue "__option_base", 1
+        moduleScope.Push
+        
+        ' Execute module statements
+        Dim mi As Long
+        For mi = 1 To stmts.count
+            Dim ctrl As String
+            ctrl = ExecuteStmtNode(stmts(mi), moduleScope)
+            If ctrl = "RETURN" Or ctrl = "ERR" Then Exit For
+        Next mi
+        
+        moduleScope.Pop
+        
+        ' Process pending exports (functions/classes declared with export)
+        Dim exportKeys As Variant
+        vAssignment exportKeys, moduleExports.keys
+        Dim ek As Variant
+        For Each ek In exportKeys
+            Dim ekStr As String: ekStr = CStr(ek)
+            If left$(ekStr, 10) = "__pending_" Then
+                Dim pendingName As String: pendingName = mid$(ekStr, 11)
+                ' Get the value from module scope and export it
+                If moduleScope.Has(pendingName) Then
+                    moduleExports.SetValue pendingName, moduleScope.GetValue(pendingName)
+                End If
+                ' Remove pending marker
+                moduleExports.Remove ekStr
+            End If
+        Next ek
+        
+        ' Handle default export
+        If moduleExports.Exists("__default") Then
+            moduleObj.SetValue "defaultExport", moduleExports.GetValue("__default")
+            moduleExports.Remove "__default"
+        End If
+    End If
+    
+    ' Restore module path
+    GLOBALS_.CURRENT_MODULE_PATH = previousModulePath
+    
+    ' Mark module as loaded
+    moduleObj.SetValue "loaded", True
+    
+    ' Store in registry
+    GLOBALS_.gModuleRegistry.SetValue modulePath, moduleObj
+    
+    ' Remove from loading list
+    For k = 1 To GLOBALS_.gLoadingModules.count
+        If CStr(GLOBALS_.gLoadingModules(k)) = modulePath Then
+            GLOBALS_.gLoadingModules.Remove k
+            Exit For
+        End If
+    Next k
+    
+    Set LoadModule = moduleObj
+End Function
+Public Function ReadModuleSource(modulePath As String) As String
+    Dim filePath As String: filePath = ResolveModulePath(modulePath)
+    
+    ' Add .vas extension if not present
+    If Not FileExists(filePath) Then
+        If right$(filePath, 4) <> ".vas" Then
+            filePath = filePath & ".vas"
+        End If
+    End If
+    
+    If Not FileExists(filePath) Then
+        err.Raise vbObjectError + 9012, "VM.ReadModuleSource", "Module file not found: " & modulePath
+    End If
+    ReadModuleSource = ReadTextFile(filePath)
+End Function
+Public Function ReadTextFile(filePath As String) As String
+    If FileExists(filePath) Then
+        Dim EOFile As Long
+        Dim FileHandled As Integer
+        Dim OutputStr As String
+        FileHandled = FreeFile
+        Open filePath For Binary As #FileHandled
+        EOFile = LOF(FileHandled)
+        OutputStr = Space$(EOFile)
+        Get #FileHandled, , OutputStr
+        Close #FileHandled
+        ReadTextFile = OutputStr
+        OutputStr = vbNullString
+    End If
+End Function
+Private Function FileExists(ByVal filePath As String) As Boolean
+    FileExists = CBool(LenB(Dir(filePath, vbHidden + vbNormal + vbSystem + vbReadOnly + vbArchive)))
+End Function
+Private Sub CreateSubFolders(FullFilePath As String)
+    Dim cPath As String
+    Dim SubFolders() As String
+    Dim j As Long
+    
+    SubFolders() = Split(FullFilePath, "\")
+    cPath = SubFolders(LBound(SubFolders))
+    For j = LBound(SubFolders) + 1 To UBound(SubFolders) - 1
+        cPath = cPath & "\" & SubFolders(j)
+        If Not FolderExists(cPath) Then
+            MkDir cPath           'Create the subdirectory
+        End If
+    Next j
+End Sub
+Private Function FolderExists(ByVal filePath As String) As Boolean
+    FolderExists = CBool(LenB(Dir(filePath, vbDirectory + vbHidden)))
+End Function
 ' ---------------------
 ' End VM class
 ' ---------------------

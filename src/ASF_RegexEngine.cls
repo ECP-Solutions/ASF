@@ -136,10 +136,10 @@ Public Property Let multiline(ByVal v As Boolean): pMultiline = v: End Property
 Public Property Get dotAll() As Boolean: dotAll = pDotAll: End Property
 Public Property Let dotAll(ByVal v As Boolean): pDotAll = v: End Property
 
-Public Function Test(ByVal subj As String) As Boolean
+Public Function test(ByVal subj As String) As Boolean
     Dim res As Collection
     Set res = Exec(subj)
-    Test = Not (res Is Nothing)
+    test = Not (res Is Nothing)
 End Function
 
 ' ---------------- Parser & AST precomputation ----------------------------

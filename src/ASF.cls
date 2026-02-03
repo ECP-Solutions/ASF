@@ -45,10 +45,13 @@ End Sub
 Public Property Get OUTPUT_() As Variant
     vAssignment OUTPUT_, OUTPUT__
 End Property
+Public Function Execute(scriptPath As String) As Variant
+    vAssignment Execute, Run(Compile(ReadTextFile(scriptPath)))
+End Function
 Public Function Run(idx As Long) As Variant
     If Not GLOBALS_ Is Nothing Then
         With VM_
-            .SetGlobals GLOBALS_
+            Set .Globals = GLOBALS_
             .RunProgramByIndex idx
             vAssignment OUTPUT__, .OUTPUT_
             vAssignment Run, .OUTPUT_
@@ -87,21 +90,23 @@ End Property
 Public Property Get GetCallStack() As Collection
     Set GetCallStack = VM_.GetCallStack
 End Property
+Public Property Let WorkingDir(baseDir As String)
+    GLOBALS_.CURRENT_MODULE_PATH = baseDir
+End Property
+Public Property Get WorkingDir() As String
+    WorkingDir = GLOBALS_.CURRENT_MODULE_PATH
+End Property
 Public Sub ClearCallStack()
     VM_.ClearCallStack
 End Sub
 Public Function ReadTextFile(filePath As String) As String
-    Dim EOFile As Long
-    Dim FileHandled As Integer
-    Dim OutputStr As String
-    
-    FileHandled = FreeFile
-    Open filePath For Binary As #FileHandled
-    EOFile = LOF(FileHandled)
-    OutputStr = Space$(EOFile)
-    Get #FileHandled, , OutputStr
-    Close #FileHandled
-    ReadTextFile = OutputStr
-    OutputStr = vbNullString
+    ReadTextFile = VM_.ReadTextFile(filePath)
 End Function
-
+Public Sub ClearModuleCache()
+    If Not GLOBALS_ Is Nothing Then
+        Set GLOBALS_.gModuleRegistry = New ASF_Map
+        Set GLOBALS_.gModuleExports = New ASF_Map
+        Set GLOBALS_.gLoadingModules = New Collection
+        GLOBALS_.CURRENT_MODULE_PATH = vbNullString
+    End If
+End Sub

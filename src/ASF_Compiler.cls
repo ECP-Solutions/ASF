@@ -13,16 +13,29 @@ Attribute VB_Exposed = False
 ' Class Module: Compiler
 Option Explicit
 Private GLOBALS_ As ASF_Globals
+Private CURRENT_MODULE_PATH_ As String
+Private IS_MODULE_MODE_ As Boolean
 
 ' Produces AST (Maps) for program and functions.
-' Relies on Parser.Tokenize, Map, ScopeStack and globals:
-'   ProgramCache, gPrograms (Collection), gFuncTable (Map), gFuncParams (Map)
-
 Public Sub SetGlobals(ByRef aGlobals As ASF_Globals)
     Set GLOBALS_ = aGlobals
 End Sub
+Public Property Let CurrentModulePath(path As String)
+    CURRENT_MODULE_PATH_ = path
+End Property
 
-' Node helpers (Map-based)
+Public Property Get CurrentModulePath() As String
+    CurrentModulePath = CURRENT_MODULE_PATH_
+End Property
+
+Public Property Let IsModuleMode(value As Boolean)
+    IS_MODULE_MODE_ = value
+End Property
+
+Public Property Get IsModuleMode() As Boolean
+    IsModuleMode = IS_MODULE_MODE_
+End Property
+
 Private Function MakeNode(nodeType As String) As ASF_Map
     Dim m As New ASF_Map
     m.Add "type", nodeType
@@ -125,7 +138,23 @@ Compiler_MainLoop:
             i = i + 1
             GoTo Compiler_MainLoop
         End If
-
+        
+        ' Import statement at top-level
+        If toks(i)(0) = "KEYWORD" And toks(i)(1) = "import" Then
+            Dim importNode As ASF_Map
+            Set importNode = ParseImportStatement(toks, i)
+            stmtsAST.Add importNode
+            GoTo Compiler_MainLoop
+        End If
+        
+        ' Export statement at top-level
+        If toks(i)(0) = "KEYWORD" And toks(i)(1) = "export" Then
+            Dim exportNode As ASF_Map
+            Set exportNode = ParseExportStatement(toks, i)
+            stmtsAST.Add exportNode
+            GoTo Compiler_MainLoop
+        End If
+        
         ' Function definition at top-level
         If toks(i)(0) = "IDENT" And LCase$(toks(i)(1)) = "fun" Then
             i = i + 1
@@ -3535,6 +3564,354 @@ Private Function ParseMethodDecl(toks As Collection, ByRef i As Long, isConstruc
     methodNode.SetValue "body", bodyStmts
     
     Set ParseMethodDecl = methodNode
+End Function
+' ---------------------
+' Module System: Parse Import Statement
+' ---------------------
+Private Function ParseImportStatement(toks As Collection, ByRef i As Long) As ASF_Map
+    ' Supports:
+    ' import { name1, name2 } from 'module'
+    ' import { name1 as alias1 } from 'module'
+    ' import defaultName from 'module'
+    ' import * as namespace from 'module'
+    ' import defaultName, { name1 } from 'module'
+    
+    Dim importNode As ASF_Map: Set importNode = MakeNode("Import")
+    Dim namedImports As New Collection
+    Dim defaultImport As String: defaultImport = vbNullString
+    Dim namespaceImport As String: namespaceImport = vbNullString
+    Dim modulePath As String
+    
+    i = i + 1 ' skip 'import'
+    
+    ' Skip comments
+    Do While i <= toks.count And toks(i)(0) = "COMMENT"
+        i = i + 1
+    Loop
+    
+    If i > toks.count Then err.Raise vbObjectError + 8001, "Compiler.ParseImportStatement", "Unexpected end after import"
+    
+    ' Check for namespace import: import * as name from 'module'
+    If toks(i)(0) = "OP" And toks(i)(1) = "*" Then
+        i = i + 1
+        ' Expect 'as'
+        Do While i <= toks.count And toks(i)(0) = "COMMENT"
+            i = i + 1
+        Loop
+        If i > toks.count Or Not (toks(i)(0) = "KEYWORD" And toks(i)(1) = "as") Then
+            err.Raise vbObjectError + 8002, "Compiler.ParseImportStatement", "Expected 'as' after * in import"
+        End If
+        i = i + 1
+        ' Get namespace name
+        Do While i <= toks.count And toks(i)(0) = "COMMENT"
+            i = i + 1
+        Loop
+        If i > toks.count Or toks(i)(0) <> "IDENT" Then
+            err.Raise vbObjectError + 8003, "Compiler.ParseImportStatement", "Expected identifier after 'as'"
+        End If
+        namespaceImport = toks(i)(1)
+        i = i + 1
+    ' Check for named imports: import { ... } from 'module'
+    ElseIf toks(i)(0) = "PAREN" And toks(i)(1) = "{" Then
+        i = i + 1
+        ' Parse named imports
+        Do While i <= toks.count And Not (toks(i)(0) = "PAREN" And toks(i)(1) = "}")
+            If toks(i)(0) = "COMMENT" Then
+                i = i + 1
+            ElseIf toks(i)(0) = "IDENT" Then
+                Dim importName As String: importName = toks(i)(1)
+                Dim localName As String: localName = importName
+                i = i + 1
+                
+                ' Check for 'as' alias
+                Do While i <= toks.count And toks(i)(0) = "COMMENT"
+                    i = i + 1
+                Loop
+                If i <= toks.count And toks(i)(0) = "KEYWORD" And toks(i)(1) = "as" Then
+                    i = i + 1
+                    Do While i <= toks.count And toks(i)(0) = "COMMENT"
+                        i = i + 1
+                    Loop
+                    If i > toks.count Or toks(i)(0) <> "IDENT" Then
+                        err.Raise vbObjectError + 8004, "Compiler.ParseImportStatement", "Expected identifier after 'as'"
+                    End If
+                    localName = toks(i)(1)
+                    i = i + 1
+                End If
+                
+                ' Add to named imports
+                Dim importSpec As ASF_Map: Set importSpec = MakeNode("ImportSpecifier")
+                importSpec.SetValue "imported", importName
+                importSpec.SetValue "local", localName
+                namedImports.Add importSpec
+                
+                ' Skip comma
+                Do While i <= toks.count And toks(i)(0) = "COMMENT"
+                    i = i + 1
+                Loop
+                If i <= toks.count And toks(i)(0) = "SEP" And toks(i)(1) = "," Then
+                    i = i + 1
+                End If
+            ElseIf toks(i)(0) = "SEP" And toks(i)(1) = "," Then
+                i = i + 1
+            Else
+                i = i + 1
+            End If
+        Loop
+        
+        If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = "}" Then
+            i = i + 1
+        End If
+    ' Default import: import name from 'module'
+    ElseIf toks(i)(0) = "IDENT" Then
+        defaultImport = toks(i)(1)
+        i = i + 1
+        
+        ' Check for optional named imports after default: import def, { name } from 'module'
+        Do While i <= toks.count And toks(i)(0) = "COMMENT"
+            i = i + 1
+        Loop
+        If i <= toks.count And toks(i)(0) = "SEP" And toks(i)(1) = "," Then
+            i = i + 1
+            Do While i <= toks.count And toks(i)(0) = "COMMENT"
+                i = i + 1
+            Loop
+            If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = "{" Then
+                ' Parse named imports (same logic as above)
+                i = i + 1
+                Do While i <= toks.count And Not (toks(i)(0) = "PAREN" And toks(i)(1) = "}")
+                    If toks(i)(0) = "COMMENT" Then
+                        i = i + 1
+                    ElseIf toks(i)(0) = "IDENT" Then
+                        importName = toks(i)(1)
+                        localName = importName
+                        i = i + 1
+                        
+                        Do While i <= toks.count And toks(i)(0) = "COMMENT"
+                            i = i + 1
+                        Loop
+                        If i <= toks.count And toks(i)(0) = "KEYWORD" And toks(i)(1) = "as" Then
+                            i = i + 1
+                            Do While i <= toks.count And toks(i)(0) = "COMMENT"
+                                i = i + 1
+                            Loop
+                            If i > toks.count Or toks(i)(0) <> "IDENT" Then
+                                err.Raise vbObjectError + 8004, "Compiler.ParseImportStatement", "Expected identifier after 'as'"
+                            End If
+                            localName = toks(i)(1)
+                            i = i + 1
+                        End If
+                        
+                        Set importSpec = MakeNode("ImportSpecifier")
+                        importSpec.SetValue "imported", importName
+                        importSpec.SetValue "local", localName
+                        namedImports.Add importSpec
+                        
+                        Do While i <= toks.count And toks(i)(0) = "COMMENT"
+                            i = i + 1
+                        Loop
+                        If i <= toks.count And toks(i)(0) = "SEP" And toks(i)(1) = "," Then
+                            i = i + 1
+                        End If
+                    ElseIf toks(i)(0) = "SEP" And toks(i)(1) = "," Then
+                        i = i + 1
+                    Else
+                        i = i + 1
+                    End If
+                Loop
+                
+                If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = "}" Then
+                    i = i + 1
+                End If
+            End If
+        End If
+    Else
+        err.Raise vbObjectError + 8005, "Compiler.ParseImportStatement", "Invalid import syntax"
+    End If
+    
+    ' Expect 'from'
+    Do While i <= toks.count And toks(i)(0) = "COMMENT"
+        i = i + 1
+    Loop
+    If i > toks.count Or Not (toks(i)(0) = "IDENT" And toks(i)(1) = "from") Then
+        err.Raise vbObjectError + 8006, "Compiler.ParseImportStatement", "Expected 'from' in import statement"
+    End If
+    i = i + 1
+    
+    ' Get module path (string literal)
+    Do While i <= toks.count And toks(i)(0) = "COMMENT"
+        i = i + 1
+    Loop
+    If i > toks.count Or toks(i)(0) <> "STRING" Then
+        err.Raise vbObjectError + 8007, "Compiler.ParseImportStatement", "Expected string literal for module path"
+    End If
+    modulePath = toks(i)(1)
+    i = i + 1
+    
+    ' Build import node
+    importNode.SetValue "source", modulePath
+    If defaultImport <> vbNullString Then
+        importNode.SetValue "defaultImport", defaultImport
+    End If
+    If namespaceImport <> vbNullString Then
+        importNode.SetValue "namespaceImport", namespaceImport
+    End If
+    If namedImports.count > 0 Then
+        importNode.SetValue "namedImports", namedImports
+    End If
+    
+    Set ParseImportStatement = importNode
+End Function
+
+' ---------------------
+' Module System: Parse Export Statement
+' ---------------------
+Private Function ParseExportStatement(toks As Collection, ByRef i As Long) As ASF_Map
+    ' Supports:
+    ' export { name1, name2 }
+    ' export { name1 as alias1 }
+    ' export default expression
+    ' export fun name() { ... }
+    ' export class Name { ... }
+    
+    Dim exportNode As ASF_Map: Set exportNode = MakeNode("Export")
+    
+    i = i + 1 ' skip 'export'
+    
+    ' Skip comments
+    Do While i <= toks.count And toks(i)(0) = "COMMENT"
+        i = i + 1
+    Loop
+    
+    If i > toks.count Then err.Raise vbObjectError + 8010, "Compiler.ParseExportStatement", "Unexpected end after export"
+    
+    ' Check for default export
+    If toks(i)(0) = "KEYWORD" And toks(i)(1) = "default" Then
+        exportNode.SetValue "isDefault", True
+        i = i + 1
+        
+        ' The default export value is an expression - collect tokens until statement end
+        Dim exprTokens As New Collection
+        Dim exprDepth As Long: exprDepth = 0
+        
+        Do While i <= toks.count
+            If toks(i)(0) = "PAREN" Then
+                Select Case toks(i)(1)
+                    Case "{", "(", "["
+                        exprDepth = exprDepth + 1
+                    Case "}", ")", "]"
+                        If exprDepth > 0 Then exprDepth = exprDepth - 1
+                End Select
+            End If
+            
+            ' Statement end
+            If exprDepth = 0 And toks(i)(0) = "SEP" And toks(i)(1) = ";" Then
+                Exit Do
+            End If
+            
+            exprTokens.Add toks(i)
+            i = i + 1
+        Loop
+        
+        ' Skip semicolon
+        If i <= toks.count And toks(i)(0) = "SEP" And toks(i)(1) = ";" Then
+            i = i + 1
+        End If
+        
+        Dim defaultExpr As ASF_Map
+        Set defaultExpr = ParseExprTokensToNode(exprTokens)
+        exportNode.SetValue "expression", defaultExpr
+        
+        Set ParseExportStatement = exportNode
+        Exit Function
+    End If
+    
+    ' Check for named exports with braces: export { name1, name2 }
+    If toks(i)(0) = "PAREN" And toks(i)(1) = "{" Then
+        exportNode.SetValue "isDefault", False
+        Dim namedExports As New Collection
+        i = i + 1
+        
+        Do While i <= toks.count And Not (toks(i)(0) = "PAREN" And toks(i)(1) = "}")
+            If toks(i)(0) = "COMMENT" Then
+                i = i + 1
+            ElseIf toks(i)(0) = "IDENT" Then
+                Dim localName As String: localName = toks(i)(1)
+                Dim exportedName As String: exportedName = localName
+                i = i + 1
+                
+                ' Check for 'as' alias
+                Do While i <= toks.count And toks(i)(0) = "COMMENT"
+                    i = i + 1
+                Loop
+                If i <= toks.count And toks(i)(0) = "KEYWORD" And toks(i)(1) = "as" Then
+                    i = i + 1
+                    Do While i <= toks.count And toks(i)(0) = "COMMENT"
+                        i = i + 1
+                    Loop
+                    If i > toks.count Or toks(i)(0) <> "IDENT" Then
+                        err.Raise vbObjectError + 8011, "Compiler.ParseExportStatement", "Expected identifier after 'as'"
+                    End If
+                    exportedName = toks(i)(1)
+                    i = i + 1
+                End If
+                
+                Dim exportSpec As ASF_Map: Set exportSpec = MakeNode("ExportSpecifier")
+                exportSpec.SetValue "local", localName
+                exportSpec.SetValue "exported", exportedName
+                namedExports.Add exportSpec
+                
+                ' Skip comma
+                Do While i <= toks.count And toks(i)(0) = "COMMENT"
+                    i = i + 1
+                Loop
+                If i <= toks.count And toks(i)(0) = "SEP" And toks(i)(1) = "," Then
+                    i = i + 1
+                End If
+            ElseIf toks(i)(0) = "SEP" And toks(i)(1) = "," Then
+                i = i + 1
+            Else
+                i = i + 1
+            End If
+        Loop
+        
+        If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = "}" Then
+            i = i + 1
+        End If
+        
+        exportNode.SetValue "namedExports", namedExports
+        Set ParseExportStatement = exportNode
+        Exit Function
+    End If
+    
+    ' Export declaration (function, class, etc.)
+    ' Only handles function exports inline
+    If toks(i)(0) = "IDENT" And LCase$(toks(i)(1)) = "fun" Then
+        exportNode.SetValue "isDefault", False
+        
+        ' Mark function name for export
+        i = i + 1
+        Do While i <= toks.count And toks(i)(0) = "COMMENT"
+            i = i + 1
+        Loop
+        
+        If i > toks.count Or toks(i)(0) <> "IDENT" Then
+            err.Raise vbObjectError + 8012, "Compiler.ParseExportStatement", "Expected function name after 'fun'"
+        End If
+        
+        Dim funcName As String: funcName = toks(i)(1)
+        exportNode.SetValue "declarationType", "function"
+        exportNode.SetValue "declarationName", funcName
+        
+        ' The function will be parsed by the main loop
+        ' Decrement i to let the main loop parse the function
+        i = i - 2 ' Back to 'fun' keyword
+        
+        Set ParseExportStatement = exportNode
+        Exit Function
+    End If
+    
+    err.Raise vbObjectError + 8013, "Compiler.ParseExportStatement", "Invalid export syntax"
 End Function
 ' ---------------------
 ' End Compiler class

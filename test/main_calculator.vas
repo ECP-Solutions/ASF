@@ -1,0 +1,5 @@
+scwd(wd);
+import calc from './calculator.vas';
+
+calculator = calc();
+return(calculator.add(10, 5)); // => 15

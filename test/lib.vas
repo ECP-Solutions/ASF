@@ -1,0 +1,12 @@
+fun helper() {
+    return 'Helper function';
+};
+
+fun main() {
+    return 'Main function';
+};
+
+VERSION = '1.0.0';
+
+export default main;
+export { helper, VERSION };

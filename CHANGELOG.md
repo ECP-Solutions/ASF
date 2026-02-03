@@ -2,6 +2,261 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [v3.0.0] - 2026-02-03
+https://github.com/ECP-Solutions/ASF/releases/tag/v3.0.0
+
+## Summary
+ASF v3.0.0 is a major-version release that introduces a full ECMAScript-style module system (`import`/`export`) and adds working-directory builtins (`cwd`, `scwd`) together with a single-call `Execute` entry point on the `ASF` UI. Modules are cached on first load, circular dependencies are detected at load time, and relative paths are resolved against the current working directory. Many of the new features are still in beta, awaiting community support and feedback, or under continuous development.
+
+---
+
+## Breaking Changes
+
+- **File extension adopted: `.vas`.**  
+  `.vas` stands for **V**BA **A**dvanced **S**cripting.  
+  `ReadModuleSource` resolves `.vas` automatically; bare module names without an extension are tried first as-is, then with `.vas` appended.  
+  Existing `.asf` source files must be renamed to `.vas` before use with the module loader.
+
+---
+
+## Highlights
+
+- **Added**
+    - `.vas` file extension — the official source-file extension for all VBA Advanced Scripting files:
+
+    - Module system — `import` / `export` statements with ECMAScript semantics:
+		```javascript
+				// ── Named exports  (math.vas) ──────────────────────
+				fun add(a, b) {
+					return a + b;
+				};
+
+				fun multiply(a, b) {
+					return a * b;
+				};
+
+				PI = 3.14159;
+
+				export { add, multiply, PI };
+
+				// ── Named imports  (main_math.vas) ─────────────────
+				scwd(wd);
+				import { add, multiply, PI } from './math.vas';
+
+				result = add(5, 3);
+				area = PI * multiply(5, 5);
+				return `5 + 3 = ${result}, Circle area: ${area}`;
+				// => "5 + 3 = 8, Circle area: 78.53975"
+		```
+
+		```javascript
+				// ── Default export  (calculator.vas) ───────────────
+				fun Calculator() {
+					return {
+						add: fun(a, b) { return a + b; },
+						subtract: fun(a, b) { return a - b; }
+					};
+				};
+
+				export default Calculator;
+
+				// ── Default import  (main_calculator.vas) ──────────
+				scwd(wd);
+				import calc from './calculator.vas';
+
+				calculator = calc();
+				return(calculator.add(10, 5));
+				// => "15"
+		```
+
+		```javascript
+				// ── Namespace import  (utils.vas) ──────────────────
+				fun formatName(first, last) {
+					return first + ' ' + last;
+				};
+
+				fun uppercase(str) {
+					return str.toUpperCase();
+				};
+
+				export { formatName, uppercase };
+
+				// ── Namespace usage  (main_utils.vas) ──────────────
+				scwd(wd);
+				import * as utils from './utils.vas';
+
+				name = utils.formatName('John', 'Doe');
+				return utils.uppercase(name);
+				// => "JOHN DOE"
+		```
+
+		```javascript
+				// ── Mixed: default + named  (lib.vas) ──────────────
+				fun helper() {
+					return 'Helper function';
+				};
+
+				fun main() {
+					return 'Main function';
+				};
+
+				VERSION = '1.0.0';
+
+				export default main;
+				export { helper, VERSION };
+
+				// ── Mixed imports  (app.vas) ────────────────────────
+				scwd(wd);
+				import mainFunc, { helper, VERSION } from './lib.vas';
+
+				return `${mainFunc()} | ${helper()} | Version: ${VERSION}`;
+				// => "Main function | Helper function | Version: 1.0.0"
+		```
+
+    - Aliasing with `as` in both import and export specifier lists:
+		```javascript
+				import { add as sum } from './math.vas';
+				export { localName as publicName };
+		```
+
+    - Working-directory builtins (`cwd` / `scwd`):
+		```javascript
+				// scwd(path)  — set current working directory
+				// cwd()       — return current working directory
+				scwd(wd);                       // set to injected path
+				currentPath = cwd();            // read it back
+				// currentPath === wd
+		```
+
+    - `Execute(filePath)` method on the `ASF` façade — single call to read, compile, and run a `.vas` file and return its result:
+		```vba
+				Dim eng As New ASF
+				eng.InjectVariable "wd", ThisWorkbook.path
+				result = eng.Execute(ThisWorkbook.path & "\main_math.vas")
+				' result === "5 + 3 = 8, Circle area: 78.53975"
+		```
+
+- **Internal core changes**:
+    - **Parser** (`ASF_Parser.cls`):
+        - Four identifiers are now intercepted during tokenization and emitted as `["KEYWORD", …]` tokens instead of `["IDENT", …]`: `import`, `export`, `default`, `as`
+        - Matching is case-sensitive; only the lower-case forms are recognised as keywords
+
+    - **Compiler** (`ASF_Compiler.cls`):
+        - New instance properties `CurrentModulePath` and `IsModuleMode` set by the VM loader before each module compilation
+        - New `ParseImportStatement` method — parses all five supported import forms and produces an `Import` AST node
+        - New `ParseExportStatement` method — parses named-brace, default-expression, and declaration export forms and produces an `Export` AST node
+        - `CompileProgram` main loop now checks for `KEYWORD / import` and `KEYWORD / export` tokens before falling through to the existing statement collector; matched statements are added directly to `stmtsAST` via `GoTo Compiler_MainLoop`
+
+    - **VM** (`ASF_VM.cls`):
+        - New builtins `cwd` and `scwd` in the Call-case builtin dispatcher; both read/write `GLOBALS_.CURRENT_MODULE_PATH`
+        - New `ExecModImport` — resolves module path, calls `LoadModule`, then binds default, namespace, or named imports into the caller's scope; named-export values are resolved through `EvalExprNode` (Variable fallback to `gFuncTable`) so that top-level `fun` declarations export correctly
+        - New `ExecModExport` — writes named or default export values into `gModuleExports` for the currently executing module path
+        - New `LoadModule` — orchestrates the full module lifecycle: circular-dependency check against `gLoadingModules`, source read, compilation via a fresh `ASF_Compiler` instance, scope creation, statement execution, pending-export post-processing, and default-export extraction; caches the result in `gModuleRegistry`
+        - New `ResolveModulePath` — for paths beginning with `./` or `../`, prepends the current working directory (normalised to forward-slash); otherwise returns the path unchanged
+        - New `ReadModuleSource` — delegates to `ResolveModulePath`, appends `.vas` if the file does not exist without it, raises error 9012 if still missing, then delegates to `ReadTextFile`
+
+    - **Globals** (`ASF_Globals.cls`):
+        - `gModuleRegistry` (`ASF_Map`) — caches loaded module objects keyed by resolved path
+        - `gModuleExports` (`ASF_Map`) — maps each module path to its live exports map during execution
+        - `gLoadingModules` (`Collection`) — stack of paths currently being loaded; used for circular-dependency detection
+        - `CURRENT_MODULE_PATH` (`String`) — the working directory used by `ResolveModulePath` and read/written by `cwd`/`scwd`
+        - All four members are initialised in `ASF_InitGlobals`
+
+    - **ASF UI** (`ASF.cls`):
+        - New `Execute(filePath As String)` method — reads, compiles, and runs a `.vas` file in a single call; returns the program output
+        - New `WorkingDir` property (get/set) — direct access to `GLOBALS_.CURRENT_MODULE_PATH`
+        - New `ClearModuleCache` method — resets `gModuleRegistry`, `gModuleExports`, `gLoadingModules`, and `CURRENT_MODULE_PATH`
+        - New `ReadTextFile(filePath)` method — exposes the VM's binary-stream file reader
+
+- **Technical Details**:
+    - **Import AST Node**:
+		```
+				Import {
+				  type:              "Import"
+				  source:            String              // raw string-literal value from 'from' clause
+				  defaultImport:     String              // present only for default-import forms
+				  namespaceImport:   String              // present only for * as X forms
+				  namedImports:      Collection          // present only when { … } specifiers exist;
+				}                                        //   each item is an ImportSpecifier
+		```
+
+    - **ImportSpecifier AST Node**:
+		```
+				ImportSpecifier {
+				  type:      "ImportSpecifier"
+				  imported:  String      // name as it appears in the exporting module
+				  local:     String      // name bound in the importing scope (differs when 'as' used)
+				}
+		```
+
+    - **Export AST Node** (three shapes):
+		```
+				// default form
+				Export {
+				  type:        "Export"
+				  isDefault:   True
+				  expression:  ExprNode     // parsed expression after 'default'
+				}
+
+				// named-brace form
+				Export {
+				  type:            "Export"
+				  isDefault:       False
+				  namedExports:    Collection     // each item is an ExportSpecifier
+				}
+
+				// declaration form  (export fun …)
+				Export {
+				  type:               "Export"
+				  isDefault:          False
+				  declarationType:    "function"
+				  declarationName:    String      // function name; main loop re-parses the declaration
+				}
+		```
+
+    - **ExportSpecifier AST Node**:
+		```
+				ExportSpecifier {
+				  type:       "ExportSpecifier"
+				  local:      String      // name in the module's own scope
+				  exported:   String      // name exposed to importers (differs when 'as' used)
+				}
+		```
+
+    - **Module Object** (stored in `gModuleRegistry`):
+		```
+				Module (ASF_Map) {
+				  path:            String      // resolved absolute path used as cache key
+				  loaded:          Boolean     // True after full execution completes
+				  exports:         ASF_Map     // live named-export bindings (name → value)
+				  defaultExport:   Variant     // present only when module contains 'export default'
+				}
+		```
+
+    - **New Keywords** (tokenised as `["KEYWORD", value]`):
+		```
+				"import"   "export"  "default"   "as"
+		```
+
+    - **Error Messages**:
+        - `"Unexpected end after import"` — import statement truncated (Compiler, #8001)
+        - `"Expected 'as' after * in import"` — namespace import missing `as` (Compiler, #8002)
+        - `"Expected identifier after 'as'"` — `as` not followed by a name (Compiler, #8003 / #8004 / #8011)
+        - `"Invalid import syntax"` — unrecognised token after `import` (Compiler, #8005)
+        - `"Expected 'from' in import statement"` — missing `from` clause (Compiler, #8006)
+        - `"Expected string literal for module path"` — non-string after `from` (Compiler, #8007)
+        - `"Unexpected end after export"` — export statement truncated (Compiler, #8010)
+        - `"Expected function name after 'fun'"` — `export fun` not followed by name (Compiler, #8012)
+        - `"Invalid export syntax"` — unrecognised token after `export` (Compiler, #8013)
+        - `"Export 'X' not found in module 'Y'"` — named import references missing key (VM, #9001)
+        - `"Circular dependency detected: X"` — module re-entered while still loading (VM, #9010)
+        - `"Failed to load module: X"` — source read raised an error (VM, #9011)
+        - `"Module file not found: X"` — path does not exist after `.vas` fallback (VM, #9012)
+
+---
+
+**Full Changelog**: https://github.com/ECP-Solutions/ASF/compare/v2.0.8...v3.0.0
+
 ## [v2.0.8] - 2026-02-01
 https://github.com/ECP-Solutions/ASF/releases/tag/v2.0.8
 

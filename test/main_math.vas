@@ -1,0 +1,5 @@
+scwd(wd); 
+import { add, multiply, PI } from './math.vas';
+result = add(5, 3);
+area = PI * multiply(5, 5);
+return `5 + 3 = ${result}, Circle area: ${area}`;// => 78.53975

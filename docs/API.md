@@ -32,6 +32,7 @@ This document describes the runtime API exposed by ASF scripts and the VM builti
 ## Runtime model & conventions
 
 - **Program**: a compiled AST that can be executed by the VM. The ASF host exposes `.Compile(script)` → programIndex and `.Run(programIndex)` to run. The `Run` method returns the result of the program being executed.
+- **Modules**: files with the `.vas` file extension can be executed using the `Execute` method. As with the `Run` method, the result of the program is returned.
 - **Scope / closures**: closures capture the environment by reference (shared-write semantics). That means nested functions can mutate outer-scope variables and see changes across closures.
 - **Indexing base**: arrays honor `__option_base` set in runtime globals (commonly 0 or 1). All array helpers and methods handle this consistently.
 - **Call signature for array callbacks**:
