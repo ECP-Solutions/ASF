@@ -32,7 +32,6 @@ This document describes the runtime API exposed by ASF scripts and the VM builti
 ## Runtime model & conventions
 
 - **Program**: a compiled AST that can be executed by the VM. The ASF host exposes `.Compile(script)` → programIndex and `.Run(programIndex)` to run. The `Run` method returns the result of the program being executed.
-- **Modules**: files with the `.vas` file extension can be executed using the `Execute` method. As with the `Run` method, the result of the program is returned.
 - **Scope / closures**: closures capture the environment by reference (shared-write semantics). That means nested functions can mutate outer-scope variables and see changes across closures.
 - **Indexing base**: arrays honor `__option_base` set in runtime globals (commonly 0 or 1). All array helpers and methods handle this consistently.
 - **Call signature for array callbacks**:
@@ -72,6 +71,10 @@ These are callable as top-level functions or via the helper bridge; some are als
 - `IsNumeric(x)` — returns `true` if `x` is numeric. 
 - `forEach(arr, fn)` — executes the provided function once for each array element. This method returns the original array, doesn't behave like the javascript alternative.
 - `Regex(pattern?, ignoreCase?, multiline?, dotAll?)` — regex Object constructor. If all arguments are omitted, the regex Object will not initialized. If one argument is given, this is considered the `pattern`; if two arguments are given, `pattern` and `ignoreCase` flag will be set; if three arguments are given, `pattern`, `ignoreCase` and `multiline` flags will be set; when all arguments are givem, also the `dotAll` is set. 
+- `cwd()` — returns the current working directory as a string. Used for module path resolution.  
+  - Example: `currentPath = cwd();`
+- `scwd(path)` — sets the current working directory. Affects relative module path resolution (`./`, `../`).  
+  - Example: `scwd(wd); import { add } from './math.vas';` 
 
 > Those are the current named builtins surfaced for scripts.
 

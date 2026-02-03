@@ -29,6 +29,8 @@ This document defines the concrete syntax supported by the Advanced Scripting Fr
 - VBExpression block: `@(...)` — raw VBAexpressions block evaluated via the [VBA-Expressions](https://github.com/ECP-Solutions/VBA-Expressions) bridge.
 - Null literal: `null` (literal representing absence of value)
 - Boolean literals: `true`, `false`
+- **Module system**: `import`/`export` statements for organizing code across `.vas` files
+- **Working directory builtins**: `cwd()` and `scwd(path)` for managing module resolution paths
 
 ---
 
@@ -54,6 +56,9 @@ This BNF uses a mixture of concrete tokens and non-terminals to show the languag
                    | <func-decl>
                    | <class-decl>
                    | <let-decl>
+                   | <import-stmt>
+                   | <export-stmt>
+                   | <array-destructuring>
 
 <if-stmt>        ::= 'if' '(' <expr> ')' <block>
                      ( 'elseif' '(' <expr> ')' <block> )*
@@ -108,6 +113,30 @@ This BNF uses a mixture of concrete tokens and non-terminals to show the languag
 <static-method-decl> ::= 'static' IDENT '(' <paramlist> ')' <block>
 
 <let-decl>       ::= 'let' IDENT [ '=' <expr> ]
+
+<import-stmt>    ::= 'import' <import-clause> 'from' STRING
+
+<import-clause>  ::= IDENT                                     // default import
+                   | '{' <named-imports> '}'                  // named imports
+                   | '*' 'as' IDENT                           // namespace import
+                   | IDENT ',' '{' <named-imports> '}'        // mixed import
+
+<named-imports>  ::= <import-specifier> ( ',' <import-specifier> )*
+
+<import-specifier> ::= IDENT [ 'as' IDENT ]
+
+<export-stmt>    ::= 'export' '{' <named-exports> '}'         // named exports
+                   | 'export' 'default' <expr>                // default export
+                   | 'export' 'fun' IDENT '(' <paramlist> ')' <block>  // function export
+
+<named-exports>  ::= <export-specifier> ( ',' <export-specifier> )*
+
+<export-specifier> ::= IDENT [ 'as' IDENT ]
+
+<array-destructuring> ::= '[' <target-list> ']' '=' <expr>
+
+<target-list>    ::= IDENT ( ',' IDENT )*
+                   | IDENT ( ',' IDENT )* ',' '...' IDENT     // with rest element
 
 <block>          ::= '{' <stmts> '}'
                    | <stmt>
@@ -173,14 +202,23 @@ This BNF uses a mixture of concrete tokens and non-terminals to show the languag
                    | 'this'
                    | 'super'
 
-<arglist>        ::= [ <expr> ( ',' <expr> )* ]
+<arglist>        ::= [ <arg-item> ( ',' <arg-item> )* ]
 
-<elemlist>       ::= [ <expr> ( ',' <expr> )* ]
+<arg-item>       ::= '...' <expr>                             // spread operator
+                   | <expr>
+
+<elemlist>       ::= [ <elem-item> ( ',' <elem-item> )* ]
+
+<elem-item>      ::= '...' <expr>                             // spread operator
+                   | <expr>
 
 <obj-items>      ::= [ (<IDENT | STRING> ':' <expr>)
                        (',' (<IDENT|STRING> ':' <expr>))* ]
 
-<paramlist>      ::= [ IDENT ( ',' IDENT )* ]
+<paramlist>      ::= [ <param-item> ( ',' <param-item> )* ]
+
+<param-item>     ::= IDENT
+                   | '...' IDENT                              // rest parameter
 
 <string-escape>  ::= '\\'
                    | '\''
@@ -209,6 +247,8 @@ VBA_EXPR         ::= any raw text until matching ')'
 Notes:
 - The parser also accepts top-level function declarations using the same `fun` syntax with a name: `fun name(params) { body }` — these are converted to program-level function definitions and stored in the global program table.
 - Collapsed identifiers like `o.a[2].b` are parsed into nested AST nodes (`Variable`/`Member`/`Index`) by the compiler helper `ParseCollapsedIdentToNode`.
+- **Module imports/exports**: `import` and `export` statements enable code organization across multiple `.vas` files with caching and circular-dependency detection.
+- **Spread/rest operators**: The `...` operator expands arrays in literals/calls and collects remaining elements in destructuring/parameters.
 
 ---
 
@@ -252,11 +292,122 @@ From highest precedence to lowest:
 
 ---
 
+## Module system
+
+ASF v3.0.0 introduces a full ECMAScript-style module system using `import` and `export` statements.
+
+### File extension
+
+- **`.vas`** — VBA Advanced Scripting source files
+- Module paths use `.vas` extension (auto-appended if omitted)
+- Relative paths (`./`, `../`) resolve against current working directory
+
+### Imports
+
+#### Named imports
+```javascript
+import { add, multiply, PI } from './math.vas';
+```
+
+#### Default import
+```javascript
+import Calculator from './calculator.vas';
+```
+
+#### Namespace import
+```javascript
+import * as utils from './utils.vas';
+name = utils.formatName('John', 'Doe');
+```
+
+#### Mixed import
+```javascript
+import mainFunc, { helper, VERSION } from './lib.vas';
+```
+
+#### Import with aliases
+```javascript
+import { add as sum, multiply as times } from './math.vas';
+```
+
+### Exports
+
+#### Named exports
+```javascript
+fun add(a, b) { return a + b; };
+PI = 3.14159;
+export { add, PI };
+```
+
+#### Default export
+```javascript
+export default Calculator;
+```
+
+#### Function export
+```javascript
+export fun processData(data) {
+    return data.map(fun(x) { return x * 2; });
+};
+```
+
+#### Export with aliases
+```javascript
+export { localName as publicName };
+```
+
+### Module features
+
+- **Caching**: Modules execute once; subsequent imports return cached exports
+- **Circular dependency detection**: Runtime error if module re-enters during load
+- **Path resolution**: Relative paths (`./`, `../`) resolved against `cwd()`
+
+---
+
+## Working directory builtins
+
+### `cwd()`
+Returns the current working directory as a string.
+
+```javascript
+currentPath = cwd();
+```
+
+### `scwd(path)`
+Sets the current working directory. Affects relative module path resolution.
+
+```javascript
+scwd(wd);  // Set working directory
+import { add } from './math.vas';  // Resolved relative to cwd()
+```
+
+**VBA usage pattern:**
+```vba
+Dim eng As New ASF
+eng.InjectVariable "wd", ThisWorkbook.Path
+result = eng.Execute(ThisWorkbook.Path & "\main.vas")
+```
+
+---
+
 ## Functions & closures
 
 - `fun(x,y) { return x+y }` produces a closure value.
 - Top-level functions: `fun add(a,b) { return a + b }` — compiled into the global program table and callable by name.
 - Closures implement **shared-write** semantics: they capture the runtime scope by reference. Mutations to outer-scope variables are visible across all closures that share that scope.
+
+### Rest parameters
+
+Functions can collect remaining arguments into an array:
+
+```javascript
+fun sum(first, ...rest) {
+    total = first;
+    rest.forEach(fun(n) { total = total + n; });
+    return total;
+};
+sum(1, 2, 3, 4);  // => 10
+```
 
 ### Call semantics
 
@@ -264,6 +415,55 @@ From highest precedence to lowest:
   - The runtime binds parameters in a new scope linked to the closure's environment.
   - Callback functions receive `(value, index, array)` when called by array-methods.
   - `this` is supported when calling closures via bound method objects or when a `thisArg` is supplied.
+
+---
+
+## Spread/rest operators
+
+### Spread in arrays
+```javascript
+arr1 = [1, 2, 3];
+arr2 = [0, ...arr1, 4, 5];  // => [0, 1, 2, 3, 4, 5]
+```
+
+### Spread in function calls
+```javascript
+fun add(a, b, c) { return a + b + c; };
+numbers = [1, 2, 3];
+result = add(...numbers);  // => 6
+```
+
+### Spread strings
+```javascript
+chars = [...'hello'];  // => ['h', 'e', 'l', 'l', 'o']
+```
+
+### Rest in destructuring
+```javascript
+[first, ...rest] = [1, 2, 3, 4, 5];
+// first = 1, rest = [2, 3, 4, 5]
+```
+
+---
+
+## Array destructuring
+
+```javascript
+// Basic destructuring
+[a, b, c] = [1, 2, 3];  // a=1, b=2, c=3
+
+// With rest element
+[head, ...tail] = myArray;
+
+// Variable swapping
+[a, b] = [b, a];
+
+// Fewer targets than elements
+[x, y] = [10, 20, 30, 40];  // x=10, y=20
+
+// More targets than elements
+[p, q, r] = [100, 200];  // p=100, q=200, r=Empty
+```
 
 ---
 
@@ -296,6 +496,9 @@ ASF uses Map-based AST nodes internally. Common node `type` values include:
 - `Object` — { type: "Object", items: [ (key,node), ... ] }
 - `VBAexpr` — { type: "VBAexpr", expr: "..." }
 - `BuiltinMethod` — runtime-built map representing a bound method (when `a.map` is evaluated and `a` is an array)
+- `Import` — { type: "Import", source: "...", defaultImport?: "...", namespaceImport?: "...", namedImports?: [...] }
+- `Export` — { type: "Export", isDefault: bool, expression?: <node>, namedExports?: [...], declarationType?: "function", declarationName?: "..." }
+- `ArrayDestructuring` — { type: "ArrayDestructuring", targets: [...], restTarget?: "...", source: <node> }
 
 ---
 
@@ -323,6 +526,27 @@ print(o.incr(o.v));  // PRINT:11
 // VBExpr embedding (evaluated by VBAexpressions)
 a = @({1;0;4});
 print(a);
+
+// spread/rest operators
+arr1 = [1, 2];
+arr2 = [3, 4];
+combined = [...arr1, ...arr2];  // [1, 2, 3, 4]
+
+fun sum(...numbers) {
+    return numbers.reduce(fun(acc, x) { return acc + x; }, 0);
+};
+print(sum(1, 2, 3, 4, 5));  // PRINT:15
+
+// array destructuring
+[a, b] = [10, 20];
+[first, ...rest] = [1, 2, 3, 4];
+
+// module system
+scwd(wd);
+import { add, multiply } from './math.vas';
+import * as utils from './utils.vas';
+result = add(5, 3);
+name = utils.formatName('John', 'Doe');
 ```
 
 Notes & hints
@@ -330,9 +554,11 @@ Notes & hints
 - null is a valid literal returned by expressions and used to represent absence of value.
 - Arrays in ASF are implemented as Variant arrays and honor __option_base (runtime option that sets the base index).
 - The compiler will attempt to expand collapsed identifiers like a.b[3].c into nested AST nodes so the VM can handle LValue semantics correctly.
+- **Module caching**: Each `.vas` file executes once per session; `ClearModuleCache()` resets the cache.
+- **Working directory**: Use `scwd(path)` to set the base directory for relative imports before loading modules.
 
 ---
 
 References
 
-See [TestRunner.bas](/test/TestRunner.bas) for a comprehensive test-driven specification (85+ tests that exercise syntax and runtime behavior).
+See [TestRunner.bas](/test/TestRunner.bas) for a comprehensive test-driven specification (373+ tests that exercise syntax and runtime behavior).
