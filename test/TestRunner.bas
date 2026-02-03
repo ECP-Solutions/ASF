@@ -3992,5 +3992,17 @@ TestFail:
     Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
+'@TestMethod("math")
+Private Sub math_basic()
+    On Error GoTo TestFail
+    
+    actual = CStr(GetResult("return(Math.pow(Math.min(1, 2, -3), 2));"))
+    expected = "9"
+    Assert.AreEqual expected, actual
 
-
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub

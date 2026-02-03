@@ -26,14 +26,15 @@ Version 1.0 | Complete Language Reference
 10. [Objects](#objects)
 11. [Object Member Methods](#object-member-methods)
 12. [Classes](#classes)
-13. [Built-in Functions](#built-in-functions)
-14. [String Methods](#string-methods)
-15. [Array Methods](#array-methods)
-16. [Template Literals](#template-literals)
-17. [Regular Expressions](#regular-expressions)
-18. [Error Handling](#error-handling)
-19. [VBA Integration](#vba-integration)
-20. [Best Practices](#best-practices)
+13. [Module System](#module-system)
+14. [Built-in Functions](#built-in-functions)
+15. [String Methods](#string-methods)
+16. [Array Methods](#array-methods)
+17. [Template Literals](#template-literals)
+18. [Regular Expressions](#regular-expressions)
+19. [Error Handling](#error-handling)
+20. [VBA Integration](#vba-integration)
+21. [Best Practices](#best-practices)
 
 ---
 
@@ -1998,6 +1999,296 @@ print(account.getInfo());  // John Doe (ACC12345): $750
 
 ---
 
+
+---
+
+## Module System
+
+ASF v3.0.0 introduces a full ECMAScript-style module system using `import` and `export` statements to organize code across multiple files.
+
+### File Extension
+
+ASF source files use the **`.vas`** extension (VBA Advanced Scripting):
+
+```
+project/
+├── main.vas
+├── math.vas
+├── utils.vas
+└── lib.vas
+```
+
+Module paths automatically append `.vas` if omitted. Example: `'./math'` resolves to `'./math.vas'`.
+
+### Imports
+
+#### Named Imports
+
+Import specific exports by name:
+
+```javascript
+import { add, multiply, PI } from './math.vas';
+
+result = add(5, 3);
+area = PI * multiply(5, 5);
+```
+
+#### Default Import
+
+Import the default export:
+
+```javascript
+import Calculator from './calculator.vas';
+
+calc = Calculator();
+sum = calc.add(10, 5);
+```
+
+#### Namespace Import
+
+Import all exports as a namespace object:
+
+```javascript
+import * as utils from './utils.vas';
+
+name = utils.formatName('John', 'Doe');
+upperName = utils.uppercase(name);
+```
+
+#### Mixed Import
+
+Import both default and named exports:
+
+```javascript
+import mainFunc, { helper, VERSION } from './lib.vas';
+
+print(mainFunc());      // Uses default export
+print(helper());        // Uses named export
+print(VERSION);         // Uses named export
+```
+
+#### Import with Aliases
+
+Rename imports to avoid conflicts:
+
+```javascript
+import { add as sum, multiply as times } from './math.vas';
+
+result = sum(2, 3);
+product = times(4, 5);
+```
+
+### Exports
+
+#### Named Exports
+
+Export multiple values by name:
+
+```javascript
+// math.vas
+fun add(a, b) {
+    return a + b;
+};
+
+fun multiply(a, b) {
+    return a * b;
+};
+
+PI = 3.14159;
+
+export { add, multiply, PI };
+```
+
+#### Default Export
+
+Export a single default value:
+
+```javascript
+// calculator.vas
+fun Calculator() {
+    return {
+        add: fun(a, b) { return a + b; },
+        subtract: fun(a, b) { return a - b; }
+    };
+};
+
+export default Calculator;
+```
+
+#### Function Export
+
+Export a function declaration:
+
+```javascript
+export fun processData(data) {
+    return data.map(fun(x) { return x * 2; });
+};
+```
+
+#### Export with Aliases
+
+Rename exports:
+
+```javascript
+fun internalName() {
+    return 'Internal implementation';
+};
+
+export { internalName as publicName };
+```
+
+### Module Features
+
+- **Caching**: Each module executes once; subsequent imports return cached exports
+- **Circular Dependency Detection**: Runtime error if a module re-enters during loading
+- **Path Resolution**: Relative paths (`./`, `../`) resolve against `cwd()`
+- **Isolation**: Each module has its own scope; only exported values are accessible
+
+### Working Directory
+
+Use `cwd()` and `scwd()` to manage module resolution:
+
+```javascript
+// Set working directory before imports
+scwd(wd);
+
+// Relative imports now resolve from wd
+import { add } from './math.vas';
+import { helper } from '../lib/utils.vas';
+
+// Get current directory
+currentDir = cwd();
+```
+
+### VBA Usage
+
+From VBA, use the `Execute` method to run `.vas` files:
+
+```vba
+Sub RunModule()
+    Dim eng As New ASF
+    
+    ' Set working directory
+    eng.InjectVariable "wd", ThisWorkbook.Path
+    
+    ' Execute module file
+    Dim result As Variant
+    result = eng.Execute(ThisWorkbook.Path & "\main.vas")
+    
+    Debug.Print result
+End Sub
+```
+
+Or manually compile and run:
+
+```vba
+Sub RunModuleManual()
+    Dim eng As New ASF
+    Dim code As String
+    
+    ' Set working directory
+    eng.WorkingDir = ThisWorkbook.Path
+    
+    ' Read and execute
+    code = eng.ReadTextFile(ThisWorkbook.Path & "\main.vas")
+    Dim idx As Long
+    idx = eng.Compile(code)
+    
+    eng.Run idx
+    Debug.Print eng.OUTPUT_
+End Sub
+```
+
+### Module Cache Management
+
+Clear the module cache to force re-execution:
+
+```vba
+' From VBA
+eng.ClearModuleCache
+
+' Modules will execute fresh on next import
+```
+
+### Example Project Structure
+
+```
+project/
+├── main.vas           ' Entry point
+├── math.vas           ' Math utilities
+├── utils.vas          ' String utilities
+├── lib.vas            ' Shared library
+└── calculator.vas     ' Calculator class
+```
+
+**main.vas:**
+```javascript
+scwd(wd);
+import { add, multiply } from './math.vas';
+import * as utils from './utils.vas';
+import Calculator from './calculator.vas';
+
+calc = Calculator();
+result = calc.add(add(5, 3), multiply(2, 4));
+name = utils.formatName('ASF', 'Framework');
+
+return `${name}: ${result}`;
+```
+
+**math.vas:**
+```javascript
+fun add(a, b) { return a + b; };
+fun multiply(a, b) { return a * b; };
+PI = 3.14159;
+
+export { add, multiply, PI };
+```
+
+**utils.vas:**
+```javascript
+fun formatName(first, last) {
+    return first + ' ' + last;
+};
+
+fun uppercase(str) {
+    return str.toUpperCase();
+};
+
+export { formatName, uppercase };
+```
+
+**calculator.vas:**
+```javascript
+fun Calculator() {
+    return {
+        add: fun(a, b) { return a + b; },
+        subtract: fun(a, b) { return a - b; },
+        multiply: fun(a, b) { return a * b; },
+        divide: fun(a, b) { return a / b; }
+    };
+};
+
+export default Calculator;
+```
+
+### Error Handling
+
+Module-related errors:
+
+```javascript
+try {
+    import { missing } from './nonexistent.vas';
+} catch (e) {
+    print('Module load failed: ' + e);
+};
+```
+
+Common errors:
+- **Module file not found** (#9012): File doesn't exist at resolved path
+- **Circular dependency detected** (#9010): Module re-enters during load
+- **Export not found** (#9001): Requested export doesn't exist in module
+- **Failed to load module** (#9011): Source read or compilation error
+
 ## Built-in Functions
 
 ### Output
@@ -2120,6 +2411,43 @@ let re2 = regex(`\\d+`);      // Matches digits
 
 ---
 
+
+### Module System Utilities
+
+#### cwd
+
+Get current working directory:
+
+```javascript
+let currentPath = cwd();
+print(currentPath);  // Shows current working directory
+```
+
+#### scwd
+
+Set current working directory for module resolution:
+
+```javascript
+scwd(wd);  // Set working directory
+
+// Relative imports now resolve from this directory
+import { add } from './math.vas';
+```
+
+**Usage pattern with VBA:**
+
+```vba
+Dim eng As New ASF
+eng.InjectVariable "wd", ThisWorkbook.Path
+result = eng.Execute(ThisWorkbook.Path & "\main.vas")
+```
+
+Inside the `.vas` file:
+
+```javascript
+scwd(wd);  // Use injected working directory
+import { helper } from './utils.vas';
+```
 ## String Methods
 
 ### Accessing Characters
@@ -2942,7 +3270,6 @@ The following words are reserved and cannot be used as variable names:
 - No `const` declaration (use `let`)
 - No `var` (use `let`)
 - Limited regex features compared to JavaScript
-- No module system (import/export)
 
 ### Future Enhancements
 

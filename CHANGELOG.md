@@ -2,6 +2,259 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [v3.0.1] - 2026-02-04
+https://github.com/ECP-Solutions/ASF/releases/tag/v3.0.1
+
+## Summary
+ASF v3.0.1 adds a comprehensive `Math` object providing JavaScript-compatible mathematical constants and functions. The Math object exposes 28 functions and 2 constants accessible through property syntax (e.g., `Math.sin(x)`, `Math.PI`), enabling scientific computing and advanced numerical operations within VBA Advanced Scripting.
+
+---
+
+## Highlights
+
+- **Added**
+    - Math object — JavaScript-compatible mathematical namespace with constants and methods:
+        ```javascript
+        // ── Mathematical constants ─────────────────────────
+        Math.E;         // Euler's number ≈ 2.718281828
+        Math.PI;        // Pi ≈ 3.141592654
+
+        // ── Trigonometric functions ────────────────────────
+        Math.sin(Math.PI / 2);      // => 1
+        Math.cos(Math.PI);          // => -1
+        Math.tan(Math.PI / 4);      // => 1
+
+        Math.asin(1);               // => 1.5708 (π/2)
+        Math.acos(0);               // => 1.5708 (π/2)
+        Math.atan(1);               // => 0.7854 (π/4)
+        Math.atan2(1, 1);           // => 0.7854 (π/4)
+
+        // ── Hyperbolic functions ───────────────────────────
+        Math.sinh(1);               // => 1.1752
+        Math.cosh(1);               // => 1.5431
+        Math.tanh(1);               // => 0.7616
+
+        Math.asinh(1);              // => 0.8814
+        Math.acosh(2);              // => 1.3170
+        Math.atanh(0.5);            // => 0.5493
+
+        // ── Exponential & logarithmic ──────────────────────
+        Math.exp(2);                // => 7.389 (e²)
+        Math.expm1(0.1);            // => 0.1052 (e^x - 1)
+
+        Math.log(Math.E);           // => 1 (natural log)
+        Math.log10(100);            // => 2 (base-10 log)
+        Math.log2(8);               // => 3 (base-2 log)
+        Math.log1p(0.1);            // => 0.0953 (ln(1 + x))
+
+        // ── Power & roots ──────────────────────────────────
+        Math.pow(2, 8);             // => 256
+        Math.sqrt(16);              // => 4
+        Math.cbrt(27);              // => 3 (cube root)
+        Math.hypot(3, 4);           // => 5 (√(3² + 4²))
+        Math.hypot(1, 2, 2);        // => 3 (√(1² + 2² + 2²))
+
+        // ── Rounding ───────────────────────────────────────
+        Math.floor(4.7);            // => 4
+        Math.ceil(4.1);             // => 5
+        Math.round(4.5);            // => 4 (rounds to even)
+        Math.round(5.5);            // => 6
+
+        // ── Sign & absolute value ──────────────────────────
+        Math.abs(-5);               // => 5
+        Math.sign(-10);             // => -1
+        Math.sign(0);               // => 0
+        Math.sign(42);              // => 1
+
+        // ── Min/max (variadic) ─────────────────────────────
+        Math.max(1, 5, 3, 9, 2);    // => 9
+        Math.min(1, 5, 3, 9, 2);    // => 1
+        ```
+
+    - Practical examples:
+        ```javascript
+        // ── Distance calculation ───────────────────────────
+        fun distance(x1, y1, x2, y2) {
+            return Math.hypot(x2 - x1, y2 - y1);
+        };
+        d = distance(0, 0, 3, 4);   // => 5
+
+        // ── Degree/radian conversion ───────────────────────
+        fun toRadians(degrees) {
+            return degrees * Math.PI / 180;
+        };
+        fun toDegrees(radians) {
+            return radians * 180 / Math.PI;
+        };
+        angle = toRadians(90);      // => 1.5708
+        degrees = toDegrees(Math.PI); // => 180
+
+        // ── Circle area ────────────────────────────────────
+        fun circleArea(radius) {
+            return Math.PI * Math.pow(radius, 2);
+        };
+        area = circleArea(5);       // => 78.5398
+
+        // ── Statistical operations ─────────────────────────
+        fun mean(numbers) {
+            sum = numbers.reduce(fun(acc, x) { return acc + x; }, 0);
+            return sum / numbers.length;
+        };
+        fun variance(numbers) {
+            avg = mean(numbers);
+            return mean(numbers.map(fun(x) {
+                return Math.pow(x - avg, 2);
+            }));
+        };
+        fun stddev(numbers) {
+            return Math.sqrt(variance(numbers));
+        };
+
+        data = [2, 4, 4, 4, 5, 5, 7, 9];
+        avg = mean(data);           // => 5
+        std = stddev(data);         // => 2
+
+        // ── Sigmoid function (ML) ──────────────────────────
+        fun sigmoid(x) {
+            return 1 / (1 + Math.exp(-x));
+        };
+        s = sigmoid(0);             // => 0.5
+
+        // ── Clamp value to range ───────────────────────────
+        fun clamp(value, min, max) {
+            return Math.max(min, Math.min(max, value));
+        };
+        clamped = clamp(150, 0, 100); // => 100
+        ```
+
+- **Internal core changes**:
+    - **VM** (`ASF_VM.cls`):
+        - Math object implemented as a property-dispatch builtin in `EvalMemberNode`
+        - Check for `baseLocal.GetValue("name") = "Math"` after builtin method lookup
+        - Math constants (`E`, `PI`) evaluated immediately and returned
+        - Math methods route through existing Call evaluation with `propN` matching function name
+        - All 28 functions implemented using VBA native math functions (`Atn`, `Exp`, `Log`, `Sqr`, etc.)
+        - Variadic support for `hypot`, `max`, `min` using `For Each` loops over `evaluated` collection
+
+- **Technical Details**:
+    - **Math Constants**:
+        ```
+        Math.E   → Exp(1)           ≈ 2.718281828459045
+        Math.PI  → 4 * Atn(1)       ≈ 3.141592653589793
+        ```
+
+    - **Trigonometric Functions** (argument in radians):
+        ```
+        Math.sin(x)     → Sine
+        Math.cos(x)     → Cosine
+        Math.tan(x)     → Tangent
+        Math.asin(x)    → Arcsine (returns NaN if |x| > 1)
+        Math.acos(x)    → Arccosine (returns NaN if |x| > 1)
+        Math.atan(x)    → Arctangent
+        Math.atan2(y,x) → Two-argument arctangent (quadrant-aware)
+        ```
+
+    - **Hyperbolic Functions**:
+        ```
+        Math.sinh(x)    → Hyperbolic sine
+        Math.cosh(x)    → Hyperbolic cosine
+        Math.tanh(x)    → Hyperbolic tangent
+        Math.asinh(x)   → Inverse hyperbolic sine
+        Math.acosh(x)   → Inverse hyperbolic cosine (returns NaN if x < 1)
+        Math.atanh(x)   → Inverse hyperbolic tangent (returns NaN if |x| >= 1)
+        ```
+
+    - **Exponential & Logarithmic Functions**:
+        ```
+        Math.exp(x)     → e^x
+        Math.expm1(x)   → e^x - 1 (more accurate for small x)
+        Math.log(x)     → Natural logarithm (returns NaN if x <= 0)
+        Math.log10(x)   → Base-10 logarithm (returns NaN if x <= 0)
+        Math.log2(x)    → Base-2 logarithm (returns NaN if x <= 0)
+        Math.log1p(x)   → ln(1 + x) (returns NaN if x <= 0)
+        ```
+
+    - **Power & Root Functions**:
+        ```
+        Math.pow(x, y)  → x^y
+        Math.sqrt(x)    → Square root
+        Math.cbrt(x)    → Cube root (handles negative values)
+        Math.hypot(...) → √(x₁² + x₂² + ... + xₙ²) (Euclidean norm)
+        ```
+
+    - **Rounding Functions**:
+        ```
+        Math.floor(x)   → Largest integer ≤ x
+        Math.ceil(x)    → Smallest integer ≥ x
+        Math.round(x)   → Rounds to nearest integer (banker's rounding)
+        ```
+
+    - **Other Functions**:
+        ```
+        Math.abs(x)     → Absolute value
+        Math.sign(x)    → -1, 0, or 1 depending on sign
+        Math.max(...)   → Maximum value (variadic)
+        Math.min(...)   → Minimum value (variadic)
+        ```
+
+    - **Implementation Notes**:
+        - All trigonometric functions expect radians (not degrees)
+        - `Math.round()` uses VBA's `Round()` (round-to-even)
+        - Invalid inputs (e.g., `Math.asin(2)`) return the string `"NaN"`
+        - `Math.atan2(y, x)` follows JavaScript convention (y-coordinate first)
+        - `Math.cbrt(x)` correctly handles negative values: `Math.cbrt(-8) => -2`
+        - Variadic functions (`hypot`, `max`, `min`) accept any number of arguments
+
+    - **Special Cases**:
+        ```
+        Math.acos(1)           => 0
+        Math.acos(-1)          => π (3.14159...)
+        Math.asin(1)           => π/2 (1.5708...)
+        Math.asin(-1)          => -π/2 (-1.5708...)
+        Math.acosh(1)          => 0
+        Math.atan2(0, 0)       => 0
+        Math.atan2(0, -1)      => π
+        Math.atanh(0)          => 0
+        Math.ceil(-4.7)        => -4
+        Math.floor(-4.7)       => -5
+        ```
+
+---
+
+## Usage Examples
+
+```javascript
+// Scientific calculator
+fun quadraticFormula(a, b, c) {
+    discriminant = Math.pow(b, 2) - 4 * a * c;
+    
+    if (discriminant < 0) {
+        return null;  // No real solutions
+    };
+    
+    sqrtDisc = Math.sqrt(discriminant);
+    x1 = (-b + sqrtDisc) / (2 * a);
+    x2 = (-b - sqrtDisc) / (2 * a);
+    
+    return [x1, x2];
+};
+
+// Solve x² - 5x + 6 = 0
+solutions = quadraticFormula(1, -5, 6);
+// => [3, 2]
+
+// Trigonometric calculations
+fun polarToCartesian(r, theta) {
+    x = r * Math.cos(theta);
+    y = r * Math.sin(theta);
+    return { x: x, y: y };
+};
+```
+
+---
+
+**Full Changelog**: https://github.com/ECP-Solutions/ASF/compare/v3.0.0...v3.0.1
+
 ## [v3.0.0] - 2026-02-03
 https://github.com/ECP-Solutions/ASF/releases/tag/v3.0.0
 
