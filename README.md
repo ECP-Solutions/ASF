@@ -505,6 +505,8 @@ After execution, the code returns
 5 + 3 = 8, Circle area: 78.53975
 ```
 
+For more details about ASF's module system visit the [documentation](https://ecp-solutions.github.io/ASF/Language%20reference.html#module-system).
+
 ---
 
 ## Performance & Benchmarks
