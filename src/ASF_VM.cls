@@ -240,7 +240,7 @@ Public Sub RunProgramByIndex(idx As Long)
     progScope.LoadRaw rawScope
 '    progScope.SetValue "__option_base", optionBase
     progScope.SetValue "__option_base", 1 'Enforce option base=1
-    
+    progScope.SetValue "Math", New Collection
     ' Variables injection
     If Not INJECTED_VARIABLES_ Is Nothing Then
         Dim elm As Variant
@@ -3483,6 +3483,180 @@ ContinueDo:
                             Case Else
                                 GoTo namedFunctions
                         End Select
+                    ElseIf TypeName(baseValLocal) = "Collection" Then
+                        ' Check for Math object
+                        Dim baseLocal As Variant
+                        vAssignment baseLocal, calleeExpr.GetValue("base")
+                        If baseLocal.GetValue("name") = "Math" Then
+                            Select Case propN
+                                Case "E"
+                                    tmpResult = Exp(1)
+                                    GoTo exitfun
+                                Case "PI"
+                                    tmpResult = 4 * Atn(1)
+                                    GoTo exitfun
+                                Case "abs"
+                                    tmpResult = Abs(evaluated(1))
+                                    GoTo exitfun
+                                Case "acos"
+                                    If evaluated(1) = -1 Then
+                                        tmpResult = 4 * Atn(1)
+                                    ElseIf evaluated(1) = 1 Then
+                                        tmpResult = 0
+                                    ElseIf evaluated(1) > 1 Or evaluated(1) < -1 Then
+                                        tmpResult = "NaN"
+                                    Else
+                                        tmpResult = Atn(-1 * evaluated(1) / _
+                                                        Sqr(-1 * evaluated(1) * evaluated(1) + 1)) + 2 * Atn(1)
+                                    End If
+                                    GoTo exitfun
+                                Case "acosh"
+                                    If evaluated(1) < 1 Then
+                                        tmpResult = "NaN"
+                                    ElseIf evaluated(1) = 1 Then
+                                        tmpResult = 0
+                                    Else
+                                        tmpResult = Log(evaluated(1) + Sqr(evaluated(1) * evaluated(1) - 1))
+                                    End If
+                                    GoTo exitfun
+                                Case "asin"
+                                    If evaluated(1) = -1 Then
+                                        tmpResult = -2 * Atn(1)
+                                    ElseIf evaluated(1) = 1 Then
+                                        tmpResult = 2 * Atn(1)
+                                    ElseIf evaluated(1) = 0 Then
+                                        tmpResult = 0
+                                    ElseIf evaluated(1) > 1 Or evaluated(1) < -1 Then
+                                        tmpResult = "NaN"
+                                    Else
+                                        tmpResult = Atn(evaluated(1) / Sqr(-1 * evaluated(1) * evaluated(1) + 1))
+                                    End If
+                                    GoTo exitfun
+                                Case "asinh"
+                                    tmpResult = Log(evaluated(1) + Sqr(evaluated(1) * evaluated(1) + 1))
+                                    GoTo exitfun
+                                Case "atan"
+                                    tmpResult = Atn(evaluated(1))
+                                    GoTo exitfun
+                                Case "atan2" 'Arguments => (y, x)
+                                    If evaluated(1) = 0 And evaluated(2) = 0 Then
+                                        tmpResult = 0
+                                    ElseIf evaluated(1) = 0 And evaluated(2) < 0 Then
+                                        tmpResult = 4 * Atn(1)
+                                    Else
+                                        tmpResult = Atn(evaluated(1) / evaluated(2))
+                                    End If
+                                    GoTo exitfun
+                                Case "atanh"
+                                    If evaluated(1) >= 1 Or evaluated(1) <= -1 Then
+                                        tmpResult = "NaN"
+                                    ElseIf evaluated(1) = 0 Then
+                                        tmpResult = 0
+                                    Else
+                                        tmpResult = Log((1 + evaluated(1)) / (1 - evaluated(1))) / 2
+                                    End If
+                                    GoTo exitfun
+                                Case "cbrt"
+                                    tmpResult = Sgn(evaluated(1)) * Abs(evaluated(1)) ^ (1 / 3)
+                                    GoTo exitfun
+                                Case "ceil"
+                                    tmpResult = Fix(evaluated(1))
+                                    tmpResult = tmpResult - ((evaluated(1) <> tmpResult) And (evaluated(1) > 0))
+                                    GoTo exitfun
+                                Case "cos"
+                                    tmpResult = Cos(evaluated(1))
+                                    GoTo exitfun
+                                Case "cosh"
+                                    tmpResult = (Exp(evaluated(1)) + Exp(-1 * evaluated(1))) / 2
+                                    GoTo exitfun
+                                Case "exp"
+                                    tmpResult = Exp(evaluated(1))
+                                    GoTo exitfun
+                                Case "expm1"
+                                    tmpResult = Exp(evaluated(1)) - 1
+                                    GoTo exitfun
+                                Case "floor"
+                                    tmpResult = Fix(evaluated(1))
+                                    tmpResult = tmpResult + ((evaluated(1) <> tmpResult) And (evaluated(1) < 0))
+                                    GoTo exitfun
+                                Case "hypot"
+                                    Dim cat As Variant
+                                    tmpResult = 0
+                                    For Each cat In evaluated
+                                        tmpResult = tmpResult + cat * cat
+                                    Next cat
+                                    tmpResult = tmpResult ^ 0.5
+                                    GoTo exitfun
+                                Case "log"
+                                    If evaluated(1) <= 0 Then
+                                        tmpResult = "NaN"
+                                    Else
+                                        tmpResult = Log(evaluated(1))
+                                    End If
+                                    GoTo exitfun
+                                Case "log10"
+                                    If evaluated(1) <= 0 Then
+                                        tmpResult = "NaN"
+                                    Else
+                                        tmpResult = Log(evaluated(1)) / Log(10)
+                                    End If
+                                    GoTo exitfun
+                                Case "log1p"
+                                    If evaluated(1) <= 0 Then
+                                        tmpResult = "NaN"
+                                    Else
+                                        tmpResult = Log(evaluated(1) + 1)
+                                    End If
+                                    GoTo exitfun
+                                Case "log2"
+                                    If evaluated(1) <= 0 Then
+                                        tmpResult = "NaN"
+                                    Else
+                                        tmpResult = Log(evaluated(1)) / Log(2)
+                                    End If
+                                    GoTo exitfun
+                                Case "max"
+                                    Dim maxEl As Variant
+                                    tmpResult = 0
+                                    For Each maxEl In evaluated
+                                        If maxEl > tmpResult Then
+                                            tmpResult = maxEl
+                                        End If
+                                    Next maxEl
+                                    GoTo exitfun
+                                Case "min"
+                                    Dim minEl As Variant
+                                    tmpResult = 0
+                                    For Each minEl In evaluated
+                                        If minEl < tmpResult Then
+                                            tmpResult = minEl
+                                        End If
+                                    Next minEl
+                                    GoTo exitfun
+                                Case "pow"
+                                    tmpResult = evaluated(1) ^ evaluated(2)
+                                    GoTo exitfun
+                                Case "round"
+                                    tmpResult = Round(evaluated(1))
+                                    GoTo exitfun
+                                Case "sign"
+                                    tmpResult = Sgn(evaluated(1))
+                                    GoTo exitfun
+                                Case "sinh"
+                                    tmpResult = (Exp(evaluated(1)) - Exp(-1 * evaluated(1))) / 2
+                                    GoTo exitfun
+                                Case "sqrt"
+                                    tmpResult = Sqr(evaluated(1))
+                                    GoTo exitfun
+                                Case "tan"
+                                    tmpResult = Tan(evaluated(1))
+                                    GoTo exitfun
+                                Case "tanh"
+                                    tmpResult = (Exp(evaluated(1)) - Exp(-1 * evaluated(1))) / _
+                                                (Exp(evaluated(1)) + Exp(-1 * evaluated(1)))
+                                    GoTo exitfun
+                            End Select
+                        End If
                     End If
                     ' --- end method builtins ---
                 End If
