@@ -58,11 +58,11 @@ Public Function Eval(Optional strValues As String) As String
         Eval = .Eval(strValues)
     End With
 End Function
-Public Function Run(idx As Long) As Variant
+Public Function Run(idx As Long, Optional values As Variant = Empty) As Variant
     If Not GLOBALS_ Is Nothing Then
         With VM_
             Set .Globals = GLOBALS_
-            .RunProgramByIndex idx
+            .RunProgramByIndex idx, values
             vAssignment OUTPUT__, .OUTPUT_
             vAssignment Run, .OUTPUT_
                 If .verbose Then
