@@ -12,66 +12,9 @@ Private GLOBALS_ As ASF_Globals
 Private Compiler_ As ASF_Compiler
 Private VM_ As ASF_VM
 Private OUTPUT__ As Variant
+Private EVALUATOR_ As VBAexpressions
+Private CAST_INJECTED_VARIABLES_ As Boolean
 
-Private Sub Class_Initialize()
-    INIT_
-End Sub
-Public Function Compile(src As String, Optional progName As String = "@anon") As Long
-    If GLOBALS_ Is Nothing Then
-        INIT_
-    End If
-    With Compiler_
-        .SetGlobals GLOBALS_
-        Compile = .CompileProgram(src, progName)
-    End With
-End Function
-Public Function GetGlobals()
-    Set GetGlobals = GLOBALS_
-End Function
-Public Function SetGlobals(aGlobals As ASF_Globals)
-    Set GLOBALS_ = aGlobals
-End Function
-Public Sub InjectVariable(varName As String, VarValue As Variant)
-    VM_.InjectVariable varName, VarValue
-End Sub
-Private Sub INIT_()
-    Set GLOBALS_ = New ASF_Globals
-    GLOBALS_.ASF_InitGlobals
-    Set Compiler_ = New ASF_Compiler
-    Set VM_ = New ASF_VM
-    VM_.verbose = False
-    VM_.EnableCallTrace = False
-End Sub
-Public Property Get OUTPUT_() As Variant
-    vAssignment OUTPUT_, OUTPUT__
-End Property
-Public Function Execute(scriptPath As String) As Variant
-    vAssignment Execute, Run(Compile(ReadTextFile(scriptPath)))
-End Function
-Public Function Run(idx As Long) As Variant
-    If Not GLOBALS_ Is Nothing Then
-        With VM_
-            Set .Globals = GLOBALS_
-            .RunProgramByIndex idx
-            vAssignment OUTPUT__, .OUTPUT_
-            vAssignment Run, .OUTPUT_
-                If .verbose Then
-                    Debug.Print "=== Runtime Log ==="
-                    Dim elm As Variant
-                    For Each elm In GLOBALS_.gRuntimeLog
-                        Debug.Print elm
-                    Next elm
-                End If
-        End With
-    End If
-End Function
-Private Sub vAssignment(ByRef var As Variant, ByRef vValue As Variant)
-    If IsObject(vValue) Then
-        Set var = vValue
-    Else
-        var = vValue
-    End If
-End Sub
 Public Property Get verbose() As Boolean
     verbose = VM_.verbose
 End Property
@@ -96,6 +39,92 @@ End Property
 Public Property Get WorkingDir() As String
     WorkingDir = GLOBALS_.CURRENT_MODULE_PATH
 End Property
+Public Property Get Evaluator() As VBAexpressions
+    Set Evaluator = EVALUATOR_
+End Property
+Public Property Get CastInjectedVars() As Boolean
+    CastInjectedVars = CAST_INJECTED_VARIABLES_
+End Property
+Public Property Let CastInjectedVars(aValue As Boolean)
+    CAST_INJECTED_VARIABLES_ = aValue
+End Property
+Private Sub Class_Initialize()
+    INIT_
+End Sub
+Public Function Compile(src As String, Optional progName As String = "@anon") As Long
+    If GLOBALS_ Is Nothing Then
+        INIT_
+    End If
+    With Compiler_
+        .SetGlobals GLOBALS_
+        Compile = .CompileProgram(src, progName)
+    End With
+End Function
+Public Function CreateEvaluator(expression As String) As VBAexpressions
+    Set EVALUATOR_ = New VBAexpressions
+    EVALUATOR_.Create expression
+    Set CreateEvaluator = EVALUATOR_
+End Function
+Public Function GetGlobals()
+    Set GetGlobals = GLOBALS_
+End Function
+Public Function SetGlobals(aGlobals As ASF_Globals)
+    Set GLOBALS_ = aGlobals
+End Function
+Public Sub InjectVariable(varName As String, VarValue As Variant)
+    VM_.InjectVariable varName, VarValue
+End Sub
+Private Sub INIT_()
+    Set GLOBALS_ = New ASF_Globals
+    GLOBALS_.ASF_InitGlobals
+    Set Compiler_ = New ASF_Compiler
+    Set VM_ = New ASF_VM
+    VM_.verbose = False
+    VM_.EnableCallTrace = False
+    CAST_INJECTED_VARIABLES_ = True
+    VM_.CastInjectedVars = CAST_INJECTED_VARIABLES_
+End Sub
+Public Property Get OUTPUT_() As Variant
+    vAssignment OUTPUT_, OUTPUT__
+End Property
+Public Function Execute(scriptPath As String) As Variant
+    vAssignment Execute, Run(Compile(ReadTextFile(scriptPath)))
+End Function
+Public Function Eval(Optional strValues As String) As String
+    With EVALUATOR_
+        Eval = .Eval(strValues)
+    End With
+End Function
+Public Function Run(idx As Long, ParamArray params() As Variant) As Variant
+    If Not GLOBALS_ Is Nothing Then
+        With VM_
+            Set .Globals = GLOBALS_
+            .CastInjectedVars = CAST_INJECTED_VARIABLES_
+            If Not IsMissing(values) Then
+                Dim params_ As Variant: params_ = params
+                .RunProgramByIndex idx, params_
+            Else
+                .RunProgramByIndex idx
+            End If
+            vAssignment OUTPUT__, .OUTPUT_
+            vAssignment Run, .OUTPUT_
+                If .verbose Then
+                    Debug.Print "=== Runtime Log ==="
+                    Dim elm As Variant
+                    For Each elm In GLOBALS_.gRuntimeLog
+                        Debug.Print elm
+                    Next elm
+                End If
+        End With
+    End If
+End Function
+Private Sub vAssignment(ByRef var As Variant, ByRef vValue As Variant)
+    If IsObject(vValue) Then
+        Set var = vValue
+    Else
+        var = vValue
+    End If
+End Sub
 Public Sub ClearCallStack()
     VM_.ClearCallStack
 End Sub

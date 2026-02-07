@@ -19,6 +19,8 @@ Private GLOBALS_ As ASF_Globals
 Private OUTPUT__ As Variant
 Private INJECTED_VARIABLES_ As Collection
 Private ENABLE_CALL_TRACE_ As Boolean
+Private CAST_INJECTED_VARIABLES_ As Boolean
+Private tmpVar As Variant
 
 ' Executes AST nodes produced by Compiler (AST).
 ' Uses Map node types and ScopeStack. Logs to gRuntimeLog.
@@ -33,7 +35,14 @@ Public Sub InjectVariable(varName As String, VarValue As Variant)
     If INJECTED_VARIABLES_ Is Nothing Then
         Set INJECTED_VARIABLES_ = New Collection
     End If
-    INJECTED_VARIABLES_.Add Array(varName, CastInjectedVar(VarValue))
+    On Error Resume Next
+    INJECTED_VARIABLES_.Remove (varName)
+    If CAST_INJECTED_VARIABLES_ Then
+        INJECTED_VARIABLES_.Add Array(varName, CastInjectedVar(VarValue)), varName
+    Else
+        vAssignment tmpVar, VarValue
+        INJECTED_VARIABLES_.Add Array(varName, tmpVar), varName
+    End If
 End Sub
 Public Property Get EnableCallTrace() As Boolean
     EnableCallTrace = ENABLE_CALL_TRACE_
@@ -43,6 +52,12 @@ Public Property Let EnableCallTrace(aValue As Boolean)
 End Property
 Public Property Get GetCallStack() As Collection
     Set GetCallStack = GLOBALS_.gCallStack
+End Property
+Public Property Get CastInjectedVars() As Boolean
+    CastInjectedVars = CAST_INJECTED_VARIABLES_
+End Property
+Public Property Let CastInjectedVars(aValue As Boolean)
+    CAST_INJECTED_VARIABLES_ = aValue
 End Property
 Public Function GetCallStackTrace() As String
     Dim sb As String
@@ -100,7 +115,7 @@ Private Function CastInjectedVar(VarValue As Variant) As Variant
     ElseIf TypeName(VarValue) = "ASF_RegexEngine" Then
         Set CastInjectedVar = VarValue
     ElseIf IsObject(VarValue) Then
-        CastInjectedVar = TypeName(VarValue)
+        Set CastInjectedVar = VarValue
     Else
         CastInjectedVar = CastType(VarValue)
     End If
@@ -117,7 +132,7 @@ Private Function CastType(aValue As Variant) As Variant
     End If
 End Function
 ' Convert native VBA array -> ASF one-based internal array representation
-Private Function ArrayToASF(arr As Variant) As Variant
+Public Function ArrayToASF(arr As Variant) As Variant
     On Error GoTo ErrHandler
     Dim lb As Long, ub As Long
     Dim tmpResult() As Variant
@@ -153,7 +168,7 @@ Private Function ArrayToASF(arr As Variant) As Variant
             ElseIf TypeName(arr(i)) = "Collection" Then
                 tmpResult(1 + i - lb) = CollToASF(arr(i))(1)
             ElseIf IsObject(arr(i)) Then
-                tmpResult(1 + i - lb) = TypeName(arr(i))
+                Set tmpResult(1 + i - lb) = arr(i)
             Else
                 tmpResult(1 + i - lb) = CastType(arr(i))
             End If
@@ -168,7 +183,7 @@ ErrHandler:
     err.Clear
 End Function
 ' Convert native VBA Collection -> ASF one-based internal array representation
-Private Function CollToASF(coll As Variant) As Variant
+Public Function CollToASF(coll As Variant) As Variant
     On Error GoTo ErrHandler
     Dim tmpResult() As Variant
     If coll.Count = 0 Then CollToASF = Array(): Exit Function
@@ -189,7 +204,7 @@ Private Function CollToASF(coll As Variant) As Variant
             If Not IsObject(coll(i)) Then
                 tmpResult(i) = coll(i)
             Else
-                tmpResult(i) = TypeName(coll(i))
+                Set tmpResult(i) = coll(i)
             End If
         End If
     Next i
@@ -228,7 +243,7 @@ Private Function MakeNode(nodeType As String) As ASF_Map
     Set MakeNode = m
 End Function
 
-Public Sub RunProgramByIndex(idx As Long)
+Public Sub RunProgramByIndex(idx As Long, Optional params As Variant = Empty)
     GLOBALS_.ASF_InitGlobals
     If idx < 1 Or idx > GLOBALS_.gPrograms.Count Then Exit Sub
     Dim p As Variant: p = GLOBALS_.gPrograms(idx)
@@ -247,6 +262,27 @@ Public Sub RunProgramByIndex(idx As Long)
         For Each elm In INJECTED_VARIABLES_
             progScope.SetValue CStr(elm(LBound(elm))), elm(UBound(elm))
         Next elm
+    End If
+    ' Placeholders
+    If Not IsEmpty(params) Then
+        If IsArray(params) Then
+            Dim pk As Long
+            Dim phid As Long
+            For pk = LBound(params) To UBound(params)
+                phid = phid + 1
+                If CAST_INJECTED_VARIABLES_ Then
+                    progScope.SetValue "$" & CStr(phid), CastInjectedVar(params(pk))
+                Else
+                    progScope.SetValue "$" & CStr(phid), params(pk)
+                End If
+            Next pk
+        Else
+            If CAST_INJECTED_VARIABLES_ Then
+                progScope.SetValue "$1", CastInjectedVar(params)
+            Else
+                progScope.SetValue "$1", params
+            End If
+        End If
     End If
     progScope.Push
     If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "RUN Program: " & progName
@@ -2785,7 +2821,7 @@ init_Error_Handler:
                                             ' Append full match + groups as an array
                                             resultsColl.Add VM_CapturesToArray(capsA)
                                     
-                                            Dim fullMatchA As String: fullMatchA = CStr(capsA.item(1))
+                                            Dim fullMatchA As String: fullMatchA = CStr(capsA.Item(1))
                                             Dim fLenA As Long: fLenA = Len(fullMatchA)
                                             If fLenA = 0 Then
                                                 sPosA = IIf(foundAtA + 1 > Lsrc, Lsrc + 1, foundAtA + 1)
@@ -2835,7 +2871,7 @@ init_Error_Handler:
                                     
                                             idxOut = idxOut + 1
                                             ReDim Preserve outMatches(1 To idxOut)
-                                            outMatches(idxOut) = CStr(caps2.item(1))
+                                            outMatches(idxOut) = CStr(caps2.Item(1))
                                     
                                             Dim fLen As Long: fLen = Len(outMatches(idxOut))
                                             If fLen = 0 Then
@@ -2961,7 +2997,7 @@ init_Error_Handler:
                                                 outRepStr = outRepStr & mid$(src, searchPos)
                                                 Exit Do
                                             Else
-                                                Dim fullMatch As String: fullMatch = CStr(caps.item(1))
+                                                Dim fullMatch As String: fullMatch = CStr(caps.Item(1))
                                                 Dim matchLen As Long: matchLen = Len(fullMatch)
                                                 Dim matchStart As Long: matchStart = foundAt
                                                 Dim matchEnd As Long: matchEnd = matchStart + matchLen - 1
@@ -2994,7 +3030,7 @@ init_Error_Handler:
                                                     argColl.Add fullMatch
                                                     Dim gi As Long
                                                     For gi = 2 To caps.Count
-                                                        argColl.Add CStr(caps.item(gi))
+                                                        argColl.Add CStr(caps.Item(gi))
                                                     Next gi
                                                     ' offset - JS uses zero-based
                                                     argColl.Add (matchStart - 1)
@@ -5759,7 +5795,7 @@ Private Function VM_ExpandReplacementFromCapturesJS( _
                     i = i + 2
                 Case "&"
                     If nCaps >= 1 Then
-                        out = out & CStr(caps.item(1))
+                        out = out & CStr(caps.Item(1))
                     End If
                     i = i + 2
                 Case "`"
@@ -5780,7 +5816,7 @@ Private Function VM_ExpandReplacementFromCapturesJS( _
                         Dim idx As Long: idx = CLng(numStr)
                         ' JS: $1 maps to capture group 1 (caps.Item(2) in our caps layout)
                         If idx >= 1 And idx <= (nCaps - 1) Then
-                            out = out & CStr(caps.item(idx + 1))
+                            out = out & CStr(caps.Item(idx + 1))
                         Else
                             ' unknown group -> empty string
                             out = out & vbNullString
@@ -5815,7 +5851,7 @@ Private Function VM_CapturesToArray(ByVal caps As Collection) As Variant
     Dim arr() As Variant: ReDim arr(1 To n)
     Dim i As Long
     For i = 1 To n
-        arr(i) = caps.item(i)
+        arr(i) = caps.Item(i)
     Next i
     VM_CapturesToArray = arr
 End Function
@@ -5862,7 +5898,7 @@ Private Function RegexCapsToVariantArray(ByVal caps As Collection) As Variant
 
     Dim i As Long
     For i = 1 To n
-        Dim v As Variant: v = caps.item(i)
+        Dim v As Variant: v = caps.Item(i)
         If IsObject(v) Then
             On Error Resume Next
             Dim tn As String: tn = TypeName(v)
@@ -5901,7 +5937,7 @@ Private Function RegexMatchesToVariantArray(ByVal matches As Collection) As Vari
     Dim i As Long
     For i = 1 To m
         Dim caps As Collection
-        Set caps = matches.item(i)
+        Set caps = matches.Item(i)
         out(i - 1) = RegexCapsToVariantArray(caps)
     Next i
 
@@ -5926,7 +5962,7 @@ Private Function RegexCapsToStringArray(ByVal caps As Collection) As Variant
 
     Dim i As Long
     For i = 1 To n
-        Dim v As Variant: v = caps.item(i)
+        Dim v As Variant: v = caps.Item(i)
         If IsObject(v) Then
             If TypeName(v) = "Collection" Then
                 ' we can't store an array in a String() direct; return a Variant array for caller
