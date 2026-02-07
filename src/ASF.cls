@@ -100,7 +100,7 @@ Public Function Run(idx As Long, ParamArray params() As Variant) As Variant
         With VM_
             Set .Globals = GLOBALS_
             .CastInjectedVars = CAST_INJECTED_VARIABLES_
-            If Not IsMissing(values) Then
+            If Not IsMissing(params) Then
                 Dim params_ As Variant: params_ = params
                 .RunProgramByIndex idx, params_
             Else
