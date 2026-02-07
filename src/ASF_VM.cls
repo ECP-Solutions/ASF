@@ -105,6 +105,9 @@ End Function
 Public Sub ClearCallStack()
     Set GLOBALS_.gCallStack = New Collection
 End Sub
+Public Function VarToASF(VarValue As Variant) As Variant
+    VarToASF = CastInjectedVar(VarValue)
+End Function
 Private Function CastInjectedVar(VarValue As Variant) As Variant
     If IsArray(VarValue) Then
         CastInjectedVar = ArrayToASF(VarValue)
@@ -132,7 +135,7 @@ Private Function CastType(aValue As Variant) As Variant
     End If
 End Function
 ' Convert native VBA array -> ASF one-based internal array representation
-Public Function ArrayToASF(arr As Variant) As Variant
+Private Function ArrayToASF(arr As Variant) As Variant
     On Error GoTo ErrHandler
     Dim lb As Long, ub As Long
     Dim tmpResult() As Variant
@@ -183,7 +186,7 @@ ErrHandler:
     err.Clear
 End Function
 ' Convert native VBA Collection -> ASF one-based internal array representation
-Public Function CollToASF(coll As Variant) As Variant
+Private Function CollToASF(coll As Variant) As Variant
     On Error GoTo ErrHandler
     Dim tmpResult() As Variant
     If coll.Count = 0 Then CollToASF = Array(): Exit Function

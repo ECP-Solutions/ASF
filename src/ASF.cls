@@ -139,3 +139,6 @@ Public Sub ClearModuleCache()
         GLOBALS_.CURRENT_MODULE_PATH = vbNullString
     End If
 End Sub
+Public Function VarToASF(VarValue) As Variant
+    VarToASF = VM_.VarToASF(VarValue)
+End Function
