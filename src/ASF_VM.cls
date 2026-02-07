@@ -20,6 +20,7 @@ Private OUTPUT__ As Variant
 Private INJECTED_VARIABLES_ As Collection
 Private ENABLE_CALL_TRACE_ As Boolean
 Private CAST_INJECTED_VARIABLES_ As Boolean
+Private Const PLACEHOLDER_CHR_ As String = "$"
 Private tmpVar As Variant
 
 ' Executes AST nodes produced by Compiler (AST).
@@ -4614,7 +4615,9 @@ Private Sub HandleAssignment(left As ASF_Map, ByVal rval As Variant, progScope A
     Dim container As Variant: vAssignment container, lval("container")
     Select Case lval("kind")
         Case "scopeVar"
-            progScope.SetValue CStr(key), rval
+            If mid$(key, 1, 1) <> PLACEHOLDER_CHR_ Then
+                progScope.SetValue CStr(key), rval
+            End If
         Case "prop"
             If TypeName(container) <> "ASF_Map" Then
                 Dim tValue As Variant
