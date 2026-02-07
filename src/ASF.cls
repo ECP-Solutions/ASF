@@ -5,13 +5,14 @@ END
 Attribute VB_Name = "ASF"
 Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
-Attribute VB_PredeclaredId = False
+Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = False
 Option Explicit
 Private GLOBALS_ As ASF_Globals
 Private Compiler_ As ASF_Compiler
 Private VM_ As ASF_VM
 Private OUTPUT__ As Variant
+Private EVALUATOR_ As VBAexpressions
 
 Private Sub Class_Initialize()
     INIT_
@@ -24,6 +25,10 @@ Public Function Compile(src As String, Optional progName As String = "@anon") As
         .SetGlobals GLOBALS_
         Compile = .CompileProgram(src, progName)
     End With
+End Function
+Public Function CreateEvaluator(expression As String) As VBAexpressions
+    Set CreateEvaluator = New VBAexpressions
+    CreateEvaluator.Create expression
 End Function
 Public Function GetGlobals()
     Set GetGlobals = GLOBALS_
@@ -47,6 +52,11 @@ Public Property Get OUTPUT_() As Variant
 End Property
 Public Function Execute(scriptPath As String) As Variant
     vAssignment Execute, Run(Compile(ReadTextFile(scriptPath)))
+End Function
+Public Function Eval(Optional strValues As String) As String
+    With EVALUATOR_
+        Eval = .Eval(strValues)
+    End With
 End Function
 Public Function Run(idx As Long) As Variant
     If Not GLOBALS_ Is Nothing Then
@@ -95,6 +105,9 @@ Public Property Let WorkingDir(baseDir As String)
 End Property
 Public Property Get WorkingDir() As String
     WorkingDir = GLOBALS_.CURRENT_MODULE_PATH
+End Property
+Public Property Get Evaluator() As VBAexpressions
+    Set Evaluator = EVALUATOR_
 End Property
 Public Sub ClearCallStack()
     VM_.ClearCallStack
