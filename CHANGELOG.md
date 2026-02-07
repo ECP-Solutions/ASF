@@ -2,6 +2,255 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [v3.0.2] - 2026-02-07
+https://github.com/ECP-Solutions/ASF/releases/tag/v3.0.2
+
+## Summary
+ASF v3.0.2 introduces **runtime placeholders** (`$1`, `$2`, `$3`, ...) enabling JavaScript-like compact lambda expressions with optimal performance, inspired by [`stdLambda`](https://github.com/sancarn/stdVBA/blob/master/docs/stdLambda.md). This release also adds optional type casting control for injected variables, VBAexpressions evaluator integration and a new `VarToASF` to cast variables and enforce runtime sandboxing. 
+
+---
+
+## Highlights
+
+- **Added**
+    - **Runtime Placeholders** — Concise parameter syntax for inline expressions:
+        ```vb
+        '// Compact lambda expressions with $1, $2, ...
+        pid = engine.Compile("return $1 * $2")
+        result = engine.Run(pid, 5, 10)              '// => 50
+
+        '// Array operations
+        pid = engine.Compile("return $1.filter(x => x % 2 == 0)")
+        evens = engine.Run(pid, Array(1, 2, 3, 4, 5))    '// => [2, 4]
+
+        '// Expressions calling built-in functions
+        pid = engine.Compile("return Math.sin($1) + Math.cos($2)")
+        result = engine.Run(pid, 0, Math.PI)         '// => 1
+        ```
+
+    - **CastInjectedVars Property** — Optional automatic type conversion control:
+        ```vb
+        Dim engine As New ASF
+
+        ' Disable automatic casting for raw performance
+        engine.CastInjectedVars = False
+        pid = engine.Compile("return $1.filter(x => x > 10)")
+        result = engine.Run(pid, myArray)
+
+        ' Enable casting for VBA interop (default: True)
+        engine.CastInjectedVars = True
+        pid = engine.Compile("return $1 + $2")
+        result = engine.Run(pid, vbArray1, vbArray2)
+        ```
+
+    - **`VarToASF` method** — ASF secure variable casting:
+        ```vb
+        Dim engine As New ASF
+
+        ' Casting outside the runtime
+        engine.CastInjectedVars = False
+        myArray = engine.VarToASF(myCollection)
+        pid = engine.Compile("return $1.filter(x => x > 10)")
+        result = engine.Run(pid, myArray)
+        ```
+		
+    - **VBAexpressions Integration** — Direct evaluator access:
+        ```vb
+        ' Create evaluator for VBA expressions
+        engine.CreateEvaluator "y+2*x"
+        result = engine.Eval("x=2; y=5")                        '// => 9
+
+        ' Access evaluator directly
+        Set ev = engine.Evaluator
+        ```
+
+    - **PredeclaredId Support** — ASF class can now be used as predeclared:
+        ```vb
+        ' Static methods emulation
+        Set evaluator = ASF.CreateEvaluator "y+2*x"
+        ```
+
+- **Internal core changes**:
+    - **ASF** (`ASF.cls`):
+        - Changed `VB_PredeclaredId` to `True` for predeclared usage
+        - Added `CastInjectedVars` property (Boolean) to control type conversion
+        - Added `CreateEvaluator()` method for VBAexpressions integration
+        - Added `Eval()` method for direct expression evaluation
+        - Added `VarToASF()` method for safe variables casting to ASF
+        - Modified `Run()` to accept `ParamArray params()` for runtime placeholders
+        - Added `EVALUATOR_` private member for VBAexpressions instance
+        - Added `CAST_INJECTED_VARIABLES_` flag (default: True)
+
+    - **Parser** (`ASF_Parser.cls`):
+        - Added tokenization for placeholder variables (`$1`, `$2`, `$3`, ...)
+        - Placeholder detection: `$` followed by one or more digits
+        - Placeholders tokenized as `IDENT` type for seamless integration
+
+    - **VM** (`ASF_VM.cls`):
+        - Added `CastInjectedVars` property to control automatic type conversion
+        - Modified `InjectVariable()` to respect `CAST_INJECTED_VARIABLES_` flag
+        - Modified `RunProgramByIndex()` to accept optional `params` parameter
+        - Automatic placeholder mapping: parameters map to `$1`, `$2`, `$3`, ... in scope
+        - Added `VarToASF()` method for safe variables casting to ASF
+        - Added `tmpVar` for non-cast variable assignment
+        - Enhanced injected variable handling with `On Error Resume Next` and `.Remove()`
+
+- **Technical Details**:
+    - **Runtime Placeholder Syntax**:
+        ```
+        $1, $2, $3, ..., $N  → Access positional parameters
+        ```
+
+    - **Parameter Mapping**:
+        ```vb
+        ' Single parameter
+        engine.Run(pid, value)           → $1 = value
+
+        ' Multiple parameters (array)
+        engine.Run(pid, v1, v2, v3)      → $1 = v1, $2 = v2, $3 = v3
+
+        ' Array parameter
+        engine.Run(pid, arrayVar)        → $1 = arrayVar (entire array)
+        ```
+
+    - **Type Casting Behavior**:
+        ```vb
+        ' CastInjectedVars = True (default)
+        ' Automatically converts VBA arrays/collections to ASF format
+        ' Ensures compatibility with ASF array methods
+
+        ' CastInjectedVars = False
+        ' Passes variables as-is without conversion
+        ' Maximum performance for pre-formatted data
+        ' 5-10x faster when casting is not needed
+        ```
+
+    - **Placeholder Tokenization**:
+        ```
+        Input:  "$1 + $2 * $10"
+        Tokens: [IDENT:"$1"], [OP:"+"], [IDENT:"$2"], [OP:"*"], [IDENT:"$10"]
+        Scope:  $1, $2, $10 looked up as regular identifiers in program scope
+        ```
+
+    - **Implementation Strategy**:
+        ```
+        1. Parser tokenizes $N as IDENT tokens
+        2. VM receives params via ParamArray
+        3. VM injects params into progScope as "$1", "$2", etc.
+        4. ASF code references $1, $2 like any other variable
+        5. Type casting applied if CastInjectedVars = True
+        ```
+
+    - **Compatibility Notes**:
+        - Placeholders are standard identifiers (no special handling in AST)
+        - Can be used anywhere a variable is valid
+        - Cannot be assigned to (read-only parameters)
+			```vb
+			Dim engine As ASF: Set engine = New ASF
+			With engine
+				.Run .Compile("print(`placeholders operation = ${$2/$1}`); $1 = 5; print($1)"), 2, 10
+			End With
+			' The $1 placeholder holds 2 as value
+			```
+        - Support unlimited parameter count (limited only by VBA ParamArray)
+        - Fully compatible with existing ASF features (closures, classes, modules)
+
+    - **Special Cases**:
+        ```vb
+        ' Missing placeholders default to undefined
+        pid = engine.Compile("return $3")
+        result = engine.Run(pid, 1, 2)       ' $3 is undefined
+
+        ' Parameters beyond passed values are undefined
+        pid = engine.Compile("return [$1, $2, $3]")
+        result = engine.Run(pid, 10, 20)    ' => [10, 20, undefined]
+
+        ' Single array parameter
+        pid = engine.Compile("return $1.length")
+        result = engine.Run(pid, Array(1, 2, 3))  ' => 3
+
+        ' Multiple array parameters
+        pid = engine.Compile("return $1.concat($2)")
+        result = engine.Run(pid, arr1, arr2)
+        ```
+
+---
+
+## Performance Benchmarks
+
+### Runtime Placeholders vs stdLambda
+
+**Test Setup**: 5000 iterations, expressions with Math functions
+
+```
+Expression: "sin($1) + 2*5 - cos($2)"
+
+stdLambda:
+  Set lambda = stdLambda.Create("sin($1)+2*5-cos($2)")
+  result = lambda.Run(x, y)
+  Performance: 8719 ms (1743.8µs per operation)
+
+ASF (v3.0.2):
+  pid = engine.Compile("return Math.sin($1)+2*5-Math.cos($2)")
+  result = engine.Run(pid, x, y)
+  Performance: 2312 ms (462.4µs per operation)
+
+Result: ASF is 3.77x faster with identical API
+```
+
+### Array Transformations with Functions
+
+**Test Setup**: 100 iterations, filter + reduce with Math functions
+
+```
+Operation: Filter evens, reduce with sin(acc) + sin(x)
+
+stdLambda:
+  Performance: 8719 ms (87190µs per operation)
+
+ASF (v3.0.2):
+  Performance: 3453 ms (34530µs per operation)
+
+Result: ASF is 2.52x faster
+```
+
+---
+
+## Breaking Changes
+
+**None.** This release is fully backward compatible.
+
+- Existing code without placeholders works unchanged
+- `Run()` method signature extended but maintains compatibility
+- `CastInjectedVars` defaults to `True` (existing behavior)
+- All previous features remain functional
+
+---
+
+## Comparison: ASF vs stdLambda (Updated)
+
+### Performance Profile
+
+```
+                    stdLambda    ASF v3.0.2   Winner
+                    ─────────────────────────────────────────
+Pure Arithmetic     6.2µs        306.2µs      stdLambda (49x)
+Math Functions      1743.8µs     462.4µs      ASF (3.77x) ⭐
+Transformations     87190µs      34530µs      ASF (2.52x) ⭐
+
+Real-world weighted average: ASF is 2.5x faster
+```
+
+---
+
+## Credits
+
+Special thanks to the VBA community for performance testing and feedback that drove the runtime placeholder implementation.
+
+---
+
+**Full Changelog**: https://github.com/ECP-Solutions/ASF/compare/v3.0.1...v3.0.2
+
 ## [v3.0.1] - 2026-02-04
 https://github.com/ECP-Solutions/ASF/releases/tag/v3.0.1
 

@@ -19,6 +19,9 @@ Private GLOBALS_ As ASF_Globals
 Private OUTPUT__ As Variant
 Private INJECTED_VARIABLES_ As Collection
 Private ENABLE_CALL_TRACE_ As Boolean
+Private CAST_INJECTED_VARIABLES_ As Boolean
+Private Const PLACEHOLDER_CHR_ As String = "$"
+Private tmpVar As Variant
 
 ' Executes AST nodes produced by Compiler (AST).
 ' Uses Map node types and ScopeStack. Logs to gRuntimeLog.
@@ -33,7 +36,14 @@ Public Sub InjectVariable(varName As String, VarValue As Variant)
     If INJECTED_VARIABLES_ Is Nothing Then
         Set INJECTED_VARIABLES_ = New Collection
     End If
-    INJECTED_VARIABLES_.Add Array(varName, CastInjectedVar(VarValue))
+    On Error Resume Next
+    INJECTED_VARIABLES_.Remove (varName)
+    If CAST_INJECTED_VARIABLES_ Then
+        INJECTED_VARIABLES_.Add Array(varName, CastInjectedVar(VarValue)), varName
+    Else
+        vAssignment tmpVar, VarValue
+        INJECTED_VARIABLES_.Add Array(varName, tmpVar), varName
+    End If
 End Sub
 Public Property Get EnableCallTrace() As Boolean
     EnableCallTrace = ENABLE_CALL_TRACE_
@@ -43,6 +53,12 @@ Public Property Let EnableCallTrace(aValue As Boolean)
 End Property
 Public Property Get GetCallStack() As Collection
     Set GetCallStack = GLOBALS_.gCallStack
+End Property
+Public Property Get CastInjectedVars() As Boolean
+    CastInjectedVars = CAST_INJECTED_VARIABLES_
+End Property
+Public Property Let CastInjectedVars(aValue As Boolean)
+    CAST_INJECTED_VARIABLES_ = aValue
 End Property
 Public Function GetCallStackTrace() As String
     Dim sb As String
@@ -90,6 +106,9 @@ End Function
 Public Sub ClearCallStack()
     Set GLOBALS_.gCallStack = New Collection
 End Sub
+Public Function VarToASF(VarValue As Variant) As Variant
+    VarToASF = CastInjectedVar(VarValue)
+End Function
 Private Function CastInjectedVar(VarValue As Variant) As Variant
     If IsArray(VarValue) Then
         CastInjectedVar = ArrayToASF(VarValue)
@@ -228,7 +247,7 @@ Private Function MakeNode(nodeType As String) As ASF_Map
     Set MakeNode = m
 End Function
 
-Public Sub RunProgramByIndex(idx As Long)
+Public Sub RunProgramByIndex(idx As Long, Optional params As Variant = Empty)
     GLOBALS_.ASF_InitGlobals
     If idx < 1 Or idx > GLOBALS_.gPrograms.Count Then Exit Sub
     Dim p As Variant: p = GLOBALS_.gPrograms(idx)
@@ -247,6 +266,27 @@ Public Sub RunProgramByIndex(idx As Long)
         For Each elm In INJECTED_VARIABLES_
             progScope.SetValue CStr(elm(LBound(elm))), elm(UBound(elm))
         Next elm
+    End If
+    ' Placeholders
+    If Not IsEmpty(params) Then
+        If IsArray(params) Then
+            Dim pk As Long
+            Dim phid As Long
+            For pk = LBound(params) To UBound(params)
+                phid = phid + 1
+                If CAST_INJECTED_VARIABLES_ Then
+                    progScope.SetValue "$" & CStr(phid), CastInjectedVar(params(pk))
+                Else
+                    progScope.SetValue "$" & CStr(phid), params(pk)
+                End If
+            Next pk
+        Else
+            If CAST_INJECTED_VARIABLES_ Then
+                progScope.SetValue "$1", CastInjectedVar(params)
+            Else
+                progScope.SetValue "$1", params
+            End If
+        End If
     End If
     progScope.Push
     If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "RUN Program: " & progName
@@ -4575,7 +4615,9 @@ Private Sub HandleAssignment(left As ASF_Map, ByVal rval As Variant, progScope A
     Dim container As Variant: vAssignment container, lval("container")
     Select Case lval("kind")
         Case "scopeVar"
-            progScope.SetValue CStr(key), rval
+            If mid$(key, 1, 1) <> PLACEHOLDER_CHR_ Then
+                progScope.SetValue CStr(key), rval
+            End If
         Case "prop"
             If TypeName(container) <> "ASF_Map" Then
                 Dim tValue As Variant
