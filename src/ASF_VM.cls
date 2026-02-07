@@ -228,7 +228,7 @@ Private Function MakeNode(nodeType As String) As ASF_Map
     Set MakeNode = m
 End Function
 
-Public Sub RunProgramByIndex(idx As Long)
+Public Sub RunProgramByIndex(idx As Long, Optional values As Variant = Empty)
     GLOBALS_.ASF_InitGlobals
     If idx < 1 Or idx > GLOBALS_.gPrograms.Count Then Exit Sub
     Dim p As Variant: p = GLOBALS_.gPrograms(idx)
@@ -247,6 +247,19 @@ Public Sub RunProgramByIndex(idx As Long)
         For Each elm In INJECTED_VARIABLES_
             progScope.SetValue CStr(elm(LBound(elm))), elm(UBound(elm))
         Next elm
+    End If
+    ' Placeholders
+    If Not IsEmpty(values) Then
+        If IsArray(values) Then
+            Dim pk As Long
+            Dim phid As Long
+            For pk = LBound(values) To UBound(values)
+                phid = phid + 1
+                progScope.SetValue "$" & CStr(phid), CastInjectedVar(values(pk))
+            Next pk
+        Else
+            progScope.SetValue "$1", CastInjectedVar(values)
+        End If
     End If
     progScope.Push
     If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "RUN Program: " & progName
