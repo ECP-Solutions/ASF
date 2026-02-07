@@ -115,7 +115,7 @@ Private Function CastInjectedVar(VarValue As Variant) As Variant
     ElseIf TypeName(VarValue) = "ASF_RegexEngine" Then
         Set CastInjectedVar = VarValue
     ElseIf IsObject(VarValue) Then
-        Set CastInjectedVar = VarValue
+        CastInjectedVar = TypeName(VarValue)
     Else
         CastInjectedVar = CastType(VarValue)
     End If
@@ -168,7 +168,7 @@ Public Function ArrayToASF(arr As Variant) As Variant
             ElseIf TypeName(arr(i)) = "Collection" Then
                 tmpResult(1 + i - lb) = CollToASF(arr(i))(1)
             ElseIf IsObject(arr(i)) Then
-                Set tmpResult(1 + i - lb) = arr(i)
+                tmpResult(1 + i - lb) = TypeName(arr(i))
             Else
                 tmpResult(1 + i - lb) = CastType(arr(i))
             End If
@@ -204,7 +204,7 @@ Public Function CollToASF(coll As Variant) As Variant
             If Not IsObject(coll(i)) Then
                 tmpResult(i) = coll(i)
             Else
-                Set tmpResult(i) = coll(i)
+                tmpResult(i) = TypeName(coll(i))
             End If
         End If
     Next i
@@ -2821,7 +2821,7 @@ init_Error_Handler:
                                             ' Append full match + groups as an array
                                             resultsColl.Add VM_CapturesToArray(capsA)
                                     
-                                            Dim fullMatchA As String: fullMatchA = CStr(capsA.Item(1))
+                                            Dim fullMatchA As String: fullMatchA = CStr(capsA.item(1))
                                             Dim fLenA As Long: fLenA = Len(fullMatchA)
                                             If fLenA = 0 Then
                                                 sPosA = IIf(foundAtA + 1 > Lsrc, Lsrc + 1, foundAtA + 1)
@@ -2871,7 +2871,7 @@ init_Error_Handler:
                                     
                                             idxOut = idxOut + 1
                                             ReDim Preserve outMatches(1 To idxOut)
-                                            outMatches(idxOut) = CStr(caps2.Item(1))
+                                            outMatches(idxOut) = CStr(caps2.item(1))
                                     
                                             Dim fLen As Long: fLen = Len(outMatches(idxOut))
                                             If fLen = 0 Then
@@ -2997,7 +2997,7 @@ init_Error_Handler:
                                                 outRepStr = outRepStr & mid$(src, searchPos)
                                                 Exit Do
                                             Else
-                                                Dim fullMatch As String: fullMatch = CStr(caps.Item(1))
+                                                Dim fullMatch As String: fullMatch = CStr(caps.item(1))
                                                 Dim matchLen As Long: matchLen = Len(fullMatch)
                                                 Dim matchStart As Long: matchStart = foundAt
                                                 Dim matchEnd As Long: matchEnd = matchStart + matchLen - 1
@@ -3030,7 +3030,7 @@ init_Error_Handler:
                                                     argColl.Add fullMatch
                                                     Dim gi As Long
                                                     For gi = 2 To caps.Count
-                                                        argColl.Add CStr(caps.Item(gi))
+                                                        argColl.Add CStr(caps.item(gi))
                                                     Next gi
                                                     ' offset - JS uses zero-based
                                                     argColl.Add (matchStart - 1)
@@ -5795,7 +5795,7 @@ Private Function VM_ExpandReplacementFromCapturesJS( _
                     i = i + 2
                 Case "&"
                     If nCaps >= 1 Then
-                        out = out & CStr(caps.Item(1))
+                        out = out & CStr(caps.item(1))
                     End If
                     i = i + 2
                 Case "`"
@@ -5816,7 +5816,7 @@ Private Function VM_ExpandReplacementFromCapturesJS( _
                         Dim idx As Long: idx = CLng(numStr)
                         ' JS: $1 maps to capture group 1 (caps.Item(2) in our caps layout)
                         If idx >= 1 And idx <= (nCaps - 1) Then
-                            out = out & CStr(caps.Item(idx + 1))
+                            out = out & CStr(caps.item(idx + 1))
                         Else
                             ' unknown group -> empty string
                             out = out & vbNullString
@@ -5851,7 +5851,7 @@ Private Function VM_CapturesToArray(ByVal caps As Collection) As Variant
     Dim arr() As Variant: ReDim arr(1 To n)
     Dim i As Long
     For i = 1 To n
-        arr(i) = caps.Item(i)
+        arr(i) = caps.item(i)
     Next i
     VM_CapturesToArray = arr
 End Function
@@ -5898,7 +5898,7 @@ Private Function RegexCapsToVariantArray(ByVal caps As Collection) As Variant
 
     Dim i As Long
     For i = 1 To n
-        Dim v As Variant: v = caps.Item(i)
+        Dim v As Variant: v = caps.item(i)
         If IsObject(v) Then
             On Error Resume Next
             Dim tn As String: tn = TypeName(v)
@@ -5937,7 +5937,7 @@ Private Function RegexMatchesToVariantArray(ByVal matches As Collection) As Vari
     Dim i As Long
     For i = 1 To m
         Dim caps As Collection
-        Set caps = matches.Item(i)
+        Set caps = matches.item(i)
         out(i - 1) = RegexCapsToVariantArray(caps)
     Next i
 
@@ -5962,7 +5962,7 @@ Private Function RegexCapsToStringArray(ByVal caps As Collection) As Variant
 
     Dim i As Long
     For i = 1 To n
-        Dim v As Variant: v = caps.Item(i)
+        Dim v As Variant: v = caps.item(i)
         If IsObject(v) Then
             If TypeName(v) = "Collection" Then
                 ' we can't store an array in a String() direct; return a Variant array for caller
