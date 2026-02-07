@@ -85,6 +85,16 @@ Tokenize_MainLoop:
                 GoTo Tokenize_SkipToLoopEnd
             End If
         End If
+        ' Placeholders variables ($1, $2,...)
+        If ch = "$" And i + 1 <= n Then
+            Dim PH As Long: PH = i + 1
+            Do While PH <= n And mid$(sourceCode, PH, 1) Like "[0-9]"
+                PH = PH + 1
+            Loop
+            toks.Add Array("IDENT", mid$(sourceCode, i, PH - i))
+            i = PH
+            GoTo Tokenize_SkipToLoopEnd
+        End If
         Select Case ch
             Case " ", vbTab, vbCr, vbLf
                 i = i + 1
@@ -291,10 +301,10 @@ Tokenize_SkipToLoopEnd:
     Dim idx As Long
     idx = 1
 Tokenize_CollapseLoop:
-    Do While idx <= toks.count
-        If idx > toks.count Then Exit Do ' FIX: Bounds
+    Do While idx <= toks.Count
+        If idx > toks.Count Then Exit Do ' FIX: Bounds
         Dim tk As Variant: tk = toks(idx)
-        If tk(0) = "IDENT" And idx + 3 <= toks.count Then
+        If tk(0) = "IDENT" And idx + 3 <= toks.Count Then
             If toks(idx + 1)(0) = "PAREN" And toks(idx + 1)(1) = "[" And toks(idx + 2)(0) = "NUMBER" And toks(idx + 3)(0) = "PAREN" And toks(idx + 3)(1) = "]" Then
                 out.Add Array("IDENT", tk(1) & "[" & toks(idx + 2)(1) & "]")
                 idx = idx + 4
@@ -312,7 +322,7 @@ End Function
 Public Function JoinTokens(tokens As Collection) As String
     Dim s As String: s = vbNullString
     Dim i As Long
-    For i = 1 To tokens.count
+    For i = 1 To tokens.Count
         If tokens(i)(0) = "STRING" Then
             s = s & ToLiteralString(CStr(tokens(i)(1))) & " "
         Else
