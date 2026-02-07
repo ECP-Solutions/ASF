@@ -27,8 +27,9 @@ Public Function Compile(src As String, Optional progName As String = "@anon") As
     End With
 End Function
 Public Function CreateEvaluator(expression As String) As VBAexpressions
-    Set CreateEvaluator = New VBAexpressions
-    CreateEvaluator.Create expression
+    Set EVALUATOR_ = New VBAexpressions
+    EVALUATOR_.Create expression
+    Set CreateEvaluator = EVALUATOR_
 End Function
 Public Function GetGlobals()
     Set GetGlobals = GLOBALS_
