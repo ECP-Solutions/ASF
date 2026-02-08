@@ -1,7 +1,7 @@
 fun Calculator() {
     return {
-        add: fun(a, b) { return a + b; },
-        subtract: fun(a, b) { return a - b; }
+        add: fun(a, b) { return a + b; };
+        subtract: fun(a, b) { return a - b; };
     };
 };
 
