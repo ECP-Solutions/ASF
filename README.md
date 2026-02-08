@@ -22,7 +22,7 @@ Debug.Print engine.OUTPUT_  ' => 12
 ## Official extension
 Users can now take advantage of syntax highlighting using the [official ASF VS Code extension](https://marketplace.visualstudio.com/items?itemName=ECPSolutions.asf-language). 
 
-:heavy_check_mark:|**Check it out! :rocket:
+:heavy_check_mark:|**Check it out!** :rocket:
 :-----:|:-----:
 Live coding|![ASF-code](/docs/assets/img/ASF.gif)
 
