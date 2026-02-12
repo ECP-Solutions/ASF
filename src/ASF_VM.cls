@@ -20,12 +20,22 @@ Private OUTPUT__ As Variant
 Private INJECTED_VARIABLES_ As Collection
 Private ENABLE_CALL_TRACE_ As Boolean
 Private CAST_INJECTED_VARIABLES_ As Boolean
+Private APPLICATION_ACCESS_ As Boolean
 Private Const PLACEHOLDER_CHR_ As String = "$"
 Private tmpVar As Variant
 
 ' Executes AST nodes produced by Compiler (AST).
 ' Uses Map node types and ScopeStack. Logs to gRuntimeLog.
 
+Private Function GetPrivateObjName(asfObj As Variant) As String
+    Dim tmpType As String
+    On Error GoTo validated
+    tmpType = TypeName(asfObj)
+    Exit Function
+validated:
+    err.Clear
+    GetPrivateObjName = asfObj.Name
+End Function
 Public Property Set Globals(aGlobals As ASF_Globals)
     Set GLOBALS_ = aGlobals
 End Property
@@ -38,7 +48,7 @@ Public Sub InjectVariable(varName As String, VarValue As Variant)
     End If
     On Error Resume Next
     INJECTED_VARIABLES_.Remove (varName)
-    If CAST_INJECTED_VARIABLES_ Then
+    If CAST_INJECTED_VARIABLES_ And Not APPLICATION_ACCESS_ Then
         INJECTED_VARIABLES_.Add Array(varName, CastInjectedVar(VarValue)), varName
     Else
         vAssignment tmpVar, VarValue
@@ -59,6 +69,12 @@ Public Property Get CastInjectedVars() As Boolean
 End Property
 Public Property Let CastInjectedVars(aValue As Boolean)
     CAST_INJECTED_VARIABLES_ = aValue
+End Property
+Public Property Get AppAccess() As Boolean
+    AppAccess = APPLICATION_ACCESS_
+End Property
+Public Property Let AppAccess(aValue As Boolean)
+    APPLICATION_ACCESS_ = aValue
 End Property
 Public Function GetCallStackTrace() As String
     Dim sb As String
@@ -223,11 +239,11 @@ End Function
 Private Function Is2Darray(arr As Variant) As Boolean
     Dim d As Long
     
-    On Error GoTo err_handler
+    On Error GoTo err_Handler
     d = UBound(arr, 2)
     Is2Darray = True
     Exit Function
-err_handler:
+err_Handler:
     Is2Darray = False
 End Function
 Public Property Get OUTPUT_() As Variant
@@ -259,7 +275,8 @@ Public Sub RunProgramByIndex(idx As Long, Optional params As Variant = Empty)
     progScope.LoadRaw rawScope
 '    progScope.SetValue "__option_base", optionBase
     progScope.SetValue "__option_base", 1 'Enforce option base=1
-    progScope.SetValue "Math", New Collection
+    Dim MathObj As New Collection
+    progScope.SetValue "Math", MathObj
     ' Variables injection
     If Not INJECTED_VARIABLES_ Is Nothing Then
         Dim elm As Variant
@@ -274,7 +291,7 @@ Public Sub RunProgramByIndex(idx As Long, Optional params As Variant = Empty)
             Dim phid As Long
             For pk = LBound(params) To UBound(params)
                 phid = phid + 1
-                If CAST_INJECTED_VARIABLES_ Then
+                If CAST_INJECTED_VARIABLES_ And Not APPLICATION_ACCESS_ Then
                     progScope.SetValue "$" & CStr(phid), CastInjectedVar(params(pk))
                 Else
                     progScope.SetValue "$" & CStr(phid), params(pk)
@@ -480,8 +497,8 @@ Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As
         Set tmpArgs = Nothing
         Exit Function
     End If
-    ' For any other base type, return Empty (safe fallback).
-    vAssignment EvalMemberNode, Empty
+    ' Delegate to Application.
+    vAssignment EvalMemberNode, CallObjectMethod(baseVal, prop)
     Exit Function
 
 ErrHandler:
@@ -685,7 +702,16 @@ Private Function ResolvePath(node As ASF_Map, progScope As ASF_ScopeStack, Optio
             Case "Member"
                 Dim baseRes As ASF_Map: Set baseRes = ResolvePath(node.GetValue("base"), progScope, forAssign)
                 If forAssign Then
-                    res.SetValue "container", baseRes("container")
+                    ' Check if base resolution returned a direct value (e.g., from Call)
+                    ' instead of a container reference
+                    If baseRes.Exists("value") And Not baseRes.Exists("container") Then
+                        ' Base is a Call or similar that returned its result as "value"
+                        ' Use that value as the container
+                        res.SetValue "container", baseRes.GetValue("value")
+                    Else
+                        ' Normal case - use container from base resolution
+                        res.SetValue "container", baseRes("container")
+                    End If
                     res.SetValue "key", node.GetValue("prop")
                     res.SetValue "kind", "prop"
                     Dim pKey As String
@@ -708,7 +734,11 @@ Private Function ResolvePath(node As ASF_Map, progScope As ASF_ScopeStack, Optio
                 If forAssign Then
                     ' We need to preserve the parent container _and_ the parent property name (if any)
                     ' so that assignments to an indexed property (e.g. o.a[2]) can write back correctly.
-                    res.SetValue "container", baseRes2("container")
+                    If baseRes2.Exists("value") And Not baseRes2.Exists("container") Then
+                        res.SetValue "container", baseRes2.GetValue("value")
+                    Else
+                        res.SetValue "container", baseRes2("container")
+                    End If
                     res.SetValue "key", EvalExprNode(node.GetValue("index"), progScope)
                     res.SetValue "kind", "index"
                     ' carry forward parent property/key info if present on the base resolution
@@ -719,27 +749,9 @@ Private Function ResolvePath(node As ASF_Map, progScope As ASF_ScopeStack, Optio
                     res.SetValue "value", EvalIndexNode(node, progScope)
                 End If
             Case "Call"
-                If forAssign Then
-                    Dim calleeExpr As ASF_Map: Set calleeExpr = node.GetValue("callee")
-                    Dim argsColl As Collection: Set argsColl = node.GetValue("args")
-                    res.SetValue "container", EvalExprNode(calleeExpr.GetValue("base"), progScope)
-                    res.SetValue "key", calleeExpr.GetValue("prop")
-                    res.SetValue "kind", "prop"
-                    Dim pKey2 As String
-                    Dim pKind2 As String
-                    ' carry forward parent property/key info if present on the base resolution
-                    If calleeExpr.Exists("key") Then
-                        pKey2 = calleeExpr("key")
-                        res.SetValue "parentKey", pKey2
-                    End If
-                    If calleeExpr.Exists("kind") Then
-                        pKind2 = calleeExpr("kind")
-                        res.SetValue "parentKind", pKind2
-                    End If
-                    res.SetValue "parentObj", calleeExpr
-                Else
-                    res.SetValue "value", EvalExprNode(node, progScope)
-                End If
+                ' A Call node in an assignment path (e.g., obj.method().prop = value)
+                ' Execute the call and return its result as "value"
+                res.SetValue "value", EvalExprNode(node, progScope)
         End Select
     End If
     Set ResolvePath = res
@@ -3546,182 +3558,191 @@ ContinueDo:
                                 GoTo namedFunctions
                         End Select
                     ElseIf TypeName(baseValLocal) = "Collection" Then
-                        ' Check for Math object
-                        Dim baseLocal As Variant
-                        vAssignment baseLocal, calleeExpr.GetValue("base")
-                        If baseLocal.GetValue("name") = "Math" Then
-                            Select Case propN
-                                Case "E"
-                                    tmpResult = Exp(1)
-                                    GoTo exitfun
-                                Case "PI"
-                                    tmpResult = 4 * Atn(1)
-                                    GoTo exitfun
-                                Case "abs"
-                                    tmpResult = Abs(evaluated(1))
-                                    GoTo exitfun
-                                Case "acos"
-                                    If evaluated(1) = -1 Then
+                        If calleeExpr.Exists("base") Then
+                            ' Check for Math object
+                            Dim baseLocal As Variant
+                            vAssignment baseLocal, calleeExpr.GetValue("base")
+                            If baseLocal.GetValue("name") = "Math" Then
+                                Select Case propN
+                                    Case "E"
+                                        tmpResult = Exp(1)
+                                        GoTo exitfun
+                                    Case "PI"
                                         tmpResult = 4 * Atn(1)
-                                    ElseIf evaluated(1) = 1 Then
-                                        tmpResult = 0
-                                    ElseIf evaluated(1) > 1 Or evaluated(1) < -1 Then
-                                        tmpResult = "NaN"
-                                    Else
-                                        tmpResult = Atn(-1 * evaluated(1) / _
-                                                        Sqr(-1 * evaluated(1) * evaluated(1) + 1)) + 2 * Atn(1)
-                                    End If
-                                    GoTo exitfun
-                                Case "acosh"
-                                    If evaluated(1) < 1 Then
-                                        tmpResult = "NaN"
-                                    ElseIf evaluated(1) = 1 Then
-                                        tmpResult = 0
-                                    Else
-                                        tmpResult = Log(evaluated(1) + Sqr(evaluated(1) * evaluated(1) - 1))
-                                    End If
-                                    GoTo exitfun
-                                Case "asin"
-                                    If evaluated(1) = -1 Then
-                                        tmpResult = -2 * Atn(1)
-                                    ElseIf evaluated(1) = 1 Then
-                                        tmpResult = 2 * Atn(1)
-                                    ElseIf evaluated(1) = 0 Then
-                                        tmpResult = 0
-                                    ElseIf evaluated(1) > 1 Or evaluated(1) < -1 Then
-                                        tmpResult = "NaN"
-                                    Else
-                                        tmpResult = Atn(evaluated(1) / Sqr(-1 * evaluated(1) * evaluated(1) + 1))
-                                    End If
-                                    GoTo exitfun
-                                Case "asinh"
-                                    tmpResult = Log(evaluated(1) + Sqr(evaluated(1) * evaluated(1) + 1))
-                                    GoTo exitfun
-                                Case "atan"
-                                    tmpResult = Atn(evaluated(1))
-                                    GoTo exitfun
-                                Case "atan2" 'Arguments => (y, x)
-                                    If evaluated(1) = 0 And evaluated(2) = 0 Then
-                                        tmpResult = 0
-                                    ElseIf evaluated(1) = 0 And evaluated(2) < 0 Then
-                                        tmpResult = 4 * Atn(1)
-                                    Else
-                                        tmpResult = Atn(evaluated(1) / evaluated(2))
-                                    End If
-                                    GoTo exitfun
-                                Case "atanh"
-                                    If evaluated(1) >= 1 Or evaluated(1) <= -1 Then
-                                        tmpResult = "NaN"
-                                    ElseIf evaluated(1) = 0 Then
-                                        tmpResult = 0
-                                    Else
-                                        tmpResult = Log((1 + evaluated(1)) / (1 - evaluated(1))) / 2
-                                    End If
-                                    GoTo exitfun
-                                Case "cbrt"
-                                    tmpResult = Sgn(evaluated(1)) * Abs(evaluated(1)) ^ (1 / 3)
-                                    GoTo exitfun
-                                Case "ceil"
-                                    tmpResult = Fix(evaluated(1))
-                                    tmpResult = tmpResult - ((evaluated(1) <> tmpResult) And (evaluated(1) > 0))
-                                    GoTo exitfun
-                                Case "cos"
-                                    tmpResult = Cos(evaluated(1))
-                                    GoTo exitfun
-                                Case "cosh"
-                                    tmpResult = (Exp(evaluated(1)) + Exp(-1 * evaluated(1))) / 2
-                                    GoTo exitfun
-                                Case "exp"
-                                    tmpResult = Exp(evaluated(1))
-                                    GoTo exitfun
-                                Case "expm1"
-                                    tmpResult = Exp(evaluated(1)) - 1
-                                    GoTo exitfun
-                                Case "floor"
-                                    tmpResult = Fix(evaluated(1))
-                                    tmpResult = tmpResult + ((evaluated(1) <> tmpResult) And (evaluated(1) < 0))
-                                    GoTo exitfun
-                                Case "hypot"
-                                    Dim cat As Variant
-                                    tmpResult = 0
-                                    For Each cat In evaluated
-                                        tmpResult = tmpResult + cat * cat
-                                    Next cat
-                                    tmpResult = tmpResult ^ 0.5
-                                    GoTo exitfun
-                                Case "log"
-                                    If evaluated(1) <= 0 Then
-                                        tmpResult = "NaN"
-                                    Else
-                                        tmpResult = Log(evaluated(1))
-                                    End If
-                                    GoTo exitfun
-                                Case "log10"
-                                    If evaluated(1) <= 0 Then
-                                        tmpResult = "NaN"
-                                    Else
-                                        tmpResult = Log(evaluated(1)) / Log(10)
-                                    End If
-                                    GoTo exitfun
-                                Case "log1p"
-                                    If evaluated(1) <= 0 Then
-                                        tmpResult = "NaN"
-                                    Else
-                                        tmpResult = Log(evaluated(1) + 1)
-                                    End If
-                                    GoTo exitfun
-                                Case "log2"
-                                    If evaluated(1) <= 0 Then
-                                        tmpResult = "NaN"
-                                    Else
-                                        tmpResult = Log(evaluated(1)) / Log(2)
-                                    End If
-                                    GoTo exitfun
-                                Case "max"
-                                    Dim maxEl As Variant
-                                    tmpResult = 0
-                                    For Each maxEl In evaluated
-                                        If maxEl > tmpResult Then
-                                            tmpResult = maxEl
+                                        GoTo exitfun
+                                    Case "abs"
+                                        tmpResult = Abs(evaluated(1))
+                                        GoTo exitfun
+                                    Case "acos"
+                                        If evaluated(1) = -1 Then
+                                            tmpResult = 4 * Atn(1)
+                                        ElseIf evaluated(1) = 1 Then
+                                            tmpResult = 0
+                                        ElseIf evaluated(1) > 1 Or evaluated(1) < -1 Then
+                                            tmpResult = "NaN"
+                                        Else
+                                            tmpResult = Atn(-1 * evaluated(1) / _
+                                                            Sqr(-1 * evaluated(1) * evaluated(1) + 1)) + 2 * Atn(1)
                                         End If
-                                    Next maxEl
-                                    GoTo exitfun
-                                Case "min"
-                                    Dim minEl As Variant
-                                    tmpResult = 0
-                                    For Each minEl In evaluated
-                                        If minEl < tmpResult Then
-                                            tmpResult = minEl
+                                        GoTo exitfun
+                                    Case "acosh"
+                                        If evaluated(1) < 1 Then
+                                            tmpResult = "NaN"
+                                        ElseIf evaluated(1) = 1 Then
+                                            tmpResult = 0
+                                        Else
+                                            tmpResult = Log(evaluated(1) + Sqr(evaluated(1) * evaluated(1) - 1))
                                         End If
-                                    Next minEl
-                                    GoTo exitfun
-                                Case "pow"
-                                    tmpResult = evaluated(1) ^ evaluated(2)
-                                    GoTo exitfun
-                                Case "round"
-                                    tmpResult = Round(evaluated(1))
-                                    GoTo exitfun
-                                Case "sign"
-                                    tmpResult = Sgn(evaluated(1))
-                                    GoTo exitfun
-                                Case "sin"
-                                    tmpResult = Sin(evaluated(1))
-                                    GoTo exitfun
-                                Case "sinh"
-                                    tmpResult = (Exp(evaluated(1)) - Exp(-1 * evaluated(1))) / 2
-                                    GoTo exitfun
-                                Case "sqrt"
-                                    tmpResult = Sqr(evaluated(1))
-                                    GoTo exitfun
-                                Case "tan"
-                                    tmpResult = Tan(evaluated(1))
-                                    GoTo exitfun
-                                Case "tanh"
-                                    tmpResult = (Exp(evaluated(1)) - Exp(-1 * evaluated(1))) / _
-                                                (Exp(evaluated(1)) + Exp(-1 * evaluated(1)))
-                                    GoTo exitfun
-                            End Select
+                                        GoTo exitfun
+                                    Case "asin"
+                                        If evaluated(1) = -1 Then
+                                            tmpResult = -2 * Atn(1)
+                                        ElseIf evaluated(1) = 1 Then
+                                            tmpResult = 2 * Atn(1)
+                                        ElseIf evaluated(1) = 0 Then
+                                            tmpResult = 0
+                                        ElseIf evaluated(1) > 1 Or evaluated(1) < -1 Then
+                                            tmpResult = "NaN"
+                                        Else
+                                            tmpResult = Atn(evaluated(1) / Sqr(-1 * evaluated(1) * evaluated(1) + 1))
+                                        End If
+                                        GoTo exitfun
+                                    Case "asinh"
+                                        tmpResult = Log(evaluated(1) + Sqr(evaluated(1) * evaluated(1) + 1))
+                                        GoTo exitfun
+                                    Case "atan"
+                                        tmpResult = Atn(evaluated(1))
+                                        GoTo exitfun
+                                    Case "atan2" 'Arguments => (y, x)
+                                        If evaluated(1) = 0 And evaluated(2) = 0 Then
+                                            tmpResult = 0
+                                        ElseIf evaluated(1) = 0 And evaluated(2) < 0 Then
+                                            tmpResult = 4 * Atn(1)
+                                        Else
+                                            tmpResult = Atn(evaluated(1) / evaluated(2))
+                                        End If
+                                        GoTo exitfun
+                                    Case "atanh"
+                                        If evaluated(1) >= 1 Or evaluated(1) <= -1 Then
+                                            tmpResult = "NaN"
+                                        ElseIf evaluated(1) = 0 Then
+                                            tmpResult = 0
+                                        Else
+                                            tmpResult = Log((1 + evaluated(1)) / (1 - evaluated(1))) / 2
+                                        End If
+                                        GoTo exitfun
+                                    Case "cbrt"
+                                        tmpResult = Sgn(evaluated(1)) * Abs(evaluated(1)) ^ (1 / 3)
+                                        GoTo exitfun
+                                    Case "ceil"
+                                        tmpResult = Fix(evaluated(1))
+                                        tmpResult = tmpResult - ((evaluated(1) <> tmpResult) And (evaluated(1) > 0))
+                                        GoTo exitfun
+                                    Case "cos"
+                                        tmpResult = Cos(evaluated(1))
+                                        GoTo exitfun
+                                    Case "cosh"
+                                        tmpResult = (Exp(evaluated(1)) + Exp(-1 * evaluated(1))) / 2
+                                        GoTo exitfun
+                                    Case "exp"
+                                        tmpResult = Exp(evaluated(1))
+                                        GoTo exitfun
+                                    Case "expm1"
+                                        tmpResult = Exp(evaluated(1)) - 1
+                                        GoTo exitfun
+                                    Case "floor"
+                                        tmpResult = Fix(evaluated(1))
+                                        tmpResult = tmpResult + ((evaluated(1) <> tmpResult) And (evaluated(1) < 0))
+                                        GoTo exitfun
+                                    Case "hypot"
+                                        Dim cat As Variant
+                                        tmpResult = 0
+                                        For Each cat In evaluated
+                                            tmpResult = tmpResult + cat * cat
+                                        Next cat
+                                        tmpResult = tmpResult ^ 0.5
+                                        GoTo exitfun
+                                    Case "log"
+                                        If evaluated(1) <= 0 Then
+                                            tmpResult = "NaN"
+                                        Else
+                                            tmpResult = Log(evaluated(1))
+                                        End If
+                                        GoTo exitfun
+                                    Case "log10"
+                                        If evaluated(1) <= 0 Then
+                                            tmpResult = "NaN"
+                                        Else
+                                            tmpResult = Log(evaluated(1)) / Log(10)
+                                        End If
+                                        GoTo exitfun
+                                    Case "log1p"
+                                        If evaluated(1) <= 0 Then
+                                            tmpResult = "NaN"
+                                        Else
+                                            tmpResult = Log(evaluated(1) + 1)
+                                        End If
+                                        GoTo exitfun
+                                    Case "log2"
+                                        If evaluated(1) <= 0 Then
+                                            tmpResult = "NaN"
+                                        Else
+                                            tmpResult = Log(evaluated(1)) / Log(2)
+                                        End If
+                                        GoTo exitfun
+                                    Case "max"
+                                        Dim maxEl As Variant
+                                        tmpResult = 0
+                                        For Each maxEl In evaluated
+                                            If maxEl > tmpResult Then
+                                                tmpResult = maxEl
+                                            End If
+                                        Next maxEl
+                                        GoTo exitfun
+                                    Case "min"
+                                        Dim minEl As Variant
+                                        tmpResult = 0
+                                        For Each minEl In evaluated
+                                            If minEl < tmpResult Then
+                                                tmpResult = minEl
+                                            End If
+                                        Next minEl
+                                        GoTo exitfun
+                                    Case "pow"
+                                        tmpResult = evaluated(1) ^ evaluated(2)
+                                        GoTo exitfun
+                                    Case "round"
+                                        tmpResult = Round(evaluated(1))
+                                        GoTo exitfun
+                                    Case "sign"
+                                        tmpResult = Sgn(evaluated(1))
+                                        GoTo exitfun
+                                    Case "sin"
+                                        tmpResult = Sin(evaluated(1))
+                                        GoTo exitfun
+                                    Case "sinh"
+                                        tmpResult = (Exp(evaluated(1)) - Exp(-1 * evaluated(1))) / 2
+                                        GoTo exitfun
+                                    Case "sqrt"
+                                        tmpResult = Sqr(evaluated(1))
+                                        GoTo exitfun
+                                    Case "tan"
+                                        tmpResult = Tan(evaluated(1))
+                                        GoTo exitfun
+                                    Case "tanh"
+                                        tmpResult = (Exp(evaluated(1)) - Exp(-1 * evaluated(1))) / _
+                                                    (Exp(evaluated(1)) + Exp(-1 * evaluated(1)))
+                                        GoTo exitfun
+                                End Select
+                            End If
+                        Else
+                            ' Delegate the evaluation to the Aplication
+                            vAssignment tmpResult, CallObjectMethod(baseValLocal, propN, evaluated)
+                            GoTo exitfun
                         End If
+                    Else
+                        vAssignment tmpResult, CallObjectMethod(baseValLocal, propN, evaluated)
+                        GoTo exitfun
                     End If
                     ' --- end method builtins ---
                 End If
@@ -4080,10 +4101,10 @@ End Function
 Private Function ArrayIsInit(aArray As Variant) As Boolean
     Dim ub As Long
     ArrayIsInit = True
-    On Error GoTo err_handler
+    On Error GoTo err_Handler
     ub = UBound(aArray)
     Exit Function
-err_handler:
+err_Handler:
     err.Clear
     ArrayIsInit = False
 End Function
@@ -4478,7 +4499,7 @@ End Function
 
 Private Function cTypeExprRes(ByRef aResult As Variant) As Variant
     Dim tmpArr() As Variant
-    On Error GoTo err_handler
+    On Error GoTo err_Handler
     If mid(aResult, 1, 2) = "{{" Then
         'VBAexpressions array was returned
         With GLOBALS_.gExprEvaluator
@@ -4489,7 +4510,7 @@ Private Function cTypeExprRes(ByRef aResult As Variant) As Variant
         vAssignment cTypeExprRes, aResult
     End If
     Exit Function
-err_handler:
+err_Handler:
     vAssignment cTypeExprRes, vbEmpty
 End Function
 
@@ -4905,26 +4926,47 @@ Private Function ResolveIndexProp(ByRef lval) As Variant
     Dim pObject As Variant
     Dim keys As New Collection
     Dim i As Long
+    Dim container As Variant: vAssignment container, lval("container")
+    
+    If Not lval.Exists("parentObj") Then
+        vAssignment ResolveIndexProp, container
+        Exit Function
+    End If
+    
     vAssignment pObject, lval("parentObj")
     Do While pObject.Exists("parentObj")
-        keys.Add pObject("key")
+        If pObject.Exists("key") Then keys.Add pObject("key")
         vAssignment pObject, pObject("parentObj")
         If Not pObject.Exists("parentKey") Then
             Exit Do
         End If
     Loop
-    baseVariable = pObject("key")
-    Dim container As Variant: vAssignment container, lval("container")
-    vAssignment pObject, container.GetValue(baseVariable)
-    If keys.Count > 0 Then
-        For i = keys.Count To 2 Step -1
-            vAssignment pObject, pObject.GetValue(keys(i))
-        Next
-        vAssignment ResolveIndexProp, pObject(keys(1))
-    Else
-        vAssignment ResolveIndexProp, pObject
+    
+    If Not pObject.Exists("key") Then
+        ' Return container directly
+        vAssignment ResolveIndexProp, container
+        Exit Function
     End If
+    
+    baseVariable = pObject("key")
+    Select Case TypeName(container)
+        Case "ASF_Map", "ASF_ScopeStack"
+            ' Container is an ASF structure
+            vAssignment pObject, container.GetValue(baseVariable)
+            If keys.Count > 0 Then
+                For i = keys.Count To 2 Step -1
+                    vAssignment pObject, pObject.GetValue(keys(i))
+                Next
+                vAssignment ResolveIndexProp, pObject(keys(1))
+            Else
+                vAssignment ResolveIndexProp, pObject
+            End If
+        Case Else
+            ' Container is a native VBA object or array
+            vAssignment ResolveIndexProp, container
+    End Select
 End Function
+
 Private Function ResolveProp(ByRef lval) As Variant
     Dim baseVariable As String
     Dim pObject As Variant
@@ -6785,6 +6827,87 @@ End Function
 Private Sub SetObjectProperty(obj As Variant, propName As Variant, propValue As Variant)
     CallByName obj, propName, VbLet, propValue
 End Sub
+Private Function GetObjectProperty(obj As Variant, propName As Variant) As Variant
+    vAssignment GetObjectProperty, CallByName(obj, propName, VbGet)
+End Function
+Private Function CallObjectMethod(obj As Variant, methodName As Variant, Optional args As Collection) As Variant
+    If args Is Nothing Then
+        vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet)
+    Else
+        Dim nArgs As Long: nArgs = args.Count
+        With args
+            'A lengthy and visually overwhelming implementation.
+            Select Case nArgs
+                Case 0
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet)
+                Case 1
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1))
+                Case 2
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2))
+                Case 3
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3))
+                Case 4
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4))
+                Case 5
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5))
+                Case 6
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6))
+                Case 7
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7))
+                Case 8
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8))
+                Case 9
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9))
+                Case 10
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10))
+                Case 11
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11))
+                Case 12
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12))
+                Case 13
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13))
+                Case 14
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14))
+                Case 15
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15))
+                Case 16
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16))
+                Case 17
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17))
+                Case 18
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18))
+                Case 19
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19))
+                Case 20
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20))
+                Case 21
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21))
+                Case 22
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22))
+                Case 23
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23))
+                Case 24
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23), .item(24))
+                Case 25
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23), .item(24), .item(25))
+                Case 26
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23), .item(24), .item(25), .item(26))
+                Case 27
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23), .item(24), .item(25), .item(26), .item(27))
+                Case 28
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23), .item(24), .item(25), .item(26), .item(27), .item(28))
+                Case 29
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23), .item(24), .item(25), .item(26), .item(27), .item(28), .item(29))
+                Case 30
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23), .item(24), .item(25), .item(26), .item(27), .item(28), .item(29), .item(30))
+                Case Else
+                    err.Raise vbObjectError + 513, "CallObjectMethod", "Too many arguments: maximum supported is 30."
+            End Select
+        End With
+    End If
+End Function
+
+
 ' ---------------------
 ' End VM class
 ' ---------------------
