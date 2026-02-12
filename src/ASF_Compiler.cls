@@ -67,7 +67,7 @@ End Function
 ' Helper: Check if token is spread operator
 ' ---------------------
 Private Function IsSpreadToken(toks As Collection, idx As Long) As Boolean
-    If idx > toks.count Then
+    If idx > toks.Count Then
         IsSpreadToken = False
         Exit Function
     End If
@@ -132,7 +132,7 @@ Public Function CompileProgram(src As String, Optional progName As String = "@an
     i = 1
 
 Compiler_MainLoop:
-    Do While i <= toks.count
+    Do While i <= toks.Count
         ' skip comments at top level
         If toks(i)(0) = "COMMENT" Then
             i = i + 1
@@ -159,17 +159,17 @@ Compiler_MainLoop:
         If toks(i)(0) = "IDENT" And LCase$(toks(i)(1)) = "fun" Then
             i = i + 1
             ' skip comments
-            Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
+            Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
                 i = i + 1
             Loop
-            If i > toks.count Then err.Raise vbObjectError + 1, , "Unexpected end after fun"
+            If i > toks.Count Then err.Raise vbObjectError + 1, , "Unexpected end after fun"
             
             ' Get function name
             fname = toks(i)(1)
             i = i + 1
             
             ' Skip comments
-            Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
+            Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
                 i = i + 1
             Loop
 
@@ -178,9 +178,9 @@ Compiler_MainLoop:
             hasRestParam = False
             restParamName = vbNullString
             
-            If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = "(" Then
+            If i <= toks.Count And toks(i)(0) = "PAREN" And toks(i)(1) = "(" Then
                 i = i + 1
-                Do While i <= toks.count And Not (safeTVRetInner(toks, i, 0) = "PAREN" And safeTVRetInner(toks, i, 1) = ")")
+                Do While i <= toks.Count And Not (safeTVRetInner(toks, i, 0) = "PAREN" And safeTVRetInner(toks, i, 1) = ")")
                     If toks(i)(0) = "COMMENT" Then
                         i = i + 1
                     Else
@@ -188,7 +188,7 @@ Compiler_MainLoop:
                         If (toks(i)(0) = "SPREAD" Or toks(i)(0) = "OP") And toks(i)(1) = "..." Then
                             ' Next token should be parameter name
                             i = i + 1
-                            If i > toks.count Or toks(i)(0) <> "IDENT" Then
+                            If i > toks.Count Or toks(i)(0) <> "IDENT" Then
                                 err.Raise vbObjectError + 9001, , "Expected parameter name after ..."
                             End If
                             
@@ -203,10 +203,10 @@ Compiler_MainLoop:
                             
                             ' Check there are no more parameters after rest
                             Dim nextIdx As Long: nextIdx = i
-                            Do While nextIdx <= toks.count And toks(nextIdx)(0) = "COMMENT"
+                            Do While nextIdx <= toks.Count And toks(nextIdx)(0) = "COMMENT"
                                 nextIdx = nextIdx + 1
                             Loop
-                            If nextIdx <= toks.count Then
+                            If nextIdx <= toks.Count Then
                                 If Not (toks(nextIdx)(0) = "PAREN" And toks(nextIdx)(1) = ")") Then
                                     If toks(nextIdx)(0) = "SEP" Then
                                         err.Raise vbObjectError + 9002, , "Rest parameter must be last parameter"
@@ -223,13 +223,13 @@ Compiler_MainLoop:
                         End If
                     End If
                 Loop
-                If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = ")" Then i = i + 1
+                If i <= toks.Count And toks(i)(0) = "PAREN" And toks(i)(1) = ")" Then i = i + 1
             End If
             ' Skip comments before body
-            Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
+            Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
                 i = i + 1
             Loop
-            If i > toks.count Or Not (toks(i)(0) = "PAREN" And toks(i)(1) = "{") Then
+            If i > toks.Count Or Not (toks(i)(0) = "PAREN" And toks(i)(1) = "{") Then
                 err.Raise vbObjectError + 2, , "Expected function body"
             End If
             
@@ -237,7 +237,7 @@ Compiler_MainLoop:
             i = i + 1
             depth = 0
             Set bodyTokens = New Collection
-            Do While i <= toks.count
+            Do While i <= toks.Count
                 If toks(i)(0) = "PAREN" Then
                     If toks(i)(1) = "{" Then
                         depth = depth + 1
@@ -262,9 +262,9 @@ Compiler_MainLoop:
             GLOBALS_.gFuncTable.Add fname, funcIdx
 
             ' Store parameters
-            If argList.count > 0 Then
-                ReDim pa(0 To argList.count - 1)
-                For j = 1 To argList.count
+            If argList.Count > 0 Then
+                ReDim pa(0 To argList.Count - 1)
+                For j = 1 To argList.Count
                     pa(j - 1) = argList(j)
                 Next j
             Else
@@ -273,7 +273,7 @@ Compiler_MainLoop:
             End If
             GLOBALS_.gFuncParams.Add fname, pa
             ' Skip closing brace
-            If i <= toks.count Then i = i + 1
+            If i <= toks.Count Then i = i + 1
             GoTo Compiler_MainLoop
             
         ElseIf toks(i)(0) = "IDENT" And LCase$(toks(i)(1)) = "class" Then
@@ -289,7 +289,7 @@ Compiler_MainLoop:
             
             Set stmtTokens = New Collection
             
-            Do While i <= toks.count
+            Do While i <= toks.Count
                 If toks(i)(0) = "COMMENT" Then
                     i = i + 1
                     GoTo CollectNextTop
@@ -329,7 +329,7 @@ Compiler_MainLoop:
 CollectNextTop:
             Loop
 
-            If stmtTokens.count > 0 Then
+            If stmtTokens.Count > 0 Then
                 Set node = ParseStatementTokensToAST(stmtTokens)
                 If Not node Is Nothing Then
                     ' add a clone to avoid accidental reference reuse
@@ -342,7 +342,7 @@ CollectNextTop:
     
     Dim optionBase As Long: optionBase = 1
     Dim filteredStmts As New Collection
-    For i = 1 To stmtsAST.count
+    For i = 1 To stmtsAST.Count
         Dim stmt As ASF_Map: Set stmt = stmtsAST(i)
         If stmt.GetValue("type") = "OptionBase" Then
             optionBase = CLng(stmt.GetValue("value"))
@@ -355,7 +355,7 @@ CollectNextTop:
     Dim normalizedStmts As Collection
     ' Normalize assignment-like expression-statements into proper Assign AST nodes
     Set normalizedStmts = NormalizeAssignsInStmts(stmtsAST)
-    pIndex = GLOBALS_.gPrograms.count + 1
+    pIndex = GLOBALS_.gPrograms.Count + 1
     GLOBALS_.gPrograms.Add Array(progName, normalizedStmts, progScope.Raw, optionBase)
     GLOBALS_.ProgramCache.Add src, pIndex
     CompileProgram = pIndex
@@ -370,14 +370,14 @@ Private Function CompileFunctionAST(fname As String, argList As Collection, body
     Dim bodyStmtsAST As Collection
     Set funcScope = New ASF_ScopeStack
     funcScope.Push
-    For i = 1 To argList.count
+    For i = 1 To argList.Count
         funcScope.SetValue argList(i), Empty
     Next i
     Dim idx As Long
     Set bodyStmtsAST = ParseTokensToAST(bodyTokens)
     ' Normalize assignments inside function body as well
     Set bodyStmtsAST = NormalizeAssignsInStmts(bodyStmtsAST)
-    idx = GLOBALS_.gPrograms.count + 1
+    idx = GLOBALS_.gPrograms.Count + 1
     GLOBALS_.gPrograms.Add Array(fname, bodyStmtsAST, funcScope.Raw)
     CompileFunctionAST = idx
 End Function
@@ -390,7 +390,7 @@ Private Function CompileFunctionASTWithRest(fname As String, argList As Collecti
     funcScope.Push
     
     ' Bind regular parameters to scope
-    For i = 1 To argList.count
+    For i = 1 To argList.Count
         funcScope.SetValue argList(i), Empty
     Next i
     
@@ -400,7 +400,7 @@ Private Function CompileFunctionASTWithRest(fname As String, argList As Collecti
     Dim idx As Long
     Set bodyStmtsAST = ParseTokensToAST(bodyTokens)
     Set bodyStmtsAST = NormalizeAssignsInStmts(bodyStmtsAST)
-    idx = GLOBALS_.gPrograms.count + 1
+    idx = GLOBALS_.gPrograms.Count + 1
     
     ' Store with rest parameter info: Array(fname, bodyStmtsAST, funcScope.Raw, restParam)
     GLOBALS_.gPrograms.Add Array(fname, bodyStmtsAST, funcScope.Raw, restParam)
@@ -415,7 +415,7 @@ Private Function ParseTokensToAST(toks As Collection) As Collection
     Dim closedTopLevelBlock As Boolean
     
 ParseMain:
-    Do While i <= toks.count
+    Do While i <= toks.Count
         If toks(i)(0) = "COMMENT" Then
             i = i + 1
             GoTo ParseMain
@@ -426,7 +426,7 @@ ParseMain:
         Dim bracketDepth As Long: bracketDepth = 0
 
 ParseInner:
-        Do While i <= toks.count
+        Do While i <= toks.Count
             If toks(i)(0) = "COMMENT" Then
                 i = i + 1
                 GoTo ParseInner
@@ -453,11 +453,11 @@ ParseInner:
                             ' closing brace is followed by 'elseif', 'else' or 'catch'. If so, continue
                             ' collecting tokens into the same stmtTokens (do not finalize yet).
                             Dim nexti As Long: nexti = i
-                            Do While nexti <= toks.count And safeTVRetInner(toks, nexti, 0) = "COMMENT"
+                            Do While nexti <= toks.Count And safeTVRetInner(toks, nexti, 0) = "COMMENT"
                                 nexti = nexti + 1
                             Loop
 
-                            If nexti <= toks.count Then
+                            If nexti <= toks.Count Then
                                 If toks(nexti)(0) = "IDENT" Then
                                     Dim nextKw As String: nextKw = LCase$(safeTVRetInner(toks, nexti, 1))
                                     If nextKw = "elseif" Or nextKw = "else" Or nextKw = "catch" Then
@@ -497,14 +497,14 @@ ParseInner:
             stmtTokens.Add toks(i)
             i = i + 1
         Loop
-        If stmtTokens.count > 0 Then
+        If stmtTokens.Count > 0 Then
             Dim tmpNode As ASF_Map
             Set tmpNode = ParseStatementTokensToAST(stmtTokens)
             If Not tmpNode Is Nothing Then
                 ' If we closed a top-level block and the next token is not a semicolon,
                 ' warn the user (do not silently swallow).
                 If closedTopLevelBlock Then
-                    If i <= toks.count Then
+                    If i <= toks.Count Then
                         If Not (toks(i)(0) = "SEP" And toks(i)(1) = ";") Then
                             ' If the next token is not a comment and not end-of-input, log warning.
                             If Not (toks(i)(0) = "COMMENT") Then
@@ -531,24 +531,24 @@ End Function
 
 ' Parse a single statement token collection into an AST node (Map)
 Private Function ParseStatementTokensToAST(stmtTokens As Collection) As ASF_Map
-    If stmtTokens.count = 0 Then
+    If stmtTokens.Count = 0 Then
         Set ParseStatementTokensToAST = Nothing
         Exit Function
     End If
 
     ' quick check for print
-    If stmtTokens.count >= 2 Then
+    If stmtTokens.Count >= 2 Then
         If stmtTokens(1)(0) = "IDENT" And LCase$(stmtTokens(1)(1)) = "print" Then
             Dim k As Long: k = 2
-            Do While k <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, k, 0) = "PAREN" And safeTVRetInner(stmtTokens, k, 1) = "(")
+            Do While k <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, k, 0) = "PAREN" And safeTVRetInner(stmtTokens, k, 1) = "(")
                 k = k + 1
             Loop
-            If k <= stmtTokens.count Then
+            If k <= stmtTokens.Count Then
                 Dim opened As Long: opened = 1
                 k = k + 1
                 Dim innerToks As Collection
                 Set innerToks = New Collection
-                Do While k <= stmtTokens.count And opened > 0
+                Do While k <= stmtTokens.Count And opened > 0
                     If stmtTokens(k)(0) = "PAREN" Then
                         If stmtTokens(k)(1) = "(" Then
                             opened = opened + 1
@@ -597,9 +597,9 @@ Private Function ParseStatementTokensToAST(stmtTokens As Collection) As ASF_Map
                 Exit Function
             Case "return"
                 Dim rv As ASF_Map: Set rv = MakeNode("Return")
-                If stmtTokens.count >= 2 Then
+                If stmtTokens.Count >= 2 Then
                     Dim rhs As New Collection, m As Long
-                    For m = 2 To stmtTokens.count: rhs.Add stmtTokens(m): Next m
+                    For m = 2 To stmtTokens.Count: rhs.Add stmtTokens(m): Next m
                     Dim rexpr As ASF_Map: Set rexpr = ParseExprTokensToNode(rhs)
                     rv.SetValue "expr", rexpr
                 Else
@@ -608,8 +608,8 @@ Private Function ParseStatementTokensToAST(stmtTokens As Collection) As ASF_Map
                 Set ParseStatementTokensToAST = rv
                 Exit Function
             Case "option"
-                If stmtTokens.count >= 3 And LCase$(stmtTokens(2)(1)) = "base" Then
-                    If stmtTokens.count >= 4 And stmtTokens(3)(0) = "NUMBER" Then
+                If stmtTokens.Count >= 3 And LCase$(stmtTokens(2)(1)) = "base" Then
+                    If stmtTokens.Count >= 4 And stmtTokens(3)(0) = "NUMBER" Then
                         Dim baseVal As Long: baseVal = CLng(stmtTokens(3)(1))
                         If baseVal = 0 Or baseVal = 1 Then
                             ' Set as program flag - return special node
@@ -628,7 +628,7 @@ Private Function ParseStatementTokensToAST(stmtTokens As Collection) As ASF_Map
     Dim compoundOp As String: compoundOp = vbNullString
     Dim ii As Long
     Dim depthB As Long, depthP As Long, depthBr As Long
-    For ii = 1 To stmtTokens.count
+    For ii = 1 To stmtTokens.Count
         If stmtTokens(ii)(0) = "PAREN" Then
             Select Case stmtTokens(ii)(1)
                 Case "{"
@@ -666,12 +666,12 @@ Private Function ParseStatementTokensToAST(stmtTokens As Collection) As ASF_Map
         Dim lhsT As Collection, rhsT As Collection, t As Long
         Set lhsT = New Collection: Set rhsT = New Collection
         For t = 1 To assignPos - 1: lhsT.Add stmtTokens(t): Next t
-        For t = assignPos + 1 To stmtTokens.count: rhsT.Add stmtTokens(t): Next t
+        For t = assignPos + 1 To stmtTokens.Count: rhsT.Add stmtTokens(t): Next t
         
         ' Check for array destructuring pattern: [ id, id, ... ] = expr
         Dim isArrayDestructuring As Boolean: isArrayDestructuring = False
-        If lhsT.count >= 3 Then
-            If lhsT(1)(0) = "PAREN" And lhsT(1)(1) = "[" And lhsT(lhsT.count)(0) = "PAREN" And lhsT(lhsT.count)(1) = "]" Then
+        If lhsT.Count >= 3 Then
+            If lhsT(1)(0) = "PAREN" And lhsT(1)(1) = "[" And lhsT(lhsT.Count)(0) = "PAREN" And lhsT(lhsT.Count)(1) = "]" Then
                 isArrayDestructuring = True
             End If
         End If
@@ -685,7 +685,7 @@ Private Function ParseStatementTokensToAST(stmtTokens As Collection) As ASF_Map
             Dim targetVar As ASF_Map
             ' Parse elements between [ and ]
             Dim dt As Long: dt = 2 ' skip opening [
-            Do While dt < lhsT.count
+            Do While dt < lhsT.Count
                 If lhsT(dt)(0) = "COMMENT" Then
                     dt = dt + 1
                     GoTo ContinueDestParse
@@ -695,11 +695,11 @@ Private Function ParseStatementTokensToAST(stmtTokens As Collection) As ASF_Map
                 If IsSpreadToken(lhsT, dt) Then
                     dt = dt + 1
                     ' Skip comments after spread
-                    Do While dt < lhsT.count And lhsT(dt)(0) = "COMMENT"
+                    Do While dt < lhsT.Count And lhsT(dt)(0) = "COMMENT"
                         dt = dt + 1
                     Loop
                     
-                    If dt < lhsT.count And lhsT(dt)(0) = "IDENT" Then
+                    If dt < lhsT.Count And lhsT(dt)(0) = "IDENT" Then
                         If hasRestInDest Then
                             err.Raise vbObjectError + 9003, "Compiler.ParseStatementTokensToAST", "Multiple rest elements in destructuring"
                         End If
@@ -708,10 +708,10 @@ Private Function ParseStatementTokensToAST(stmtTokens As Collection) As ASF_Map
                         dt = dt + 1
                         
                         ' Validate rest is last (only closing bracket should follow)
-                        Do While dt < lhsT.count And lhsT(dt)(0) = "COMMENT"
+                        Do While dt < lhsT.Count And lhsT(dt)(0) = "COMMENT"
                             dt = dt + 1
                         Loop
-                        If dt < lhsT.count And Not (lhsT(dt)(0) = "PAREN" And lhsT(dt)(1) = "]") Then
+                        If dt < lhsT.Count And Not (lhsT(dt)(0) = "PAREN" And lhsT(dt)(1) = "]") Then
                             If lhsT(dt)(0) = "SEP" And lhsT(dt)(1) = "," Then
                                 err.Raise vbObjectError + 9002, "Compiler.ParseStatementTokensToAST", "Rest element must be last in destructuring"
                             End If
@@ -751,7 +751,7 @@ ContinueDestParse:
             Exit Function
         End If
         Dim lhsNode As ASF_Map
-        If lhsT.count = 1 And lhsT(1)(0) = "IDENT" Then
+        If lhsT.Count = 1 And lhsT(1)(0) = "IDENT" Then
             Dim nm As String: nm = lhsT(1)(1)
             If InStr(nm, "[") > 0 Then
                 Dim baseName As String: baseName = left$(nm, InStr(nm, "[") - 1)
@@ -805,7 +805,7 @@ End Function
 
 Private Function ParseArgsTokensToExprNodes(argTokens As Collection) As Collection
     Dim out As New Collection
-    If argTokens.count = 0 Then
+    If argTokens.Count = 0 Then
         Set ParseArgsTokensToExprNodes = out
         Exit Function
     End If
@@ -815,7 +815,7 @@ Private Function ParseArgsTokensToExprNodes(argTokens As Collection) As Collecti
     Dim bracketDepth As Long: bracketDepth = 0
     Dim cur As New Collection
 ParseArgsMain:
-    Do While i <= argTokens.count
+    Do While i <= argTokens.Count
         If argTokens(i)(0) = "PAREN" Then
             Select Case argTokens(i)(1)
                 Case "{"
@@ -834,7 +834,7 @@ ParseArgsMain:
         End If
         ' Argument/element separator: comma only (semicolon is NOT an argument separator)
         If argTokens(i)(0) = "SEP" And argTokens(i)(1) = "," And braceDepth = 0 And parenDepth = 0 And bracketDepth = 0 Then
-            If cur.count > 0 Then out.Add ParseExprTokensToNode(cur)
+            If cur.Count > 0 Then out.Add ParseExprTokensToNode(cur)
             Set cur = New Collection
             i = i + 1
             GoTo ParseArgsMain
@@ -843,7 +843,7 @@ ParseArgsMain:
         cur.Add argTokens(i)
         i = i + 1
     Loop
-    If cur.count > 0 Then out.Add ParseExprTokensToNode(cur)
+    If cur.Count > 0 Then out.Add ParseExprTokensToNode(cur)
     Set ParseArgsTokensToExprNodes = out
 End Function
 
@@ -856,7 +856,7 @@ Private Function ParseExprFromStringToNode(exprStr As String) As ASF_Map
 End Function
 
 Private Function ParseExprTokensToNode(toks As Collection) As ASF_Map
-    Dim n As Long: n = toks.count
+    Dim n As Long: n = toks.Count
     If n = 0 Then
         Set ParseExprTokensToNode = MakeNode("Literal"): ParseExprTokensToNode.SetValue "value", Empty
         Exit Function
@@ -1197,7 +1197,7 @@ Private Function DoPostfixChaining(ByVal currentNode As ASF_Map, types() As Stri
                     idx = idx + 1
                 Loop
 
-                If argTok.count > 0 Then
+                If argTok.Count > 0 Then
                     If isSpreadArg Then
                         ' Create SpreadElement node
                         Dim spreadArgNode As ASF_Map: Set spreadArgNode = MakeNode("SpreadElement")
@@ -1275,7 +1275,7 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
         
                 Dim partsNodes As New Collection
                 Dim pi As Long
-                For pi = 1 To tplParts.count
+                For pi = 1 To tplParts.Count
                     Dim p As Variant: p = tplParts(pi)
                     If p(0) = "LITERAL" Then
                         Dim litNode As ASF_Map: Set litNode = MakeNode("Literal")
@@ -1495,7 +1495,7 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
                             idx = idx + 1
                         Loop
                         
-                        If superArgTok.count > 0 Then
+                        If superArgTok.Count > 0 Then
                             superArgs.Add ParseExprTokensToNode(superArgTok)
                         End If
                         
@@ -1740,13 +1740,13 @@ ContinueParenInner:
                     
                     ' Create appropriate node
                     If isSpread Then
-                        If elemTok.count > 0 Then
+                        If elemTok.Count > 0 Then
                             Set spreadNode = MakeNode("SpreadElement")
                             spreadNode.SetValue "argument", ParseExprTokensToNode(elemTok)
                             arrList.Add spreadNode
                         End If
                     Else
-                        If elemTok.count > 0 Then
+                        If elemTok.Count > 0 Then
                             arrList.Add ParseExprTokensToNode(elemTok)
                         End If
                     End If
@@ -1805,7 +1805,7 @@ ContinueParenInner:
                             idx = idx + 1
                         Loop
                         
-                        If spreadSrcTok.count > 0 Then
+                        If spreadSrcTok.Count > 0 Then
                             ' Create SpreadProperty node
                             Set spreadPropNode = MakeNode("SpreadProperty")
                             spreadPropNode.SetValue "argument", ParseExprTokensToNode(spreadSrcTok)
@@ -1890,15 +1890,15 @@ End Function
 Private Function ParseIfAST(stmtTokens As Collection) As ASF_Map
     Dim node As ASF_Map: Set node = MakeNode("If")
     Dim i As Long: i = 2
-    Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "(")
+    Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "(")
         i = i + 1
     Loop
-    If i > stmtTokens.count Then Set ParseIfAST = node: Exit Function
+    If i > stmtTokens.Count Then Set ParseIfAST = node: Exit Function
     i = i + 1
     Dim condTokens As Collection
     Set condTokens = New Collection
     Dim condDepth As Long: condDepth = 0
-    Do While i <= stmtTokens.count
+    Do While i <= stmtTokens.Count
         If stmtTokens(i)(0) = "PAREN" Then
             If stmtTokens(i)(1) = "(" Then
                 condDepth = condDepth + 1
@@ -1915,15 +1915,15 @@ Private Function ParseIfAST(stmtTokens As Collection) As ASF_Map
     Loop
     node.SetValue "cond", ParseExprTokensToNode(condTokens)
 
-    Do While i <= stmtTokens.count And Not (safeTVRet(stmtTokens(i), 0) = "PAREN" And safeTVRet(stmtTokens(i), 1) = "{")
+    Do While i <= stmtTokens.Count And Not (safeTVRet(stmtTokens(i), 0) = "PAREN" And safeTVRet(stmtTokens(i), 1) = "{")
         i = i + 1
     Loop
-    If i > stmtTokens.count Then Set ParseIfAST = node.Clone: GoTo clean_
+    If i > stmtTokens.Count Then Set ParseIfAST = node.Clone: GoTo clean_
     Dim j As Long: j = i + 1
     Dim depth As Long: depth = 0
     Dim thenTokens As Collection
     Set thenTokens = New Collection
-    Do While j <= stmtTokens.count
+    Do While j <= stmtTokens.Count
         If stmtTokens(j)(0) = "PAREN" Then
             If stmtTokens(j)(1) = "{" Then
                 depth = depth + 1
@@ -1950,7 +1950,7 @@ Private Function ParseIfAST(stmtTokens As Collection) As ASF_Map
     Dim edepth As Long
     Set elseifConds = New Collection
     Set elseifBlocks = New Collection
-    Do While pos <= stmtTokens.count
+    Do While pos <= stmtTokens.Count
         If stmtTokens(pos)(0) = "COMMENT" Then
             pos = pos + 1
             GoTo IfParseNext
@@ -1959,14 +1959,14 @@ Private Function ParseIfAST(stmtTokens As Collection) As ASF_Map
             tname = LCase$(stmtTokens(pos)(1))
             If tname = "elseif" Then
                 pos = pos + 1
-                Do While pos <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, pos, 0) = "PAREN" And safeTVRetInner(stmtTokens, pos, 1) = "(")
+                Do While pos <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, pos, 0) = "PAREN" And safeTVRetInner(stmtTokens, pos, 1) = "(")
                     pos = pos + 1
                 Loop
-                If pos > stmtTokens.count Then Exit Do
+                If pos > stmtTokens.Count Then Exit Do
                 pos = pos + 1
                 edepth = 0
                 Set eCondTok = New Collection
-                Do While pos <= stmtTokens.count
+                Do While pos <= stmtTokens.Count
                     If stmtTokens(pos)(0) = "PAREN" Then
                         If stmtTokens(pos)(1) = "(" Then
                             edepth = edepth + 1
@@ -1981,14 +1981,14 @@ Private Function ParseIfAST(stmtTokens As Collection) As ASF_Map
                     eCondTok.Add stmtTokens(pos)
                     pos = pos + 1
                 Loop
-                Do While pos <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, pos, 0) = "PAREN" And safeTVRetInner(stmtTokens, pos, 1) = "{")
+                Do While pos <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, pos, 0) = "PAREN" And safeTVRetInner(stmtTokens, pos, 1) = "{")
                     pos = pos + 1
                 Loop
-                If pos > stmtTokens.count Then Exit Do
+                If pos > stmtTokens.Count Then Exit Do
                 pos = pos + 1
                 Set eBlockTok = New Collection
                 depth = 0
-                Do While pos <= stmtTokens.count
+                Do While pos <= stmtTokens.Count
                     If stmtTokens(pos)(0) = "PAREN" Then
                         If stmtTokens(pos)(1) = "{" Then
                             depth = depth + 1
@@ -2009,14 +2009,14 @@ Private Function ParseIfAST(stmtTokens As Collection) As ASF_Map
                 GoTo IfParseNext
             ElseIf tname = "else" Then
                 pos = pos + 1
-                Do While pos <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, pos, 0) = "PAREN" And safeTVRetInner(stmtTokens, pos, 1) = "{")
+                Do While pos <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, pos, 0) = "PAREN" And safeTVRetInner(stmtTokens, pos, 1) = "{")
                     pos = pos + 1
                 Loop
-                If pos > stmtTokens.count Then Exit Do
+                If pos > stmtTokens.Count Then Exit Do
                 pos = pos + 1
                 Set elseTok = New Collection
                 depth = 0
-                Do While pos <= stmtTokens.count
+                Do While pos <= stmtTokens.Count
                     If stmtTokens(pos)(0) = "PAREN" Then
                         If stmtTokens(pos)(1) = "{" Then
                             depth = depth + 1
@@ -2066,10 +2066,10 @@ Private Function ParseForAST(stmtTokens As Collection) As ASF_Map
     Dim i As Long: i = 2
 
     ' locate opening '(' of the for header
-    Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "(")
+    Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "(")
         i = i + 1
     Loop
-    If i > stmtTokens.count Then Set ParseForAST = node: Exit Function
+    If i > stmtTokens.Count Then Set ParseForAST = node: Exit Function
 
     ' enter header (consume '(')
     i = i + 1
@@ -2078,7 +2078,7 @@ Private Function ParseForAST(stmtTokens As Collection) As ASF_Map
     Set initTok = New Collection
     Dim hdrParen As Long, hdrBracket As Long, hdrBrace As Long
     hdrParen = 0: hdrBracket = 0: hdrBrace = 0
-    Do While i <= stmtTokens.count
+    Do While i <= stmtTokens.Count
         If stmtTokens(i)(0) = "PAREN" Then
             Select Case stmtTokens(i)(1)
                 Case "("
@@ -2115,12 +2115,12 @@ Private Function ParseForAST(stmtTokens As Collection) As ASF_Map
     ' Try to detect "for (<left> in <right>)" or "for (<left> of <right>)"
     Dim foundPos As Long: foundPos = 0
     Dim foundKind As String: foundKind = vbNullString
-    If initTok.count > 0 Then
+    If initTok.Count > 0 Then
         Dim depthP As Long: depthP = 0
         Dim depthB As Long: depthB = 0
         Dim depthC As Long: depthC = 0
         Dim tIdx As Long
-        For tIdx = 1 To initTok.count
+        For tIdx = 1 To initTok.Count
             Dim tkType As String: tkType = CStr(initTok(tIdx)(0))
             Dim tkVal As String: tkVal = CStr(initTok(tIdx)(1))
             If tkType = "PAREN" Then
@@ -2156,7 +2156,7 @@ Private Function ParseForAST(stmtTokens As Collection) As ASF_Map
         For k = 1 To foundPos - 1
             leftTok.Add initTok(k)
         Next k
-        For k = foundPos + 1 To initTok.count
+        For k = foundPos + 1 To initTok.Count
             rightTok.Add initTok(k)
         Next k
 
@@ -2169,15 +2169,15 @@ Private Function ParseForAST(stmtTokens As Collection) As ASF_Map
         node.SetValue "iter", rightNode
 
         ' advance i past the ')' that closes the header (stmtTokens(i) should be ')')
-        If i <= stmtTokens.count And (stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = ")") Then
+        If i <= stmtTokens.Count And (stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = ")") Then
             i = i + 1
         End If
 
         ' now find body opening '{'
-        Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "{")
+        Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "{")
             i = i + 1
         Loop
-        If i > stmtTokens.count Then
+        If i > stmtTokens.Count Then
             Set ParseForAST = node.Clone
             Exit Function
         End If
@@ -2186,7 +2186,7 @@ Private Function ParseForAST(stmtTokens As Collection) As ASF_Map
         Dim j As Long: j = i + 1
         Dim depth As Long: depth = 0
         Set bodyToks = New Collection
-        Do While j <= stmtTokens.count
+        Do While j <= stmtTokens.Count
             If stmtTokens(j)(0) = "PAREN" Then
                 If stmtTokens(j)(1) = "{" Then
                     depth = depth + 1
@@ -2218,7 +2218,7 @@ Private Function ParseForAST(stmtTokens As Collection) As ASF_Map
     ' parse cond (tokens between first sep and second sep or closing ')')
     Set condTok = New Collection
     hdrParen = 0: hdrBracket = 0: hdrBrace = 0
-    Do While i <= stmtTokens.count
+    Do While i <= stmtTokens.Count
         If stmtTokens(i)(0) = "PAREN" Then
             Select Case stmtTokens(i)(1)
                 Case "("
@@ -2252,7 +2252,7 @@ Private Function ParseForAST(stmtTokens As Collection) As ASF_Map
     ' parse step (rest until closing ')' at header-level)
     Set stepTok = New Collection
     hdrParen = 0: hdrBracket = 0: hdrBrace = 0
-    Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = ")")
+    Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = ")")
         If stmtTokens(i)(0) = "PAREN" Then
             Select Case stmtTokens(i)(1)
                 Case "("
@@ -2275,16 +2275,16 @@ Private Function ParseForAST(stmtTokens As Collection) As ASF_Map
     node.SetValue "step", ParseStatementTokensToAST(stepTok)
 
     ' find body opening '{'
-    Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "{")
+    Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "{")
         i = i + 1
     Loop
-    If i > stmtTokens.count Then Set ParseForAST = node.Clone: GoTo clean_
+    If i > stmtTokens.Count Then Set ParseForAST = node.Clone: GoTo clean_
 
     ' collect body tokens
     Dim j2 As Long: j2 = i + 1
     Dim depth2 As Long: depth2 = 0
     Set bodyToks = New Collection
-    Do While j2 <= stmtTokens.count
+    Do While j2 <= stmtTokens.Count
         If stmtTokens(j2)(0) = "PAREN" Then
             If stmtTokens(j2)(1) = "{" Then
                 depth2 = depth2 + 1
@@ -2313,15 +2313,15 @@ End Function
 Private Function ParseWhileAST(stmtTokens As Collection) As ASF_Map
     Dim node As ASF_Map: Set node = MakeNode("While")
     Dim i As Long: i = 2
-    Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "(")
+    Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "(")
         i = i + 1
     Loop
-    If i > stmtTokens.count Then Set ParseWhileAST = node: Exit Function
+    If i > stmtTokens.Count Then Set ParseWhileAST = node: Exit Function
     i = i + 1
     Dim condTok As Collection
     Set condTok = New Collection
     Dim depthP As Long: depthP = 0
-    Do While i <= stmtTokens.count
+    Do While i <= stmtTokens.Count
         If stmtTokens(i)(0) = "PAREN" Then
             If stmtTokens(i)(1) = "(" Then
                 depthP = depthP + 1
@@ -2338,15 +2338,15 @@ Private Function ParseWhileAST(stmtTokens As Collection) As ASF_Map
     Loop
     node.SetValue "cond", ParseExprTokensToNode(condTok)
 
-    Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "{")
+    Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "{")
         i = i + 1
     Loop
-    If i > stmtTokens.count Then Set ParseWhileAST = node: Exit Function
+    If i > stmtTokens.Count Then Set ParseWhileAST = node: Exit Function
     Dim j As Long: j = i + 1
     Dim depth As Long: depth = 0
     Dim bodyToks As Collection
     Set bodyToks = New Collection
-    Do While j <= stmtTokens.count
+    Do While j <= stmtTokens.Count
         If stmtTokens(j)(0) = "PAREN" Then
             If stmtTokens(j)(1) = "{" Then
                 depth = depth + 1
@@ -2368,16 +2368,16 @@ End Function
 Private Function ParseTryCatchAST(stmtTokens As Collection) As ASF_Map
     Dim node As ASF_Map: Set node = MakeNode("TryCatch")
     Dim i As Long: i = 2
-    Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "{")
+    Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "{")
         i = i + 1
     Loop
-    If i > stmtTokens.count Then Set ParseTryCatchAST = node: Exit Function
+    If i > stmtTokens.Count Then Set ParseTryCatchAST = node: Exit Function
     Dim j As Long: j = i + 1
     Dim n As Long
     Dim depth As Long: depth = 0
     Dim tryTok As Collection
     Set tryTok = New Collection
-    n = stmtTokens.count
+    n = stmtTokens.Count
     Do While j <= n
         If stmtTokens(j)(0) = "PAREN" Then
             If stmtTokens(j)(1) = "{" Then
@@ -2398,16 +2398,16 @@ Private Function ParseTryCatchAST(stmtTokens As Collection) As ASF_Map
     Dim k As Long: k = j + 1
     Dim catchTok As Collection
     Set catchTok = New Collection
-    Do While k <= stmtTokens.count
+    Do While k <= stmtTokens.Count
         If stmtTokens(k)(0) = "IDENT" And LCase$(stmtTokens(k)(1)) = "catch" Then
             Dim kk As Long: kk = k + 1
-            Do While kk <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, kk, 0) = "PAREN" And safeTVRetInner(stmtTokens, kk, 1) = "{")
+            Do While kk <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, kk, 0) = "PAREN" And safeTVRetInner(stmtTokens, kk, 1) = "{")
                 kk = kk + 1
             Loop
-            If kk <= stmtTokens.count Then
+            If kk <= stmtTokens.Count Then
                 kk = kk + 1
                 Dim depth2 As Long: depth2 = 0
-                Do While kk <= stmtTokens.count
+                Do While kk <= stmtTokens.Count
                     If stmtTokens(kk)(0) = "PAREN" Then
                         If stmtTokens(kk)(1) = "{" Then
                             depth2 = depth2 + 1
@@ -2434,35 +2434,35 @@ End Function
 Private Function ParseSwitchAST(stmtTokens As Collection) As ASF_Map
     Dim node As ASF_Map: Set node = MakeNode("Switch")
     Dim i As Long: i = 2
-    Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "(")
+    Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "(")
         i = i + 1
     Loop
-    If i > stmtTokens.count Then Set ParseSwitchAST = node: Exit Function
+    If i > stmtTokens.Count Then Set ParseSwitchAST = node: Exit Function
     i = i + 1
     Dim condTok As New Collection
-    Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = ")")
+    Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = ")")
         condTok.Add stmtTokens(i)
         i = i + 1
     Loop
     node.SetValue "expr", ParseExprTokensToNode(condTok)
 
-    Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "{")
+    Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "{")
         i = i + 1
     Loop
-    If i > stmtTokens.count Then Set ParseSwitchAST = node: Exit Function
+    If i > stmtTokens.Count Then Set ParseSwitchAST = node: Exit Function
     i = i + 1
     Dim cases As Collection
     Set cases = New Collection
     Dim defaultBlock As Collection
     Dim valTok As Collection
-    Do While i <= stmtTokens.count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "}")
+    Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "}")
         If stmtTokens(i)(0) = "IDENT" And LCase$(stmtTokens(i)(1)) = "case" Then
             i = i + 1
             Set valTok = New Collection
             Dim cvParen As Long: cvParen = 0
             Dim cvBracket As Long: cvBracket = 0
             Dim cvBrace As Long: cvBrace = 0
-            Do While i <= stmtTokens.count
+            Do While i <= stmtTokens.Count
                 If stmtTokens(i)(0) = "PAREN" Then
                     Select Case stmtTokens(i)(1)
                         Case "("
@@ -2487,14 +2487,14 @@ Private Function ParseSwitchAST(stmtTokens As Collection) As ASF_Map
                 i = i + 1
             Loop
             Dim caseValNode As ASF_Map: Set caseValNode = ParseExprTokensToNode(valTok)
-            If i <= stmtTokens.count And stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = "{" Then
+            If i <= stmtTokens.Count And stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = "{" Then
                 i = i + 1
                 Dim depth As Long: depth = 0
                 Dim blockTok As Collection
                 Dim pair As Collection
                 Dim caseBlock As Collection
                 Set blockTok = New Collection
-                Do While i <= stmtTokens.count
+                Do While i <= stmtTokens.Count
                     If stmtTokens(i)(0) = "PAREN" Then
                         If stmtTokens(i)(1) = "{" Then
                             depth = depth + 1
@@ -2518,14 +2518,14 @@ Private Function ParseSwitchAST(stmtTokens As Collection) As ASF_Map
             End If
         ElseIf stmtTokens(i)(0) = "IDENT" And LCase$(stmtTokens(i)(1)) = "default" Then
             i = i + 1
-            Do While i <= stmtTokens.count And Not (stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = "{")
+            Do While i <= stmtTokens.Count And Not (stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = "{")
                 i = i + 1
             Loop
-            If i <= stmtTokens.count And stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = "{" Then
+            If i <= stmtTokens.Count And stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = "{" Then
                 i = i + 1
                 Dim depth2 As Long: depth2 = 0
                 Dim defTok As New Collection
-                Do While i <= stmtTokens.count
+                Do While i <= stmtTokens.Count
                     If stmtTokens(i)(0) = "PAREN" Then
                         If stmtTokens(i)(1) = "{" Then
                             depth2 = depth2 + 1
@@ -2612,7 +2612,7 @@ Private Function NormalizeExprNodeRecursive(expr As ASF_Map) As ASF_Map
                 Dim newArgs As New Collection
                 Dim changed As Boolean: changed = False
                 Dim i As Long
-                For i = 1 To args.count
+                For i = 1 To args.Count
                     Dim ae As ASF_Map: Set ae = NormalizeExprNodeRecursive(args(i))
                     If Not ae Is args(i) Then changed = True: newArgs.Add ae Else newArgs.Add args(i)
                 Next i
@@ -2646,7 +2646,7 @@ Private Function NormalizeExprNodeRecursive(expr As ASF_Map) As ASF_Map
                 Dim newit As New Collection
                 Dim ch As Boolean: ch = False
                 Dim ii As Long
-                For ii = 1 To items.count
+                For ii = 1 To items.Count
                     Dim ei As ASF_Map: Set ei = NormalizeExprNodeRecursive(items(ii))
                     If Not ei Is items(ii) Then ch = True: newit.Add ei Else newit.Add items(ii)
                 Next ii
@@ -2766,7 +2766,7 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
             Dim i As Long
             If Not thenBlk Is Nothing Then
                 Set outThen = New Collection
-                For i = 1 To thenBlk.count
+                For i = 1 To thenBlk.Count
                     outThen.Add NormalizeNodeRecursive(thenBlk(i))
                 Next i
             End If
@@ -2775,16 +2775,16 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
             Set outElseIfConds = New Collection
             Set outElseIfBlocks = New Collection
             If Not elseifConds Is Nothing Then
-                For i = 1 To elseifConds.count
+                For i = 1 To elseifConds.Count
                     outElseIfConds.Add NormalizeExprNodeRecursive(elseifConds(i))
                 Next i
             End If
             If Not elseifBlocks Is Nothing Then
-                For i = 1 To elseifBlocks.count
+                For i = 1 To elseifBlocks.Count
                     Set eb = elseifBlocks(i)
                     Set nb = New Collection
                     Dim j As Long
-                    For j = 1 To eb.count
+                    For j = 1 To eb.Count
                         nb.Add NormalizeNodeRecursive(eb(j))
                     Next j
                     outElseIfBlocks.Add nb
@@ -2793,7 +2793,7 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
             Set elseBlk = node.GetValue("else")
             If Not elseBlk Is Nothing Then
                 Set outElse = New Collection
-                For i = 1 To elseBlk.count
+                For i = 1 To elseBlk.Count
                     outElse.Add NormalizeNodeRecursive(elseBlk(i))
                 Next i
             End If
@@ -2816,7 +2816,7 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
             Dim bodyOrig As Collection: Set bodyOrig = node.GetValue("body")
             If Not bodyOrig Is Nothing Then
                 Dim bidx As Long
-                For bidx = 1 To bodyOrig.count
+                For bidx = 1 To bodyOrig.Count
                     newBody.Add NormalizeNodeRecursive(bodyOrig(bidx))
                 Next bidx
             End If
@@ -2929,7 +2929,7 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
             Set nbdy = New Collection
             If Not bdy Is Nothing Then
                 Dim bi As Long
-                For bi = 1 To bdy.count
+                For bi = 1 To bdy.Count
                     nbdy.Add NormalizeNodeRecursive(bdy(bi))
                 Next bi
             End If
@@ -2946,10 +2946,10 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
             Set nt = New Collection: Set nc = New Collection
             Dim ti As Long
             If Not tryBlk Is Nothing Then
-                For ti = 1 To tryBlk.count: nt.Add NormalizeNodeRecursive(tryBlk(ti)): Next ti
+                For ti = 1 To tryBlk.Count: nt.Add NormalizeNodeRecursive(tryBlk(ti)): Next ti
             End If
             If Not catchBlk Is Nothing Then
-                For ti = 1 To catchBlk.count: nc.Add NormalizeNodeRecursive(catchBlk(ti)): Next ti
+                For ti = 1 To catchBlk.Count: nc.Add NormalizeNodeRecursive(catchBlk(ti)): Next ti
             End If
             Set ntc = New ASF_Map
             ntc.Add "type", "TryCatch"
@@ -2963,13 +2963,13 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
             Set ncases = New Collection
             If Not cases Is Nothing Then
                 Dim ci As Long
-                For ci = 1 To cases.count
+                For ci = 1 To cases.Count
                     Set pair = cases(ci)
                     Set caseExpr = NormalizeExprNodeRecursive(pair(1))
                     Set blockStmts = pair(2)
                     Set nb = New Collection
                     Dim bi2 As Long
-                    For bi2 = 1 To blockStmts.count
+                    For bi2 = 1 To blockStmts.Count
                         nb.Add NormalizeNodeRecursive(blockStmts(bi2))
                     Next bi2
                     Set newPair = New Collection
@@ -2982,7 +2982,7 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
             If Not def Is Nothing Then
                 Set ndef = New Collection
                 Dim di As Long
-                For di = 1 To def.count: ndef.Add NormalizeNodeRecursive(def(di)): Next di
+                For di = 1 To def.Count: ndef.Add NormalizeNodeRecursive(def(di)): Next di
             End If
             Set nsw = New ASF_Map
             nsw.Add "type", "Switch"
@@ -3016,7 +3016,7 @@ Private Function NormalizeAssignsInStmts(stmts As Collection) As Collection
     End If
     Dim i As Long
     Dim n As ASF_Map
-    For i = 1 To stmts.count
+    For i = 1 To stmts.Count
         Set n = stmts(i)
         out.Add NormalizeNodeRecursive(n)
     Next i
@@ -3264,11 +3264,11 @@ Private Function ParseClassDecl(toks As Collection, ByRef i As Long) As ASF_Map
     i = i + 1
     
     ' Skip comments
-    Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
+    Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
         i = i + 1
     Loop
     
-    If i > toks.count Then err.Raise vbObjectError + 1, , "Expected class name"
+    If i > toks.Count Then err.Raise vbObjectError + 1, , "Expected class name"
     
     ' Get class name
     Dim className As String: className = toks(i)(1)
@@ -3276,18 +3276,18 @@ Private Function ParseClassDecl(toks As Collection, ByRef i As Long) As ASF_Map
     i = i + 1
     
     ' Skip comments
-    Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
+    Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
         i = i + 1
     Loop
     
     ' Check for extends
     Dim superClass As String: superClass = vbNullString
-    If i <= toks.count And LCase$(toks(i)(1)) = "extends" Then
+    If i <= toks.Count And LCase$(toks(i)(1)) = "extends" Then
         i = i + 1
-        Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
+        Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
             i = i + 1
         Loop
-        If i <= toks.count Then
+        If i <= toks.Count Then
             superClass = toks(i)(1)
             classNode.SetValue "superClass", superClass
             i = i + 1
@@ -3295,12 +3295,12 @@ Private Function ParseClassDecl(toks As Collection, ByRef i As Long) As ASF_Map
     End If
     
     ' Skip comments before body
-    Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
+    Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
         i = i + 1
     Loop
     
     ' Expect '{'
-    If i > toks.count Or Not (toks(i)(0) = "PAREN" And toks(i)(1) = "{") Then
+    If i > toks.Count Or Not (toks(i)(0) = "PAREN" And toks(i)(1) = "{") Then
         err.Raise vbObjectError + 2, , "Expected class body"
     End If
     i = i + 1
@@ -3311,7 +3311,7 @@ Private Function ParseClassDecl(toks As Collection, ByRef i As Long) As ASF_Map
     Dim constructor As ASF_Map
     Dim depth As Long: depth = 0
     
-    Do While i <= toks.count
+    Do While i <= toks.Count
         ' Skip comments
         If toks(i)(0) = "COMMENT" Then
             i = i + 1
@@ -3345,10 +3345,10 @@ Private Function ParseClassDecl(toks As Collection, ByRef i As Long) As ASF_Map
                 isStatic = True
                 i = i + 1
                 ' Skip comments after static
-                Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
+                Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
                     i = i + 1
                 Loop
-                If i > toks.count Then GoTo ContinueClassBody
+                If i > toks.Count Then GoTo ContinueClassBody
                 memberName = LCase$(toks(i)(1))
             End If
             
@@ -3361,7 +3361,7 @@ Private Function ParseClassDecl(toks As Collection, ByRef i As Long) As ASF_Map
                     ' Parse field declaration: field name1, name2 = defaultValue, name3;
                     i = i + 1
                     Dim valToks As Collection
-                    Do While i <= toks.count
+                    Do While i <= toks.Count
                         If toks(i)(0) = "COMMENT" Then
                             i = i + 1
                             GoTo ContinueFieldParse
@@ -3382,12 +3382,12 @@ Private Function ParseClassDecl(toks As Collection, ByRef i As Long) As ASF_Map
                             Dim defaultVal As ASF_Map
                             Set defaultVal = Nothing
                             
-                            If i <= toks.count And toks(i)(0) = "OP" And toks(i)(1) = "=" Then
+                            If i <= toks.Count And toks(i)(0) = "OP" And toks(i)(1) = "=" Then
                                 i = i + 1
                                 ' Collect tokens until comma or semicolon
                                 Set valToks = New Collection
                                 Dim vDepth As Long: vDepth = 0
-                                Do While i <= toks.count
+                                Do While i <= toks.Count
                                     If toks(i)(0) = "PAREN" Then
                                         Select Case toks(i)(1)
                                             Case "(", "[", "{"
@@ -3407,7 +3407,7 @@ Private Function ParseClassDecl(toks As Collection, ByRef i As Long) As ASF_Map
                                     i = i + 1
                                 Loop
                                 
-                                If valToks.count > 0 Then
+                                If valToks.Count > 0 Then
                                     Set defaultVal = ParseExprTokensToNode(valToks)
                                 End If
                             End If
@@ -3421,7 +3421,7 @@ Private Function ParseClassDecl(toks As Collection, ByRef i As Long) As ASF_Map
                             fields.Add fieldNode
                             
                             ' Skip comma
-                            If i <= toks.count And toks(i)(0) = "SEP" And toks(i)(1) = "," Then
+                            If i <= toks.Count And toks(i)(0) = "SEP" And toks(i)(1) = "," Then
                                 i = i + 1
                             End If
                         End If
@@ -3449,7 +3449,7 @@ ContinueClassBody:
     Loop
     
     ' Skip closing brace
-    If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = "}" Then
+    If i <= toks.Count And toks(i)(0) = "PAREN" And toks(i)(1) = "}" Then
         i = i + 1
     End If
     
@@ -3475,7 +3475,7 @@ Private Function ParseMethodDecl(toks As Collection, ByRef i As Long, isConstruc
     i = i + 1
     
     ' Skip comments
-    Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
+    Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
         i = i + 1
     Loop
     
@@ -3485,26 +3485,26 @@ Private Function ParseMethodDecl(toks As Collection, ByRef i As Long, isConstruc
     Dim methodHasRest As Boolean: methodHasRest = False
     Dim methodRestName As String: methodRestName = vbNullString
     
-    If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = "(" Then
+    If i <= toks.Count And toks(i)(0) = "PAREN" And toks(i)(1) = "(" Then
         i = i + 1
-        Do While i <= toks.count And Not (safeTVRetInner(toks, i, 0) = "PAREN" And safeTVRetInner(toks, i, 1) = ")")
+        Do While i <= toks.Count And Not (safeTVRetInner(toks, i, 0) = "PAREN" And safeTVRetInner(toks, i, 1) = ")")
             If toks(i)(0) = "COMMENT" Then
                 i = i + 1
             Else
                 If IsSpreadToken(toks, i) Then
                     i = i + 1
-                    Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
+                    Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
                         i = i + 1
                     Loop
                     
-                    If i <= toks.count And toks(i)(0) = "IDENT" Then
+                    If i <= toks.Count And toks(i)(0) = "IDENT" Then
                         methodHasRest = True
                         methodRestName = toks(i)(1)
                         i = i + 1
-                        Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
+                        Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
                             i = i + 1
                         Loop
-                        If i <= toks.count And safeTVRetInner(toks, i, 0) = "SEP" And safeTVRetInner(toks, i, 1) = "," Then
+                        If i <= toks.Count And safeTVRetInner(toks, i, 0) = "SEP" And safeTVRetInner(toks, i, 1) = "," Then
                             err.Raise vbObjectError + 9002, "Compiler.ParseMethodDecl", "Rest parameter must be last"
                         End If
                     End If
@@ -3519,7 +3519,7 @@ Private Function ParseMethodDecl(toks As Collection, ByRef i As Long, isConstruc
                 End If
             End If
         Loop
-        If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = ")" Then i = i + 1
+        If i <= toks.Count And toks(i)(0) = "PAREN" And toks(i)(1) = ")" Then i = i + 1
     End If
     methodNode.SetValue "params", params
     If methodHasRest Then
@@ -3527,12 +3527,12 @@ Private Function ParseMethodDecl(toks As Collection, ByRef i As Long, isConstruc
     End If
     
     ' Skip comments before body
-    Do While i <= toks.count And safeTVRetInner(toks, i, 0) = "COMMENT"
+    Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
         i = i + 1
     Loop
     
     ' Parse body
-    If i > toks.count Or Not (toks(i)(0) = "PAREN" And toks(i)(1) = "{") Then
+    If i > toks.Count Or Not (toks(i)(0) = "PAREN" And toks(i)(1) = "{") Then
         err.Raise vbObjectError + 3, , "Expected method body"
     End If
     i = i + 1
@@ -3540,7 +3540,7 @@ Private Function ParseMethodDecl(toks As Collection, ByRef i As Long, isConstruc
     Dim bodyTokens As Collection
     Set bodyTokens = New Collection
     Dim depth As Long: depth = 0
-    Do While i <= toks.count
+    Do While i <= toks.Count
         If toks(i)(0) = "PAREN" Then
             If toks(i)(1) = "{" Then
                 depth = depth + 1
@@ -3557,7 +3557,7 @@ Private Function ParseMethodDecl(toks As Collection, ByRef i As Long, isConstruc
     Loop
     
     ' Skip closing brace
-    If i <= toks.count Then i = i + 1
+    If i <= toks.Count Then i = i + 1
     
     Dim bodyStmts As Collection
     Set bodyStmts = ParseTokensToAST(bodyTokens)
@@ -3585,28 +3585,28 @@ Private Function ParseImportStatement(toks As Collection, ByRef i As Long) As AS
     i = i + 1 ' skip 'import'
     
     ' Skip comments
-    Do While i <= toks.count And toks(i)(0) = "COMMENT"
+    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
         i = i + 1
     Loop
     
-    If i > toks.count Then err.Raise vbObjectError + 8001, "Compiler.ParseImportStatement", "Unexpected end after import"
+    If i > toks.Count Then err.Raise vbObjectError + 8001, "Compiler.ParseImportStatement", "Unexpected end after import"
     
     ' Check for namespace import: import * as name from 'module'
     If toks(i)(0) = "OP" And toks(i)(1) = "*" Then
         i = i + 1
         ' Expect 'as'
-        Do While i <= toks.count And toks(i)(0) = "COMMENT"
+        Do While i <= toks.Count And toks(i)(0) = "COMMENT"
             i = i + 1
         Loop
-        If i > toks.count Or Not (toks(i)(0) = "KEYWORD" And toks(i)(1) = "as") Then
+        If i > toks.Count Or Not (toks(i)(0) = "KEYWORD" And toks(i)(1) = "as") Then
             err.Raise vbObjectError + 8002, "Compiler.ParseImportStatement", "Expected 'as' after * in import"
         End If
         i = i + 1
         ' Get namespace name
-        Do While i <= toks.count And toks(i)(0) = "COMMENT"
+        Do While i <= toks.Count And toks(i)(0) = "COMMENT"
             i = i + 1
         Loop
-        If i > toks.count Or toks(i)(0) <> "IDENT" Then
+        If i > toks.Count Or toks(i)(0) <> "IDENT" Then
             err.Raise vbObjectError + 8003, "Compiler.ParseImportStatement", "Expected identifier after 'as'"
         End If
         namespaceImport = toks(i)(1)
@@ -3615,7 +3615,7 @@ Private Function ParseImportStatement(toks As Collection, ByRef i As Long) As AS
     ElseIf toks(i)(0) = "PAREN" And toks(i)(1) = "{" Then
         i = i + 1
         ' Parse named imports
-        Do While i <= toks.count And Not (toks(i)(0) = "PAREN" And toks(i)(1) = "}")
+        Do While i <= toks.Count And Not (toks(i)(0) = "PAREN" And toks(i)(1) = "}")
             If toks(i)(0) = "COMMENT" Then
                 i = i + 1
             ElseIf toks(i)(0) = "IDENT" Then
@@ -3624,15 +3624,15 @@ Private Function ParseImportStatement(toks As Collection, ByRef i As Long) As AS
                 i = i + 1
                 
                 ' Check for 'as' alias
-                Do While i <= toks.count And toks(i)(0) = "COMMENT"
+                Do While i <= toks.Count And toks(i)(0) = "COMMENT"
                     i = i + 1
                 Loop
-                If i <= toks.count And toks(i)(0) = "KEYWORD" And toks(i)(1) = "as" Then
+                If i <= toks.Count And toks(i)(0) = "KEYWORD" And toks(i)(1) = "as" Then
                     i = i + 1
-                    Do While i <= toks.count And toks(i)(0) = "COMMENT"
+                    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
                         i = i + 1
                     Loop
-                    If i > toks.count Or toks(i)(0) <> "IDENT" Then
+                    If i > toks.Count Or toks(i)(0) <> "IDENT" Then
                         err.Raise vbObjectError + 8004, "Compiler.ParseImportStatement", "Expected identifier after 'as'"
                     End If
                     localName = toks(i)(1)
@@ -3646,10 +3646,10 @@ Private Function ParseImportStatement(toks As Collection, ByRef i As Long) As AS
                 namedImports.Add importSpec
                 
                 ' Skip comma
-                Do While i <= toks.count And toks(i)(0) = "COMMENT"
+                Do While i <= toks.Count And toks(i)(0) = "COMMENT"
                     i = i + 1
                 Loop
-                If i <= toks.count And toks(i)(0) = "SEP" And toks(i)(1) = "," Then
+                If i <= toks.Count And toks(i)(0) = "SEP" And toks(i)(1) = "," Then
                     i = i + 1
                 End If
             ElseIf toks(i)(0) = "SEP" And toks(i)(1) = "," Then
@@ -3659,7 +3659,7 @@ Private Function ParseImportStatement(toks As Collection, ByRef i As Long) As AS
             End If
         Loop
         
-        If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = "}" Then
+        If i <= toks.Count And toks(i)(0) = "PAREN" And toks(i)(1) = "}" Then
             i = i + 1
         End If
     ' Default import: import name from 'module'
@@ -3668,18 +3668,18 @@ Private Function ParseImportStatement(toks As Collection, ByRef i As Long) As AS
         i = i + 1
         
         ' Check for optional named imports after default: import def, { name } from 'module'
-        Do While i <= toks.count And toks(i)(0) = "COMMENT"
+        Do While i <= toks.Count And toks(i)(0) = "COMMENT"
             i = i + 1
         Loop
-        If i <= toks.count And toks(i)(0) = "SEP" And toks(i)(1) = "," Then
+        If i <= toks.Count And toks(i)(0) = "SEP" And toks(i)(1) = "," Then
             i = i + 1
-            Do While i <= toks.count And toks(i)(0) = "COMMENT"
+            Do While i <= toks.Count And toks(i)(0) = "COMMENT"
                 i = i + 1
             Loop
-            If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = "{" Then
+            If i <= toks.Count And toks(i)(0) = "PAREN" And toks(i)(1) = "{" Then
                 ' Parse named imports (same logic as above)
                 i = i + 1
-                Do While i <= toks.count And Not (toks(i)(0) = "PAREN" And toks(i)(1) = "}")
+                Do While i <= toks.Count And Not (toks(i)(0) = "PAREN" And toks(i)(1) = "}")
                     If toks(i)(0) = "COMMENT" Then
                         i = i + 1
                     ElseIf toks(i)(0) = "IDENT" Then
@@ -3687,15 +3687,15 @@ Private Function ParseImportStatement(toks As Collection, ByRef i As Long) As AS
                         localName = importName
                         i = i + 1
                         
-                        Do While i <= toks.count And toks(i)(0) = "COMMENT"
+                        Do While i <= toks.Count And toks(i)(0) = "COMMENT"
                             i = i + 1
                         Loop
-                        If i <= toks.count And toks(i)(0) = "KEYWORD" And toks(i)(1) = "as" Then
+                        If i <= toks.Count And toks(i)(0) = "KEYWORD" And toks(i)(1) = "as" Then
                             i = i + 1
-                            Do While i <= toks.count And toks(i)(0) = "COMMENT"
+                            Do While i <= toks.Count And toks(i)(0) = "COMMENT"
                                 i = i + 1
                             Loop
-                            If i > toks.count Or toks(i)(0) <> "IDENT" Then
+                            If i > toks.Count Or toks(i)(0) <> "IDENT" Then
                                 err.Raise vbObjectError + 8004, "Compiler.ParseImportStatement", "Expected identifier after 'as'"
                             End If
                             localName = toks(i)(1)
@@ -3707,10 +3707,10 @@ Private Function ParseImportStatement(toks As Collection, ByRef i As Long) As AS
                         importSpec.SetValue "local", localName
                         namedImports.Add importSpec
                         
-                        Do While i <= toks.count And toks(i)(0) = "COMMENT"
+                        Do While i <= toks.Count And toks(i)(0) = "COMMENT"
                             i = i + 1
                         Loop
-                        If i <= toks.count And toks(i)(0) = "SEP" And toks(i)(1) = "," Then
+                        If i <= toks.Count And toks(i)(0) = "SEP" And toks(i)(1) = "," Then
                             i = i + 1
                         End If
                     ElseIf toks(i)(0) = "SEP" And toks(i)(1) = "," Then
@@ -3720,7 +3720,7 @@ Private Function ParseImportStatement(toks As Collection, ByRef i As Long) As AS
                     End If
                 Loop
                 
-                If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = "}" Then
+                If i <= toks.Count And toks(i)(0) = "PAREN" And toks(i)(1) = "}" Then
                     i = i + 1
                 End If
             End If
@@ -3730,19 +3730,19 @@ Private Function ParseImportStatement(toks As Collection, ByRef i As Long) As AS
     End If
     
     ' Expect 'from'
-    Do While i <= toks.count And toks(i)(0) = "COMMENT"
+    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
         i = i + 1
     Loop
-    If i > toks.count Or Not (toks(i)(0) = "IDENT" And toks(i)(1) = "from") Then
+    If i > toks.Count Or Not (toks(i)(0) = "IDENT" And toks(i)(1) = "from") Then
         err.Raise vbObjectError + 8006, "Compiler.ParseImportStatement", "Expected 'from' in import statement"
     End If
     i = i + 1
     
     ' Get module path (string literal)
-    Do While i <= toks.count And toks(i)(0) = "COMMENT"
+    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
         i = i + 1
     Loop
-    If i > toks.count Or toks(i)(0) <> "STRING" Then
+    If i > toks.Count Or toks(i)(0) <> "STRING" Then
         err.Raise vbObjectError + 8007, "Compiler.ParseImportStatement", "Expected string literal for module path"
     End If
     modulePath = toks(i)(1)
@@ -3756,7 +3756,7 @@ Private Function ParseImportStatement(toks As Collection, ByRef i As Long) As AS
     If namespaceImport <> vbNullString Then
         importNode.SetValue "namespaceImport", namespaceImport
     End If
-    If namedImports.count > 0 Then
+    If namedImports.Count > 0 Then
         importNode.SetValue "namedImports", namedImports
     End If
     
@@ -3779,11 +3779,11 @@ Private Function ParseExportStatement(toks As Collection, ByRef i As Long) As AS
     i = i + 1 ' skip 'export'
     
     ' Skip comments
-    Do While i <= toks.count And toks(i)(0) = "COMMENT"
+    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
         i = i + 1
     Loop
     
-    If i > toks.count Then err.Raise vbObjectError + 8010, "Compiler.ParseExportStatement", "Unexpected end after export"
+    If i > toks.Count Then err.Raise vbObjectError + 8010, "Compiler.ParseExportStatement", "Unexpected end after export"
     
     ' Check for default export
     If toks(i)(0) = "KEYWORD" And toks(i)(1) = "default" Then
@@ -3794,7 +3794,7 @@ Private Function ParseExportStatement(toks As Collection, ByRef i As Long) As AS
         Dim exprTokens As New Collection
         Dim exprDepth As Long: exprDepth = 0
         
-        Do While i <= toks.count
+        Do While i <= toks.Count
             If toks(i)(0) = "PAREN" Then
                 Select Case toks(i)(1)
                     Case "{", "(", "["
@@ -3814,7 +3814,7 @@ Private Function ParseExportStatement(toks As Collection, ByRef i As Long) As AS
         Loop
         
         ' Skip semicolon
-        If i <= toks.count And toks(i)(0) = "SEP" And toks(i)(1) = ";" Then
+        If i <= toks.Count And toks(i)(0) = "SEP" And toks(i)(1) = ";" Then
             i = i + 1
         End If
         
@@ -3832,7 +3832,7 @@ Private Function ParseExportStatement(toks As Collection, ByRef i As Long) As AS
         Dim namedExports As New Collection
         i = i + 1
         
-        Do While i <= toks.count And Not (toks(i)(0) = "PAREN" And toks(i)(1) = "}")
+        Do While i <= toks.Count And Not (toks(i)(0) = "PAREN" And toks(i)(1) = "}")
             If toks(i)(0) = "COMMENT" Then
                 i = i + 1
             ElseIf toks(i)(0) = "IDENT" Then
@@ -3841,15 +3841,15 @@ Private Function ParseExportStatement(toks As Collection, ByRef i As Long) As AS
                 i = i + 1
                 
                 ' Check for 'as' alias
-                Do While i <= toks.count And toks(i)(0) = "COMMENT"
+                Do While i <= toks.Count And toks(i)(0) = "COMMENT"
                     i = i + 1
                 Loop
-                If i <= toks.count And toks(i)(0) = "KEYWORD" And toks(i)(1) = "as" Then
+                If i <= toks.Count And toks(i)(0) = "KEYWORD" And toks(i)(1) = "as" Then
                     i = i + 1
-                    Do While i <= toks.count And toks(i)(0) = "COMMENT"
+                    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
                         i = i + 1
                     Loop
-                    If i > toks.count Or toks(i)(0) <> "IDENT" Then
+                    If i > toks.Count Or toks(i)(0) <> "IDENT" Then
                         err.Raise vbObjectError + 8011, "Compiler.ParseExportStatement", "Expected identifier after 'as'"
                     End If
                     exportedName = toks(i)(1)
@@ -3862,10 +3862,10 @@ Private Function ParseExportStatement(toks As Collection, ByRef i As Long) As AS
                 namedExports.Add exportSpec
                 
                 ' Skip comma
-                Do While i <= toks.count And toks(i)(0) = "COMMENT"
+                Do While i <= toks.Count And toks(i)(0) = "COMMENT"
                     i = i + 1
                 Loop
-                If i <= toks.count And toks(i)(0) = "SEP" And toks(i)(1) = "," Then
+                If i <= toks.Count And toks(i)(0) = "SEP" And toks(i)(1) = "," Then
                     i = i + 1
                 End If
             ElseIf toks(i)(0) = "SEP" And toks(i)(1) = "," Then
@@ -3875,7 +3875,7 @@ Private Function ParseExportStatement(toks As Collection, ByRef i As Long) As AS
             End If
         Loop
         
-        If i <= toks.count And toks(i)(0) = "PAREN" And toks(i)(1) = "}" Then
+        If i <= toks.Count And toks(i)(0) = "PAREN" And toks(i)(1) = "}" Then
             i = i + 1
         End If
         
@@ -3891,11 +3891,11 @@ Private Function ParseExportStatement(toks As Collection, ByRef i As Long) As AS
         
         ' Mark function name for export
         i = i + 1
-        Do While i <= toks.count And toks(i)(0) = "COMMENT"
+        Do While i <= toks.Count And toks(i)(0) = "COMMENT"
             i = i + 1
         Loop
         
-        If i > toks.count Or toks(i)(0) <> "IDENT" Then
+        If i > toks.Count Or toks(i)(0) <> "IDENT" Then
             err.Raise vbObjectError + 8012, "Compiler.ParseExportStatement", "Expected function name after 'fun'"
         End If
         
