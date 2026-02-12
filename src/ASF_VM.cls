@@ -718,6 +718,28 @@ Private Function ResolvePath(node As ASF_Map, progScope As ASF_ScopeStack, Optio
                 Else
                     res.SetValue "value", EvalIndexNode(node, progScope)
                 End If
+            Case "Call"
+                If forAssign Then
+                    Dim calleeExpr As ASF_Map: Set calleeExpr = node.GetValue("callee")
+                    Dim argsColl As Collection: Set argsColl = node.GetValue("args")
+                    res.SetValue "container", EvalExprNode(calleeExpr.GetValue("base"), progScope)
+                    res.SetValue "key", calleeExpr.GetValue("prop")
+                    res.SetValue "kind", "prop"
+                    Dim pKey2 As String
+                    Dim pKind2 As String
+                    ' carry forward parent property/key info if present on the base resolution
+                    If calleeExpr.Exists("key") Then
+                        pKey2 = calleeExpr("key")
+                        res.SetValue "parentKey", pKey2
+                    End If
+                    If calleeExpr.Exists("kind") Then
+                        pKind2 = calleeExpr("kind")
+                        res.SetValue "parentKind", pKind2
+                    End If
+                    res.SetValue "parentObj", calleeExpr
+                Else
+                    res.SetValue "value", EvalExprNode(node, progScope)
+                End If
         End Select
     End If
     Set ResolvePath = res
@@ -4622,7 +4644,13 @@ Private Sub HandleAssignment(left As ASF_Map, ByVal rval As Variant, progScope A
             If TypeName(container) <> "ASF_Map" Then
                 Dim tValue As Variant
                 vAssignment tValue, ResolveIndexProp(lval)
-                tValue.SetValue CStr(key), rval
+                Select Case TypeName(tValue)
+                    Case "ASF_Map", "ASF_ScopeStack"
+                        tValue.SetValue CStr(key), rval
+                    Case Else
+                        ' Perform a call by name
+                        SetObjectProperty tValue, key, rval
+                End Select
             Else
                 container.SetValue CStr(key), rval
             End If
@@ -4888,10 +4916,14 @@ Private Function ResolveIndexProp(ByRef lval) As Variant
     baseVariable = pObject("key")
     Dim container As Variant: vAssignment container, lval("container")
     vAssignment pObject, container.GetValue(baseVariable)
-    For i = keys.Count To 2 Step -1
-        vAssignment pObject, pObject.GetValue(keys(i))
-    Next
-    vAssignment ResolveIndexProp, pObject(keys(1))
+    If keys.Count > 0 Then
+        For i = keys.Count To 2 Step -1
+            vAssignment pObject, pObject.GetValue(keys(i))
+        Next
+        vAssignment ResolveIndexProp, pObject(keys(1))
+    Else
+        vAssignment ResolveIndexProp, pObject
+    End If
 End Function
 Private Function ResolveProp(ByRef lval) As Variant
     Dim baseVariable As String
@@ -6750,6 +6782,9 @@ End Sub
 Private Function FolderExists(ByVal filePath As String) As Boolean
     FolderExists = CBool(LenB(Dir(filePath, vbDirectory + vbHidden)))
 End Function
+Private Sub SetObjectProperty(obj As Variant, propName As Variant, propValue As Variant)
+    CallByName obj, propName, VbLet, propValue
+End Sub
 ' ---------------------
 ' End VM class
 ' ---------------------
