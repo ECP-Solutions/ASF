@@ -4475,7 +4475,9 @@ Private Function EvalVBExpressionWithScope(expr As String, progScope As ASF_Scop
                  If IsArray(tmpVal) Then
                     .VarValue(CStr(key)) = .ArrayToString(tmpVal)
                  Else
-                    .VarValue(CStr(key)) = CStr(tmpVal)
+                    If Not IsObject(tmpVal) Then
+                        .VarValue(CStr(key)) = CStr(tmpVal)
+                    End If
                 End If
              Next key
          Next frame
