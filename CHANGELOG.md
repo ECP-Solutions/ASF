@@ -2,6 +2,199 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [v3.1.0] - 2026-02-13
+https://github.com/ECP-Solutions/ASF/releases/tag/v3.1.0
+
+## Summary
+ASF v3.1.0 introduces **native Office Object support**, enabling seamless interaction with Excel, Word, PowerPoint, and other Office applications directly from ASF scripts. This release adds optional host application access control, fixes VBAexpressions integration bugs, resolves property chaining issues, and includes significant internal refactoring for improved code maintainability.
+
+---
+
+## Highlights
+
+- **Added**
+    - **Native Office Object Support** — Direct access to Office application objects with full method chaining:
+        ```vb
+        Dim engine As ASF: Set engine = New ASF
+        
+        ' Access Excel ranges and properties
+        engine.AppAccess = True
+        pid = engine.Compile("let a = $1.sheets(1).range('A1').value + $1.sheets(1).range('B1').value; return a.slice(21)")
+        result = engine.Run(pid, Application.Workbooks(1))
+        ' If A1 = "Hello from range A1." and B1 = " Good to see you in B1!"
+        ' => "Good to see you in B1!"
+        
+        ' Word document manipulation
+        pid = engine.Compile("return $1.paragraphs(1).range.text")
+        text = engine.Run(pid, ActiveDocument)
+        
+        ' PowerPoint slide access
+        pid = engine.Compile("return $1.slides(1).shapes.count")
+        count = engine.Run(pid, ActivePresentation)
+        ```
+
+    - **`AppAccess` Property** — Optional host application exposure with security control:
+        ```vb
+        Dim engine As New ASF
+        
+        ' Grant script access to host application
+        engine.AppAccess = True
+        pid = engine.Compile("return $1.name")
+        twbName = engine.Run(pid, ThisWorkbook)
+        
+        ' Secure mode (default)
+        engine.AppAccess = False
+        pid = engine.Compile("return $1.name")
+        ' Error: Object required
+
+        ```
+
+- **Fixed**
+    - **Property Chaining Resolution** — Proper segregation of dotted properties:
+        ```vb
+        ' Before v3.1.0: Treated "sheets.count" as single property
+        pid = engine.Compile("return $1.sheets.count")
+        ' Parser error: Cannot find property "sheets.count"
+        
+        ' After v3.1.0: Properly segregates each property
+        pid = engine.Compile("return $1.sheets.count")
+        count = engine.Run(pid, ThisWorkbook)  ' => 3 (works correctly)
+        ```
+
+    - **`VBAexpressions` Type Safety** — Fixed scope creation bug.
+
+- **Improved**
+    - **`ParsePrimaryNode` refactoring** — Enhanced code readability for maintainability:
+        - Clearer control flow and logic structure
+        - Better separation of concerns for different token types
+        - More maintainable for future enhancements
+        - No functional changes (internal only)
+
+- **Internal core changes**:
+    - **ASF** (`ASF.cls`):
+        - Added `AppAccess` property (Boolean) to control host application exposure
+        - Added `APP_ACCESS_` private member (default: False)
+        - Modified `Run()` to check `AppAccess` before exposing host application object
+        - Enhanced security model for controlled object access
+
+    - **Compiler** (`ASF_Compiler.cls`):
+        - **Refactored** `ParsePrimaryNode()` for improved code clarity
+        - **Fixed** property chaining to properly parse dotted notation
+        - Enhanced tokenization of member access chains
+        - Improved handling of collapsed identifiers with multiple dots
+        - Better separation between simple properties and complex chains
+
+    - **VM** (`ASF_VM.cls`):
+        - **Added** Office object support in member access evaluation
+        - **Modified** `EvalMemberNode()` to handle native VBA objects
+        - **Enhanced** method call handling for Office object models
+        - **Added** type checking in `Eval()` for VBAexpressions integration
+        - Improved `CreateEvaluator()` to validate object types before evaluation
+        - Added safeguards against passing objects to VBAexpressions
+
+- **Technical Details**:
+    - **Office Object Integration**: Actually, the base `Application` object only returns an `String`. Users can pass the current Document/Workbook/Presentations instead of the base `Application`
+	
+        ```
+        Expression: $1.sheets(1).range('A1').value
+        
+        Parsing Flow:
+          1. $1 → Placeholder variable (Workbook object)
+          2. .sheets(1) → Member "sheets" + Call with arg 1
+          3. .range('A1') → Member "range" + Call with arg 'A1'
+          4. .value → Member "value"
+        
+        AST Structure:
+          Member {
+            base: Member {
+              base: Call {
+                callee: Member {
+                  base: Call {
+                    callee: Member {
+                      base: Variable("$1"),
+                      prop: "sheets"
+                    },
+                    args: [1]
+                  },
+                  prop: "range"
+                },
+                args: ['A1']
+              },
+              prop: "value"
+            }
+          }
+        
+        VM Execution:
+          - Evaluates each member/call in sequence
+          - Uses CallByName for VBA object methods
+          - Returns final property value
+        ```
+
+    - **AppAccess Security Model**:
+        ```
+        AppAccess = False (default):
+          - Application object NOT injected into scope
+          - Scripts cannot access host application
+          - Maximum security, sandboxed execution
+        
+        AppAccess = True (opt-in):
+          - Application object available as "Application"
+          - Scripts can access ThisWorkbook, etc.
+          - Useful for trusted automation scripts
+          - Objects can be passed explicitly via placeholders or using a custom scopes.
+          - Requires explicit enable by caller
+        
+          engine.AppAccess = False              ' Sandbox
+          pid = engine.Compile("return $1.name")
+          result = engine.Run(pid, ThisWorkbook) ' Explicit object ✓
+        ```
+
+    - **Property Chain Parsing**:
+        ```
+        Input: "$1.sheets.count"
+        
+        Before v3.1.0:
+          Tokenizer: IDENT("$1"), SYM("."), IDENT("sheets.count")
+          Parser: Member{base: $1, prop: "sheets.count"} ✗
+          Error: No property "sheets.count" on Workbook
+        
+        After v3.1.0:
+          Tokenizer: IDENT("$1"), SYM("."), IDENT("sheets"), SYM("."), IDENT("count")
+          Parser: 
+            Member{
+              base: Member{
+                base: Variable("$1"),
+                prop: "sheets"
+              },
+              prop: "count"
+            } ✓
+          Result: Correct property access chain
+        ```
+
+    - **`ParsePrimaryNode` Refactoring**:
+        ```
+        Improvements:
+          - Extracted common patterns into helper functions
+          - Clearer variable naming conventions
+          - Consistent code style
+        ```
+
+    - **Compatibility Notes**:
+        - Works with Excel, Word, PowerPoint, Access, Outlook, and other VBA-enabled apps
+        - `CallByName` used for maximum compatibility across Office versions
+        - `AppAccess` defaults to `False` for backward compatibility
+        - Existing scripts without Office objects continue to work unchanged
+
+---
+
+## Breaking Changes
+
+**None.** This release is fully backward compatible.
+
+---
+
+**Full Changelog**: https://github.com/ECP-Solutions/ASF/compare/v3.0.2...v3.1.0
+
 ## [v3.0.2] - 2026-02-07
 https://github.com/ECP-Solutions/ASF/releases/tag/v3.0.2
 

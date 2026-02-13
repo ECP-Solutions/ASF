@@ -102,7 +102,7 @@ Private Sub negation_unary()
     GetResult "print(-5 + 3, !false, !true);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:-2, True, False"
     Assert.AreEqual expected, actual
@@ -226,7 +226,7 @@ Private Sub if_chain_same_line()
     GetResult "a=2; if (a==1) { print('one') } elseif (a==2) { print('two') } else { print('other') }; print('done');", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:'two', PRINT:'done'"
     Assert.AreEqual expected, actual
@@ -255,7 +255,7 @@ Private Sub if_multiline()
                     "print('end');", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:'three', PRINT:'end'"
     Assert.AreEqual expected, actual
@@ -375,7 +375,7 @@ Private Sub function_scope_isolation()
     GetResult "a=5; fun f(a) { a = a + 1 ; print(a) } ; f(a); print(a);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:6, PRINT:5"
     Assert.AreEqual expected, actual
@@ -402,9 +402,9 @@ Private Sub recursion_fib_arrays()
                             "print(a);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 2)) & ", " _
-                    & CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
-                    & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 2)) & ", " _
+                    & CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " _
+                    & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:1, PRINT:8, PRINT:[ 1, 1, 2, 3, 5, 8 ]"
     Assert.AreEqual expected, actual
@@ -441,8 +441,8 @@ Private Sub closure_shared_write()
     GetResult "a = 1; f = fun() { a = a + 1; return a }; print(f()); print(a);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
-                    & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " _
+                    & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:2, PRINT:2"
     Assert.AreEqual expected, actual
@@ -463,9 +463,9 @@ Private Sub closure_multiple_instances()
                 "print(f1()); print(f2()); print(a);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 2)) & ", " _
-                    & CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
-                    & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 2)) & ", " _
+                    & CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " _
+                    & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:1, PRINT:2, PRINT:2"
     Assert.AreEqual expected, actual
@@ -484,8 +484,8 @@ Private Sub array_literal_and_length()
     GetResult "a=[10,20,30]; print(a[2]); print(a.length);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
-                    & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " _
+                    & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:20, PRINT:3"
     Assert.AreEqual expected, actual
@@ -505,9 +505,9 @@ Private Sub array_of_arrays_length()
                 "print(a[1]); print(a[3]); print(a[3].length)", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 2)) & ", " _
-                    & CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
-                    & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 2)) & ", " _
+                    & CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " _
+                    & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 7, 8 ], PRINT:[ 9, 10, 11 ], PRINT:3"
     Assert.AreEqual expected, actual
@@ -526,8 +526,8 @@ Private Sub object_literal_and_member()
     GetResult "o = { x: 10, y: 'hi' } ; print(o.x) ; o.x = o.x + 5 ; print(o.x)", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
-                    & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " _
+                    & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:10, PRINT:15"
     Assert.AreEqual expected, actual
@@ -607,7 +607,7 @@ Private Sub mutating_VBAexpressions_Arrays()
     GetResult "a=@({{1;2;3};{4;(5+4);'value'}}); a[1]=2*5; print(a);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 10, [ 4, 9, 'value' ] ]"
     Assert.AreEqual expected, actual
@@ -629,7 +629,7 @@ Private Sub vbexpr_embedded()
                             " print(@(MROUND(LUDECOMP(ARRAY(a;b;c));4)))", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ [ -3, 0, -10 ], [ -0.3333, 1, 2.6667 ], [ -0.3333, 0, 0.6667 ] ]"
     Assert.AreEqual expected, actual
@@ -683,7 +683,7 @@ TestFail:
     Resume TestExit
 End Sub
 
-'@TestMethod("host_sees")
+'@TestMethod("host_VBA_Expressions")
 Private Sub host_sees_array_mutation()
     On Error GoTo TestFail
     Dim asfGlobals As New ASF_Globals
@@ -717,7 +717,7 @@ Private Sub map_nested_array()
     GetResult "a = [1,[2,[3,[4]]]]; b = a.map(fun(x) { return x * 10 }); print(b);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 10, [ 20, [ 30, [ 40 ] ] ] ]"
     Assert.AreEqual expected, actual
@@ -738,7 +738,7 @@ Private Sub map_array_of_objects()
                         "print(b);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ { k: 2, arr: [ 11, 21 ] }, { k: 4, arr: [ 31, [ 41, 51 ] ] } ]"
     Assert.AreEqual expected, actual
@@ -759,7 +759,7 @@ Private Sub map_closure_capture()
                         "print(b);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 5, 10, 15 ]"
     Assert.AreEqual expected, actual
@@ -778,7 +778,7 @@ Private Sub map_returning_nested_array()
     GetResult "print( [1,2].map(fun(x){ return [x,x] }) );", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ [ 1, 1 ], [ 2, 2 ] ]"
     Assert.AreEqual expected, actual
@@ -799,7 +799,7 @@ Private Sub map_returning_objects_and_arrays()
                         "print(b);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ { orig: 1, pair: [ 1, 1 ], nested: [ [ 1, 2 ], { v: 1 } ] }, { orig: 2, pair: [ 2, 4 ], nested: [ [ 2, 3 ], { v: 4 } ] } ]"
     Assert.AreEqual expected, actual
@@ -820,7 +820,7 @@ Private Sub mapping_mixed_types()
                         "print(b);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 3, 'x', [ 6, 'y', [ 9 ] ] ]"
     Assert.AreEqual expected, actual
@@ -841,7 +841,7 @@ Private Sub filter_simple()
                         "print(b);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 2, 4 ]"
     Assert.AreEqual expected, actual
@@ -862,7 +862,7 @@ Private Sub filter_nested_arrays()
                         "print(b);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ [ 2, 3 ], [ 5 ] ]"
     Assert.AreEqual expected, actual
@@ -911,7 +911,7 @@ Private Sub slice_tail_only()
     GetResult "a=[10,20,30,40]; b=a.slice(2); print(b);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 20, 30, 40 ]"
     Assert.AreEqual expected, actual
@@ -930,7 +930,7 @@ Private Sub slice_start_end()
     GetResult "a=['ant', 'bison', 'camel', 'duck', 'elephant']; b=a.slice(3,5); print(b);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 'camel', 'duck' ]"
     Assert.AreEqual expected, actual
@@ -949,8 +949,8 @@ Private Sub pop_push()
     GetResult "a=[1,2]; a.push(3); a.push(4); x = a.pop(); print(a); print(x);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
-                    & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " _
+                    & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, 2, 3 ], PRINT:4"
     Assert.AreEqual expected, actual
@@ -969,7 +969,7 @@ Private Sub range_default()
     GetResult "print(range(3));", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 0, 1, 2 ]"
     Assert.AreEqual expected, actual
@@ -988,7 +988,7 @@ Private Sub range_custom()
     GetResult "print(range(1,3));", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, 2 ]"
     Assert.AreEqual expected, actual
@@ -1007,7 +1007,7 @@ Private Sub range_with_step()
     GetResult "print(range(1,10,2));", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, 3, 5, 7, 9 ]"
     Assert.AreEqual expected, actual
@@ -1026,7 +1026,7 @@ Private Sub flatten_full()
     GetResult "a=[1,[2,3],[4,[5]]]; b = flatten(a); print(b);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, 2, 3, 4, 5 ]"
     Assert.AreEqual expected, actual
@@ -1045,7 +1045,7 @@ Private Sub flatten_depth_one()
     GetResult "a=[1,[2,[3]]]; b = flatten(a,1); print(b);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, 2, [ 3 ] ]"
     Assert.AreEqual expected, actual
@@ -1064,8 +1064,8 @@ Private Sub clone_array()
     GetResult "o = { x: 1, a: [1,2] }; c = clone(o); c.a.push(3); print(o.a); print(c.a);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
-                    & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " _
+                    & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, 2 ], PRINT:[ 1, 2, 3 ]"
     Assert.AreEqual expected, actual
@@ -1199,7 +1199,7 @@ Private Sub array_unique_basic()
     GetResult "a = [1,2,2,3]; b = a.unique(); print(b);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, 2, 3 ]"
     Assert.AreEqual expected, actual
@@ -1217,7 +1217,7 @@ Private Sub array_unique_nested()
     GetResult "a=[1,[2],[2]]; print(a.unique());", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, [ 2 ] ]"
     Assert.AreEqual expected, actual
@@ -1235,7 +1235,7 @@ Private Sub array_concat()
     GetResult "a=[1]; b = a.concat([2,3],4); print(b);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, 2, 3, 4 ]"
     Assert.AreEqual expected, actual
@@ -1266,7 +1266,7 @@ Private Sub array_shift_unshift()
     GetResult "a=[1,2,3]; x = a.shift(); a.unshift(0); print(a); print(x);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 0, 2, 3 ], PRINT:1"
     Assert.AreEqual expected, actual
@@ -1284,7 +1284,7 @@ Private Sub array_delete()
     GetResult "a=[1,2,3]; a.delete(2); print(a);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, 3 ]"
     Assert.AreEqual expected, actual
@@ -1302,7 +1302,7 @@ Private Sub array_splice_mutating()
     GetResult "a=[1,2,3,4]; removed=a.splice(2,2,9,10); print(removed); print(a);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 2, 3 ], PRINT:[ 1, 9, 10, 4 ]"
     Assert.AreEqual expected, actual
@@ -1320,7 +1320,7 @@ Private Sub array_toSpliced_non_mutating()
     GetResult "a=[1,2,3]; b = a.toSpliced(2,1,9); print(a); print(b);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, 2, 3 ], PRINT:[ 1, 9, 3 ]"
     Assert.AreEqual expected, actual
@@ -1351,7 +1351,7 @@ Private Sub array_copyWithin()
     GetResult "a=[1,2,3,4]; a.copyWithin(2,1,3); print(a);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, 1, 2, 4 ]"
     Assert.AreEqual expected, actual
@@ -1369,7 +1369,7 @@ Private Sub array_entries()
     GetResult "a=[10,20]; print(a.entries());", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ [ 1, 10 ], [ 2, 20 ] ]"
     Assert.AreEqual expected, actual
@@ -1418,7 +1418,7 @@ Private Sub array_from_string()
     GetResult "print([].from('ab'))", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 'a', 'b' ]"
     Assert.AreEqual expected, actual
@@ -1436,7 +1436,7 @@ Private Sub from_array_copy()
     GetResult "print([].from([1,2,3]));", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, 2, 3 ]"
     Assert.AreEqual expected, actual
@@ -1455,7 +1455,7 @@ Private Sub from_single_value_wrap()
     GetResult "print([].from(5));", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 5 ]"
     Assert.AreEqual expected, actual
@@ -1474,7 +1474,7 @@ Private Sub from_with_map_array()
     GetResult "print([].from([1,2,3], fun(x){ return x * 2 }));", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 2, 4, 6 ]"
     Assert.AreEqual expected, actual
@@ -1493,7 +1493,7 @@ Private Sub from_with_map_string()
     GetResult "print([].from('ab', fun(c){ return c & c }));", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 'aa', 'bb' ]"
     Assert.AreEqual expected, actual
@@ -1513,7 +1513,7 @@ Private Sub from_nonclosure_second_arg_ignored()
     GetResult "print([].from([7,8], 123));", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 7, 8 ]"
     Assert.AreEqual expected, actual
@@ -1559,7 +1559,7 @@ Private Sub array_reverse_and_toReversed()
     GetResult "a=[1,2,3]; b = a.toReversed(); a.reverse(); print(b); print(a);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 3, 2, 1 ], PRINT:[ 3, 2, 1 ]"
     Assert.AreEqual expected, actual
@@ -1590,7 +1590,7 @@ Private Sub array_with_non_mutating()
     GetResult "a=[1,2,3]; b = a.with(2,9); print(a); print(b);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, 2, 3 ], PRINT:[ 1, 9, 3 ]"
     Assert.AreEqual expected, actual
@@ -1608,7 +1608,7 @@ Private Sub array_sort_and_toSorted()
     GetResult "a=[3,1,2]; b = a.toSorted(); a.sort(); print(b); print(a);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, 2, 3 ], PRINT:[ 1, 2, 3 ]"
     Assert.AreEqual expected, actual
@@ -1626,9 +1626,9 @@ Private Sub array_toSpliced_and_join()
     GetResult "a=[ 'camel', 'duck', 'elephant' ]; b = a.toSpliced(2,1,'hippo'); print(a); print(b); print(b.join(', '));", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 2)) & ", " & _
-                CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & _
-                CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 2)) & ", " & _
+                CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & _
+                CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 'camel', 'duck', 'elephant' ], PRINT:[ 'camel', 'hippo', 'elephant' ], PRINT:'camel, hippo, elephant'"
     Assert.AreEqual expected, actual
@@ -1648,7 +1648,7 @@ Private Sub array_entries_and_every_find_combo()
                 "f = a.find(fun(x){ return x > 4 }); print(ok); print(f);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:True, PRINT:6"
     Assert.AreEqual expected, actual
@@ -1666,7 +1666,7 @@ Private Sub array_includes_and_index_checks_with_objects()
     GetResult "a = [{k:1},{k:2},{k:1}]; idx = a.indexOf({k:1}); inc = a.includes({k:1}); print(idx); print(inc);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     ' indexOf returns first occurrence using deep equality; option base is 1
     expected = "PRINT:1, PRINT:True"
@@ -1685,8 +1685,8 @@ Private Sub array_complex_splice_and_copyWithin()
     GetResult "a=[0,1,2,3,4,5]; removed = a.splice(3,2,9); print(removed); print(a); a.copyWithin(2,1,3); print(a);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 2)) & ", " & _
-                CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 2)) & ", " & _
+                CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 2, 3 ], PRINT:[ 0, 1, 9, 4, 5 ], PRINT:[ 0, 0, 1, 4, 5 ]"
     Assert.AreEqual expected, actual
@@ -1704,7 +1704,7 @@ Private Sub deeply_nested_Arrays()
     GetResult "a=[1,[[2,3],4],5]; a[2][1][2]=10; print(a);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, [ [ 2, 10 ], 4 ], 5 ]"
     Assert.AreEqual expected, actual
@@ -1722,8 +1722,8 @@ Private Sub typeof_array()
     GetResult "a=['fruits', 'animals']; print(typeof a); print(typeof a[1]);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
-                & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " _
+                & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:'array', PRINT:'string'"
     Assert.AreEqual expected, actual
@@ -1741,8 +1741,8 @@ Private Sub typeof_object()
     GetResult "a={name: 'mango', fruit: true}; print(typeof a); print(typeof a.fruit);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
-                & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " _
+                & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:'object', PRINT:'boolean'"
     Assert.AreEqual expected, actual
@@ -1760,8 +1760,8 @@ Private Sub typeof_closures()
     GetResult "f = fun(a) { a = a + 1; return a }; print(typeof f); print(typeof f(1));", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
-                & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " _
+                & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:'function', PRINT:'number'"
     Assert.AreEqual expected, actual
@@ -1792,7 +1792,7 @@ Private Sub for_in_with_array_indices()
     GetResult "a=[10,20]; out=[]; for (i in a) { out.push(i) }; print(out);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, 2 ]"
     Assert.AreEqual expected, actual
@@ -1823,7 +1823,7 @@ Private Sub for_in_with_object_properties()
     GetResult "o = { a:1, b:2 }; keys=[]; for (k in o) { keys.push(k) }; print(keys);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 'a', 'b' ]"
     Assert.AreEqual expected, actual
@@ -2244,7 +2244,7 @@ Private Sub regex_match_from_string_object()
     GetResult "print('test1test2'.match(`/t(e)(st(\d?))/`));", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 'test1', 'e', 'st1', '1' ]"
     Assert.AreEqual expected, actual
@@ -2262,7 +2262,7 @@ Private Sub regex_match_global_from_string_object()
     GetResult "print('test1test2'.match(`/t(e)(st(\d?))/g`));", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 'test1', 'test2' ]"
     Assert.AreEqual expected, actual
@@ -2280,7 +2280,7 @@ Private Sub regex_matchall_from_string_object()
     GetResult "print('test1test2'.matchAll(`/t(e)(st(\d?))/g`));", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ [ 'test1', 'e', 'st1', '1' ], [ 'test2', 'e', 'st2', '2' ] ]"
     Assert.AreEqual expected, actual
@@ -2311,7 +2311,7 @@ Private Sub regex_object_execute_method()
     GetResult "re=regex(); re.init(`(\D*)(\d*)(\W*)`); print(re.exec('abc12345#$*%'));", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 'abc12345#$*%', 'abc', '12345', '#$*%' ]"
     Assert.AreEqual expected, actual
@@ -2342,7 +2342,7 @@ Private Sub regex_object_split_method()
     GetResult "re=regex(); re.init(`[,;\.\s]+`); print(re.split('apple,orange;banana grape.strawberry'));", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 'apple', 'orange', 'banana', 'grape', 'strawberry' ]"
     Assert.AreEqual expected, actual
@@ -2360,7 +2360,7 @@ Private Sub regex_object_executeAll_method()
     GetResult "re=regex(`[,;\.\s]+`); print(re.ExecAll('apple,orange;banana grape.strawberry'));", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ [ ',' ], [ ';' ], [ ' ' ], [ '.' ] ]"
     Assert.AreEqual expected, actual
@@ -2405,7 +2405,7 @@ Private Sub regex_object_conditional_simple()
     GetResult "re=regex(`(?:(a)|(b))(?(1)(X)|(Y))`); print(re.Exec('aX'));", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 'aX', 'a', 'X' ]"
     Assert.AreEqual expected, actual
@@ -2423,7 +2423,7 @@ Private Sub regex_object_conditional_inline_flags()
     GetResult "re=regex(`(?:(a)|(b))(?(1)(?i:x)|(?i:y))`); print(re.Exec('aaaX'));", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 'aX', 'a' ]"
     Assert.AreEqual expected, actual
@@ -2441,7 +2441,7 @@ Private Sub regex_object_conditional_inline_flags_off()
     GetResult "re=regex(`(?:(a)|(b))(?(1)(?-i:x)|y)`, True); print(re.Exec('bbBY'));", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 'BY', 'B' ]"
     Assert.AreEqual expected, actual
@@ -2459,7 +2459,7 @@ Private Sub regex_object_inline_dotAll_flags()
     GetResult "re=regex(`(?:(a)|(b))(?(1)(?s:.))`); print(re.Exec('a\n'));", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = ConvertNewLines(CStr(.gRuntimeLog(.gRuntimeLog.count)))
+        actual = ConvertNewLines(CStr(.gRuntimeLog(.gRuntimeLog.Count)))
     End With
     expected = "PRINT:[ 'a\n', 'a' ]"
     Assert.AreEqual expected, actual
@@ -2490,7 +2490,7 @@ Private Sub regex_object_Named_Conditionals()
     GetResult "re=regex(`(?:(?<A>a)|(?<B>b))(?(A)X|Y)`); print(re.Exec('bY'));", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = ConvertNewLines(CStr(.gRuntimeLog(.gRuntimeLog.count)))
+        actual = ConvertNewLines(CStr(.gRuntimeLog(.gRuntimeLog.Count)))
     End With
     expected = "PRINT:[ 'bY', 'b' ]"
     Assert.AreEqual expected, actual
@@ -2530,8 +2530,8 @@ Private Sub classes_static_method_declarations()
             "print(r2);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
-                & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " _
+                & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:2, PRINT:'hello'"
     Assert.AreEqual expected, actual
@@ -2560,7 +2560,7 @@ Private Sub classes_field_declarations()
             "animal.speak();", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:'Animal Lion is 5 years old'"
     Assert.AreEqual expected, actual
@@ -2602,9 +2602,9 @@ Private Sub classes_inheritance_with_fields()
            "print('Area: ' + circle.getArea());", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 2)) & ", " _
-                & CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
-                & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 2)) & ", " _
+                & CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " _
+                & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:'Position: 10,20', PRINT:'Color: red', PRINT:'Area: 78.53975'"
     Assert.AreEqual expected, actual
@@ -2676,8 +2676,8 @@ Private Sub classes_fields_with_complex_initializers()
             "print('Magnitude: ' + v.magnitude);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
-                & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " _
+                & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:'Vector: (3, 4, 0)', PRINT:'Magnitude: 5'"
     Assert.AreEqual expected, actual
@@ -2710,8 +2710,8 @@ Private Sub classes_multiple_instances()
             "print('Counter 2: ' + c2.getCount());", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " _
-                & CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " _
+                & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:'Counter 1: 2', PRINT:'Counter 2: 1'"
     Assert.AreEqual expected, actual
@@ -2753,7 +2753,7 @@ Private Sub object_keys()
     GetResult "o = {a: 1, b: 2, c: 3}; print(o.keys());", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 'a', 'b', 'c' ]"
     Assert.AreEqual expected, actual
@@ -2771,7 +2771,7 @@ Private Sub object_values()
     GetResult "o = {a: 1, b: 2, c: 3}; print(o.values());", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, 2, 3 ]"
     Assert.AreEqual expected, actual
@@ -2789,7 +2789,7 @@ Private Sub object_entries()
     GetResult "o = {a: 1, b: 2}; print(o.entries());", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ [ 'a', 1 ], [ 'b', 2 ] ]"
     Assert.AreEqual expected, actual
@@ -2937,7 +2937,7 @@ Private Sub object_set_new_key()
     GetResult "o = {a: 1}; o.set('b', 2); print(o);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:{ a: 1, b: 2 }"
     Assert.AreEqual expected, actual
@@ -2968,7 +2968,7 @@ Private Sub object_delete_existing_key()
     GetResult "o = {a: 1, b: 2, c: 3}; o.delete('b'); print(o);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:{ a: 1, c: 3 }"
     Assert.AreEqual expected, actual
@@ -3012,8 +3012,8 @@ Private Sub object_clone_simple()
     GetResult "o = {a: 1, b: 2}; c = o.clone(); c.b = 99; print(o.b); print(c.b);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & _
-                CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & _
+                CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:2, PRINT:99"
     Assert.AreEqual expected, actual
@@ -3031,8 +3031,8 @@ Private Sub object_clone_nested()
     GetResult "o = {x: 1, nested: {y: 2}}; c = o.clone(); c.nested.y = 99; print(o.nested.y); print(c.nested.y);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & _
-                CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & _
+                CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:2, PRINT:99"
     Assert.AreEqual expected, actual
@@ -3050,7 +3050,7 @@ Private Sub object_merge()
     GetResult "o1 = {a: 1, b: 2}; o2 = {b: 20, c: 3}; o1.merge(o2); print(o1);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:{ a: 1, b: 20, c: 3 }"
     Assert.AreEqual expected, actual
@@ -3068,7 +3068,7 @@ Private Sub object_merge_nested()
     GetResult "o1 = {a: 1, nested: {x: 10}}; o2 = {nested: {y: 20}, b: 2}; o1.merge(o2); print(o1);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:{ a: 1, nested: { y: 20 }, b: 2 }"
     Assert.AreEqual expected, actual
@@ -3112,7 +3112,7 @@ Private Sub object_map()
     GetResult "o = {a: 1, b: 2, c: 3}; result = o.map(fun(val, key) { return val * 2 }); print(result);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:{ a: 2, b: 4, c: 6 }"
     Assert.AreEqual expected, actual
@@ -3130,7 +3130,7 @@ Private Sub object_map_with_key()
     GetResult "o = {a: 1, b: 2}; result = o.map(fun(val, key) { return key & val }); print(result);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:{ a: 'a1', b: 'b2' }"
     Assert.AreEqual expected, actual
@@ -3148,7 +3148,7 @@ Private Sub object_filter()
     GetResult "o = {a: 1, b: 2, c: 3, d: 4}; result = o.filter(fun(val, key) { return val % 2 == 0 }); print(result);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:{ b: 2, d: 4 }"
     Assert.AreEqual expected, actual
@@ -3166,7 +3166,7 @@ Private Sub object_filter_by_key()
     GetResult "o = {apple: 10, banana: 20, cherry: 30}; result = o.filter(fun(val, key) { return key.startsWith('a') }); print(result);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:{ apple: 10 }"
     Assert.AreEqual expected, actual
@@ -3236,7 +3236,7 @@ Private Sub object_chaining_methods()
     GetResult "o = {a: 1, b: 2, c: 3, d: 4}; result = o.filter(fun(v) { return v > 1 }).map(fun(v) { return v * 10 }); print(result);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:{ b: 20, c: 30, d: 40 }"
     Assert.AreEqual expected, actual
@@ -3254,7 +3254,7 @@ Private Sub object_with_nested_arrays()
     GetResult "o = {a: [1,2], b: [3,4]}; result = o.map(fun(arr) { return arr.reduce(fun(sum, x) { return sum + x }, 0) }); print(result);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:{ a: 3, b: 7 }"
     Assert.AreEqual expected, actual
@@ -3299,8 +3299,8 @@ Private Sub polymorphism_basic()
                 "print(cat.speak());", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & _
-                CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & _
+                CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:'Rex barks', PRINT:'Whiskers meows'"
     Assert.AreEqual expected, actual
@@ -3332,9 +3332,9 @@ Private Sub polymorphism_three_levels()
                 "print(s.move());", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 2)) & ", " & _
-                CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & _
-                CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 2)) & ", " & _
+                CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & _
+                CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:'moving', PRINT:'driving on road', PRINT:'racing on track'"
     Assert.AreEqual expected, actual
@@ -3401,7 +3401,7 @@ Private Sub sort_chain_on_objects()
         "print(topSellers);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ { name: 'Charlie', bonus: 2200 }, { name: 'Alice', bonus: 1500 } ]"
     Assert.AreEqual expected, actual
@@ -3446,7 +3446,7 @@ Private Sub injecting_asf_objects()
     End With
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ { name: 'Charlie', bonus: 2200 }, { name: 'Alice', bonus: 1500 } ]"
     Assert.AreEqual expected, actual
@@ -3463,7 +3463,7 @@ Private Sub spread_simple()
     GetResult "arr1 = [1, 2, 3]; arr2 = [0, ...arr1, 4]; print(arr2)", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 0, 1, 2, 3, 4 ]"
     Assert.AreEqual expected, actual
@@ -3480,7 +3480,7 @@ Private Sub spread_multiple()
     GetResult "a = [1, 2]; b = [3, 4]; c = [...a, ...b, 5]; print(c)", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, 2, 3, 4, 5 ]"
     Assert.AreEqual expected, actual
@@ -3497,7 +3497,7 @@ Private Sub spread_with_empty()
     GetResult "empty = []; withEmpty = [1, ...empty, 2]; print(withEmpty)", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, 2 ]"
     Assert.AreEqual expected, actual
@@ -3514,7 +3514,7 @@ Private Sub spread_strings()
     GetResult "chars = [...'hello']; print(chars)", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 'h', 'e', 'l', 'l', 'o' ]"
     Assert.AreEqual expected, actual
@@ -3531,7 +3531,7 @@ Private Sub spread_mixed_string()
     GetResult "result = [1, ...'ab', 2]; print(result)", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, 'a', 'b', 2 ]"
     Assert.AreEqual expected, actual
@@ -3548,7 +3548,7 @@ Private Sub spread_combined()
     GetResult "begin = [1]; middle = [2, 3, 4]; end = [5]; combined = [...begin, ...middle, ...end]; print(combined)", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, 2, 3, 4, 5 ]"
     Assert.AreEqual expected, actual
@@ -3565,7 +3565,7 @@ Private Sub spread_nested()
     GetResult "nested = [[1, 2], [3, 4]]; spread = [...nested]; print(spread)", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ [ 1, 2 ], [ 3, 4 ] ]"
     Assert.AreEqual expected, actual
@@ -3582,8 +3582,8 @@ Private Sub spread_shallow_copy()
     GetResult "original = [1, 2, 3]; copy = [...original]; copy[1] = 999; print(original[1]); print(copy[1])", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
-        actual = CStr(.gRuntimeLog(.gRuntimeLog.count - 1)) & ", " & _
-                CStr(.gRuntimeLog(.gRuntimeLog.count))
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & _
+                CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:1, PRINT:999"
     Assert.AreEqual expected, actual
@@ -4006,3 +4006,49 @@ TestFail:
     Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
+
+'@TestMethod("calling_native_app_level")
+Private Sub calling_native_function_app_level()
+    On Error GoTo TestFail
+    Set scriptEngine = New ASF
+    Dim progIdx As Long
+    
+    With scriptEngine
+        Dim col As New Collection
+        col.Add 5, "myNumber"
+        .AppAccess = True
+        progIdx = .Compile("/*Get collection item*/ return($1.item('myNumber'))")
+        .Run progIdx, col
+        actual = CStr(.OUTPUT_)
+    End With
+    expected = "5"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("calling_native_app_level")
+Private Sub calling_native_function_app_level_2()
+    On Error GoTo TestFail
+    Set scriptEngine = New ASF
+    Dim progIdx As Long
+    
+    With scriptEngine
+        .AppAccess = True
+        progIdx = .Compile("/*Actibe Workbook Name*/ return($1.sheets.count)")
+        .Run progIdx, ThisWorkbook
+        actual = .OUTPUT_
+    End With
+    expected = ThisWorkbook.Sheets().Count
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+

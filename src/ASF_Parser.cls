@@ -237,7 +237,7 @@ ContinueDo:
                     GoTo Tokenize_SkipToLoopEnd
                 ElseIf ch Like "[A-Za-z_]" Then
                     Dim j3 As Long: j3 = i
-                    Do While j3 <= n And mid$(sourceCode, j3, 1) Like "[A-Za-z0-9_.]"
+                    Do While j3 <= n And mid$(sourceCode, j3, 1) Like "[A-Za-z0-9_]"
                         j3 = j3 + 1
                     Loop
                     tmpIdent = mid$(sourceCode, i, j3 - i)
