@@ -26,16 +26,6 @@ Private tmpVar As Variant
 
 ' Executes AST nodes produced by Compiler (AST).
 ' Uses Map node types and ScopeStack. Logs to gRuntimeLog.
-
-Private Function GetPrivateObjName(asfObj As Variant) As String
-    Dim tmpType As String
-    On Error GoTo validated
-    tmpType = TypeName(asfObj)
-    Exit Function
-validated:
-    err.Clear
-    GetPrivateObjName = asfObj.Name
-End Function
 Public Property Set Globals(aGlobals As ASF_Globals)
     Set GLOBALS_ = aGlobals
 End Property
@@ -2859,7 +2849,7 @@ init_Error_Handler:
                                             ' Append full match + groups as an array
                                             resultsColl.Add VM_CapturesToArray(capsA)
                                     
-                                            Dim fullMatchA As String: fullMatchA = CStr(capsA.item(1))
+                                            Dim fullMatchA As String: fullMatchA = CStr(capsA.Item(1))
                                             Dim fLenA As Long: fLenA = Len(fullMatchA)
                                             If fLenA = 0 Then
                                                 sPosA = IIf(foundAtA + 1 > Lsrc, Lsrc + 1, foundAtA + 1)
@@ -2909,7 +2899,7 @@ init_Error_Handler:
                                     
                                             idxOut = idxOut + 1
                                             ReDim Preserve outMatches(1 To idxOut)
-                                            outMatches(idxOut) = CStr(caps2.item(1))
+                                            outMatches(idxOut) = CStr(caps2.Item(1))
                                     
                                             Dim fLen As Long: fLen = Len(outMatches(idxOut))
                                             If fLen = 0 Then
@@ -3035,7 +3025,7 @@ init_Error_Handler:
                                                 outRepStr = outRepStr & mid$(src, searchPos)
                                                 Exit Do
                                             Else
-                                                Dim fullMatch As String: fullMatch = CStr(caps.item(1))
+                                                Dim fullMatch As String: fullMatch = CStr(caps.Item(1))
                                                 Dim matchLen As Long: matchLen = Len(fullMatch)
                                                 Dim matchStart As Long: matchStart = foundAt
                                                 Dim matchEnd As Long: matchEnd = matchStart + matchLen - 1
@@ -3068,7 +3058,7 @@ init_Error_Handler:
                                                     argColl.Add fullMatch
                                                     Dim gi As Long
                                                     For gi = 2 To caps.Count
-                                                        argColl.Add CStr(caps.item(gi))
+                                                        argColl.Add CStr(caps.Item(gi))
                                                     Next gi
                                                     ' offset - JS uses zero-based
                                                     argColl.Add (matchStart - 1)
@@ -4971,6 +4961,9 @@ Private Function ResolveIndexProp(ByRef lval) As Variant
             vAssignment ResolveIndexProp, container
     End Select
 End Function
+Private Function indexDecompose(indexStr As String) As Variant
+    
+End Function
 
 Private Function ResolveProp(ByRef lval) As Variant
     Dim baseVariable As String
@@ -5880,7 +5873,7 @@ Private Function VM_ExpandReplacementFromCapturesJS( _
                     i = i + 2
                 Case "&"
                     If nCaps >= 1 Then
-                        out = out & CStr(caps.item(1))
+                        out = out & CStr(caps.Item(1))
                     End If
                     i = i + 2
                 Case "`"
@@ -5901,7 +5894,7 @@ Private Function VM_ExpandReplacementFromCapturesJS( _
                         Dim idx As Long: idx = CLng(numStr)
                         ' JS: $1 maps to capture group 1 (caps.Item(2) in our caps layout)
                         If idx >= 1 And idx <= (nCaps - 1) Then
-                            out = out & CStr(caps.item(idx + 1))
+                            out = out & CStr(caps.Item(idx + 1))
                         Else
                             ' unknown group -> empty string
                             out = out & vbNullString
@@ -5936,7 +5929,7 @@ Private Function VM_CapturesToArray(ByVal caps As Collection) As Variant
     Dim arr() As Variant: ReDim arr(1 To n)
     Dim i As Long
     For i = 1 To n
-        arr(i) = caps.item(i)
+        arr(i) = caps.Item(i)
     Next i
     VM_CapturesToArray = arr
 End Function
@@ -5983,7 +5976,7 @@ Private Function RegexCapsToVariantArray(ByVal caps As Collection) As Variant
 
     Dim i As Long
     For i = 1 To n
-        Dim v As Variant: v = caps.item(i)
+        Dim v As Variant: v = caps.Item(i)
         If IsObject(v) Then
             On Error Resume Next
             Dim tn As String: tn = TypeName(v)
@@ -6022,7 +6015,7 @@ Private Function RegexMatchesToVariantArray(ByVal matches As Collection) As Vari
     Dim i As Long
     For i = 1 To m
         Dim caps As Collection
-        Set caps = matches.item(i)
+        Set caps = matches.Item(i)
         out(i - 1) = RegexCapsToVariantArray(caps)
     Next i
 
@@ -6047,7 +6040,7 @@ Private Function RegexCapsToStringArray(ByVal caps As Collection) As Variant
 
     Dim i As Long
     For i = 1 To n
-        Dim v As Variant: v = caps.item(i)
+        Dim v As Variant: v = caps.Item(i)
         If IsObject(v) Then
             If TypeName(v) = "Collection" Then
                 ' we can't store an array in a String() direct; return a Variant array for caller
@@ -6849,65 +6842,65 @@ Private Function CallObjectMethod(obj As Variant, methodName As Variant, Optiona
                 Case 0
                     vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod)
                 Case 1
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1))
                 Case 2
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2))
                 Case 3
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3))
                 Case 4
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4))
                 Case 5
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5))
                 Case 6
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6))
                 Case 7
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7))
                 Case 8
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8))
                 Case 9
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8), .Item(9))
                 Case 10
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8), .Item(9), .Item(10))
                 Case 11
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8), .Item(9), .Item(10), .Item(11))
                 Case 12
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8), .Item(9), .Item(10), .Item(11), .Item(12))
                 Case 13
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8), .Item(9), .Item(10), .Item(11), .Item(12), .Item(13))
                 Case 14
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8), .Item(9), .Item(10), .Item(11), .Item(12), .Item(13), .Item(14))
                 Case 15
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8), .Item(9), .Item(10), .Item(11), .Item(12), .Item(13), .Item(14), .Item(15))
                 Case 16
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8), .Item(9), .Item(10), .Item(11), .Item(12), .Item(13), .Item(14), .Item(15), .Item(16))
                 Case 17
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8), .Item(9), .Item(10), .Item(11), .Item(12), .Item(13), .Item(14), .Item(15), .Item(16), .Item(17))
                 Case 18
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8), .Item(9), .Item(10), .Item(11), .Item(12), .Item(13), .Item(14), .Item(15), .Item(16), .Item(17), .Item(18))
                 Case 19
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8), .Item(9), .Item(10), .Item(11), .Item(12), .Item(13), .Item(14), .Item(15), .Item(16), .Item(17), .Item(18), .Item(19))
                 Case 20
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8), .Item(9), .Item(10), .Item(11), .Item(12), .Item(13), .Item(14), .Item(15), .Item(16), .Item(17), .Item(18), .Item(19), .Item(20))
                 Case 21
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8), .Item(9), .Item(10), .Item(11), .Item(12), .Item(13), .Item(14), .Item(15), .Item(16), .Item(17), .Item(18), .Item(19), .Item(20), .Item(21))
                 Case 22
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8), .Item(9), .Item(10), .Item(11), .Item(12), .Item(13), .Item(14), .Item(15), .Item(16), .Item(17), .Item(18), .Item(19), .Item(20), .Item(21), .Item(22))
                 Case 23
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8), .Item(9), .Item(10), .Item(11), .Item(12), .Item(13), .Item(14), .Item(15), .Item(16), .Item(17), .Item(18), .Item(19), .Item(20), .Item(21), .Item(22), .Item(23))
                 Case 24
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23), .item(24))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8), .Item(9), .Item(10), .Item(11), .Item(12), .Item(13), .Item(14), .Item(15), .Item(16), .Item(17), .Item(18), .Item(19), .Item(20), .Item(21), .Item(22), .Item(23), .Item(24))
                 Case 25
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23), .item(24), .item(25))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8), .Item(9), .Item(10), .Item(11), .Item(12), .Item(13), .Item(14), .Item(15), .Item(16), .Item(17), .Item(18), .Item(19), .Item(20), .Item(21), .Item(22), .Item(23), .Item(24), .Item(25))
                 Case 26
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23), .item(24), .item(25), .item(26))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8), .Item(9), .Item(10), .Item(11), .Item(12), .Item(13), .Item(14), .Item(15), .Item(16), .Item(17), .Item(18), .Item(19), .Item(20), .Item(21), .Item(22), .Item(23), .Item(24), .Item(25), .Item(26))
                 Case 27
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23), .item(24), .item(25), .item(26), .item(27))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8), .Item(9), .Item(10), .Item(11), .Item(12), .Item(13), .Item(14), .Item(15), .Item(16), .Item(17), .Item(18), .Item(19), .Item(20), .Item(21), .Item(22), .Item(23), .Item(24), .Item(25), .Item(26), .Item(27))
                 Case 28
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23), .item(24), .item(25), .item(26), .item(27), .item(28))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8), .Item(9), .Item(10), .Item(11), .Item(12), .Item(13), .Item(14), .Item(15), .Item(16), .Item(17), .Item(18), .Item(19), .Item(20), .Item(21), .Item(22), .Item(23), .Item(24), .Item(25), .Item(26), .Item(27), .Item(28))
                 Case 29
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23), .item(24), .item(25), .item(26), .item(27), .item(28), .item(29))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8), .Item(9), .Item(10), .Item(11), .Item(12), .Item(13), .Item(14), .Item(15), .Item(16), .Item(17), .Item(18), .Item(19), .Item(20), .Item(21), .Item(22), .Item(23), .Item(24), .Item(25), .Item(26), .Item(27), .Item(28), .Item(29))
                 Case 30
-                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23), .item(24), .item(25), .item(26), .item(27), .item(28), .item(29), .item(30))
+                    vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod, .Item(1), .Item(2), .Item(3), .Item(4), .Item(5), .Item(6), .Item(7), .Item(8), .Item(9), .Item(10), .Item(11), .Item(12), .Item(13), .Item(14), .Item(15), .Item(16), .Item(17), .Item(18), .Item(19), .Item(20), .Item(21), .Item(22), .Item(23), .Item(24), .Item(25), .Item(26), .Item(27), .Item(28), .Item(29), .Item(30))
                 Case Else
                     err.Raise vbObjectError + 513, "CallObjectMethod", "Too many arguments: maximum supported is 30."
             End Select
