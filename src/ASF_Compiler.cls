@@ -1107,6 +1107,154 @@ Private Function ParseUnaryNode(types() As String, vals() As Variant, n As Long,
     Set ParseUnaryNode = ParsePrimaryNode(types, vals, n, idx)
 End Function
 
+' ParseCollapsedIdent: Parses a collapsed identifier string like "a[2].b"
+' and returns the AST node chain. The base of the chain will be a Variable
+' node that can be replaced by the caller.
+Private Function ParseCollapsedIdent(ByVal collapsedStr As String, _
+                                     types() As String, vals() As Variant, _
+                                     n As Long, ByRef idx As Long) As ASF_Map
+    Dim s As String: s = collapsedStr
+    Dim poss As Long: poss = 1
+    Dim L As Long: L = Len(s)
+    Dim ident As String: ident = vbNullString
+    Dim propName As String
+    Dim currentNode As ASF_Map
+    Dim mem As ASF_Map
+    Dim indexNode As ASF_Map
+    
+    ' Read leading identifier
+    Do While poss <= L
+        Dim ch0 As String: ch0 = mid$(s, poss, 1)
+        If ch0 = "." Or ch0 = "[" Then Exit Do
+        ident = ident & ch0
+        poss = poss + 1
+    Loop
+    Set currentNode = MakeNode("Variable")
+    currentNode.SetValue "name", ident
+    
+    ' Parse internal segments embedded in string (handles a[1][2].b)
+    Do While poss <= L
+        Dim ch As String: ch = mid$(s, poss, 1)
+        If ch = "." Then
+            poss = poss + 1
+            propName = vbNullString
+            Do While poss <= L
+                Dim ch2 As String: ch2 = mid$(s, poss, 1)
+                If ch2 = "." Or ch2 = "[" Then Exit Do
+                propName = propName & ch2
+                poss = poss + 1
+            Loop
+            Set mem = MakeNode("Member")
+            mem.SetValue "base", currentNode.Clone
+            mem.SetValue "prop", propName
+            Set currentNode = mem
+        ElseIf ch = "[" Then
+            ' Find closing bracket inside the string
+            Dim depthBr As Long: depthBr = 0
+            Dim posClose As Long: posClose = 0
+            Dim iCh As Long
+            For iCh = poss To L
+                Dim cch As String: cch = mid$(s, iCh, 1)
+                If cch = "[" Then
+                    depthBr = depthBr + 1
+                ElseIf cch = "]" Then
+                    depthBr = depthBr - 1
+                    If depthBr = 0 Then
+                        posClose = iCh
+                        Exit For
+                    End If
+                End If
+            Next iCh
+            If posClose = 0 Then
+                err.Raise vbObjectError + 8002, "Compiler.ParseCollapsedIdent", _
+                          "Invalid collapsed identifier: missing ']' in " & s
+            End If
+            Dim idxStr As String: idxStr = mid$(s, poss + 1, posClose - poss - 1)
+            Dim idxNodeFromStr As ASF_Map
+            Set idxNodeFromStr = ParseExprFromStringToNode(idxStr)
+            Set indexNode = MakeNode("Index")
+            indexNode.SetValue "base", currentNode.Clone
+            indexNode.SetValue "index", idxNodeFromStr
+            Set currentNode = indexNode
+            poss = posClose + 1
+        Else
+            Exit Do
+        End If
+    Loop
+    
+    ' Handle any immediately following bracket tokens in token stream
+    Do While idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "["
+        idx = idx + 1
+        Dim idxTok As Collection: Set idxTok = New Collection
+        Dim depthIdx As Long: depthIdx = 0
+        Do While idx < n
+            If safeTVRet(types, idx) = "PAREN" Then
+                If safeTVRet(vals, idx) = "[" Then
+                    depthIdx = depthIdx + 1
+                ElseIf safeTVRet(vals, idx) = "]" Then
+                    If depthIdx = 0 Then
+                        Exit Do
+                    Else
+                        depthIdx = depthIdx - 1
+                    End If
+                End If
+            End If
+            idxTok.Add Array(safeTVRet(types, idx), safeTVRet(vals, idx))
+            idx = idx + 1
+        Loop
+        Dim idxExprNode As ASF_Map
+        Set idxExprNode = ParseExprTokensToNode(idxTok)
+        If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "]" Then
+            idx = idx + 1
+        End If
+        Dim moreIndex As ASF_Map: Set moreIndex = MakeNode("Index")
+        moreIndex.SetValue "base", currentNode
+        moreIndex.SetValue "index", idxExprNode
+        Set currentNode = moreIndex
+    Loop
+    
+    Set ParseCollapsedIdent = currentNode
+End Function
+
+' ReplaceLeafVariable: Recursively finds the leftmost Variable node and replaces it
+Private Sub ReplaceLeafVariable(node As ASF_Map, newBase As ASF_Map)
+    Dim baseNode As ASF_Map
+    Dim varName As String
+    
+    Select Case node.GetValue("type")
+        Case "Variable"
+            ' Can't replace the node itself, but we shouldn't reach this case
+            Exit Sub
+            
+        Case "Member"
+            Set baseNode = node.GetValue("base")
+            If baseNode.GetValue("type") = "Variable" Then
+                ' Create Member node: newBase.propertyName
+                varName = baseNode.GetValue("name")
+                Dim memberNode As ASF_Map: Set memberNode = MakeNode("Member")
+                memberNode.SetValue "base", newBase.Clone
+                memberNode.SetValue "prop", varName
+                node.SetValue "base", memberNode
+            Else
+                ' Recurse into the base
+                Call ReplaceLeafVariable(baseNode, newBase)
+            End If
+            
+        Case "Index"
+            Set baseNode = node.GetValue("base")
+            If baseNode.GetValue("type") = "Variable" Then
+                ' Create Member node: newBase.propertyName
+                varName = baseNode.GetValue("name")
+                Dim memberNode2 As ASF_Map: Set memberNode2 = MakeNode("Member")
+                memberNode2.SetValue "base", newBase.Clone
+                memberNode2.SetValue "prop", varName
+                node.SetValue "base", memberNode2
+            Else
+                ' Recurse into the base
+                Call ReplaceLeafVariable(baseNode, newBase)
+            End If
+    End Select
+End Sub
 ' Helper: perform postfix chaining (.prop, [index], (args)) on a given currentNode.
 ' Returns the updated currentNode (NOT cloned) and advances idx accordingly.
 Private Function DoPostfixChaining(ByVal currentNode As ASF_Map, types() As String, vals() As Variant, n As Long, ByRef idx As Long) As ASF_Map
@@ -1120,11 +1268,23 @@ Private Function DoPostfixChaining(ByVal currentNode As ASF_Map, types() As Stri
             idx = idx + 1
             If idx < n And safeTVRet(types, idx) = "IDENT" Then
                 propName = CStr(safeTVRet(vals, idx))
-                Set mem = MakeNode("Member")
-                mem.SetValue "base", currentNode
-                mem.SetValue "prop", propName
-                Set currentNode = mem.Clone
                 idx = idx + 1
+                
+                ' Check if propName is a collapsed identifier (contains [ or .)
+                If InStr(propName, "[") > 0 Or InStr(propName, ".") > 0 Then
+                    ' Parse the collapsed identifier
+                    Dim collapsedNode As ASF_Map
+                    Set collapsedNode = ParseCollapsedIdent(propName, types, vals, n, idx)
+                    ' Replace its base Variable with currentNode
+                    Call ReplaceLeafVariable(collapsedNode, currentNode)
+                    Set currentNode = collapsedNode
+                Else
+                    ' Simple property name
+                    Set mem = MakeNode("Member")
+                    mem.SetValue "base", currentNode
+                    mem.SetValue "prop", propName
+                    Set currentNode = mem.Clone
+                End If
             Else
                 ' invalid member access; stop postfixing
                 Exit Do
@@ -1517,109 +1677,7 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
             ' Collapsed identifiers path (a.b[2].c style, possibly with bracket tokens following the IDENT)
             Set currentNode = Nothing
             If InStr(name, ".") > 0 Or InStr(name, "[") > 0 Then
-                Dim s As String: s = CStr(name)
-                Dim poss As Long: poss = 1
-                Dim L As Long: L = Len(s)
-                Dim ident As String: ident = vbNullString
-                Dim propName As String
-
-                ' read leading ident
-                Do While poss <= L
-                    Dim ch0 As String: ch0 = mid$(s, poss, 1)
-                    If ch0 = "." Or ch0 = "[" Then Exit Do
-                    ident = ident & ch0
-                    poss = poss + 1
-                Loop
-                Set currentNode = MakeNode("Variable")
-                currentNode.SetValue "name", ident
-
-                ' parse internal segments embedded in IDENT string (handles a[1][2].b)
-                Do While poss <= L
-                    Dim ch As String: ch = mid$(s, poss, 1)
-                    If ch = "." Then
-                        poss = poss + 1
-                        propName = vbNullString
-                        Do While poss <= L
-                            Dim ch2 As String: ch2 = mid$(s, poss, 1)
-                            If ch2 = "." Or ch2 = "[" Then Exit Do
-                            propName = propName & ch2
-                            poss = poss + 1
-                        Loop
-                        Set mem = MakeNode("Member")
-                        mem.SetValue "base", currentNode.Clone
-                        mem.SetValue "prop", propName
-                        Set currentNode = mem
-                    ElseIf ch = "[" Then
-                        ' find closing bracket inside the IDENT string
-                        Dim depthBr As Long: depthBr = 0
-                        Dim posClose As Long: posClose = 0
-                        Dim iCh As Long
-                        For iCh = poss To L
-                            Dim cch As String: cch = mid$(s, iCh, 1)
-                            If cch = "[" Then
-                                depthBr = depthBr + 1
-                            ElseIf cch = "]" Then
-                                depthBr = depthBr - 1
-                                If depthBr = 0 Then
-                                    posClose = iCh
-                                    Exit For
-                                End If
-                            End If
-                        Next iCh
-                        If posClose = 0 Then
-                            err.Raise vbObjectError + 8002, "Compiler.ParsePrimary", "Invalid collapsed identifier: missing ']' in " & s
-                        End If
-                        Dim idxStr As String: idxStr = mid$(s, poss + 1, posClose - poss - 1)
-                        Dim idxNodeFromStr As ASF_Map: Set idxNodeFromStr = ParseExprFromStringToNode(idxStr)
-                        Set indexNode = MakeNode("Index")
-                        indexNode.SetValue "base", currentNode.Clone
-                        indexNode.SetValue "index", idxNodeFromStr
-                        Set currentNode = indexNode
-                        poss = posClose + 1
-                    Else
-                        Exit Do
-                    End If
-                Loop
-
-                ' consume the IDENT token
-                idx = idx + 1
-
-                ' ** NEW: consume any immediately following bracketed tokens in the token stream **
-                ' This handles cases where Tokenize collapsed only part of the brackets (e.g. "a[1]" token
-                ' followed by "[" "2" "]" tokens).
-                Do While idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "["
-                    ' gather tokens inside this bracket (support nested constructs)
-                    idx = idx + 1
-                    Dim idxTok As Collection: Set idxTok = New Collection
-                    Dim depthIdx As Long: depthIdx = 0
-                    Do While idx < n
-                        If safeTVRet(types, idx) = "PAREN" Then
-                            If safeTVRet(vals, idx) = "[" Then
-                                depthIdx = depthIdx + 1
-                            ElseIf safeTVRet(vals, idx) = "]" Then
-                                If depthIdx = 0 Then
-                                    Exit Do
-                                Else
-                                    depthIdx = depthIdx - 1
-                                End If
-                            End If
-                        ElseIf safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = "," And depthIdx = 0 Then
-                            ' commas at top-level inside bracket are part of expression, keep them
-                        End If
-                        idxTok.Add Array(safeTVRet(types, idx), safeTVRet(vals, idx))
-                        idx = idx + 1
-                    Loop
-                    ' parse the collected inner expression
-                    Dim idxExprNode As ASF_Map: Set idxExprNode = ParseExprTokensToNode(idxTok)
-                    ' consume the closing ']'
-                    If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "]" Then idx = idx + 1
-                    ' attach new Index node
-                    Dim moreIndex As ASF_Map: Set moreIndex = MakeNode("Index")
-                    moreIndex.SetValue "base", currentNode
-                    moreIndex.SetValue "index", idxExprNode
-                    Set currentNode = moreIndex
-                Loop
-
+                Set currentNode = ParseCollapsedIdent(name, types, vals, n, idx)
             End If
 
             ' if collapsed form was not used, create a simple variable node
@@ -3024,17 +3082,17 @@ Private Function NormalizeAssignsInStmts(stmts As Collection) As Collection
 End Function
 
 Private Function safeTVRet(ByRef arr As Variant, idx As Long) As String
-    On Error GoTo err_handler
+    On Error GoTo err_Handler
     safeTVRet = arr(idx)
     Exit Function
-err_handler:
+err_Handler:
     safeTVRet = vbNullString
 End Function
 Private Function safeTVRetInner(ByRef arr As Variant, idx1 As Long, idx2 As Long) As String
-    On Error GoTo err_handler
+    On Error GoTo err_Handler
     safeTVRetInner = arr(idx1)(idx2)
     Exit Function
-err_handler:
+err_Handler:
     safeTVRetInner = vbNullString
 End Function
 ' Compile a backtick-wrapped template string (like `foo ${a+1} bar`) into a Template AST node.
