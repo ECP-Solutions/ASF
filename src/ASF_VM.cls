@@ -3734,9 +3734,12 @@ ContinueDo:
                                                     (Exp(evaluated(1)) + Exp(-1 * evaluated(1)))
                                         GoTo exitfun
                                 End Select
+                            Else
+                                ' Delegate the evaluation to the Aplication
+                                vAssignment tmpResult, CallObjectMethod(baseValLocal, propN, evaluated)
+                                GoTo exitfun
                             End If
                         Else
-                            ' Delegate the evaluation to the Aplication
                             vAssignment tmpResult, CallObjectMethod(baseValLocal, propN, evaluated)
                             GoTo exitfun
                         End If
