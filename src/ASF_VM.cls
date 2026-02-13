@@ -6840,6 +6840,9 @@ Private Function CallObjectMethod(obj As Variant, methodName As Variant, Optiona
         vAssignment CallObjectMethod, CallByName(obj, methodName, VbGet Or VbMethod)
     Else
         Dim nArgs As Long: nArgs = args.Count
+        If nArgs = 1 Then
+            If IsEmpty(args(1)) Then nArgs = nArgs - 1
+        End If
         With args
             'A lengthy and visually overwhelming implementation.
             Select Case nArgs
