@@ -4697,6 +4697,8 @@ Private Sub HandleAssignment(left As ASF_Map, ByVal rval As Variant, progScope A
                     ' fallback: maybe container itself is the array
                     vAssignment arrVal, container
                 End If
+                ' Initialize the array if needed
+                If UBound(arrVal) = -1 Then ReDim Preserve arrVal(1 To 1)
                 ' Ensure arrVal is an array we can index into (AssignToArrayValueInPlace will create/resize).
                 If keyChain.Count > 1 Then 'nested indexes
                     Call AssignToArrayValueInPlace(arrVal, pos, rval, optionBase, keyChain)
@@ -4709,7 +4711,7 @@ Private Sub HandleAssignment(left As ASF_Map, ByVal rval As Variant, progScope A
                 ElseIf TypeName(container) = "ASF_ScopeStack" Then
                     container.SetValue CStr(parentKey), arrVal
                 Else
-                    ' if container itself was an array variable (rare), try to overwrite it:
+                    ' if container itself was an array variable, try to overwrite it:
                     container = arrVal
                 End If
             Else

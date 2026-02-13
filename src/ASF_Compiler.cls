@@ -751,25 +751,7 @@ ContinueDestParse:
             Exit Function
         End If
         Dim lhsNode As ASF_Map
-        If lhsT.Count = 1 And lhsT(1)(0) = "IDENT" Then
-            Dim nm As String: nm = lhsT(1)(1)
-            If InStr(nm, "[") > 0 Then
-                Dim baseName As String: baseName = left$(nm, InStr(nm, "[") - 1)
-                Dim idxStr As String: idxStr = mid$(nm, InStr(nm, "[") + 1, Len(nm) - InStr(nm, "[") - 1)
-                Dim idxNode As ASF_Map: Set idxNode = ParseExprFromStringToNode(idxStr)
-                Set lhsNode = MakeNode("Index")
-                Dim tmpVar As ASF_Map: Set tmpVar = MakeNode("Variable")
-                tmpVar.SetValue "name", baseName
-                lhsNode.SetValue "base", tmpVar
-                lhsNode.SetValue "index", idxNode
-            Else
-                Set lhsNode = MakeNode("Variable")
-                lhsNode.SetValue "name", nm
-            End If
-        Else
-            Set lhsNode = ParseExprTokensToNode(lhsT)
-        End If
-
+        Set lhsNode = ParseExprTokensToNode(lhsT)
         If compoundOp <> vbNullString Then
             ' For compound assignments like "a += 3" produce:
             ' Assign { left: lhsNode, right: Binary { left: (clone of lhsNode), op: <op>, right: <rhsExpr> } }
@@ -1678,6 +1660,7 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
             Set currentNode = Nothing
             If InStr(name, ".") > 0 Or InStr(name, "[") > 0 Then
                 Set currentNode = ParseCollapsedIdent(name, types, vals, n, idx)
+                idx = idx + 1
             End If
 
             ' if collapsed form was not used, create a simple variable node
@@ -1688,7 +1671,7 @@ Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Lon
             End If
 
             ' Run postfix chaining via helper (this still handles .prop, (args), extra [] if any remain)
-            Set currentNode = DoPostfixChaining(currentNode, types, vals, n, idx)
+            Set currentNode = DoPostfixChaining(currentNode.Clone, types, vals, n, idx)
             Set ParsePrimaryNode = currentNode.Clone
             Exit Function
         Case "PAREN"
