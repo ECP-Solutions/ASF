@@ -673,7 +673,7 @@ Private Sub calling_native_function()
         .Run progIdx
         actual = CStr(.OUTPUT_)
     End With
-    expected = ThisWorkbook.Name
+    expected = ThisWorkbook.name
     Assert.AreEqual expected, actual
     
 TestExit:
