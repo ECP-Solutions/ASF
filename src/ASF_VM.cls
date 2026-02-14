@@ -229,6 +229,39 @@ ErrHandler:
     err.Clear
     ArrayToASF2 = Array()
 End Function
+' Convert native ASF to 2 dim VBA array, no casting
+Private Function ASFto2Darray(arr As Variant) As Variant
+    On Error GoTo ErrHandler
+    Dim lb As Long, ub As Long
+    Dim lb2 As Long, ub2 As Long
+    Dim tmpResult() As Variant
+    lb = LBound(arr): ub = UBound(arr)
+    Dim n As Long: n = ub - lb + 1
+    If n <= 0 Then ASFto2Darray = Array(): Exit Function
+    Dim i As Long
+    Dim j As Long
+    Dim tmpLng As Long
+    Dim m As Long
+    For i = lb To ub
+        tmpLng = UBound(arr(i)) - LBound(arr(i)) + 1
+        If tmpLng > m Then m = tmpLng
+    Next i
+    ReDim tmpResult(1 To n, 1 To m)
+    For i = lb To ub
+        lb2 = LBound(arr(i))
+        ub2 = UBound(arr(i))
+        For j = lb2 To ub2
+            vAssignment tmpResult(i - lb + 1, j - lb2 + 1), arr(i)(j)
+        Next j
+    Next i
+    ASFto2Darray = tmpResult
+    Erase tmpResult
+    Exit Function
+
+ErrHandler:
+    err.Clear
+    ASFto2Darray = Array()
+End Function
 ' Convert native VBA Collection -> ASF one-based internal array representation
 Private Function CollToASF(coll As Variant) As Variant
     On Error GoTo ErrHandler
@@ -6880,15 +6913,15 @@ Private Function FolderExists(ByVal filePath As String) As Boolean
     FolderExists = CBool(LenB(Dir(filePath, vbDirectory + vbHidden)))
 End Function
 Private Sub SetObjectProperty(obj As Variant, propName As Variant, propValue As Variant)
-    CallByName obj, propName, VbLet, propValue
+    Dim vbaParam As Variant: vAssignment vbaParam, CastVBAparam(propValue)
+    If Not IsObject(propValue) Then
+        CallByName obj, propName, VbLet, vbaParam
+    Else
+        CallByName obj, propName, VbSet, vbaParam
+    End If
     ' Trace: Pop call with return value
-    PopCallTrace CStr(propName), propValue
+    PopCallTrace CStr(propName), vbaParam
 End Sub
-Private Function GetObjectProperty(obj As Variant, propName As Variant) As Variant
-    vAssignment GetObjectProperty, CallByName(obj, propName, VbGet)
-    ' Trace: Pop call with return value
-    PopCallTrace CStr(propName), GetObjectProperty
-End Function
 Private Function CallObjectMethod(obj As Variant, methodName As Variant, Optional args As Collection) As Variant
     ' Trace: Push call
     PushCallTrace CStr(methodName), args
@@ -6906,65 +6939,65 @@ Private Function CallObjectMethod(obj As Variant, methodName As Variant, Optiona
                 Case 0
                     vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod)
                 Case 1
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)))
                 Case 2
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)))
                 Case 3
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)))
                 Case 4
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)))
                 Case 5
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)))
                 Case 6
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)))
                 Case 7
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)))
                 Case 8
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)))
                 Case 9
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)))
                 Case 10
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)))
                 Case 11
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)))
                 Case 12
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)))
                 Case 13
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)))
                 Case 14
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)))
                 Case 15
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)))
                 Case 16
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)))
                 Case 17
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)))
                 Case 18
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)))
                 Case 19
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)))
                 Case 20
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)), CastVBAparam(.item(20)))
                 Case 21
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)), CastVBAparam(.item(20)), CastVBAparam(.item(21)))
                 Case 22
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)), CastVBAparam(.item(20)), CastVBAparam(.item(21)), CastVBAparam(.item(22)))
                 Case 23
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)), CastVBAparam(.item(20)), CastVBAparam(.item(21)), CastVBAparam(.item(22)), CastVBAparam(.item(23)))
                 Case 24
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23), .item(24))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)), CastVBAparam(.item(20)), CastVBAparam(.item(21)), CastVBAparam(.item(22)), CastVBAparam(.item(23)), CastVBAparam(.item(24)))
                 Case 25
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23), .item(24), .item(25))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)), CastVBAparam(.item(20)), CastVBAparam(.item(21)), CastVBAparam(.item(22)), CastVBAparam(.item(23)), CastVBAparam(.item(24)), CastVBAparam(.item(25)))
                 Case 26
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23), .item(24), .item(25), .item(26))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)), CastVBAparam(.item(20)), CastVBAparam(.item(21)), CastVBAparam(.item(22)), CastVBAparam(.item(23)), CastVBAparam(.item(24)), CastVBAparam(.item(25)), CastVBAparam(.item(26)))
                 Case 27
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23), .item(24), .item(25), .item(26), .item(27))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)), CastVBAparam(.item(20)), CastVBAparam(.item(21)), CastVBAparam(.item(22)), CastVBAparam(.item(23)), CastVBAparam(.item(24)), CastVBAparam(.item(25)), CastVBAparam(.item(26)), CastVBAparam(.item(27)))
                 Case 28
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23), .item(24), .item(25), .item(26), .item(27), .item(28))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)), CastVBAparam(.item(20)), CastVBAparam(.item(21)), CastVBAparam(.item(22)), CastVBAparam(.item(23)), CastVBAparam(.item(24)), CastVBAparam(.item(25)), CastVBAparam(.item(26)), CastVBAparam(.item(27)), CastVBAparam(.item(28)))
                 Case 29
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23), .item(24), .item(25), .item(26), .item(27), .item(28), .item(29))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)), CastVBAparam(.item(20)), CastVBAparam(.item(21)), CastVBAparam(.item(22)), CastVBAparam(.item(23)), CastVBAparam(.item(24)), CastVBAparam(.item(25)), CastVBAparam(.item(26)), CastVBAparam(.item(27)), CastVBAparam(.item(28)), CastVBAparam(.item(29)))
                 Case 30
-                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, .item(1), .item(2), .item(3), .item(4), .item(5), .item(6), .item(7), .item(8), .item(9), .item(10), .item(11), .item(12), .item(13), .item(14), .item(15), .item(16), .item(17), .item(18), .item(19), .item(20), .item(21), .item(22), .item(23), .item(24), .item(25), .item(26), .item(27), .item(28), .item(29), .item(30))
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)), CastVBAparam(.item(20)), CastVBAparam(.item(21)), CastVBAparam(.item(22)), CastVBAparam(.item(23)), CastVBAparam(.item(24)), CastVBAparam(.item(25)), CastVBAparam(.item(26)), CastVBAparam(.item(27)), CastVBAparam(.item(28)), CastVBAparam(.item(29)), CastVBAparam(.item(30)))
                 Case Else
                     err.Raise vbObjectError + 513, "CallObjectMethod", "Too many arguments: maximum supported is 30."
             End Select
@@ -6979,7 +7012,13 @@ Private Function CallObjectMethod(obj As Variant, methodName As Variant, Optiona
     PopCallTrace CStr(methodName), CallObjectMethod
 End Function
 
-
+Private Function CastVBAparam(aValue As Variant) As Variant
+    If IsArray(aValue) And Not IsObject(aValue) Then
+        CastVBAparam = ASFto2Darray(aValue)
+    Else
+        vAssignment CastVBAparam, aValue
+    End If
+End Function
 ' ---------------------
 ' End VM class
 ' ---------------------
