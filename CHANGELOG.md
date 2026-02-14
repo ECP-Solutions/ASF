@@ -2,6 +2,138 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [v3.1.1] - 2026-02-14
+https://github.com/ECP-Solutions/ASF/releases/tag/v3.1.1
+
+## Summary
+ASF v3.1.1 enhances Office application integration by enabling seamless data exchange with Excel, Word, PowerPoint and all MS Office applications for comprehensive debugging visibility for automation workflows.
+
+---
+
+## Highlights
+
+- **Added**
+    - **Extended Call Trace for Office Objects** — Full execution tracing with safe formatting for host containers and Office objects.
+
+    - **Bidirectional Array Conversion** — Automatic conversion between VBA 2D arrays and ASF jagged arrays.
+		```vb
+		Dim arr As Variant
+		arr = Array(Array("id", "name", "email"), _
+					Array(1, "John", "john@example.com"), _
+					Array(2, "Jane", "jane@example.com"))
+		
+		engine.InjectVariable "arr", arr
+		pid = engine.Compile("$1.Sheets(1).Range('A1:C3').Value2 = arr")
+		engine.Run pid, ThisWorkbook
+		' ASF converts jagged --> 2D for Range.Value2 assignment
+		
+		' ASF --> VBA: Excel ranges returned as properly formatted jagged arrays
+		pid = engine.Compile("return $1.Sheets(1).Range('A1:C3').Value2")
+		result = engine.Run(pid, ThisWorkbook)
+		' ASF converts 2D --> jagged for internal processing
+		```
+    - **Safe VBA Parameter Marshaling** — Proper array conversion for `CallByName` operations:
+        ```vb
+        ' Internal: CastVBAparam() ensures proper 2D array format
+        ' ASF jagged arrays --> VBA 2D arrays for method calls
+        
+        pid = engine.Compile("$1.Sheets(1).Range('A1:F11').Value2 = arr; return $1.Sheets(1).Range('A1:F11').Value2")
+        result = engine.Run(pid, ThisWorkbook)
+        
+        ' Internally:
+        ' 1. arr (jagged) --> converted to 2D for Range.Value2 setter
+        ' 2. Range.Value2 getter returns 2D --> converted to jagged for ASF
+        ' 3. Final return value converted back as needed
+        ```
+
+- **Improved**
+    - **Call Trace Formatting** — Enhanced console output for complex Office objects:
+        - Safe string representation for Worksheets, Ranges, and other Office objects
+        - Proper formatting of nested arrays in trace output
+        - Type indicators for Office object types (`<Sheets>`, `<Worksheet>`, `<Range>`)
+
+- **Internal core changes**:
+    - **VM** (`ASF_VM.cls`):
+        - **Added** `CastVBAparam()` function for safe VBA parameter conversion
+        - **Modified** `CallObjectMethod()` to wrap all arguments with `CastVBAparam()`
+        - **Enhanced** `ArrayToASF2()` for bidirectional array conversion
+        - **Added** safe object formatting in `PushCallTrace()` for Office objects
+        - **Improved** return value handling to convert 2D arrays to jagged format
+        - Added type checking to preserve object types during conversions
+
+- **Technical Details**:
+    - **Array Conversion Flow**:
+        ```
+        VBA 2D Array → ASF Jagged Array:
+          Input:  Dim arr(1 To 3, 1 To 2) As Variant
+                  arr(1,1) = "A1"  arr(1,2) = "B1"
+                  arr(2,1) = "A2"  arr(2,2) = "B2"
+                  arr(3,1) = "A3"  arr(3,2) = "B3"
+          
+          Output: [ ["A1", "B1"], ["A2", "B2"], ["A3", "B3"] ]
+        
+        ASF Jagged Array → VBA 2D Array:
+          Input:  [ ["A1", "B1"], ["A2", "B2"], ["A3", "B3"] ]
+          
+          Output: arr(1 To 3, 1 To 2)
+                  arr(1,1) = "A1"  arr(1,2) = "B1"
+                  arr(2,1) = "A2"  arr(2,2) = "B2"
+                  arr(3,1) = "A3"  arr(3,2) = "B3"
+        ```
+
+    - **CastVBAparam() Function**:
+        ```
+        Purpose: Convert ASF jagged arrays to VBA 2D arrays for CallByName
+        
+        Input Handling:
+          - Jagged Array → Converted to 2D array
+          - 2D Array → Passed through unchanged
+          - Scalar Values → Passed through unchanged
+          - Objects → Passed through unchanged
+        
+        Usage in CallObjectMethod():
+          Before: CallByName(obj, method, VbGet, .item(1), .item(2))
+          After:  CallByName(obj, method, VbGet, CastVBAparam(.item(1)), CastVBAparam(.item(2)))
+          
+          Ensures: Range.Value2 = jaggedArray works correctly
+        ```
+
+    - **Call Trace Enhancement**:
+        ```
+        Object Type Detection:
+          - TypeName() used to identify Office objects
+          - Special formatting for: Sheets, Worksheet, Range, Document, Presentation
+          - Generic <Object> for unrecognized types
+        
+        Array Formatting:
+          - Small arrays: Full inline display
+          - Large arrays: Formatted with indentation and newlines
+          - Nested structures: Recursive pretty-printing
+        
+        Example Output:
+          CALL: Sheets() -> <Sheets>
+          CALL: range('A1:F11') -> <Range>
+          CALL: Value2() -> [ [ 'id', 'name', 'email' ]
+            [ 1, 'John', 'john@example.com' ]
+            [ 2, 'Jane', 'jane@example.com' ]
+          ]
+        ```
+
+    - **Compatibility Notes**:
+        - Works with all Office applications supporting VBA
+        - Handles native Office applications properties correctly (Excel, Word, PowerPoint, Access)
+        - Maintains backward compatibility with non-Office ASF scripts
+
+---
+
+## Breaking Changes
+
+**None.** This release is fully backward compatible.
+
+---
+
+**Full Changelog**: https://github.com/ECP-Solutions/ASF/compare/v3.1.0...v3.1.1
+
 ## [v3.1.0] - 2026-02-13
 https://github.com/ECP-Solutions/ASF/releases/tag/v3.1.0
 
