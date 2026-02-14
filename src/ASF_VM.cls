@@ -5496,7 +5496,11 @@ Private Function builtin_typeof(v As Variant) As String
         On Error GoTo 0
     End If
     If isArr Then
-        builtin_typeof = "array"
+        If Not IsObject(v) Then
+            builtin_typeof = "array"
+        Else
+            builtin_typeof = "object" & ": <" & TypeName(v) & ">"
+        End If
         Exit Function
     End If
 
