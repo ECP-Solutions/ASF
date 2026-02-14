@@ -321,7 +321,7 @@ Public Sub RunProgramByIndex(idx As Long, Optional params As Variant = Empty)
                 If CAST_INJECTED_VARIABLES_ And Not APPLICATION_ACCESS_ Then
                     progScope.SetValue "$" & CStr(phid), CastInjectedVar(params(pk))
                 Else
-                    If IsArray(params(pk)) Then
+                    If IsArray(params(pk)) And Not IsObject(params(pk)) Then
                         progScope.SetValue "$" & CStr(phid), ArrayToASF2(params(pk))
                     Else
                         progScope.SetValue "$" & CStr(phid), params(pk)
@@ -524,12 +524,16 @@ Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As
 
     ' If base is an array/string, the member can be a call with missing parents
     If TypeName(baseVal) = "String" Or IsArray(baseVal) Then
-        Dim tmpNode As ASF_Map: Set tmpNode = MakeNode("Call")
-        Dim tmpArgs As New Collection
-        tmpNode.SetValue "callee", node
-        tmpNode.SetValue "args", tmpArgs
-        vAssignment EvalMemberNode, EvalExprNode(tmpNode, progScope)
-        Set tmpArgs = Nothing
+        If IsObject(baseVal) Then 'An object identified as an array
+            vAssignment EvalMemberNode, CallObjectMethod(baseVal, prop)
+        Else
+            Dim tmpNode As ASF_Map: Set tmpNode = MakeNode("Call")
+            Dim tmpArgs As New Collection
+            tmpNode.SetValue "callee", node
+            tmpNode.SetValue "args", tmpArgs
+            vAssignment EvalMemberNode, EvalExprNode(tmpNode, progScope)
+            Set tmpArgs = Nothing
+        End If
         Exit Function
     End If
     
@@ -6962,7 +6966,7 @@ Private Function CallObjectMethod(obj As Variant, methodName As Variant, Optiona
             End Select
         End With
     End If
-    If IsArray(tmpResult) Then
+    If IsArray(tmpResult) And Not IsObject(tmpResult) Then
         CallObjectMethod = ArrayToASF2(tmpResult)
     Else
         vAssignment CallObjectMethod, tmpResult
