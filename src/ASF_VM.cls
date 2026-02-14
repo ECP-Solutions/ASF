@@ -6972,7 +6972,7 @@ Private Function CallObjectMethod(obj As Variant, methodName As Variant, Optiona
         vAssignment CallObjectMethod, tmpResult
     End If
     ' Trace: Pop call with return value
-    PopCallTrace CStr(methodName), tmpResult
+    PopCallTrace CStr(methodName), CallObjectMethod
 End Function
 
 
