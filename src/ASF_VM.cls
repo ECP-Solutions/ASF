@@ -329,7 +329,7 @@ Public Sub RunProgramByIndex(idx As Long, Optional params As Variant = Empty)
                 End If
             Next pk
         Else
-            If CAST_INJECTED_VARIABLES_ Then
+            If CAST_INJECTED_VARIABLES_ And Not APPLICATION_ACCESS_ Then
                 progScope.SetValue "$1", CastInjectedVar(params)
             Else
                 progScope.SetValue "$1", params
@@ -532,6 +532,7 @@ Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As
         Set tmpArgs = Nothing
         Exit Function
     End If
+    
     ' Delegate to Application.
     vAssignment EvalMemberNode, CallObjectMethod(baseVal, prop)
     Exit Function
