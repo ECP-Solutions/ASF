@@ -5516,7 +5516,7 @@ Private Function builtin_typeof(v As Variant) As String
             Exit Function
         End If
         ' other COM/host objects
-        builtin_typeof = "object"
+        builtin_typeof = "object" & ": <" & TypeName(v) & ">"
         Exit Function
     End If
 
