@@ -4295,7 +4295,11 @@ Private Function ValueToStringWithCtx(v As Variant, visited As Collection, depth
 
     ' Arrays (native VBA arrays)
     If IsArray(v) Then
-        ValueToStringWithCtx = ArrayToString(v, visited, depth)
+        If Not IsObject(v) Then
+            ValueToStringWithCtx = ArrayToString(v, visited, depth)
+        Else
+            ValueToStringWithCtx = "<" & TypeName(v) & ">"
+        End If
         Exit Function
     End If
 
