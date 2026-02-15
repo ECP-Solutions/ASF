@@ -23,6 +23,7 @@ This document describes the runtime API exposed by ASF scripts and the VM builti
 - Array and String methods (exposed as properties)
 - Regex Object 
 - Object methods / member behavior
+- Office Application Integration
 - [VBA Expressions](https://github.com/ECP-Solutions/VBA-Expressions) integration
 - Error & truthiness rules
 - Examples & usage patterns
@@ -32,6 +33,7 @@ This document describes the runtime API exposed by ASF scripts and the VM builti
 ## Runtime model & conventions
 
 - **Program**: a compiled AST that can be executed by the VM. The ASF host exposes `.Compile(script)` → programIndex and `.Run(programIndex)` to run. The `Run` method returns the result of the program being executed.
+- **AppAccess**: Boolean property controlling Office object access (default: `False`). When `True`, scripts can access Office objects passed as runtime parameters (`$1`, `$2`, etc.). Always disable when not needed for security.
 - **Scope / closures**: closures capture the environment by reference (shared-write semantics). That means nested functions can mutate outer-scope variables and see changes across closures.
 - **Indexing base**: arrays honor `__option_base` set in runtime globals (commonly 0 or 1). All array helpers and methods handle this consistently.
 - **Call signature for array callbacks**:
@@ -435,10 +437,111 @@ This design allows `a.map(fn)` and `f = a.map; f(fn)` to behave consistently.
 
 ---
 
+## Office Application Integration
+
+ASF v3.1.0+ provides native Office object support with seamless array marshaling and comprehensive type introspection.
+
+### AppAccess Property
+
+Enable Office object access via the `AppAccess` property (default: `False`):
+
+```vb
+Dim engine As New ASF
+engine.AppAccess = True  ' Enable Office object access
+
+pid = engine.Compile("return $1.name")
+result = engine.Run(pid, ThisWorkbook)
+```
+
+**Security:** `AppAccess` controls whether scripts can access Office objects passed as runtime parameters (`$1`, `$2`, etc.). Always disable when not needed.
+
+### Native Office Object Support
+
+When `AppAccess = True`, scripts can directly interact with Excel, Word, PowerPoint, Outlook, and Access objects:
+
+```javascript
+// Excel
+let wb = $1;                        // Workbook object
+let sheets = $1.sheets;             // Sheets collection
+let sheet = $1.sheets(1);           // Worksheet object
+let range = $1.sheets(1).range('A1:C10');  // Range object
+let data = range.value;             // Read data
+
+// Word
+let doc = $1;                       // Document object
+let para = $1.paragraphs(1);        // Paragraph object
+let text = para.range.text;         // Text content
+
+// PowerPoint
+let pres = $1;                      // Presentation object
+let slides = $1.slides;             // Slides collection
+let shapes = $1.slides(1).shapes;   // Shapes collection
+```
+
+### Enhanced typeof for Office Objects
+
+The `typeof` operator returns formatted type information for VBA objects:
+
+```javascript
+// Basic types (unchanged)
+typeof 42;              // 'number'
+typeof 'hello';         // 'string'
+typeof [1,2,3];         // 'array'
+typeof {};              // 'object'
+
+// VBA Collections and Dictionaries
+typeof <Collection>;    // 'object: <Collection>'
+typeof <Dictionary>;    // 'object: <Dictionary>'
+
+// Excel objects
+typeof $1;                          // 'object: <Workbook>'
+typeof $1.sheets;                   // 'object: <Sheets>'
+typeof $1.sheets(1);                // 'object: <Worksheet>'
+typeof $1.sheets(1).range('A1');    // 'object: <Range>'
+
+// Word objects
+typeof <Document>;      // 'object: <Document>'
+typeof <Paragraphs>;    // 'object: <Paragraphs>'
+
+// PowerPoint objects
+typeof <Presentation>;  // 'object: <Presentation>'
+typeof <Slides>;        // 'object: <Slides>'
+
+// Other Office applications
+typeof <Application>;   // 'object: <Application>'
+```
+
+**Implementation:** Safe string formatting detects TypeName and returns formatted type indicators. Uses angle brackets to distinguish from ASF objects.
+
+### Call Tracing for Office Objects
+
+When tracing is enabled, Office objects display with type indicators:
+
+```
+CALL: Sheets() -> <Sheets>
+CALL: range('A1:F11') -> <Range>
+CALL: Value2() -> [
+    ['id', 'name', 'email']
+    [1, 'John', 'john@example.com']
+    [2, 'Jane', 'jane@example.com']
+]
+```
+
+Arrays are pretty-printed with proper indentation for readability.
+
+### Compatibility
+
+- Works with Excel, Word, PowerPoint, Outlook, Access
+- Handles all native Office properties and methods
+- Maintains backward compatibility with non-Office ASF scripts
+- No dependencies on external COM objects
+
+---
+
 ## VBA Expressions integration
 
 - `@( ... )` syntax embeds raw VBAexpressions. The string inside is evaluated by the VBA Expressions evaluator at runtime and its result is returned to the script.
-- Use-case: matrix operations, calling VBA functions/worksheet UDFs, or invoking existing code via the `gExprEvaluator` bridge.
+- Use-case: matrix operations, advanced math functions. 
 
 ---
 
