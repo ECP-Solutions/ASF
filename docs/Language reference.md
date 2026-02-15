@@ -8,7 +8,7 @@ description: "ASF Language Documentation."
 
 # ASF Language Documentation
 
-Version 1.0 | Complete Language Reference
+Version 1.0.1| Complete Language Reference
 
 ---
 
@@ -34,7 +34,8 @@ Version 1.0 | Complete Language Reference
 18. [Regular Expressions](#regular-expressions)
 19. [Error Handling](#error-handling)
 20. [VBA Integration](#vba-integration)
-21. [Best Practices](#best-practices)
+21. [Office Application Integration](#office-application-integration)
+22. [Best Practices](#best-practices)
 
 ---
 
@@ -2311,6 +2312,7 @@ print({ name: 'John', age: 30 });
 Return type as string:
 
 ```javascript
+// Basic types
 typeof 42;          // 'number'
 typeof 'hello';     // 'string'
 typeof true;        // 'boolean'
@@ -2319,6 +2321,16 @@ typeof undefined;   // 'undefined'
 typeof [1, 2, 3];   // 'array'
 typeof {};          // 'object'
 typeof fun() {};    // 'function'
+
+// VBA object types (when AppAccess = True)
+typeof $1;                          // 'object: <Workbook>'
+typeof $1.sheets;                   // 'object: <Sheets>'
+typeof $1.sheets(1);                // 'object: <Worksheet>'
+typeof $1.sheets(1).range('A1');    // 'object: <Range>'
+
+// VBA Collections and Dictionaries
+// typeof <Collection instance>      // 'object: <Collection>'
+// typeof <Dictionary instance>      // 'object: <Dictionary>'
 ```
 
 #### isArray
@@ -2976,27 +2988,6 @@ let c = @({-3;0;-10});
 print(@(MROUND(LUDECOMP(ARRAY(a;b;c));4)))
 ```
 
-### Call to native VBA Functions
-Functions with a single `Variant` argument can be invoked from ASF through the VBA-Expressions library
-
-```vb
-Dim asfGlobals As New ASF_Globals
-Dim progIdx  As Long
-With asfGlobals
-	.ASF_InitGlobals
-	.gExprEvaluator.DeclareUDF "ThisWBname", "UserDefFunctions"
-End With
-Set scriptEngine = New ASF
-With scriptEngine
-	.SetGlobals asfGlobals
-	progIdx = .Compile("/*Get Thisworkbook name*/ return(@(ThisWBname()))")
-	.Run progIdx
-	Debug.Print CStr(.OUTPUT_)
-End With
-```
-
->**Notes**: In the above example, the `ThisWBname` function is coded in the `UDFunctions.cls` class module. And the callback is defined in the `VBAcallBack.cls` class module as `Public UserDefFunctions As New UDFunctions`. Each UDF will receive a single evaluated array of strings, containing all the arguments given. In this way, the ASF remains sandboxed and secure at runtime. Users can add new class module with custom functions and declare them with the `DeclareUDF` method as `<exprEvaluator>.DeclareUDF <functionName>, <alias>`; where `<alias>` is a custom name given to Variable holding an instance of the target class module.
-
 ### Injecting VBA Values
 
 From VBA, inject values into ASF:
@@ -3028,6 +3019,169 @@ engine.Run idx
 Dim result As Variant
 result = engine.OUTPUT_
 Debug.Print result  ' Prints: 30
+```
+
+---
+
+## Office Application Integration
+
+### Overview
+
+ASF v3.1.0+ provides **native Office object support**, enabling seamless interaction with Excel, Word, PowerPoint, Outlook, and Access directly from ASF scripts. This integration includes full property chaining, method invocation, and bidirectional array marshaling.
+
+### AppAccess Property
+
+Control Office object access with the `AppAccess` security property:
+
+```vb
+Dim engine As New ASF
+
+' Enable Office object access (default: False)
+engine.AppAccess = True
+
+' Now scripts can access Office objects via $1, $2, etc.
+pid = engine.Compile("return $1.name")
+result = engine.Run(pid, ThisWorkbook)
+```
+
+**Security Note:** `AppAccess` is `False` by default. Enable only when scripts need to interact with Office applications.
+
+### Excel Integration
+
+#### Accessing Workbooks and Sheets
+
+```vb
+Dim engine As New ASF
+engine.AppAccess = True
+
+' Access workbook properties
+pid = engine.Compile("return $1.name")
+wbName = engine.Run(pid, ThisWorkbook)
+
+' Access sheets
+pid = engine.Compile("return $1.sheets.count")
+sheetCount = engine.Run(pid, ThisWorkbook)
+
+' Access specific sheet
+pid = engine.Compile("return $1.sheets(1).name")
+sheetName = engine.Run(pid, ThisWorkbook)
+```
+
+#### Working with Ranges
+
+```javascript
+// Read from range
+let data = $1.sheets(1).range('A1:C10').value2;
+
+// Write to range
+$1.sheets(1).range('D1').value2 = 'Total';
+
+// Property chaining
+let cellValue = $1.sheets(1).range('A1').value2;
+```
+
+### Word Integration
+
+#### Accessing Document Objects
+
+```vb
+Dim engine As New ASF
+engine.AppAccess = True
+
+' Get paragraph text
+pid = engine.Compile("return $1.paragraphs(1).range.text")
+text = engine.Run(pid, ActiveDocument)
+
+' Count paragraphs
+pid = engine.Compile("return $1.paragraphs.count")
+count = engine.Run(pid, ActiveDocument)
+```
+
+### PowerPoint Integration
+
+#### Accessing Presentation Objects
+
+```vb
+Dim engine As New ASF
+engine.AppAccess = True
+
+' Get slide count
+pid = engine.Compile("return $1.slides.count")
+slideCount = engine.Run(pid, ActivePresentation)
+
+' Access shapes on a slide
+pid = engine.Compile("return $1.slides(1).shapes.count")
+shapeCount = engine.Run(pid, ActivePresentation)
+```
+
+### Bidirectional Array Conversion
+
+ASF v3.1.1+ automatically converts between ASF jagged arrays and VBA 2D arrays when interacting with Office objects:
+
+```vb
+Dim engine As New ASF
+engine.AppAccess = True
+
+' ASF jagged array → VBA 2D array (automatic)
+Dim code As String
+code = "let data = [['id', 'name'], [1, 'John'], [2, 'Jane']]; " & _
+       "$1.sheets(1).range('A1:B3').value2 = data;"  ' Automatic conversion!
+
+engine.Run engine.Compile(code), ThisWorkbook
+
+' VBA 2D array → ASF jagged array (automatic)
+code = "let range = $1.sheets(1).range('A1:B3').value2; " & _
+       "return range[0][0];"  ' Automatic conversion!
+       
+result = engine.Run(engine.Compile(code), ThisWorkbook)
+```
+
+**How It Works:**
+- When assigning ASF arrays to `Range.Value2`, automatic conversion to VBA 2D arrays
+- When reading `Range.Value2`, automatic conversion to ASF jagged arrays
+- Transparent to the script author - just works!
+
+### Enhanced typeof for Office Objects
+
+The `typeof` operator provides detailed type information for VBA objects:
+
+```javascript
+// VBA Collections
+let coll = /* New Collection */;
+typeof coll;  // 'object: <Collection>'
+
+// Scripting Dictionary
+let dict = /* CreateObject("Scripting.Dictionary") */;
+typeof dict;  // 'object: <Dictionary>'
+
+// Excel objects
+typeof $1;                          // 'object: <Workbook>'
+typeof $1.sheets;                   // 'object: <Sheets>'
+typeof $1.sheets(1);                // 'object: <Worksheet>'
+typeof $1.sheets(1).range('A1');    // 'object: <Range>'
+
+// Other Office applications
+// Word: 'object: <Document>', 'object: <Paragraphs>'
+// PowerPoint: 'object: <Presentation>', 'object: <Slides>'
+```
+
+### Security Best Practices
+
+1. **Disable AppAccess by default**: Only enable when needed
+2. **Validate input**: Sanitize user input before passing to Office objects
+3. **Limit scope**: Pass specific objects (e.g., single worksheet) rather than entire workbook
+4. **Error handling**: Wrap Office interactions in try-catch blocks
+
+```vb
+' Good: Limited scope
+engine.AppAccess = True
+Set targetSheet = ThisWorkbook.Sheets("Data")
+result = engine.Run(pid, targetSheet)
+
+' Better: Disable after use
+engine.AppAccess = True
+result = engine.Run(pid, ThisWorkbook)
+engine.AppAccess = False
 ```
 
 ---
@@ -3299,4 +3453,4 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 **End of Documentation**
 
-Version 1.0 | Last Updated:January 2026
+Version 1.0.1 | Last Updated:February 2026
