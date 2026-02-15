@@ -103,13 +103,12 @@ Live coding|![ASF-code](/docs/assets/img/ASF.gif)
 
 - Simple macros (e.g., `Range("A1").Value = 10`)
 - Performance-critical tight loops (millions of iterations)
-- Direct Excel object model manipulation (formatting, charts)
-- Interacting with COM objects extensively
+- Interacting with COM or application host objects extensively
 - You need VBA's compile-time type checking
 
 ### 🤝 Use BOTH When
 
-- Complex business logic + Excel automation (ASF for logic, VBA for Excel API)
+- Complex business logic + Excel automation (ASF for logic an non heavy API, VBA for speed boost)
 - You need rapid iteration on algorithms but final performance matters (prototype in ASF, optimize hotspots in VBA)
 
 **Think of ASF like Excel's `LAMBDA`:** Not a replacement for formulas, but a powerful addition when complexity demands it.
