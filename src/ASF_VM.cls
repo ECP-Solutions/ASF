@@ -1603,18 +1603,10 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                     
                     vAssignment baseValLocal, EvalExprNode(calleeExpr.GetValue("base"), progScope)
                     If TypeName(baseValLocal) = "Collection" Then
-                        Dim builtinMethodsNames As Variant
                         Dim i As Long
                         Dim knownMethod As Boolean
-                        builtinMethodsNames = Array("push", "pop", "foreach", "unique", "concat", _
-                                                    "tostring", "join", "shift", "unshift", "delete", _
-                                                    "splice", "tospliced", "at", "copywithin", "entries", _
-                                                    "every", "find", "findindex", "findlast", "findlastindex", _
-                                                    "from", "includes", "indexof", "lastindexof", "of", _
-                                                    "reverse", "toreversed", "some", "with", "sort", _
-                                                    "tosorted")
-                        For i = LBound(builtinMethodsNames) To UBound(builtinMethodsNames)
-                            knownMethod = (builtinMethodsNames(i) = propN)
+                        For i = LBound(GLOBALS_.builtinArrayMethods) To UBound(GLOBALS_.builtinArrayMethods)
+                            knownMethod = (GLOBALS_.builtinArrayMethods(i) = propN)
                             If knownMethod Then Exit For
                         Next i
                         If Not knownMethod Then

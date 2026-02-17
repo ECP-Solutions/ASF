@@ -26,6 +26,7 @@ Public gCallStack As Collection
 Public gExprEvaluator As VBAexpressions
 Public re As ASF_RegexEngine
 Private MAX_CALL_DEPTH_ As Long
+Public builtinArrayMethods As Variant
 
 Public Function ASF_InitGlobals() As ASF_Globals
     If gPrograms Is Nothing Then Set gPrograms = New Collection
@@ -44,6 +45,15 @@ Public Function ASF_InitGlobals() As ASF_Globals
     STRICT_STRINGS = True
     MAX_CALL_DEPTH_ = 512
     CURRENT_MODULE_PATH = vbNullString
+    If IsEmpty(builtinArrayMethods) Then
+        builtinArrayMethods = Array("push", "pop", "foreach", "unique", "concat", _
+                                    "tostring", "join", "shift", "unshift", "delete", _
+                                    "splice", "tospliced", "at", "copywithin", "entries", _
+                                    "every", "find", "findindex", "findlast", "findlastindex", _
+                                    "from", "includes", "indexof", "lastindexof", "of", _
+                                    "reverse", "toreversed", "some", "with", "sort", _
+                                    "tosorted")
+    End If
     Set ASF_InitGlobals = Me
 End Function
 Public Property Get MAX_CALL_DEPTH() As Long
