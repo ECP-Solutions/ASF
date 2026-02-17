@@ -160,8 +160,8 @@ Public Function items() As Collection
     Set items = out
 End Function
 ' Count property
-Public Property Get count() As Long
-    count = pKeys.index + 1
+Public Property Get Count() As Long
+    Count = pKeys.index + 1
 End Property
 ' Clear
 Public Sub Clear()
@@ -172,7 +172,7 @@ Public Function Clone() As ASF_Map
     Dim m As New ASF_Map
     Dim k As Long
     For k = 0 To pKeys.index
-        If TypeName(pItems.Storage(k)) = "ASF_Map" Then
+        If typeName(pItems.Storage(k)) = "ASF_Map" Then
             m.Add CStr(pKeys.Storage(k)), pItems.Storage(k).Clone
         Else
             m.Add CStr(pKeys.Storage(k)), pItems.Storage(k)
