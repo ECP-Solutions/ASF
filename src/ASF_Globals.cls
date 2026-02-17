@@ -46,13 +46,14 @@ Public Function ASF_InitGlobals() As ASF_Globals
     MAX_CALL_DEPTH_ = 512
     CURRENT_MODULE_PATH = vbNullString
     If IsEmpty(builtinArrayMethods) Then
-        builtinArrayMethods = Array("push", "pop", "foreach", "unique", "concat", _
-                                    "tostring", "join", "shift", "unshift", "delete", _
-                                    "splice", "tospliced", "at", "copywithin", "entries", _
-                                    "every", "find", "findindex", "findlast", "findlastindex", _
-                                    "from", "includes", "indexof", "lastindexof", "of", _
-                                    "reverse", "toreversed", "some", "with", "sort", _
-                                    "tosorted")
+        builtinArrayMethods = Array("length", "map", "filter", "reduce", "slice", "push", _
+                                    "pop", "foreach", "unique", "concat", "tostring", _
+                                    "join", "shift", "unshift", "delete", "splice", _
+                                    "tospliced", "at", "copywithin", "entries", "every", _
+                                    "find", "findindex", "findlast", "findlastindex", _
+                                    "from", "includes", "indexof", "lastindexof", _
+                                    "of", "reverse", "toreversed", "some", "with", _
+                                    "sort", "tosorted")
     End If
     Set ASF_InitGlobals = Me
 End Function
