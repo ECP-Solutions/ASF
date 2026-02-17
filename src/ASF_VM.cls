@@ -1618,6 +1618,8 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                 isSpecialColl = tmpBaseLocal.GetValue("name") = "Math"
                             End If
                             GoTo CallCollMethod
+                        Else
+                            baseValLocal = CollToASF(baseValLocal, False)
                         End If
                     End If
                     If IsArray(baseValLocal) Then
