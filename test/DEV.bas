@@ -19,8 +19,8 @@ Private Sub test()
                             "    return result;" & _
                             " };" & _
                             " let myData = $1.Sheets(1).ListObjects('Demo_Table').ListRows.map(" & _
-                            "     fun(row) {" & _
-                            "         return row.asDictionary().Get('ip_address');" & _
+                            "     fun(col) {" & _
+                            "         return col.asDictionary().Get('ip_address');" & _
                             "      }" & _
                             " ); print(myData[5])")
         .Run progIdx, ThisWorkbook
