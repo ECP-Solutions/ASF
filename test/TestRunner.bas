@@ -4019,9 +4019,9 @@ Private Sub calling_native_function_app_level()
         .AppAccess = True
         progIdx = .Compile("/*Get collection item*/ return($1.item('myNumber'))")
         .Run progIdx, col
-        actual = CStr(.OUTPUT_)
+        actual = .OUTPUT_
     End With
-    expected = "5"
+    expected = 5
     Assert.AreEqual expected, actual
 TestExit:
     Exit Sub
