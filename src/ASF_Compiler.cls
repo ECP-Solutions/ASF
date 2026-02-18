@@ -50,9 +50,9 @@ Private Function CloneCollectionOfVariants(src As Variant) As Collection
     Dim it As Variant
     For Each it In src
         If IsObject(it) Then
-            If TypeName(it) = "ASF_Map" Then
+            If typeName(it) = "ASF_Map" Then
                 out.Add it.Clone
-            ElseIf TypeName(it) = "Collection" Then
+            ElseIf typeName(it) = "Collection" Then
                 out.Add CloneCollectionOfVariants(it)
             Else
                 out.Add it
@@ -156,7 +156,7 @@ Compiler_MainLoop:
         End If
         
         ' Function definition at top-level
-        If toks(i)(0) = "IDENT" And LCase$(toks(i)(1)) = "fun" Then
+        If toks(i)(0) = "IDENT" And toks(i)(1) = "fun" Then
             i = i + 1
             ' skip comments
             Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
@@ -276,10 +276,16 @@ Compiler_MainLoop:
             If i <= toks.Count Then i = i + 1
             GoTo Compiler_MainLoop
             
-        ElseIf toks(i)(0) = "IDENT" And LCase$(toks(i)(1)) = "class" Then
+        ElseIf toks(i)(0) = "IDENT" And toks(i)(1) = "class" Then
             ' Class definition at top-level
             Set classNode = ParseClassDecl(toks, i)
             stmtsAST.Add classNode
+            GoTo Compiler_MainLoop
+        ElseIf toks(i)(0) = "IDENT" And toks(i)(1) = "prototype" Then
+            ' Prototype definition at top-level
+            Dim prototypeNode As ASF_Map
+            Set prototypeNode = ParsePrototypeStatement(toks, i)
+            stmtsAST.Add prototypeNode
             GoTo Compiler_MainLoop
         Else
             ' collect a top-level statement tokens (nesting-aware) then parse to AST node
@@ -3953,6 +3959,156 @@ Private Function ParseExportStatement(toks As Collection, ByRef i As Long) As AS
     End If
     
     err.Raise vbObjectError + 8013, "Compiler.ParseExportStatement", "Invalid export syntax"
+End Function
+' ---------------------
+' Parse Prototype Statement: Prototype.COM.<classtype> <methodname>(<params>){<body>};
+' ---------------------
+Private Function ParsePrototypeStatement(toks As Collection, ByRef i As Long) As ASF_Map
+    Dim prototypeNode As ASF_Map: Set prototypeNode = MakeNode("Prototype")
+    
+    i = i + 1 ' Skip 'Prototype'
+    ' Skip comments
+    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+        i = i + 1
+    Loop
+    ' Expect '.'
+    If i > toks.Count Or Not (toks(i)(0) = "SYM" And toks(i)(1) = ".") Then
+        err.Raise vbObjectError + 9100, "Compiler.ParsePrototypeStatement", "Expected '.' after Prototype"
+    End If
+    i = i + 1
+    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+        i = i + 1
+    Loop
+    ' Expect 'COM'
+    If i > toks.Count Or Not (toks(i)(0) = "IDENT" And toks(i)(1) = "COM") Then
+        err.Raise vbObjectError + 9101, "Compiler.ParsePrototypeStatement", "Expected 'COM' after Prototype."
+    End If
+    i = i + 1
+    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+        i = i + 1
+    Loop
+    ' Expect '.'
+    If i > toks.Count Or Not (toks(i)(0) = "SYM" And toks(i)(1) = ".") Then
+        err.Raise vbObjectError + 9102, "Compiler.ParsePrototypeStatement", "Expected '.' after COM"
+    End If
+    i = i + 1
+    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+        i = i + 1
+    Loop
+    ' Get class type
+    If i > toks.Count Or toks(i)(0) <> "IDENT" Then
+        err.Raise vbObjectError + 9103, "Compiler.ParsePrototypeStatement", "Expected class type after Prototype.COM."
+    End If
+    Dim classType As String: classType = toks(i)(1)
+    i = i + 1
+    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+        i = i + 1
+    Loop
+    ' Get method name
+    If i > toks.Count Or toks(i)(0) <> "IDENT" Then
+        err.Raise vbObjectError + 9104, "Compiler.ParsePrototypeStatement", "Expected method name"
+    End If
+    Dim methodName As String: methodName = toks(i)(1)
+    i = i + 1
+    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+        i = i + 1
+    Loop
+    ' Parse parameters
+    Dim argList As New Collection
+    Dim hasRestParam As Boolean: hasRestParam = False
+    Dim restParamName As String: restParamName = vbNullString
+    
+    If i <= toks.Count And toks(i)(0) = "PAREN" And toks(i)(1) = "(" Then
+        i = i + 1
+        Do While i <= toks.Count And Not (safeTVRetInner(toks, i, 0) = "PAREN" And safeTVRetInner(toks, i, 1) = ")")
+            If toks(i)(0) = "COMMENT" Then
+                i = i + 1
+            Else
+                ' Check for rest parameter (...)
+                If (toks(i)(0) = "SPREAD" Or toks(i)(0) = "OP") And toks(i)(1) = "..." Then
+                    ' Next token should be parameter name
+                    i = i + 1
+                    If i > toks.Count Or toks(i)(0) <> "IDENT" Then
+                        err.Raise vbObjectError + 9105, "Compiler.ParsePrototypeStatement", "Expected parameter name after ..."
+                    End If
+                    If hasRestParam Then
+                        err.Raise vbObjectError + 9106, "Compiler.ParsePrototypeStatement", "Multiple rest parameters not allowed"
+                    End If
+                    restParamName = toks(i)(1)
+                    hasRestParam = True
+                    i = i + 1
+                Else
+                    ' Regular parameter
+                    If hasRestParam Then
+                        err.Raise vbObjectError + 9107, "Compiler.ParsePrototypeStatement", "Rest parameter must be last parameter"
+                    End If
+                    If toks(i)(0) = "IDENT" Then argList.Add toks(i)(1)
+                    i = i + 1
+                End If
+            End If
+        Loop
+        If i <= toks.Count And toks(i)(0) = "PAREN" And toks(i)(1) = ")" Then i = i + 1
+    End If
+    Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
+        i = i + 1
+    Loop
+    ' Expect function body
+    If i > toks.Count Or Not (toks(i)(0) = "PAREN" And toks(i)(1) = "{") Then
+        err.Raise vbObjectError + 9108, "Compiler.ParsePrototypeStatement", "Expected method body"
+    End If
+    ' Collect function body
+    i = i + 1
+    Dim depth As Long: depth = 0
+    Dim bodyTokens As New Collection
+    Do While i <= toks.Count
+        If toks(i)(0) = "PAREN" Then
+            If toks(i)(1) = "{" Then
+                depth = depth + 1
+            ElseIf toks(i)(1) = "}" Then
+                If depth = 0 Then
+                    Exit Do
+                Else
+                    depth = depth - 1
+                End If
+            End If
+        End If
+        bodyTokens.Add toks(i)
+        i = i + 1
+    Loop
+    ' Create internal function name for the prototype method
+    Dim internalFuncName As String
+    internalFuncName = "__PROTOTYPE_" & UCase$(classType) & "_" & UCase$(methodName)
+    ' Compile the function
+    Dim funcIdx As Long
+    If hasRestParam Then
+        funcIdx = CompileFunctionASTWithRest(internalFuncName, argList, bodyTokens, restParamName)
+    Else
+        funcIdx = CompileFunctionAST(internalFuncName, argList, bodyTokens)
+    End If
+    GLOBALS_.gFuncTable.Add internalFuncName, funcIdx
+    ' Store parameters for the function
+    Dim pa() As String
+    If argList.Count > 0 Then
+        ReDim pa(0 To argList.Count - 1)
+        Dim j As Long
+        For j = 1 To argList.Count
+            pa(j - 1) = argList(j)
+        Next j
+    Else
+        ReDim pa(0 To 0)
+        pa(0) = vbNullString
+    End If
+    GLOBALS_.gFuncParams.Add internalFuncName, pa
+    ' Store prototype information in the node
+    prototypeNode.SetValue "classType", classType
+    prototypeNode.SetValue "methodName", methodName
+    prototypeNode.SetValue "funcIndex", funcIdx
+    prototypeNode.SetValue "internalFuncName", internalFuncName
+    prototypeNode.SetValue "params", argList
+    ' Skip closing brace
+    If i <= toks.Count Then i = i + 1
+    
+    Set ParsePrototypeStatement = prototypeNode
 End Function
 ' ---------------------
 ' End Compiler class
