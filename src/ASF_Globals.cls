@@ -26,25 +26,7 @@ Public gCallStack As Collection
 Public gExprEvaluator As VBAexpressions
 Public re As ASF_RegexEngine
 Private MAX_CALL_DEPTH_ As Long
-Public builtinArrayMethods As Variant
-Public knownMSOcollections  As Variant
-Private Const MSOColStr As String = "ActionSettings,Actions,AddIns,AddressEntries,AddressLists,Adjustments,AllDatabaseDiagrams,AllForms,AllFunctions," & _
-                                    "AllMacros,AllModules,AllQueries,AllReports,AllStoredProcedures,AllTables,AllViews,AllowEditRanges,AnimationBehaviors," & _
-                                    "AnimationPoints,Areas,Axes,Bookmarks,Borders,Breaks,CalculatedFields,CalculatedItems,CalculatedMembers,Cells," & _
-                                    "Characters,ChartGroups,ChartObjects,Charts,Collection,Collections,Columns,Comments,Containers,Controls,CubeFields," & _
-                                    "CustomLabels,CustomProperties,CustomViews,DataLabels,Departments,Dialogs,Dictionaries,Dictionary,DocumentWindows," & _
-                                    "Documents,Editors,EmailSignatureEntries,Endnotes,FieldLinks,Fields,FileConverters,Filters,FirstLetterExceptions," & _
-                                    "FontNames,Fonts,Footnotes,FormFields,Frames,GroupShapes,HeadersFooters,HeadingStyles,Hyperlinks,Indexes,InlineShapes," & _
-                                    "ItemProperties,JPEGFiles,KeyBindings,KeysBoundTo,Languages,LegendEntries,Lines,ListColumns,ListEntries,ListItems," & _
-                                    "ListLevels,ListObjects,ListParagraphs,ListRows,ListTemplates,Lists,MailMergeDataFields,MailMergeFieldNames,MailMergeFields," & _
-                                    "MappedDataFields,NameSpaces,NamedSlideShows,Names,ODBCErrors,OLEDBErrors,OLEObjects,OtherCorrectionsExceptions," & _
-                                    "OutlookBarGroups,OutlookBarShortcuts,Pages,Panes,Paragraphs,Parameters,Phonetics,PivotCaches,PivotFields,PivotFormulas," & _
-                                    "PivotItemList,PivotItems,PivotTables,Placeholders,Points,PrintRanges,ProofreadingErrors,PublishObjects,QueryTables," & _
-                                    "Recipients,Rectangles,Regions,Relationships,Reminders,Reports,Results,Revisions,Rules,Scenes,Sections,Sequence,Sequences," & _
-                                    "SeriesCollection,ShapeNodes,Shapes,Slicers,SlideRange,SlideShowWindows,Slides,SmartTagActions,SmartTagRecognizers," & _
-                                    "SmartTagTypes,SmartTags,StyleSheets,Styles,Subdocuments,SyncObjects,TabStops,Tabs,TaskPanes,Tasks,Templates,TextColumns," & _
-                                    "TextStyleLevels,TextStyles,Trendlines,Trends,UsedObjects,VPageBreaks,Variables,Views,Visualizations,Watches,Windows,Words," & _
-                                    "XMLChildNodeSuggestions,XMLNamespaces,XMLNodes,XMLSchemaReferences,XSLTransforms,XmlMaps,Zooms."
+
 Public Function ASF_InitGlobals() As ASF_Globals
     If gPrograms Is Nothing Then Set gPrograms = New Collection
     If gFuncTable Is Nothing Then Set gFuncTable = New ASF_Map
@@ -62,15 +44,6 @@ Public Function ASF_InitGlobals() As ASF_Globals
     STRICT_STRINGS = True
     MAX_CALL_DEPTH_ = 512
     CURRENT_MODULE_PATH = vbNullString
-    If IsEmpty(builtinArrayMethods) Then
-        builtinArrayMethods = Array("at", "concat", "copywithin", "delete", "entries", "every", "filter", "find", "findindex", _
-                                    "findlast", "findlastindex", "foreach", "from", "includes", "indexof", "join", "lastindexof", _
-                                    "length", "map", "of", "pop", "push", "reduce", "reverse", "shift", "slice", "some", "sort", _
-                                    "splice", "toreversed", "tosorted", "tospliced", "tostring", "unique", "unshift", "with")
-    End If
-    If IsEmpty(knownMSOcollections) Then
-        knownMSOcollections = Split(MSOColStr, ",")
-    End If
     Set ASF_InitGlobals = Me
 End Function
 Public Property Get MAX_CALL_DEPTH() As Long

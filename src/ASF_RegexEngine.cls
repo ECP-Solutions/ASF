@@ -541,11 +541,11 @@ Private Sub PropagateFlags(ByVal node As Variant, ByRef flags As String)
     If node Is Nothing Then Exit Sub
     On Error GoTo err_
     
-    If typeName(node) = "Collection" Then
+    If TypeName(node) = "Collection" Then
         Dim t As String
         Dim elm As Variant
         For Each elm In node
-            If typeName(elm) = "Collection" Then
+            If TypeName(elm) = "Collection" Then
                 If NodeExists(elm, "type") Then t = NodeGet(elm, "type")
                 Select Case t
                     Case "lit", "dot"
@@ -805,7 +805,7 @@ Private Sub TraverseForGroups(ByVal node As Variant, ByRef maxIdx As Long)
     If node Is Nothing Then Exit Sub
     On Error GoTo err_
     
-    If typeName(node) = "Collection" Then
+    If TypeName(node) = "Collection" Then
         Dim t As String
         Dim elm As Variant
         Dim tmpIdx As Long
@@ -818,7 +818,7 @@ Private Sub TraverseForGroups(ByVal node As Variant, ByRef maxIdx As Long)
             End If
         End If
         For Each elm In node
-            If typeName(elm) = "Collection" Then
+            If TypeName(elm) = "Collection" Then
                 If NodeExists(elm, "type") Then t = NodeGet(elm, "type")
                 If t = "group" Then
                     If NodeExists(elm, "idx") Then
@@ -1231,7 +1231,7 @@ Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal
                     On Error GoTo 0
         
                     If Not IsEmpty(targetNode) Then
-                        If typeName(targetNode(UBound(targetNode))) = "Collection" Then
+                        If TypeName(targetNode(UBound(targetNode))) = "Collection" Then
                             Dim childNode As Collection: Set childNode = targetNode(UBound(targetNode))
                             Dim snapG() As Long: snapG = CopyCaps()
                             If MatchNode(childNode, subj, pos, recEnd) Then
@@ -1270,7 +1270,7 @@ End Function
 
 
 Private Function MatchSequence(ByVal children As Collection, ByVal subj As String, ByVal pos As Long, Optional ByRef outEnd As Variant) As Boolean
-    If DEBUG_TRACE Then Debug.Print "TRACE MatchSequence start pos=" & pos & " children=" & children.Count
+    If DEBUG_TRACE Then Debug.Print "TRACE MatchSequence start pos=" & pos & " children=" & children.count
     Dim seqSnap() As Long
     Dim rootSnap() As Long: rootSnap = CopyCaps()
     Dim grpSnap() As Long
@@ -1278,7 +1278,7 @@ Private Function MatchSequence(ByVal children As Collection, ByVal subj As Strin
     Dim curPos As Long: curPos = pos
     Dim i As Long
 
-    For i = 1 To children.Count
+    For i = 1 To children.count
         Dim node As Collection: Set node = children(i)
         Dim nodeEnd As Variant
         Dim nodeType As String: nodeType = NodeGet(node, "type")
@@ -1343,7 +1343,7 @@ Private Function MatchSequence(ByVal children As Collection, ByVal subj As Strin
                 Dim remSuccessP As Boolean: remSuccessP = True
                 Dim jP As Long
                 Dim nxtEndP As Variant
-                For jP = i + 1 To children.Count
+                For jP = i + 1 To children.count
                     Dim nxtNodeP As Collection: Set nxtNodeP = children(jP)
                     If DEBUG_TRACE Then Debug.Print "TRACE   quant possessive trying remainder child j=" & jP & " at posTry=" & posTryP & " type=" & NodeGet(nxtNodeP, "type")
                     If Not MatchNode(nxtNodeP, subj, posTryP, nxtEndP) Then
@@ -1398,10 +1398,10 @@ Private Function MatchSequence(ByVal children As Collection, ByVal subj As Strin
                 Dim remSuccess As Boolean: remSuccess = True
                 Dim j As Long
                 Dim nxtEnd As Variant
-                If i + 1 <= children.Count Then
+                If i + 1 <= children.count Then
                     ' Create a sub-collection for remaining children
                     Set remChildren = New Collection
-                    For j = i + 1 To children.Count
+                    For j = i + 1 To children.count
                         remChildren.Add children(j)
                     Next j
                     
@@ -1655,7 +1655,7 @@ Private Function MatchCharClassNode(ByVal node As Collection, ByVal ch As String
     Dim items As Collection: Set items = NodeGet(node, "chars")
     Dim matched2 As Boolean: matched2 = False
     Dim i As Long
-    For i = 1 To items.Count
+    For i = 1 To items.count
         Dim it As Variant: it = items(i)
         If IsArray(it) Then
             If it(0) = "range" Then
@@ -1721,7 +1721,7 @@ Private Function ExpandReplacement(ByVal caps As Collection, ByVal repl As Strin
                 Case "$"
                     out = out & "$": i = i + 2: GoTo ContinueLoop
                 Case "&"
-                    If caps.Count >= 1 Then out = out & CStr(caps.Item(1))
+                    If caps.count >= 1 Then out = out & CStr(caps.Item(1))
                     i = i + 2: GoTo ContinueLoop
                 Case "`"
                     If mstart >= 1 Then
@@ -1784,24 +1784,24 @@ Private Function ExpandReplacement(ByVal caps As Collection, ByVal repl As Strin
                     useIdx = -1
                     If Len(numStr) = 2 Then
                         try2 = CLng(numStr)
-                        If try2 >= 0 And try2 <= caps.Count - 1 Then
+                        If try2 >= 0 And try2 <= caps.count - 1 Then
                             useIdx = try2
                             i = i + 3
                         Else
                             Dim try1 As Long: try1 = CLng(left$(numStr, 1))
-                            If try1 >= 0 And try1 <= caps.Count - 1 Then useIdx = try1
+                            If try1 >= 0 And try1 <= caps.count - 1 Then useIdx = try1
                             i = i + 2
                         End If
                     ElseIf Len(numStr) = 1 Then
                         tryOne = CLng(numStr)
-                        If tryOne >= 0 And tryOne <= caps.Count - 1 Then useIdx = tryOne
+                        If tryOne >= 0 And tryOne <= caps.count - 1 Then useIdx = tryOne
                         i = i + 2
                     Else
                         out = out & "$": i = i + 1
                     End If
                     If useIdx >= 0 Then
                         capIndex = useIdx + 1
-                        If capIndex >= 1 And capIndex <= caps.Count Then out = out & CStr(caps.Item(capIndex)) Else out = out & vbNullString
+                        If capIndex >= 1 And capIndex <= caps.count Then out = out & CStr(caps.Item(capIndex)) Else out = out & vbNullString
                     End If
                     GoTo ContinueLoop
                 Case Else
@@ -1820,7 +1820,7 @@ Private Function BuildCaptureCollection() As Collection
     If capsStart(0) >= 1 And capsEnd(0) >= capsStart(0) Then
         col.Add SafeMid(CurSubject, capsStart(0), capsEnd(0) - capsStart(0) + 1)
     Else
-        If col.Count = 0 Then
+        If col.count = 0 Then
             col.Add vbNullString
         End If
     End If
@@ -1960,7 +1960,7 @@ Public Function ExecAll(ByVal subj As String) As Collection
                 If MatchSteps > pMaxMatchSteps Then err.Raise vbObjectError + 1, "RegexEngine", "Match aborted: too many steps"
             Next tryPos
 
-            If results.Count = 0 Then
+            If results.count = 0 Then
                 Set ExecAll = Nothing
             Else
                 Set ExecAll = results
@@ -2027,7 +2027,7 @@ Public Function ExecAll(ByVal subj As String) As Collection
         If MatchSteps > pMaxMatchSteps Then err.Raise vbObjectError + 1, "RegexEngine", "Match aborted: too many steps"
     Loop
 
-    If results.Count = 0 Then
+    If results.count = 0 Then
         Set ExecAll = Nothing
     Else
         Set ExecAll = results
@@ -2649,7 +2649,7 @@ Private Sub UpdateNamedCapturesFromAST()
     Dim pair As Variant
     Dim gname As String
     Dim gidx As Long
-    For i = 1 To gnodes.Count
+    For i = 1 To gnodes.count
         pair = gnodes(i) ' Array(name, idx, nodeRef)
         gname = CStr(pair(0))
         gidx = CLng(pair(1))

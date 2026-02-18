@@ -13,6 +13,8 @@ Private Compiler_ As ASF_Compiler
 Private VM_ As ASF_VM
 Private OUTPUT__ As Variant
 Private EVALUATOR_ As VBAexpressions
+Private CAST_INJECTED_VARIABLES_ As Boolean
+Private APPLICATION_ACCESS_ As Boolean
 
 Public Property Get verbose() As Boolean
     verbose = VM_.verbose
@@ -42,22 +44,16 @@ Public Property Get Evaluator() As VBAexpressions
     Set Evaluator = EVALUATOR_
 End Property
 Public Property Get CastInjectedVars() As Boolean
-    CastInjectedVars = VM_.CastInjectedVars
+    CastInjectedVars = CAST_INJECTED_VARIABLES_
 End Property
 Public Property Let CastInjectedVars(aValue As Boolean)
-    VM_.CastInjectedVars = aValue
+    CAST_INJECTED_VARIABLES_ = aValue
 End Property
 Public Property Get AppAccess() As Boolean
-    AppAccess = VM_.AppAccess
+    AppAccess = APPLICATION_ACCESS_
 End Property
 Public Property Let AppAccess(aValue As Boolean)
-    VM_.AppAccess = aValue
-End Property
-Public Property Get OverrideCollMethods() As Boolean
-    OverrideCollMethods = VM_.OverrideCollMethods
-End Property
-Public Property Let OverrideCollMethods(aValue As Boolean)
-    VM_.OverrideCollMethods = aValue
+    APPLICATION_ACCESS_ = aValue
 End Property
 Private Sub Class_Initialize()
     INIT_
@@ -92,9 +88,9 @@ Private Sub INIT_()
     Set VM_ = New ASF_VM
     VM_.verbose = False
     VM_.EnableCallTrace = False
-    VM_.AppAccess = False
-    VM_.CastInjectedVars = True
-    VM_.OverrideCollMethods = False
+    CAST_INJECTED_VARIABLES_ = True
+    VM_.AppAccess = APPLICATION_ACCESS_
+    VM_.CastInjectedVars = CAST_INJECTED_VARIABLES_
 End Sub
 Public Property Get OUTPUT_() As Variant
     vAssignment OUTPUT_, OUTPUT__
@@ -111,6 +107,8 @@ Public Function Run(idx As Long, ParamArray params() As Variant) As Variant
     If Not GLOBALS_ Is Nothing Then
         With VM_
             Set .Globals = GLOBALS_
+            .CastInjectedVars = CAST_INJECTED_VARIABLES_
+            .AppAccess = APPLICATION_ACCESS_
             If Not IsMissing(params) Then
                 Dim params_ As Variant: params_ = params
                 .RunProgramByIndex idx, params_
