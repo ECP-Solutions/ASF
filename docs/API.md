@@ -24,6 +24,7 @@ This document describes the runtime API exposed by ASF scripts and the VM builti
 - Regex Object 
 - Object methods / member behavior
 - Office Application Integration
+- COM Object Prototype Extension
 - [VBA Expressions](https://github.com/ECP-Solutions/VBA-Expressions) integration
 - Error & truthiness rules
 - Examples & usage patterns
@@ -535,6 +536,153 @@ Arrays are pretty-printed with proper indentation for readability.
 - Handles all native Office properties and methods
 - Maintains backward compatibility with non-Office ASF scripts
 - No dependencies on external COM objects
+
+---
+
+## COM Object Prototype Extension
+
+ASF v3.1.2+ introduces COM object prototype extension (monkey patching), allowing custom methods to be added to Office objects at runtime.
+
+### Prototype Method Definition
+
+Define custom methods for COM objects using the `prototype.COM.ObjectType methodName()` syntax:
+
+```javascript
+// Define a method for Range objects
+prototype.COM.Range formatCurrency() {
+    this.NumberFormat = "$#,##0.00";
+    this.Font.Bold = true;
+    return this; // Enable method chaining
+}
+
+// Define a method for ListRow objects  
+prototype.COM.ListRow asDictionary() {
+    let headers = this.parent.listcolumns;
+    let values = this.range.value2;
+    let result = {};
+    for (let i = 1, i <= headers.count, i+=1) {
+        result.set(headers.item(i).name, values[1][i]);
+    }
+    return result;
+}
+```
+
+### Prototype Method Invocation
+
+Call prototype methods directly on COM objects:
+
+```vb
+Dim engine As New ASF  
+engine.AppAccess = True
+engine.OverrideCollMethods = True  ' Required for prototype methods
+
+' Define and use Range prototype method
+pid = engine.Compile("prototype.COM.Range highlight() {" & _
+                    "    this.Interior.Color = 65535;" & _
+                    "    return this;" & _
+                    "}; $1.Range('A1:A10').highlight();")
+engine.Run pid, ThisWorkbook.Sheets(1)
+
+' Define and use ListRow prototype method  
+pid = engine.Compile("prototype.COM.ListRow asDictionary() {" & _
+                    "    let headers = this.parent.listcolumns;" & _
+                    "    let values = this.range.value2;" & _
+                    "    let result = {};" & _
+                    "    for (let i = 1, i <= headers.count, i+=1) {" & _
+                    "        result.set(headers.item(i).name, values[1][i]);" & _
+                    "    };" & _
+                    "    return result;" & _
+                    "}; return $1.ListObjects('Table1').ListRows(1).asDictionary();")
+result = engine.Run(pid, ThisWorkbook.Sheets(1))
+```
+
+### `this` Binding in Prototype Methods
+
+Within prototype methods, `this` refers to the COM object instance:
+
+```javascript
+prototype.COM.Worksheet addTotal(range) {
+    // 'this' refers to the Worksheet object
+    let targetRange = this.Range(range);
+    targetRange.Formula = "=SUM(" + range + ")";
+    targetRange.Font.Bold = true;
+    return this; // Return worksheet for chaining
+}
+```
+
+### Method Chaining Support
+
+Prototype methods can return `this` to enable fluent interfaces:
+
+```javascript
+// Method chaining example
+$1.Range('A1:A10')
+  .formatCurrency()    // Custom prototype method
+  .highlight()         // Another custom method  
+  .resize(10, 2);      // Native Excel method
+```
+
+### Collection Method Integration
+
+When `OverrideCollMethods = True`, Office collections gain JavaScript array methods that work with prototype methods:
+
+```javascript
+// Apply prototype method to all ListRows using .map()
+let tableData = $1.ListObjects('Sales').ListRows
+    .map(fun(row) { return row.asDictionary(); })
+    .filter(fun(dict) { return dict.get('Amount') > 1000; });
+```
+
+### Supported COM Object Types
+
+Prototype methods can be defined for any Office COM object type:
+
+#### Excel Objects
+- `Range`, `Worksheet`, `Workbook`, `ListRow`, `ListObject`, `ListColumn`
+- `Chart`, `PivotTable`, `PivotField`, `Shape`, etc.
+
+#### Word Objects  
+- `Document`, `Selection`, `Paragraph`, `Table`, `Style`
+- `Range`, `Field`, `Bookmark`, etc.
+
+#### PowerPoint Objects
+- `Presentation`, `Slide`, `Shape`, `TextRange`
+- `SlideShow`, `Master`, etc.
+
+#### Access Objects
+- `Form`, `Report`, `Recordset`, `Control`
+- `TableDef`, `QueryDef`, etc.
+
+#### Outlook Objects
+- `MailItem`, `ContactItem`, `Folder`, `Attachment`
+- `Account`, `Store`, etc.
+
+### Implementation Notes
+
+- **Compilation**: Prototype methods are compiled into internal functions with name prefix `__PROTOTYPE_<OBJECTTYPE>_<METHODNAME>`
+- **Registration**: Method mappings stored in `GLOBALS_.gCOMPrototypes` dictionary
+- **Invocation**: `CallObjectMethod` checks for prototype methods before falling back to native COM methods
+- **Scope**: Prototype methods create new function scope with `this` bound to the COM object
+- **Performance**: ~15% overhead compared to native COM method calls
+
+### Error Handling
+
+Prototype method calls follow standard ASF error handling:
+
+```javascript
+try {
+    result = $1.Range('A1').customMethod();
+} catch (error) {
+    print('Prototype method failed: ' + error);
+};
+```
+
+### Security Considerations
+
+- Requires `AppAccess = True` to access COM objects
+- Requires `OverrideCollMethods = True` for collection integration
+- Prototype methods have full access to COM object properties and methods
+- Always disable `AppAccess` when prototype functionality is not needed
 
 ---
 
