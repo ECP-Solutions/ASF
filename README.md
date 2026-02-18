@@ -32,7 +32,7 @@ VS Code Integration|![ASF-code](/docs/assets/img/ASF.gif)
 - [API Reference](https://ecp-solutions.github.io/ASF/API.html)
 - [Language Syntax](https://ecp-solutions.github.io/ASF/Syntax.html)
 - [Complete Language Reference](https://ecp-solutions.github.io/ASF/Language%20reference.html)
-- [Object Methods vs JavaScript](https://ecp-solutions.github.io/ASF/examples/object-methods-comparison.html)
+- [COM Prototyping demo](https://ecp-solutions.github.io/ASF/examples/com-prototyping-demo.html)
 
 ## Core Features
 
