@@ -4,84 +4,187 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ASF COM Prototyping - Extend Office Objects</title>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=JetBrains+Mono:wght@400;500;700&family=Source+Sans+3:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #111118;
+            --bg-card: #16161f;
+            --bg-card-hover: #1c1c28;
+            --accent: #e8a849;
+            --accent-dim: #c08a30;
+            --accent-glow: rgba(232, 168, 73, 0.15);
+            --accent-rust: #de6e3a;
+            --accent-python: #4b8bbe;
+            --accent-green: #4ade80;
+            --accent-red: #f87171;
+            --text-primary: #e8e6e1;
+            --text-secondary: #9b9a97;
+            --text-dim: #5c5b58;
+            --border: rgba(232, 168, 73, 0.12);
+            --border-subtle: rgba(255,255,255,0.06);
+            --font-display: 'Playfair Display', Georgia, serif;
+            --font-body: 'Source Sans 3', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        *, *::before, *::after { 
+            margin: 0; 
+            padding: 0; 
+            box-sizing: border-box; 
+        }
+
+        html { 
+            scroll-behavior: smooth; 
+            scrollbar-width: thin; 
+            scrollbar-color: var(--accent-dim) var(--bg-primary); 
+        }
+
+        /* Global scrollbar styling for WebKit browsers */
+        ::-webkit-scrollbar {
+            width: 12px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-primary);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--accent-dim);
+            border-radius: 6px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--accent);
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: var(--font-body);
+            line-height: 1.7;
+            font-weight: 300;
+            overflow-x: hidden;
             padding: 20px;
         }
 
+        ::selection { 
+            background: var(--accent); 
+            color: var(--bg-primary); 
+        }
+
+        /* Noise overlay */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+            pointer-events: none;
+            z-index: 9999;
+        }
+
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
+            position: relative;
         }
 
         header {
             text-align: center;
-            color: white;
-            margin-bottom: 30px;
+            padding: 4rem 2rem;
+            margin-bottom: 3rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        header::before {
+            content: '';
+            position: absolute;
+            top: -30%;
+            right: -20%;
+            width: 60vw;
+            height: 60vw;
+            background: radial-gradient(ellipse, var(--accent-glow), transparent 70%);
+            pointer-events: none;
         }
 
         header h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            font-family: var(--font-display);
+            font-size: clamp(2.5rem, 6vw, 4.5rem);
+            font-weight: 900;
+            margin-bottom: 1.5rem;
+            color: var(--text-primary);
+            opacity: 0;
+            animation: fadeUp 1s ease 0.2s forwards;
         }
 
         header p {
-            font-size: 1.2em;
-            opacity: 0.9;
-            margin-bottom: 10px;
+            font-family: var(--font-display);
+            font-size: clamp(1rem, 2vw, 1.4rem);
+            margin-bottom: 1rem;
+            color: var(--accent);
+            font-style: italic;
+            font-weight: 400;
+            opacity: 0;
+            animation: fadeUp 0.8s ease 0.4s forwards;
         }
 
         .subtitle {
-            font-size: 1em;
-            opacity: 0.8;
-            font-style: italic;
+            font-size: 1rem;
+            color: var(--text-secondary);
+            opacity: 0;
+            animation: fadeUp 0.8s ease 0.6s forwards;
         }
 
         .examples-container {
             display: flex;
             flex-direction: column;
-            gap: 20px;
+            gap: 2rem;
         }
 
         .example-card {
-            background: white;
-            border-radius: 12px;
+            background: var(--bg-card);
+            border-radius: 1rem;
             overflow: hidden;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-            transition: transform 0.3s ease;
+            border: 1px solid var(--border);
+            transition: all 0.4s ease;
+            opacity: 0;
+            animation: fadeUp 0.8s ease forwards;
         }
 
+        .example-card:nth-child(2) { animation-delay: 0.1s; }
+        .example-card:nth-child(3) { animation-delay: 0.2s; }
+        .example-card:nth-child(4) { animation-delay: 0.3s; }
+        .example-card:nth-child(5) { animation-delay: 0.4s; }
+        .example-card:nth-child(6) { animation-delay: 0.5s; }
+
         .example-card:hover {
-            transform: translateY(-5px);
+            transform: translateY(-0.25rem);
+            border-color: var(--accent);
+            box-shadow: 0 1rem 2rem var(--accent-glow);
         }
 
         .example-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dim) 100%);
+            color: var(--bg-primary);
+            padding: 1.5rem 2rem;
             cursor: pointer;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            border-bottom: 1px solid var(--border);
         }
 
         .example-header h2 {
-            font-size: 1.4em;
+            font-family: var(--font-display);
+            font-size: 1.4rem;
+            font-weight: 700;
         }
 
         .toggle-icon {
-            font-size: 1.5em;
+            font-size: 1.5rem;
             transition: transform 0.3s ease;
+            color: var(--bg-primary);
         }
 
         .example-card.collapsed .toggle-icon {
@@ -92,125 +195,199 @@
             max-height: none;
             overflow-y: auto;
             transition: max-height 0.3s ease;
-            padding: 25px;
+            padding: 2rem;
+            background: var(--bg-card);
         }
 
         .example-card.collapsed .example-content {
             max-height: 0;
-            padding: 0 25px;
+            padding: 0 2rem;
             overflow: hidden;
         }
 
         .example-description {
-            background: #f9f9f9;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            border-left: 4px solid #667eea;
-            font-size: 1em;
-            color: #555;
+            background: var(--bg-secondary);
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            margin-bottom: 2rem;
+            border-left: 4px solid var(--accent);
+            font-size: 1rem;
+            color: var(--text-secondary);
             line-height: 1.6;
+            border: 1px solid var(--border-subtle);
         }
 
         .code-block {
-            margin-bottom: 20px;
-            max-height: 600px;
+            margin-bottom: 2rem;
+            max-height: 500px;
             overflow-y: auto;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            background: var(--bg-secondary);
+            scrollbar-width: thin;
+            scrollbar-color: var(--accent-dim) var(--bg-secondary);
+        }
+
+        .code-block::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .code-block::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+        }
+
+        .code-block::-webkit-scrollbar-thumb {
+            background: var(--accent-dim);
+            border-radius: 4px;
+        }
+
+        .code-block::-webkit-scrollbar-thumb:hover {
+            background: var(--accent);
         }
 
         .code-block h3 {
-            color: #667eea;
+            color: var(--accent);
             margin: 0;
-            padding: 15px 20px 10px 20px;
-            font-size: 1.1em;
+            padding: 1rem 1.5rem;
+            font-size: 1.1rem;
             display: flex;
             align-items: center;
-            gap: 8px;
-            background: #f8f9fa;
-            border-bottom: 1px solid #e0e0e0;
+            gap: 0.75rem;
+            background: var(--bg-card-hover);
+            border-bottom: 1px solid var(--border);
             position: sticky;
             top: 0;
             z-index: 10;
+            font-family: var(--font-display);
+            font-weight: 600;
         }
 
         .badge {
-            background: #667eea;
-            color: white;
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 0.75em;
-            font-weight: bold;
+            background: var(--accent);
+            color: var(--bg-primary);
+            padding: 0.25rem 0.75rem;
+            border-radius: 1rem;
+            font-size: 0.7rem;
+            font-family: var(--font-mono);
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
         }
 
         .badge.new {
-            background: #51cf66;
+            background: var(--accent-green);
         }
 
         pre {
-            background: #f5f5f5;
+            background: var(--bg-secondary);
             border-radius: 0;
-            padding: 20px;
+            padding: 1.5rem;
             overflow-x: auto;
             overflow-y: visible;
-            font-family: 'Courier New', monospace;
-            font-size: 0.9em;
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
             line-height: 1.6;
             border: none;
             margin: 0;
             max-height: none;
+            color: var(--text-primary);
         }
 
         .usage-example {
-            background: #e8f5e9;
-            border: 1px solid #4caf50;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            max-height: 400px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            margin-bottom: 1.5rem;
+            max-height: 350px;
             overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: var(--accent-dim) var(--bg-primary);
+        }
+
+        .usage-example::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .usage-example::-webkit-scrollbar-track {
+            background: var(--bg-primary);
+        }
+
+        .usage-example::-webkit-scrollbar-thumb {
+            background: var(--accent-dim);
+            border-radius: 4px;
+        }
+
+        .usage-example::-webkit-scrollbar-thumb:hover {
+            background: var(--accent);
         }
 
         .usage-example h4 {
-            color: #2e7d32;
+            color: var(--accent);
             margin: 0;
-            padding: 10px 15px;
-            font-size: 0.95em;
-            background: #f1f8e9;
-            border-bottom: 1px solid #a5d6a7;
+            padding: 1rem 1.5rem;
+            font-size: 0.9rem;
+            font-family: var(--font-display);
+            font-weight: 600;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
             position: sticky;
             top: 0;
             z-index: 10;
         }
 
         .usage-example pre {
-            background: #f1f8e9;
+            background: var(--bg-primary);
             border: none;
             margin: 0;
-            padding: 15px;
+            padding: 1.5rem;
         }
 
         .feature-highlight {
-            background: #fff3cd;
-            border: 1px solid #ffc107;
-            border-radius: 6px;
-            padding: 12px;
-            margin: 15px 0;
-            font-size: 0.9em;
-            color: #856404;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin: 1.5rem 0;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
         }
 
         .feature-highlight strong {
-            color: #533f03;
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         @media (max-width: 768px) {
             .container {
-                padding: 0 10px;
+                padding: 0 1rem;
+            }
+            
+            header {
+                padding: 3rem 1rem;
             }
             
             header h1 {
-                font-size: 2em;
+                font-size: 2rem;
+            }
+            
+            .example-content {
+                padding: 1.5rem;
+            }
+            
+            .code-block h3 {
+                padding: 1rem;
+                font-size: 1rem;
+            }
+            
+            pre {
+                padding: 1rem;
+                font-size: 0.8rem;
             }
         }
     </style>
