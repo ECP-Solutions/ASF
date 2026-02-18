@@ -35,7 +35,8 @@ Version 1.0.1| Complete Language Reference
 19. [Error Handling](#error-handling)
 20. [VBA Integration](#vba-integration)
 21. [Office Application Integration](#office-application-integration)
-22. [Best Practices](#best-practices)
+22. [COM Object Prototype Extension](#com-object-prototype-extension)
+23. [Best Practices](#best-practices)
 
 ---
 
@@ -51,6 +52,7 @@ Version 1.0.1| Complete Language Reference
 - **Modern array methods** - map, filter, reduce, and more
 - **Template literals** - String interpolation with backticks
 - **Regular expressions** - Pattern matching support
+- **COM object extension** - Monkey patching for Office objects (v3.1.2+)
 - **VBA integration** - Seamless integration with VBA code
 
 ### Why ASF?
@@ -3183,6 +3185,341 @@ engine.AppAccess = True
 result = engine.Run(pid, ThisWorkbook)
 engine.AppAccess = False
 ```
+
+---
+
+## COM Object Prototype Extension
+
+ASF v3.1.2+ supports COM object prototype extension (monkey patching), allowing you to add custom methods to Office objects at runtime.
+
+### Overview
+
+Prototype extension enables you to:
+- Add custom methods to any Office COM object type
+- Create reusable functionality across different Office applications
+- Build fluent interfaces with method chaining
+- Extend Office objects with domain-specific logic
+
+### Basic Syntax
+
+Define prototype methods using the `prototype.COM.ObjectType methodName()` syntax:
+
+```javascript
+// Syntax: prototype.COM.<ObjectType> <methodName>(<parameters>) { <body> }
+prototype.COM.Range formatAsHeader() {
+    this.Font.Bold = true;
+    this.Font.Size = 14;
+    this.Interior.Color = 15592941;  // Light blue
+    return this;
+}
+```
+
+### Simple Examples
+
+#### Excel Range Enhancement
+
+```javascript
+// Add a method to format currency
+prototype.COM.Range formatCurrency() {
+    this.NumberFormat = "$#,##0.00";
+    this.Font.Bold = true;
+    this.Font.Color = 192;  // Dark red
+    return this;
+}
+
+// Usage
+$1.Range('B2:B10').formatCurrency();
+```
+
+#### Word Document Processing
+
+```javascript  
+// Add a method to count words in a paragraph
+prototype.COM.Paragraph countWords() {
+    let text = this.Range.Text;
+    let words = text.split(' ').filter(fun(word) {
+        return word.trim().length > 0;
+    });
+    return words.length;
+}
+
+// Usage  
+let wordCount = $1.Paragraphs(1).countWords();
+```
+
+#### PowerPoint Slide Automation
+
+```javascript
+// Add a method to apply consistent formatting
+prototype.COM.Slide applyTemplate() {
+    this.Background.Fill.ForeColor.RGB = 16777215;  // White
+    if (this.Shapes.Count > 0) {
+        this.Shapes(1).TextFrame.TextRange.Font.Name = 'Calibri';
+        this.Shapes(1).TextFrame.TextRange.Font.Size = 24;
+    }
+    return this;
+}
+
+// Usage
+$1.Slides(1).applyTemplate();
+```
+
+### Advanced Examples
+
+#### ListRow to Dictionary Conversion
+
+```javascript
+prototype.COM.ListRow asDictionary() {
+    let headers = this.parent.listcolumns;
+    let values = this.range.value2;
+    let result = {};
+    
+    for (let i = 1, i <= headers.count, i += 1) {
+        let columnName = headers.item(i).name;
+        let cellValue = values[1][i];
+        result.set(columnName, cellValue);
+    }
+    
+    return result;
+}
+
+// Usage
+let customer = $1.ListObjects('Customers').ListRows(1).asDictionary();
+let name = customer.get('Name');
+let email = customer.get('Email');
+```
+
+#### Recordset to JSON Converter
+
+```javascript
+prototype.COM.Recordset toJSON() {
+    let results = [];
+    this.MoveFirst();
+    
+    while (!this.EOF) {
+        let record = {};
+        for (let i = 0, i < this.Fields.Count, i += 1) {
+            let fieldName = this.Fields(i).Name;
+            let fieldValue = this.Fields(i).Value;
+            record.set(fieldName, fieldValue);
+        }
+        results.push(record);
+        this.MoveNext();
+    }
+    
+    return results;
+}
+
+// Usage (Access)
+let data = $1.OpenRecordset('SELECT * FROM Products').toJSON();
+```
+
+### Method Chaining
+
+Prototype methods can return `this` to enable fluent interfaces:
+
+```javascript
+// Define chainable methods
+prototype.COM.Range setBold() {
+    this.Font.Bold = true;
+    return this;
+}
+
+prototype.COM.Range setColor(color) {
+    this.Font.Color = color;
+    return this;
+}
+
+prototype.COM.Range center() {
+    this.HorizontalAlignment = -4108;  // xlCenter
+    return this;
+}
+
+// Chain method calls
+$1.Range('A1:C1')
+  .setBold()
+  .setColor(255)     // Red
+  .center()
+  .formatCurrency();
+```
+
+### Integration with Collection Methods
+
+When `OverrideCollMethods = True`, Office collections gain JavaScript array methods that work seamlessly with prototype methods:
+
+```javascript
+// Process all rows in a table
+let processedData = $1.ListObjects('Sales').ListRows
+    .map(fun(row) { 
+        return row.asDictionary(); 
+    })
+    .filter(fun(dict) { 
+        return dict.get('Amount') > 1000; 
+    })
+    .map(fun(dict) {
+        return {
+            customer: dict.get('Customer'),
+            amount: dict.get('Amount'),
+            formatted: '$' + dict.get('Amount').toString()
+        };
+    });
+```
+
+### Working with `this` Context
+
+Within prototype methods, `this` refers to the COM object instance:
+
+```javascript
+prototype.COM.Worksheet findLastRow(column) {
+    // 'this' refers to the Worksheet object
+    let lastRow = this.Cells(this.Rows.Count, column).End(-4162).Row;  // xlUp
+    return lastRow;
+}
+
+prototype.COM.Workbook saveBackup() {
+    // 'this' refers to the Workbook object
+    let backupName = this.Path + '\\' + this.Name + '.backup';
+    this.SaveCopyAs(backupName);
+    return this;
+}
+```
+
+### VBA Setup Requirements
+
+Enable prototype functionality in your VBA code:
+
+```vb
+Sub UsePrototypeMethods()
+    Dim engine As New ASF
+    
+    ' Required settings
+    engine.AppAccess = True           ' Enable Office object access
+    engine.OverrideCollMethods = True ' Enable collection method override
+    
+    ' Define prototype method
+    Dim prototypeCode As String
+    prototypeCode = "prototype.COM.Range highlight() {" & _
+                   "    this.Interior.Color = 65535;" & _
+                   "    this.Font.Bold = true;" & _
+                   "    return this;" & _
+                   "};"
+    
+    ' Use prototype method
+    Dim usageCode As String  
+    usageCode = "$1.Range('A1:A10').highlight();"
+    
+    ' Execute
+    Dim pid As Long
+    pid = engine.Compile(prototypeCode + usageCode)
+    engine.Run pid, ThisWorkbook.Sheets(1)
+End Sub
+```
+
+### Supported Object Types
+
+Prototype methods work with any Office COM object:
+
+#### Microsoft Excel
+- `Application`, `Workbook`, `Workbooks`, `Worksheet`, `Worksheets`
+- `Range`, `ListObject`, `ListRow`, `ListColumn`, `Chart`, `PivotTable`
+
+#### Microsoft Word  
+- `Application`, `Document`, `Documents`, `Selection`
+- `Paragraph`, `Paragraphs`, `Table`, `Tables`, `Range`
+
+#### Microsoft PowerPoint
+- `Application`, `Presentation`, `Presentations`
+- `Slide`, `Slides`, `Shape`, `Shapes`
+
+#### Microsoft Access
+- `Application`, `Form`, `Forms`, `Report`, `Reports`
+- `Recordset`, `TableDef`, `QueryDef`
+
+#### Microsoft Outlook
+- `Application`, `MailItem`, `ContactItem`, `Folder`
+- `Attachment`, `Recipient`, `Account`
+
+### Error Handling
+
+Handle prototype method errors using try-catch:
+
+```javascript
+prototype.COM.Range safeFormat() {
+    try {
+        this.NumberFormat = "0.00%";
+        this.Font.Color = 255;
+        return true;
+    } catch (error) {
+        print('Formatting failed: ' + error);
+        return false;
+    }
+}
+
+// Usage with error handling
+try {
+    let success = $1.Range('A1').safeFormat();
+    if (!success) {
+        print('Range formatting failed');
+    }
+} catch (error) {
+    print('Prototype method error: ' + error);
+}
+```
+
+### Best Practices for Prototype Methods
+
+#### Return `this` for Chainability
+
+```javascript
+// Good - enables chaining
+prototype.COM.Range formatHeader() {
+    this.Font.Bold = true;
+    this.Font.Size = 12;
+    return this;  // Enable chaining
+}
+
+// Less useful - breaks chaining  
+prototype.COM.Range formatHeader() {
+    this.Font.Bold = true;
+    this.Font.Size = 12;
+    return true;  // Returns boolean instead
+}
+```
+
+#### Validate Input Parameters
+
+```javascript
+prototype.COM.Range setBackgroundColor(colorValue) {
+    if (typeof colorValue != 'number') {
+        print('Error: Color must be a number');
+        return this;
+    }
+    
+    this.Interior.Color = colorValue;
+    return this;
+}
+```
+
+#### Use Descriptive Method Names
+
+```javascript
+// Good - clear and descriptive
+prototype.COM.Range formatAsCurrency() { }
+prototype.COM.Range highlightNegativeValues() { }
+prototype.COM.ListRow convertToDictionary() { }
+
+// Poor - vague or confusing
+prototype.COM.Range doStuff() { }
+prototype.COM.Range format() { }  // Too generic
+prototype.COM.ListRow convert() { }  // Unclear what it converts to
+```
+
+### Performance Considerations
+
+- Prototype method calls have ~15% overhead compared to native COM methods
+- Collection override (`OverrideCollMethods = True`) can impact memory usage
+- Consider caching frequently accessed properties within method implementations
+- Use prototype methods for complex operations rather than simple property access
 
 ---
 
