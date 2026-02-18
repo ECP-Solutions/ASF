@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASF COM Prototyping - Extend Office Objects</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            font-size: 1em;
+            opacity: 0.8;
+            font-style: italic;
+        }
+
+        .examples-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .example-card {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            transition: transform 0.3s ease;
+        }
+
+        .example-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .example-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .example-header h2 {
+            font-size: 1.4em;
+        }
+
+        .toggle-icon {
+            font-size: 1.5em;
+            transition: transform 0.3s ease;
+        }
+
+        .example-card.collapsed .toggle-icon {
+            transform: rotate(-90deg);
+        }
+
+        .example-content {
+            max-height: none;
+            overflow-y: auto;
+            transition: max-height 0.3s ease;
+            padding: 25px;
+        }
+
+        .example-card.collapsed .example-content {
+            max-height: 0;
+            padding: 0 25px;
+            overflow: hidden;
+        }
+
+        .example-description {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+            font-size: 1em;
+            color: #555;
+            line-height: 1.6;
+        }
+
+        .code-block {
+            margin-bottom: 20px;
+            max-height: 600px;
+            overflow-y: auto;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+        }
+
+        .code-block h3 {
+            color: #667eea;
+            margin: 0;
+            padding: 15px 20px 10px 20px;
+            font-size: 1.1em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e0e0e0;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .badge {
+            background: #667eea;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: bold;
+        }
+
+        .badge.new {
+            background: #51cf66;
+        }
+
+        pre {
+            background: #f5f5f5;
+            border-radius: 0;
+            padding: 20px;
+            overflow-x: auto;
+            overflow-y: visible;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            line-height: 1.6;
+            border: none;
+            margin: 0;
+            max-height: none;
+        }
+
+        .usage-example {
+            background: #e8f5e9;
+            border: 1px solid #4caf50;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .usage-example h4 {
+            color: #2e7d32;
+            margin: 0;
+            padding: 10px 15px;
+            font-size: 0.95em;
+            background: #f1f8e9;
+            border-bottom: 1px solid #a5d6a7;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .usage-example pre {
+            background: #f1f8e9;
+            border: none;
+            margin: 0;
+            padding: 15px;
+        }
+
+        .feature-highlight {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 6px;
+            padding: 12px;
+            margin: 15px 0;
+            font-size: 0.9em;
+            color: #856404;
+        }
+
+        .feature-highlight strong {
+            color: #533f03;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 0 10px;
+            }
+            
+            header h1 {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>⚡ ASF COM Prototyping</h1>
+            <p>Extend Office Objects with Custom Methods at Runtime</p>
+            <div class="subtitle">Add your own methods to Excel, Word, PowerPoint, and Access objects</div>
+        </header>
+
+        <div class="examples-container">
+            <!-- Example 1: Excel Range Enhancement -->
+            <div class="example-card">
+                <div class="example-header" onclick="toggleExample(this)">
+                    <h2>1. Excel Range Enhancement 📊</h2>
+                    <span class="toggle-icon">▼</span>
+                </div>
+                <div class="example-content">
+                    <div class="example-description">
+                        Add custom methods directly to Excel Range objects with method chaining support.
+                    </div>
+                    
+                    <div class="code-block">
+                        <h3><span class="badge new">Simple Methods</span></h3>
+                        <pre>// Add currency formatting
+prototype.COM.Range currency() {
+    this.NumberFormat = "$#,##0.00";
+    return this;
+}
+
+// Add highlighting
+prototype.COM.Range highlight() {
+    this.Interior.Color = 65535;
+    return this;
+}</pre>
+                    </div>
+
+                    <div class="usage-example">
+                        <h4>Test It:</h4>
+                        <pre>With scriptEngine
+    .AppAccess = True
+    
+    ' Define methods and use them in a single script
+    pid = .Compile("prototype.COM.Range currency() { " & _
+                   "this.NumberFormat = '$#,##0.00'; return this; }; " & _
+                   "prototype.COM.Range highlight() { " & _
+                   "this.Interior.Color = 65535; return this; }; " & _
+                   "$1.Range('A1:A3').currency(); " & _
+                   "$1.Range('B1:B3').currency().highlight();")
+    .Run pid, ActiveSheet
+End With</pre>
+                    </div>
+
+                    <div class="feature-highlight">
+                        <strong>Key Features:</strong> Native feel • Method chaining • Easy to test
+                    </div>
+                </div>
+            </div>
+
+            <!-- Example 2: Word Document Intelligence -->
+            <div class="example-card">
+                <div class="example-header" onclick="toggleExample(this)">
+                    <h2>2. Word Document Methods 📝</h2>
+                    <span class="toggle-icon">▼</span>
+                </div>
+                <div class="example-content">
+                    <div class="example-description">
+                        Add smart methods to Word Document objects for quick analysis and formatting.
+                    </div>
+                    
+                    <div class="code-block">
+                        <h3><span class="badge new">Document Methods</span></h3>
+                        <pre>// Get word count
+prototype.COM.Document wordCount() {
+    return this.Range.Words.Count - 1;
+}
+
+// Make title
+prototype.COM.Document makeTitle() {
+    this.Paragraphs(1).Range.Style = 'Title';
+    return this;
+}</pre>
+                    </div>
+
+                    <div class="usage-example">
+                        <h4>Test It:</h4>
+                        <pre>With scriptEngine
+    .AppAccess = True
+    
+    ' Define methods and use them in a single script
+    pid = .Compile("prototype.COM.Document wordCount() { " & _
+                   "return this.Range.Words.Count - 1; }; " & _
+                   "prototype.COM.Document makeTitle() { " & _
+                   "this.Paragraphs(1).Range.Style = 'Title'; return this; }; " & _
+                   "let words = $1.wordCount(); print(`Words: ${words}`); " & _
+                   "$1.makeTitle();")
+    .Run pid, ActiveDocument
+End With</pre>
+                    </div>
+
+                    <div class="feature-highlight">
+                        <strong>Smart Features:</strong> Document analysis • Auto-formatting • Chainable methods
+                    </div>
+                </div>
+            </div>
+
+            <!-- Example 3: PowerPoint Slide Automation -->
+            <div class="example-card">
+                <div class="example-header" onclick="toggleExample(this)">
+                    <h2>3. PowerPoint Slide Magic 🎨</h2>
+                    <span class="toggle-icon">▼</span>
+                </div>
+                <div class="example-content">
+                    <div class="example-description">
+                        Add automation methods to PowerPoint slides for instant theming and content.
+                    </div>
+                    
+                    <div class="code-block">
+                        <h3><span class="badge new">Slide Methods</span></h3>
+                        <pre>// Apply theme
+prototype.COM.Slide theme() {
+    this.Background.Fill.ForeColor.RGB = 16777215;
+    if (this.Shapes.Count > 0) {
+        this.Shapes(1).TextFrame.TextRange.Font.Size = 28;
+    }
+    return this;
+}
+
+// Add footer
+prototype.COM.Slide footer(text) {
+    this.Shapes.AddTextbox(1, 30, 500, 660, 30)
+        .TextFrame.TextRange.Text = text;
+    return this;
+}</pre>
+                    </div>
+
+                    <div class="usage-example">
+                        <h4>Test It:</h4>
+                        <pre>With scriptEngine
+    .AppAccess = True
+    
+    ' Define methods and use them in a single script
+    pid = .Compile("prototype.COM.Slide theme() { " & _
+                   "this.Background.Fill.ForeColor.RGB = 16777215; " & _
+                   "if (this.Shapes.Count > 0) { this.Shapes(1).TextFrame.TextRange.Font.Size = 28; } " & _
+                   "return this; }; " & _
+                   "prototype.COM.Slide footer(text) { " & _
+                   "this.Shapes.AddTextbox(1, 30, 500, 660, 30).TextFrame.TextRange.Text = text; " & _
+                   "return this; }; " & _
+                   "$1.Slides(1).theme(); " & _
+                   "$1.Slides(1).theme().footer('My Company');")
+    .Run pid, ActivePresentation
+End With</pre>
+                    </div>
+
+                    <div class="feature-highlight">
+                        <strong>Automation Power:</strong> Instant theming • Content generation • Method chaining
+                    </div>
+                </div>
+            </div>
+
+            <!-- Example 4: Excel Table Intelligence -->
+            <div class="example-card">
+                <div class="example-header" onclick="toggleExample(this)">
+                    <h2>4. Excel Table Smarts 🗂️</h2>
+                    <span class="toggle-icon">▼</span>
+                </div>
+                <div class="example-content">
+                    <div class="example-description">
+                        Convert Excel table rows to dictionaries for easy column-based data access.
+                    </div>
+                    
+                    <div class="code-block">
+                        <h3><span class="badge new">Smart Tables</span></h3>
+                        <pre>// Row to dictionary
+prototype.COM.ListRow asDict() {
+    let headers = this.parent.listcolumns;
+    let values = this.range.value2;
+    let dict = {};
+    
+    for (let i = 1; i <= headers.count; i += 1) {
+        dict.set(headers.item(i).name, values[1][i]);
+    }
+    
+    return dict;
+}</pre>
+                    </div>
+
+                    <div class="usage-example">
+                        <h4>Test It:</h4>
+                        <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 10px; margin-bottom: 10px; font-size: 0.9em;">
+                            ⚠️ <strong>Collection Methods Required:</strong> This example uses array methods on ListRows collection, requiring OverrideCollMethods = True
+                        </div>
+                        <pre>With scriptEngine
+    .AppAccess = True
+    .OverrideCollMethods = True  ' Required for array methods on collections
+    
+    ' Define method and use it in a single script
+    pid = .Compile("prototype.COM.ListRow asDict() { " & _
+                   "let headers = this.parent.listcolumns; " & _
+                   "let values = this.range.value2; let dict = {}; " & _
+                   "for (let i = 1; i <= headers.count; i += 1) { " & _
+                   "dict.set(headers.item(i).name, values[1][i]); } return dict; }; " & _
+                   "let row = $1.ListObjects('Table1').ListRows(1).asDict(); " & _
+                   "let name = row.get('Name'); let email = row.get('Email'); " & _
+                   "print('Name: ' + name + ', Email: ' + email);")
+    .Run pid, ActiveSheet
+End With</pre>
+                    </div>
+
+                    <div class="feature-highlight">
+                        <strong>Smart Access:</strong> Column names not indexes • Dictionary conversion • Easy data access
+                    </div>
+                </div>
+            </div>
+
+            <!-- Example 5: Cross-Application Power -->
+            <div class="example-card">
+                <div class="example-header" onclick="toggleExample(this)">
+                    <h2>5. Cross-App Integration ⚡</h2>
+                    <span class="toggle-icon">▼</span>
+                </div>
+                <div class="example-content">
+                    <div class="example-description">
+                        Create simple workflows between Office applications with custom methods.
+                    </div>
+                    
+                    <div class="code-block">
+                        <h3><span class="badge new">Simple Integration</span></h3>
+                        <pre>// Excel to Word
+prototype.COM.Range toWord() {
+    let word = @(CreateObject("Word.Application"));
+    word.Visible = true;
+    let doc = word.Documents.Add();
+    
+    let data = this.value2;
+    doc.Range().Text = data.map(fun(row) { 
+        return row.join('\t'); 
+    }).join('\n');
+    
+    return doc;
+}</pre>
+                    </div>
+
+                    <div class="usage-example">
+                        <h4>Test It:</h4>
+                        <pre>With scriptEngine
+    .AppAccess = True
+    
+    ' Define method and use it in a single script
+    pid = .Compile("prototype.COM.Range toWord() { " & _
+                   "let word = @(CreateObject('Word.Application')); word.Visible = true; " & _
+                   "let doc = word.Documents.Add(); let data = this.value2; " & _
+                   "doc.Range().Text = data.map(fun(row) { return row.join('\t'); }).join('\n'); " & _
+                   "return doc; }; " & _
+                   "let doc = $1.Range('A1:C3').toWord(); print('Created Word document');")
+    .Run pid, ActiveSheet
+End With</pre>
+                    </div>
+
+                    <div class="feature-highlight">
+                        <strong>Integration Power:</strong> Cross-app workflows • Data sharing • One language for all Office
+                    </div>
+                </div>
+            </div>
+
+            <!-- Example 6: Office Collections + Array Methods -->
+            <div class="example-card">
+                <div class="example-header" onclick="toggleExample(this)">
+                    <h2>6. Collections + Array Methods 🔄</h2>
+                    <span class="toggle-icon">▼</span>
+                </div>
+                <div class="example-content">
+                    <div class="example-description">
+                        Use JavaScript array methods directly on Office collections like Sheets, Slides, and Tables.
+                    </div>
+                    
+                    <div class="code-block">
+                        <h3><span class="badge new">Array Power</span></h3>
+                        <pre>// Process sheets
+let names = $1.Sheets
+    .map(fun(sheet) { return sheet.Name; })
+    .filter(fun(name) { return !name.startsWith('_'); });
+
+// Process slides
+$1.Slides
+    .filter(fun(slide) { return slide.Shapes.Count > 0; })
+    .forEach(fun(slide) { slide.theme(); });</pre>
+                    </div>
+
+                    <div class="usage-example">
+                        <h4>Test It:</h4>
+                        <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 10px; margin-bottom: 10px; font-size: 0.9em;">
+                            ⚠️ <strong>Collection Methods Required:</strong> This example uses array methods on Office collections, requiring OverrideCollMethods = True
+                        </div>
+                        <pre>With scriptEngine
+    .AppAccess = True
+    .OverrideCollMethods = True  ' Required for array methods on collections
+    
+    ' Process collections in a single script
+    pid = .Compile("let names = $1.Sheets" & _
+                   ".map(fun(sheet) { return sheet.Name; })" & _
+                   ".filter(fun(name) { return !name.startsWith('_'); }); " & _
+                   "print('Sheets: ' + names.join(', '));")
+    .Run pid, ActiveWorkbook
+    
+    ' For PowerPoint (separate script for different object type)
+    ' pid = .Compile("$1.Slides" & _
+    '                ".filter(fun(slide) { return slide.Shapes.Count > 0; })" & _
+    '                ".forEach(fun(slide) { slide.theme(); }); " & _
+    '                "print('Themed slides with shapes');")
+    ' .Run pid, ActivePresentation
+End With</pre>
+                    </div>
+
+                    <div class="feature-highlight">
+                        <strong>Collection Magic:</strong> .map(), .filter(), .forEach() on Office collections • Functional programming • Batch processing
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        function toggleExample(header) {
+            const card = header.parentElement;
+            card.classList.toggle('collapsed');
+        }
+
+        // Auto-expand first example
+        document.addEventListener('DOMContentLoaded', function() {
+            // All examples start expanded by default
+        });
+    </script>
+</body>
+</html>
