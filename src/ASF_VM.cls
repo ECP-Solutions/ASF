@@ -7061,18 +7061,11 @@ Private Function CallObjectMethod(obj As Variant, methodName As Variant, Optiona
         If Not prototypeInfo Is Nothing Then
             Dim funcIdx As Long: funcIdx = prototypeInfo.GetValue("funcIndex")
             Dim prototypeArgs As Collection
-            If Not IsMissing(args) Then
+            If Not IsMissing(args) And Not args Is Nothing Then
                 Set prototypeArgs = args
             Else
                 Set prototypeArgs = New Collection
             End If
-'            prototypeArgs.Add obj ' Add 'this' as first parameter
-'            If Not args Is Nothing Then
-'                Dim i As Long
-'                For i = 1 To args.Count
-'                    prototypeArgs.Add args(i)
-'                Next i
-'            End If
             ' Trace: Push call
             PushCallTrace CStr(methodName), prototypeArgs
             vAssignment tmpResult, CallFuncByIndex_AST(funcIdx, prototypeArgs, obj)
