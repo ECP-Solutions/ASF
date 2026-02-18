@@ -238,7 +238,7 @@ Use ASF for complex logic and VBA for performance hotspots:
 Dim businessRules As String: businessRules = "return data.filter(fun(x) { return x.status == 'active' }).map(fun(x) { return x.value * 1.08; })"
 Dim processedData As Variant: processedData = engine.Run(engine.Compile(businessRules))
 
-' VBA for bulk Excel operations  
+' VBA for bulk Excel operations
 Range("A1").Resize(UBound(processedData), 1).Value2 = Application.Transpose(processedData)
 ```
 
