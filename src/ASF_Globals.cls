@@ -28,23 +28,30 @@ Public re As ASF_RegexEngine
 Private MAX_CALL_DEPTH_ As Long
 Public builtinArrayMethods As Variant
 Public knownMSOcollections  As Variant
-Private Const MSOColStr As String = "ActionSettings,Actions,AddIns,AddressEntries,AddressLists,Adjustments,AllDatabaseDiagrams,AllForms,AllFunctions," & _
-                                    "AllMacros,AllModules,AllQueries,AllReports,AllStoredProcedures,AllTables,AllViews,AllowEditRanges,AnimationBehaviors," & _
-                                    "AnimationPoints,Areas,Axes,Bookmarks,Borders,Breaks,CalculatedFields,CalculatedItems,CalculatedMembers,Cells," & _
-                                    "Characters,ChartGroups,ChartObjects,Charts,Collection,Collections,Columns,Comments,Containers,Controls,CubeFields," & _
-                                    "CustomLabels,CustomProperties,CustomViews,DataLabels,Departments,Dialogs,Dictionaries,Dictionary,DocumentWindows," & _
-                                    "Documents,Editors,EmailSignatureEntries,Endnotes,FieldLinks,Fields,FileConverters,Filters,FirstLetterExceptions," & _
-                                    "FontNames,Fonts,Footnotes,FormFields,Frames,GroupShapes,HeadersFooters,HeadingStyles,Hyperlinks,Indexes,InlineShapes," & _
-                                    "ItemProperties,JPEGFiles,KeyBindings,KeysBoundTo,Languages,LegendEntries,Lines,ListColumns,ListEntries,ListItems," & _
-                                    "ListLevels,ListObjects,ListParagraphs,ListRows,ListTemplates,Lists,MailMergeDataFields,MailMergeFieldNames,MailMergeFields," & _
-                                    "MappedDataFields,NameSpaces,NamedSlideShows,Names,ODBCErrors,OLEDBErrors,OLEObjects,OtherCorrectionsExceptions," & _
-                                    "OutlookBarGroups,OutlookBarShortcuts,Pages,Panes,Paragraphs,Parameters,Phonetics,PivotCaches,PivotFields,PivotFormulas," & _
-                                    "PivotItemList,PivotItems,PivotTables,Placeholders,Points,PrintRanges,ProofreadingErrors,PublishObjects,QueryTables," & _
-                                    "Recipients,Rectangles,Regions,Relationships,Reminders,Reports,Results,Revisions,Rules,Scenes,Sections,Sequence,Sequences," & _
-                                    "SeriesCollection,ShapeNodes,Shapes,Slicers,SlideRange,SlideShowWindows,Slides,SmartTagActions,SmartTagRecognizers," & _
-                                    "SmartTagTypes,SmartTags,StyleSheets,Styles,Subdocuments,SyncObjects,TabStops,Tabs,TaskPanes,Tasks,Templates,TextColumns," & _
-                                    "TextStyleLevels,TextStyles,Trendlines,Trends,UsedObjects,VPageBreaks,Variables,Views,Visualizations,Watches,Windows,Words," & _
-                                    "XMLChildNodeSuggestions,XMLNamespaces,XMLNodes,XMLSchemaReferences,XSLTransforms,XmlMaps,Zooms"
+Private Const MSOColStr As String = "Accessories,Accounts,ActionSettings,Actions,AddIns,AddressBooks,AddressEntries,AddressLists,Adjustments,AllDatabaseDiagrams," & _
+                                    "AllForms,AllFunctions,AllMacros,AllModules,AllQueries,AllReports,AllStoredProcedures,AllTables,AllViews,Animations,AnimationBehaviors," & _
+                                    "AnimationPoints,Applications,Areas,Attachments,Axes,Bookmarks,Borders,Breaks,BuildingBlocks,BuildingBlockTypes,CalculatedFields," & _
+                                    "CalculatedItems,CalculatedMembers,Categories,Cells,Characters,ChartColors,ChartGroups,ChartObjects,Charts,CodeData,CodeProject," & _
+                                    "Collection,Collections,ColorSchemes,Columns,CommandBars,CommandBarControls,Comments,Connections,Containers,ContentControls,Controls," & _
+                                    "ConversationHeader,CubeFields,CurrentData,CurrentProject,CustomLabels,CustomLayouts,CustomProperties,CustomTaskPanes,CustomViews," & _
+                                    "CustomXMLParts,DataAccessPages,DataLabels,Databases,DataSources,DBEngine,Departments,Dialogs,Dictionaries,Dictionary,DocumentLibraryVersions," & _
+                                    "Documents,DocumentWindows,Editors,EmailSignatureEntries,Endnotes,Errors,ExchangeDistributionList,ExchangeUser,Explorers,ExtraColors,FieldLinks," & _
+                                    "Fields,FileConverters,FileDialogFilters,FileDialogSelectedItems,Filters,FirstLetterExceptions,Folders,FontNames,Fonts,Footnotes,FormatConditions," & _
+                                    "FormFields,Forms,Frames,GroupShapes,Groups,HeadersFooters,HeadingStyles,HPageBreaks,Hyperlinks,Icons,Indexes,InlineShapes,Inspectors,Interior," & _
+                                    "ItemProperties,Items,JPEGFiles,KeyBindings,KeysBoundTo,Languages,LanguageSettings,LegendEntries,Lines,ListColumns,ListEntries,ListItems," & _
+                                    "ListLevels,ListObjects,ListParagraphs,ListRows,ListTemplates,Lists,MailMergeDataFields,MailMergeFieldNames,MailMergeFields,MappedDataFields," & _
+                                    "ModelChanges,ModelConnection,ModelMeasures,ModelRelationships,ModelTables,Modules,MotionEffects,MsoDebugOptions,Names,NamedSlideShows," & _
+                                    "NameSpaces,NewFile,ODBCErrors,OLEDBErrors,OLEObjects,OMathFunctions,OtherCorrectionsExceptions,Outline,OutlookBarGroups,OutlookBarShortcuts," & _
+                                    "Pages,Panes,Paragraphs,Parameters,Phonetics,PickerResults,PivotCaches,PivotFields,PivotFormulas,PivotItemList,PivotItems,PivotLines,PivotTables," & _
+                                    "Placeholders,Points,Presentations,PrintRanges,ProofreadingErrors,Properties,PropertyPages,Protection,PublishObjects,QueryDefs,QueryTables,Recipients," & _
+                                    "RecentFiles,Rectangles,References,Regions,Relations,Relationships,Reminders,Reports,Research,Results,Revisions,Rules,Scenes,Sections,Selection," & _
+                                    "Sentences,Sequence,Sequences,SeriesCollection,SeriesLines,ShapeNodes,Shapes,Sheets,Signatures,Slicers,SlideRange,Slides,SlideShowSettings," & _
+                                    "SlideShowWindows,SlideSizes,SmartArtColors,SmartArtLayouts,SmartArtNodes,SmartArtQuickStyles,SmartTagActions,SmartTagRecognizers,SmartTagTypes," & _
+                                    "SmartTags,Sort,SortFields,SparklineGroups,Stores,StyleSheets,Styles,Subdocuments,SyncObjects,TableDefs,TableOfAuthorities,TableOfContents," & _
+                                    "TableOfFigures,Tables,TableStyles,TabStops,Tabs,TaskPanes,Tasks,Templates,TextColumns,TextInput,TextStyleLevels,TextStyles,Timing,Trendlines," & _
+                                    "Trends,UsedObjects,Users,Validation,Variables,Views,Visualizations,VPageBreaks,Watches,WebPageFonts,Windows,Workbooks,Worksheets,Workspaces,Words," & _
+                                    "XMLChildNodeSuggestions,XMLMapping,XMLNamespaces,XMLNodes,XMLSchemaReferences,XmlDataBinding,XmlMaps,XSLTransforms,Zooms"
+
 Public Function ASF_InitGlobals() As ASF_Globals
     If gPrograms Is Nothing Then Set gPrograms = New Collection
     If gFuncTable Is Nothing Then Set gFuncTable = New ASF_Map
