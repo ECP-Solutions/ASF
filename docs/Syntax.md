@@ -23,6 +23,7 @@ This document defines the concrete syntax supported by the Advanced Scripting Fr
 - Single-line comment: `/* ... */` (also supports C-style token comments in parser)
 - Function literal: `fun (params...) { ... }`
 - Top-level function declaration: `fun name(params...) { ... }`
+- COM prototype method declaration: `prototype.COM.ObjectType methodName(params...) { ... }` (v3.1.2+)
 - Anonymous function values are closures with **shared-write** semantics (they capture the current runtime scope by reference).
 - Array literal: `[ elem1, elem2, ... ]`
 - Object literal: `{ key1: value1, key2: value2 }`
@@ -55,6 +56,7 @@ This BNF uses a mixture of concrete tokens and non-terminals to show the languag
                    | <print-stmt>
                    | <func-decl>
                    | <class-decl>
+                   | <prototype-decl>
                    | <let-decl>
                    | <import-stmt>
                    | <export-stmt>
@@ -92,6 +94,8 @@ This BNF uses a mixture of concrete tokens and non-terminals to show the languag
 <func-decl>      ::= 'fun' IDENT '(' <paramlist> ')' <block>
 
 <class-decl>     ::= 'class' IDENT [ 'extends' IDENT ] '{' <class-body> '}'
+
+<prototype-decl> ::= 'prototype' '.' 'COM' '.' IDENT IDENT '(' <paramlist> ')' <block>
 
 <class-body>     ::= <class-member>*
 
@@ -246,6 +250,7 @@ VBA_EXPR         ::= any raw text until matching ')'
 
 Notes:
 - The parser also accepts top-level function declarations using the same `fun` syntax with a name: `fun name(params) { body }` — these are converted to program-level function definitions and stored in the global program table.
+- **Prototype methods**: `prototype.COM.ObjectType methodName(params) { body }` declarations are compiled into internal functions and registered for COM object method dispatch (v3.1.2+).
 - Collapsed identifiers like `o.a[2].b` are parsed into nested AST nodes (`Variable`/`Member`/`Index`) by the compiler helper `ParseCollapsedIdentToNode`.
 - **Module imports/exports**: `import` and `export` statements enable code organization across multiple `.vas` files with caching and circular-dependency detection.
 - **Spread/rest operators**: The `...` operator expands arrays in literals/calls and collects remaining elements in destructuring/parameters.
@@ -499,6 +504,7 @@ ASF uses Map-based AST nodes internally. Common node `type` values include:
 - `Import` — { type: "Import", source: "...", defaultImport?: "...", namespaceImport?: "...", namedImports?: [...] }
 - `Export` — { type: "Export", isDefault: bool, expression?: <node>, namedExports?: [...], declarationType?: "function", declarationName?: "..." }
 - `ArrayDestructuring` — { type: "ArrayDestructuring", targets: [...], restTarget?: "...", source: <node> }
+- `PrototypeDeclaration` — { type: "PrototypeDeclaration", objectType: "...", methodName: "...", params: [...], body: <stmts> }
 
 ---
 
@@ -547,6 +553,27 @@ import { add, multiply } from './math.vas';
 import * as utils from './utils.vas';
 result = add(5, 3);
 name = utils.formatName('John', 'Doe');
+
+// COM object prototype extension (v3.1.2+)
+prototype.COM.Range formatCurrency() {
+    this.NumberFormat = "$#,##0.00";
+    this.Font.Bold = true;
+    return this;  // Enable method chaining
+};
+
+prototype.COM.ListRow asDictionary() {
+    let headers = this.parent.listcolumns;
+    let values = this.range.value2;
+    let result = {};
+    for (let i = 1, i <= headers.count, i+=1) {
+        result.set(headers.item(i).name, values[1][i]);
+    }
+    return result;
+};
+
+// Usage of prototype methods
+$1.Range('A1:A10').formatCurrency();
+let rowData = $1.ListObjects('Table1').ListRows(1).asDictionary();
 ```
 
 Notes & hints
@@ -556,6 +583,7 @@ Notes & hints
 - The compiler will attempt to expand collapsed identifiers like a.b[3].c into nested AST nodes so the VM can handle LValue semantics correctly.
 - **Module caching**: Each `.vas` file executes once per session; `ClearModuleCache()` resets the cache.
 - **Working directory**: Use `scwd(path)` to set the base directory for relative imports before loading modules.
+- **Prototype methods**: COM object prototype extension requires `AppAccess = True` and `OverrideCollMethods = True` for collection integration (v3.1.2+).
 
 ---
 
