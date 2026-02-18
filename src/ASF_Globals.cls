@@ -44,7 +44,7 @@ Private Const MSOColStr As String = "ActionSettings,Actions,AddIns,AddressEntrie
                                     "SeriesCollection,ShapeNodes,Shapes,Slicers,SlideRange,SlideShowWindows,Slides,SmartTagActions,SmartTagRecognizers," & _
                                     "SmartTagTypes,SmartTags,StyleSheets,Styles,Subdocuments,SyncObjects,TabStops,Tabs,TaskPanes,Tasks,Templates,TextColumns," & _
                                     "TextStyleLevels,TextStyles,Trendlines,Trends,UsedObjects,VPageBreaks,Variables,Views,Visualizations,Watches,Windows,Words," & _
-                                    "XMLChildNodeSuggestions,XMLNamespaces,XMLNodes,XMLSchemaReferences,XSLTransforms,XmlMaps,Zooms."
+                                    "XMLChildNodeSuggestions,XMLNamespaces,XMLNodes,XMLSchemaReferences,XSLTransforms,XmlMaps,Zooms"
 Public Function ASF_InitGlobals() As ASF_Globals
     If gPrograms Is Nothing Then Set gPrograms = New Collection
     If gFuncTable Is Nothing Then Set gFuncTable = New ASF_Map
@@ -79,3 +79,4 @@ End Property
 Public Property Let MAX_CALL_DEPTH(aValue As Long)
     MAX_CALL_DEPTH_ = aValue
 End Property
+
