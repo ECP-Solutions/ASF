@@ -24,8 +24,6 @@ Private APPLICATION_ACCESS_ As Boolean
 Private Const PLACEHOLDER_CHR_ As String = "$"
 Private tmpVar As Variant
 Private emptyColl As New Collection
-Private COM_PROTOTYPES_ As Collection ' COM Prototype storage for monkey patching
-Private COLLECTIONS_METHOD_OVERRIDE_ As Boolean
 
 ' Executes AST nodes produced by Compiler (AST).
 ' Uses Map node types and ScopeStack. Logs to gRuntimeLog.
@@ -49,87 +47,6 @@ Public Sub InjectVariable(varName As String, VarValue As Variant)
         INJECTED_VARIABLES_.Add Array(varName, tmpVar), varName
     End If
 End Sub
-Private Sub InitializeCOMPrototypes()
-    If COM_PROTOTYPES_ Is Nothing Then
-        Set COM_PROTOTYPES_ = New Collection
-    End If
-End Sub
-' Register a prototype method for a COM class type
-Public Sub RegisterCOMPrototype(classType As String, methodName As String, funcIndex As Long, params As Collection)
-    InitializeCOMPrototypes
-    
-    Dim classKey As String: classKey = UCase$(classType)
-    Dim prototypeMethods As Collection
-    
-    ' Get or create methods collection for this class type
-    On Error Resume Next
-    Set prototypeMethods = COM_PROTOTYPES_(classKey)
-    On Error GoTo 0
-    
-    If prototypeMethods Is Nothing Then
-        Set prototypeMethods = New Collection
-        COM_PROTOTYPES_.Add prototypeMethods, classKey
-    End If
-    
-    ' Store method info
-    Dim methodInfo As ASF_Map: Set methodInfo = New ASF_Map
-    methodInfo.SetValue "funcIndex", funcIndex
-    methodInfo.SetValue "params", params
-    
-    ' Remove existing method if present
-    On Error Resume Next
-    prototypeMethods.Remove UCase$(methodName)
-    On Error GoTo 0
-    
-    prototypeMethods.Add methodInfo, UCase$(methodName)
-End Sub
-' Check if a prototype method exists for a COM object type and method name
-Private Function HasCOMPrototype(obj As Variant, methodName As String) As Boolean
-    InitializeCOMPrototypes
-    
-    On Error GoTo NoPrototype
-    
-    Dim objectType As String: objectType = GetCOMObjectType(obj)
-    If objectType = vbNullString Then GoTo NoPrototype
-    
-    Dim prototypeMethods As Collection
-    Set prototypeMethods = COM_PROTOTYPES_(UCase$(objectType))
-    
-    Dim methodInfo As ASF_Map
-    Set methodInfo = prototypeMethods(UCase$(methodName))
-    
-    HasCOMPrototype = True
-    Exit Function
-    
-NoPrototype:
-    HasCOMPrototype = False
-End Function
-' Get prototype method info for a COM object type and method name
-Private Function GetCOMPrototype(obj As Variant, methodName As String) As ASF_Map
-    InitializeCOMPrototypes
-    
-    On Error GoTo NoPrototype
-    
-    Dim objectType As String: objectType = GetCOMObjectType(obj)
-    If objectType = vbNullString Then GoTo NoPrototype
-    
-    Dim prototypeMethods As Collection
-    Set prototypeMethods = COM_PROTOTYPES_(UCase$(objectType))
-    
-    Set GetCOMPrototype = prototypeMethods(UCase$(methodName))
-    Exit Function
-    
-NoPrototype:
-    Set GetCOMPrototype = Nothing
-End Function
-' Determine COM object type using TypeName
-Private Function GetCOMObjectType(obj As Variant) As String
-    If IsObject(obj) Then
-        GetCOMObjectType = typeName(obj)
-    Else
-        GetCOMObjectType = vbNullString
-    End If
-End Function
 Public Property Get EnableCallTrace() As Boolean
     EnableCallTrace = ENABLE_CALL_TRACE_
 End Property
@@ -150,12 +67,6 @@ Public Property Get AppAccess() As Boolean
 End Property
 Public Property Let AppAccess(aValue As Boolean)
     APPLICATION_ACCESS_ = aValue
-End Property
-Public Property Get OverrideCollMethods() As Boolean
-    OverrideCollMethods = COLLECTIONS_METHOD_OVERRIDE_
-End Property
-Public Property Let OverrideCollMethods(aValue As Boolean)
-    COLLECTIONS_METHOD_OVERRIDE_ = aValue
 End Property
 Public Function GetCallStackTrace() As String
     Dim sb As String
@@ -209,22 +120,22 @@ End Function
 Private Function CastInjectedVar(VarValue As Variant) As Variant
     If IsArray(VarValue) Then
         CastInjectedVar = ArrayToASF(VarValue)
-    ElseIf IsVBAcollection(VarValue) Then
+    ElseIf TypeName(VarValue) = "Collection" Then
         CastInjectedVar = CollToASF(VarValue)
-    ElseIf typeName(VarValue) = "ASF_Map" Then
+    ElseIf TypeName(VarValue) = "ASF_Map" Then
         Set CastInjectedVar = VarValue
-    ElseIf typeName(VarValue) = "ASF_RegexEngine" Then
+    ElseIf TypeName(VarValue) = "ASF_RegexEngine" Then
         Set CastInjectedVar = VarValue
     ElseIf IsObject(VarValue) Then
-        CastInjectedVar = typeName(VarValue)
+        CastInjectedVar = TypeName(VarValue)
     Else
         CastInjectedVar = CastType(VarValue)
     End If
 End Function
 Private Function CastType(aValue As Variant) As Variant
-    If typeName(aValue) = "String" Then
+    If TypeName(aValue) = "String" Then
         CastType = CStr(aValue)
-    ElseIf typeName(aValue) = "Boolean" Then
+    ElseIf TypeName(aValue) = "Boolean" Then
         CastType = CBool(aValue)
     ElseIf IsNumeric(aValue) Then
         CastType = CDbl(aValue)
@@ -252,10 +163,10 @@ Private Function ArrayToASF(arr As Variant) As Variant
             For ii = lb2 To ub2
                 If IsArray(arr(i, ii)) Then
                     tmpElm(1 + ii - lb2) = ArrayToASF(arr(i, ii))
-                ElseIf IsVBAcollection(arr(i, ii)) Then
+                ElseIf TypeName(arr(i, ii)) = "Collection" Then
                     tmpElm(1 + ii - lb2) = CollToASF(arr(i, ii))(1)
                 ElseIf IsObject(arr(i, ii)) Then
-                    tmpElm(1 + ii - lb2) = typeName(arr(i, ii))
+                    tmpElm(1 + ii - lb2) = TypeName(arr(i, ii))
                 Else
                     tmpElm(1 + ii - lb2) = CastType(arr(i, ii))
                 End If
@@ -266,10 +177,10 @@ Private Function ArrayToASF(arr As Variant) As Variant
         For i = lb To ub
             If IsArray(arr(i)) Then
                 tmpResult(1 + i - lb) = ArrayToASF(arr(i))
-            ElseIf IsVBAcollection(arr(i)) Then
+            ElseIf TypeName(arr(i)) = "Collection" Then
                 tmpResult(1 + i - lb) = CollToASF(arr(i))(1)
             ElseIf IsObject(arr(i)) Then
-                tmpResult(1 + i - lb) = typeName(arr(i))
+                tmpResult(1 + i - lb) = TypeName(arr(i))
             Else
                 tmpResult(1 + i - lb) = CastType(arr(i))
             End If
@@ -352,41 +263,31 @@ ErrHandler:
     ASFto2Darray = Array()
 End Function
 ' Convert native VBA Collection -> ASF one-based internal array representation
-Private Function CollToASF(coll As Variant, Optional CastElem As Boolean = True) As Variant
+Private Function CollToASF(coll As Variant) As Variant
     On Error GoTo ErrHandler
     Dim tmpResult() As Variant
-    Dim tmpElm As Variant
-    Dim i As Long: i = 1
     If coll.Count = 0 Then CollToASF = Array(): Exit Function
+    Dim i As Long
     ReDim tmpResult(1 To coll.Count)
-    For Each tmpElm In coll
-        If IsArray(tmpElm) Then
-            If CastElem Then
-                tmpResult(i) = ArrayToASF(tmpElm)
-            Else
-                tmpResult(i) = ArrayToASF2(tmpElm)
-            End If
-        ElseIf IsVBAcollection(tmpElm) Then
-            tmpResult(i) = CollToASF(tmpElm, CastElem)
-        ElseIf typeName(tmpElm) = "String" Then
-            tmpResult(i) = CStr(tmpElm)
-        ElseIf typeName(tmpElm) = "Boolean" Then
-            tmpResult(i) = CBool(tmpElm)
-        ElseIf IsNumeric(tmpElm) Then
-            tmpResult(i) = CDbl(tmpElm)
+    For i = 1 To coll.Count
+        If IsArray(coll(i)) Then
+            tmpResult(i) = ArrayToASF(coll(i))
+        ElseIf TypeName(coll(i)) = "Collection" Then
+            tmpResult(i) = CollToASF(coll(i))
+        ElseIf TypeName(coll(i)) = "String" Then
+            tmpResult(i) = CStr(coll(i))
+        ElseIf TypeName(coll(i)) = "Boolean" Then
+            tmpResult(i) = CBool(coll(i))
+        ElseIf IsNumeric(coll(i)) Then
+            tmpResult(i) = CDbl(coll(i))
         Else
-            If CastElem Then
-                If Not IsObject(tmpElm) Then
-                    tmpResult(i) = tmpElm
-                Else
-                    tmpResult(i) = typeName(tmpElm)
-                End If
+            If Not IsObject(coll(i)) Then
+                tmpResult(i) = coll(i)
             Else
-                vAssignment tmpResult(i), tmpElm
+                tmpResult(i) = TypeName(coll(i))
             End If
         End If
-        i = i + 1
-    Next tmpElm
+    Next i
     CollToASF = tmpResult
     Erase tmpResult
     Exit Function
@@ -395,7 +296,6 @@ ErrHandler:
     CollToASF = Array("[<error>]")
     err.Clear
 End Function
-
 Private Function Is2Darray(arr As Variant) As Boolean
     Dim d As Long
     
@@ -567,14 +467,6 @@ Private Function ExecuteStmtNode(node As ASF_Map, progScope As ASF_ScopeStack) A
         Case "Export"
             ExecuteStmtNode = ExecModExport(node, progScope)
             Exit Function
-        Case "Prototype"
-            Dim classType As String: classType = node.GetValue("classType")
-            Dim methodName As String: methodName = node.GetValue("methodName")
-            Dim funcIdx As Long: funcIdx = node.GetValue("funcIndex")
-            Dim params As Collection: Set params = node.GetValue("params")
-            RegisterCOMPrototype classType, methodName, funcIdx, params
-            ExecuteStmtNode = vbNullString
-            Exit Function
         Case Else
             ' unknown node type
             If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "Unknown statement node: " & tP
@@ -634,7 +526,7 @@ Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As
     Dim baseVal As Variant
     vAssignment baseVal, EvalExprNode(node.GetValue("base"), progScope)
 
-    If typeName(baseVal) = "ASF_Map" Then
+    If TypeName(baseVal) = "ASF_Map" Then
         'Eval static method on a class
         If baseVal.Exists("classMethods") Then
             Dim classMethods As Collection
@@ -654,7 +546,7 @@ Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As
     End If
 
     ' If base is an ASF_ScopeStack, try to read property if present
-    If typeName(baseVal) = "ASF_ScopeStack" Then
+    If TypeName(baseVal) = "ASF_ScopeStack" Then
         If baseVal.Has(CStr(prop)) Then
             vAssignment EvalMemberNode, baseVal.GetValue(CStr(prop))
         Else
@@ -664,7 +556,7 @@ Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As
     End If
 
     ' If base is an array/string, the member can be a call with missing parents
-    If typeName(baseVal) = "String" Or IsArray(baseVal) Then
+    If TypeName(baseVal) = "String" Or IsArray(baseVal) Then
         If IsObject(baseVal) Then 'An object identified as an array
             vAssignment EvalMemberNode, CallObjectMethod(baseVal, prop)
         Else
@@ -705,7 +597,7 @@ Private Function EvalIndexNode(node As ASF_Map, progScope As ASF_ScopeStack) As 
         Dim adjustedPos As Long: adjustedPos = lb + (pos - optionBase)
         If adjustedPos > ub Then err.Raise vbObjectError + 5005, "VM.EvalIndexNode", "Index out of bounds"
         vAssignment EvalIndexNode, baseVal(adjustedPos)
-    ElseIf typeName(baseVal) = "ASF_Map" Then
+    ElseIf TypeName(baseVal) = "ASF_Map" Then
         vAssignment EvalIndexNode, baseVal.GetValue(pos)
     Else
         err.Raise vbObjectError + 5006, "VM.EvalIndexNode", "Cannot index non-array/non-map"
@@ -728,12 +620,12 @@ Private Function EvalArrayNode(node As ASF_Map, progScope As ASF_ScopeStack) As 
         
         For ii = 1 To items.Count
             Set itemNode = items(ii)
-            If typeName(itemNode) = "ASF_Map" And itemNode.GetValue("type") = "SpreadElement" Then
+            If TypeName(itemNode) = "ASF_Map" And itemNode.GetValue("type") = "SpreadElement" Then
                 ' Evaluate the spread argument
                 vAssignment spreadArr, EvalExprNode(itemNode.GetValue("argument"), progScope)
                 
                 ' JavaScript behavior: spread strings into characters
-                If typeName(spreadArr) = "String" Then
+                If TypeName(spreadArr) = "String" Then
                     totalCount = totalCount + Len(spreadArr)
                 ElseIf IsArray(spreadArr) Then
                     Dim spreadLen As Long
@@ -767,11 +659,11 @@ Private Function EvalArrayNode(node As ASF_Map, progScope As ASF_ScopeStack) As 
         
         For ii = 1 To items.Count
             Set itemNode = items(ii)
-            If typeName(itemNode) = "ASF_Map" And itemNode.GetValue("type") = "SpreadElement" Then
+            If TypeName(itemNode) = "ASF_Map" And itemNode.GetValue("type") = "SpreadElement" Then
                 ' Spread the elements
                 vAssignment spreadArr, EvalExprNode(itemNode.GetValue("argument"), progScope)
                 
-                If typeName(spreadArr) = "String" Then
+                If TypeName(spreadArr) = "String" Then
                     ' JavaScript behavior: spread string into individual characters
                     StrLen = Len(spreadArr)
                     For ci = 1 To StrLen
@@ -854,7 +746,7 @@ Private Function ResolvePath(node As ASF_Map, progScope As ASF_ScopeStack, Optio
                     Dim indexV As Variant: indexV = EvalVBExpressionWithScope(indexStr, progScope) ' Twist: use VBEXPR for fallback computed
                     current = GetIndexedValue(current, indexV, progScope)
                 Else
-                    If typeName(current) = "ASF_Map" Then
+                    If TypeName(current) = "ASF_Map" Then
                         vAssignment current, current.GetValue(part)
                     Else
                         err.Raise vbObjectError + 5007, "VM.ResolvePath", "Cannot access property on non-map"
@@ -947,7 +839,7 @@ Private Function GetIndexedValue(baseVal As Variant, idxV As Variant, progScope 
         Dim adjustedPos As Long: adjustedPos = lb + (pos - optionBase)
         If adjustedPos > UBound(baseVal) Then err.Raise vbObjectError + 5005, "VM.GetIndexedValue", "Index out of bounds"
         vAssignment GetIndexedValue, baseVal(adjustedPos)
-    ElseIf typeName(baseVal) = "ASF_Map" Then
+    ElseIf TypeName(baseVal) = "ASF_Map" Then
         vAssignment GetIndexedValue, baseVal.GetValue(pos)
     Else
         err.Raise vbObjectError + 5006, "VM.GetIndexedValue", "Cannot index non-array/non-map"
@@ -1066,7 +958,7 @@ Private Function ExecForNode(node As ASF_Map, progScope As ASF_ScopeStack) As St
             Next iChar
 
         ' ASF_Map objects (attempt to obtain keys)
-        ElseIf Not IsEmpty(iterVal) And Not IsNull(iterVal) And IsObject(iterVal) And typeName(iterVal) = "ASF_Map" Then
+        ElseIf Not IsEmpty(iterVal) And Not IsNull(iterVal) And IsObject(iterVal) And TypeName(iterVal) = "ASF_Map" Then
             Set keysCol = GetMapKeys(iterVal) ' returns Collection of keys (strings or numeric)
             ' for-of: replace keysCol with values collection
             If kind = "of" Then
@@ -1319,7 +1211,7 @@ Private Function EvalObjectNode(node As ASF_Map, progScope As ASF_ScopeStack) As
                 ' Evaluate the spread source
                 vAssignment spreadSrc, EvalExprNode(valNode.GetValue("argument"), progScope)
                 
-                If typeName(spreadSrc) = "ASF_Map" Then
+                If TypeName(spreadSrc) = "ASF_Map" Then
                     ' JavaScript behavior: merge all enumerable properties
                     Set spreadKeys = spreadSrc.keys()
                     If spreadKeys.Count > 0 Then
@@ -1334,7 +1226,7 @@ Private Function EvalObjectNode(node As ASF_Map, progScope As ASF_ScopeStack) As
                         keyIndex = CStr(jj - LBound(spreadSrc) + 1) ' Convert to 1-based  DIFFERS FROM JS
                         resultMap.SetValue keyIndex, spreadSrc(jj)
                     Next jj
-                ElseIf typeName(spreadSrc) = "String" Then
+                ElseIf TypeName(spreadSrc) = "String" Then
                     ' JavaScript behavior: string spreads as character index (0-based)
                     For si = 1 To Len(spreadSrc)
                         resultMap.SetValue CStr(si), mid$(spreadSrc, si, 1) ' Convert to 1-based  DIFFERS FROM JS
@@ -1456,7 +1348,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                     Dim evs As Variant
                     vAssignment evs, EvalExprNode(pNode, progScope)
                     ' pretty-print arrays/maps/collections; fallback to CStr for primitives
-                    If IsArray(evs) Or (IsObject(evs) And typeName(evs) = "ASF_Map") Then
+                    If IsArray(evs) Or (IsObject(evs) And TypeName(evs) = "ASF_Map") Then
                         outStr = outStr & ValueToStringForPrint(evs)
                     ElseIf IsNull(evs) Then
                         outStr = outStr & "null"
@@ -1483,7 +1375,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
             If Not IsEmpty(vVal) Then
                 ' If it's a Map and looks like a function node, return as callable
                 On Error Resume Next
-                If typeName(vVal) = "ASF_Map" Then
+                If TypeName(vVal) = "ASF_Map" Then
                     Dim maybeType As Variant
                     maybeType = Empty
                     On Error Resume Next
@@ -1532,7 +1424,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                             Else
                                 paramsCol.Add vbNullString
                             End If
-                        ElseIf typeName(paVar) = "Collection" Then
+                        ElseIf TypeName(paVar) = "Collection" Then
                             ' already a collection — copy it
                             For Each it In paVar
                                 paramsCol.Add it
@@ -1600,21 +1492,21 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
             Dim thisInstance As Variant
             vAssignment thisInstance, progScope.GetValue("this")
             
-            If typeName(thisInstance) = "ASF_Map" And thisInstance.GetValue("type") = "Instance" Then
+            If TypeName(thisInstance) = "ASF_Map" And thisInstance.GetValue("type") = "Instance" Then
                 Dim instanceClassName As String: instanceClassName = thisInstance.GetValue("className")
                 
                 ' Get the class definition
                 Dim classDefSuper As Variant
                 vAssignment classDefSuper, progScope.GetValue(instanceClassName)
                 
-                If typeName(classDefSuper) = "ASF_Map" And classDefSuper.GetValue("type") = "Class" Then
+                If TypeName(classDefSuper) = "ASF_Map" And classDefSuper.GetValue("type") = "Class" Then
                     ' Get parent class
                     If classDefSuper.Exists("superClass") Then
                         Dim parentClassName As String: parentClassName = classDefSuper.GetValue("superClass")
                         Dim parentClassDef As Variant
                         vAssignment parentClassDef, progScope.GetValue(parentClassName)
                         
-                        If typeName(parentClassDef) = "ASF_Map" And parentClassDef.Exists("constructor") Then
+                        If TypeName(parentClassDef) = "ASF_Map" And parentClassDef.Exists("constructor") Then
                             Dim parentCtor As ASF_Map: Set parentCtor = parentClassDef.GetValue("constructor")
                             
                             ' Execute parent constructor with this instance and provided args
@@ -1662,11 +1554,11 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
             For k = 1 To argsColl.Count
                 Set argNode = argsColl(k)
                 
-                If typeName(argNode) = "ASF_Map" And argNode.GetValue("type") = "SpreadElement" Then
+                If TypeName(argNode) = "ASF_Map" And argNode.GetValue("type") = "SpreadElement" Then
                     ' Evaluate spread and expand
                     vAssignment spreadVal, EvalExprNode(argNode.GetValue("argument"), progScope)
                     
-                    If typeName(spreadVal) = "String" Then
+                    If TypeName(spreadVal) = "String" Then
                         ' JavaScript behavior: spread string into individual characters
                         For sci = 1 To Len(spreadVal)
                             evaluated.Add mid$(spreadVal, sci, 1)
@@ -1699,24 +1591,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                     ' --- method builtins on Member callee ---
                     Dim propN As String: propN = LCase$(CStr(calleeExpr.GetValue("prop")))
                     Dim baseValLocal As Variant
-                    
                     vAssignment baseValLocal, EvalExprNode(calleeExpr.GetValue("base"), progScope)
-                    If IsVBAcollection(baseValLocal) And COLLECTIONS_METHOD_OVERRIDE_ Then
-                        Dim knownMethod As Boolean
-                        knownMethod = (BinarySearch(GLOBALS_.builtinArrayMethods, propN) <> -1)
-                        If Not knownMethod Then
-                            Dim isSpecialColl As Boolean
-                            Dim tmpBase As Variant
-                            Dim tmpBaseLocal As Variant
-                            vAssignment tmpBaseLocal, calleeExpr.GetValue("base")
-                            If tmpBaseLocal.Exists("name") Then
-                                isSpecialColl = tmpBaseLocal.GetValue("name") = "Math"
-                            End If
-                            GoTo CallCollMethod
-                        Else
-                            baseValLocal = CollToASF(baseValLocal, False)
-                        End If
-                    End If
                     If IsArray(baseValLocal) Then
                         ' Array methods (map/filter/reduce/slice/push/pop)
                         Select Case propN
@@ -1731,7 +1606,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                 ' map(fn) -> return new array with fn applied to each element (recursively tolerates nested arrays)
                                 If evaluated.Count < 1 Then vAssignment tmpResult, Empty: GoTo exitfun
                                 Dim mapper As Variant: vAssignment mapper, evaluated(1)
-                                If typeName(mapper) <> "ASF_Map" Or mapper.GetValue("type") <> "Closure" Then
+                                If TypeName(mapper) <> "ASF_Map" Or mapper.GetValue("type") <> "Closure" Then
                                     vAssignment tmpResult, Empty: GoTo exitfun
                                 End If
                             
@@ -1771,7 +1646,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                 ' filter(fn) -> return new array with elements where fn(elem) truthy
                                 If evaluated.Count < 1 Then vAssignment tmpResult, Empty: GoTo exitfun
                                 Dim pred As Variant: vAssignment pred, evaluated(1)
-                                If typeName(pred) <> "ASF_Map" Or pred.GetValue("type") <> "Closure" Then
+                                If TypeName(pred) <> "ASF_Map" Or pred.GetValue("type") <> "Closure" Then
                                     vAssignment tmpResult, Empty: GoTo exitfun
                                 End If
                                 If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
@@ -1803,7 +1678,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                 ' reduce(fn, initial?) -> apply reduction
                                 If evaluated.Count < 1 Then vAssignment tmpResult, Empty: GoTo exitfun
                                 Dim rfn As Variant: vAssignment rfn, evaluated(1)
-                                If typeName(rfn) <> "ASF_Map" Or rfn.GetValue("type") <> "Closure" Then
+                                If TypeName(rfn) <> "ASF_Map" Or rfn.GetValue("type") <> "Closure" Then
                                     vAssignment tmpResult, Empty: GoTo exitfun
                                 End If
                                 If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
@@ -1954,7 +1829,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                 End If
                             
                                 Dim cb As Variant: vAssignment cb, evaluated(1)
-                                If typeName(cb) <> "ASF_Map" Or cb.GetValue("type") <> "Closure" Then
+                                If TypeName(cb) <> "ASF_Map" Or cb.GetValue("type") <> "Closure" Then
                                     vAssignment tmpResult, Empty
                                     GoTo exitfun
                                 End If
@@ -2109,7 +1984,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                 ReDim parts(1 To len_val)
                                 For ii_j = 0 To len_val - 1
                                     vAssignment valj, baseValLocal(lb_val + ii_j)
-                                    If IsArray(valj) Or (IsObject(valj) And typeName(valj) = "ASF_Map") Then
+                                    If IsArray(valj) Or (IsObject(valj) And TypeName(valj) = "ASF_Map") Then
                                         parts(ii_j + 1) = ValueToStringForPrint(valj)
                                     Else
                                         parts(ii_j + 1) = CStr(valj)
@@ -2476,7 +2351,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                             Case "every"
                                 If Not IsArray(baseValLocal) Or evaluated.Count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
                                 Dim cb_every As Variant: vAssignment cb_every, evaluated(1)
-                                If typeName(cb_every) <> "ASF_Map" Or cb_every.GetValue("type") <> "Closure" Then vAssignment tmpResult, Empty: GoTo exitfun
+                                If TypeName(cb_every) <> "ASF_Map" Or cb_every.GetValue("type") <> "Closure" Then vAssignment tmpResult, Empty: GoTo exitfun
                                 lb_b = LBound(baseValLocal)
                                 ub_b = UBound(baseValLocal)
                                 len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
@@ -2502,7 +2377,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                             Case "find", "findindex", "findlast", "findlastindex"
                                 If Not IsArray(baseValLocal) Or evaluated.Count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
                                 Dim cb_find As Variant: vAssignment cb_find, evaluated(1)
-                                If typeName(cb_find) <> "ASF_Map" Or cb_find.GetValue("type") <> "Closure" Then vAssignment tmpResult, Empty: GoTo exitfun
+                                If TypeName(cb_find) <> "ASF_Map" Or cb_find.GetValue("type") <> "Closure" Then vAssignment tmpResult, Empty: GoTo exitfun
                                 Dim ob_f As Long: ob_f = progScope.GetValue("__option_base")
                                 lb_b = LBound(baseValLocal)
                                 ub_b = UBound(baseValLocal)
@@ -2568,7 +2443,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                         ReDim tempIn(0 To -1)
                                     End If
                             
-                                ElseIf typeName(val_from) = "String" Then
+                                ElseIf TypeName(val_from) = "String" Then
                                     ' string -> array of characters (option base)
                                     If Len(val_from) = 0 Then
                                         ReDim outArr(opt_from To opt_from)
@@ -2609,7 +2484,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                 
                                 If Not IsEmpty(comp) And Not IsNull(comp) Then
                                     ' only apply mapping if comp is a Closure map object
-                                    If typeName(comp) = "ASF_Map" Then
+                                    If TypeName(comp) = "ASF_Map" Then
                                         If comp.Exists("type") And CStr(comp.GetValue("type")) = "Closure" Then
                                             For i_sp = 0 To newSize - 1
                                                 Set argColl = New Collection
@@ -2723,7 +2598,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                             Case "some"
                                 If Not IsArray(baseValLocal) Or evaluated.Count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
                                 Dim cb_some As Variant: vAssignment cb_some, evaluated(1)
-                                If typeName(cb_some) <> "ASF_Map" Or cb_some.GetValue("type") <> "Closure" Then vAssignment tmpResult, Empty: GoTo exitfun
+                                If TypeName(cb_some) <> "ASF_Map" Or cb_some.GetValue("type") <> "Closure" Then vAssignment tmpResult, Empty: GoTo exitfun
                                 lb_b = LBound(baseValLocal)
                                 ub_b = UBound(baseValLocal)
                                 len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
@@ -2787,7 +2662,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                 ' determine if comp is a closure
                                 Dim hasComp As Boolean: hasComp = False
                                 If Not IsEmpty(comp) And Not IsNull(comp) Then
-                                    If typeName(comp) = "ASF_Map" Then
+                                    If TypeName(comp) = "ASF_Map" Then
                                         If comp.Exists("type") And CStr(comp.GetValue("type")) = "Closure" Then hasComp = True
                                     End If
                                 End If
@@ -2814,7 +2689,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                             Case Else
                                 GoTo namedFunctions
                         End Select
-                    ElseIf typeName(baseValLocal) = "ASF_RegexEngine" Then
+                    ElseIf TypeName(baseValLocal) = "ASF_RegexEngine" Then
                         ' Expose regex module methods with the Regex object
                         Select Case propN
                             Case "escape"
@@ -2891,7 +2766,7 @@ init_Error_Handler:
                                 tmpResult = baseValLocal.test(CStr(evaluated(1)))
                                 GoTo exitfun
                         End Select
-                    ElseIf typeName(baseValLocal) = "String" Then
+                    ElseIf TypeName(baseValLocal) = "String" Then
                         'Builtins string methods
                         Dim nidx As Long
                         Dim eidx As Long
@@ -3057,7 +2932,7 @@ init_Error_Handler:
                                             ' Append full match + groups as an array
                                             resultsColl.Add VM_CapturesToArray(capsA)
                                     
-                                            Dim fullMatchA As String: fullMatchA = CStr(capsA.Item(1))
+                                            Dim fullMatchA As String: fullMatchA = CStr(capsA.item(1))
                                             Dim fLenA As Long: fLenA = Len(fullMatchA)
                                             If fLenA = 0 Then
                                                 sPosA = IIf(foundAtA + 1 > Lsrc, Lsrc + 1, foundAtA + 1)
@@ -3107,7 +2982,7 @@ init_Error_Handler:
                                     
                                             idxOut = idxOut + 1
                                             ReDim Preserve outMatches(1 To idxOut)
-                                            outMatches(idxOut) = CStr(caps2.Item(1))
+                                            outMatches(idxOut) = CStr(caps2.item(1))
                                     
                                             Dim fLen As Long: fLen = Len(outMatches(idxOut))
                                             If fLen = 0 Then
@@ -3233,7 +3108,7 @@ init_Error_Handler:
                                                 outRepStr = outRepStr & mid$(src, searchPos)
                                                 Exit Do
                                             Else
-                                                Dim fullMatch As String: fullMatch = CStr(caps.Item(1))
+                                                Dim fullMatch As String: fullMatch = CStr(caps.item(1))
                                                 Dim matchLen As Long: matchLen = Len(fullMatch)
                                                 Dim matchStart As Long: matchStart = foundAt
                                                 Dim matchEnd As Long: matchEnd = matchStart + matchLen - 1
@@ -3261,12 +3136,12 @@ init_Error_Handler:
                                                 Dim replacedText As String: replacedText = vbNullString
     
                                                 ' --- replacement is a function/closure? ---
-                                                If Not IsEmpty(replRaw) And (IsObject(replRaw) Or typeName(replRaw) = "ASF_Map") Then
+                                                If Not IsEmpty(replRaw) And (IsObject(replRaw) Or TypeName(replRaw) = "ASF_Map") Then
                                                     Set argColl = New Collection
                                                     argColl.Add fullMatch
                                                     Dim gi As Long
                                                     For gi = 2 To caps.Count
-                                                        argColl.Add CStr(caps.Item(gi))
+                                                        argColl.Add CStr(caps.item(gi))
                                                     Next gi
                                                     ' offset - JS uses zero-based
                                                     argColl.Add (matchStart - 1)
@@ -3445,7 +3320,7 @@ ContinueDo:
                                 tmpResult = RTrim$(baseValLocal)
                                 GoTo exitfun
                         End Select
-                    ElseIf typeName(baseValLocal) = "ASF_Map" Then
+                    ElseIf TypeName(baseValLocal) = "ASF_Map" Then
                         ' ASF_Map (object) methods
                         Select Case propN
                             Case "keys"
@@ -3582,7 +3457,7 @@ ContinueDo:
                                     vAssignment tmpResult, baseValLocal
                                 Else
                                     Dim mergeObj As Variant: vAssignment mergeObj, evaluated(1)
-                                    If typeName(mergeObj) = "ASF_Map" Then
+                                    If TypeName(mergeObj) = "ASF_Map" Then
                                         Dim mergeKeys As Collection: Set mergeKeys = mergeObj.keys()
                                         Dim mk As Variant
                                         For Each mk In mergeKeys
@@ -3601,7 +3476,7 @@ ContinueDo:
                                 End If
                                 
                                 Dim cb_obj As Variant: vAssignment cb_obj, evaluated(1)
-                                If typeName(cb_obj) <> "ASF_Map" Or cb_obj.GetValue("type") <> "Closure" Then
+                                If TypeName(cb_obj) <> "ASF_Map" Or cb_obj.GetValue("type") <> "Closure" Then
                                     vAssignment tmpResult, Empty
                                     GoTo exitfun
                                 End If
@@ -3630,7 +3505,7 @@ ContinueDo:
                                 End If
                                 
                                 Dim cb_map As Variant: vAssignment cb_map, evaluated(1)
-                                If typeName(cb_map) <> "ASF_Map" Or cb_map.GetValue("type") <> "Closure" Then
+                                If TypeName(cb_map) <> "ASF_Map" Or cb_map.GetValue("type") <> "Closure" Then
                                     vAssignment tmpResult, Empty
                                     GoTo exitfun
                                 End If
@@ -3661,7 +3536,7 @@ ContinueDo:
                                 End If
                                 
                                 Dim cb_filter As Variant: vAssignment cb_filter, evaluated(1)
-                                If typeName(cb_filter) <> "ASF_Map" Or cb_filter.GetValue("type") <> "Closure" Then
+                                If TypeName(cb_filter) <> "ASF_Map" Or cb_filter.GetValue("type") <> "Closure" Then
                                     vAssignment tmpResult, Empty
                                     GoTo exitfun
                                 End If
@@ -3694,7 +3569,7 @@ ContinueDo:
                                 End If
                                 
                                 Dim cb_some_obj As Variant: vAssignment cb_some_obj, evaluated(1)
-                                If typeName(cb_some_obj) <> "ASF_Map" Or cb_some_obj.GetValue("type") <> "Closure" Then
+                                If TypeName(cb_some_obj) <> "ASF_Map" Or cb_some_obj.GetValue("type") <> "Closure" Then
                                     tmpResult = False
                                     GoTo exitfun
                                 End If
@@ -3727,7 +3602,7 @@ ContinueDo:
                                 End If
                                 
                                 Dim cb_every_obj As Variant: vAssignment cb_every_obj, evaluated(1)
-                                If typeName(cb_every_obj) <> "ASF_Map" Or cb_every_obj.GetValue("type") <> "Closure" Then
+                                If TypeName(cb_every_obj) <> "ASF_Map" Or cb_every_obj.GetValue("type") <> "Closure" Then
                                     tmpResult = False
                                     GoTo exitfun
                                 End If
@@ -3755,12 +3630,11 @@ ContinueDo:
                             Case Else
                                 GoTo namedFunctions
                         End Select
-                    ElseIf typeName(baseValLocal) = "Collection" Then
-CallCollMethod:
-                        If isSpecialColl Then
+                    ElseIf TypeName(baseValLocal) = "Collection" Then
+                        If calleeExpr.Exists("base") Then
                             ' Check for Math object
                             Dim baseLocal As Variant
-                            vAssignment baseLocal, tmpBaseLocal
+                            vAssignment baseLocal, calleeExpr.GetValue("base")
                             If baseLocal.GetValue("name") = "Math" Then
                                 Select Case propN
                                     Case "E"
@@ -4082,17 +3956,17 @@ namedFunctions:
                     Dim feTmpVal As Variant: vAssignment feTmpVal, evaluated(1)
                     Dim cbFn As Variant: vAssignment cbFn, evaluated(2)
                 
-                    If typeName(cbFn) <> "ASF_Map" Or cbFn.GetValue("type") <> "Closure" Then
+                    If TypeName(cbFn) <> "ASF_Map" Or cbFn.GetValue("type") <> "Closure" Then
                         vAssignment tmpResult, Empty
                         GoTo exitfun
                     End If
                 
-                    If Not IsArray(feTmpVal) And typeName(feTmpVal) <> "ASF_Map" Then
+                    If Not IsArray(feTmpVal) And TypeName(feTmpVal) <> "ASF_Map" Then
                         vAssignment tmpResult, Empty
                         GoTo exitfun
                     End If
                 
-                    If typeName(feTmpVal) = "ASF_Map" Then
+                    If TypeName(feTmpVal) = "ASF_Map" Then
                         Dim foreachKeys2 As Collection: Set foreachKeys2 = feTmpVal.keys()
                         Dim fk2 As Variant
                         Dim args_obj2 As Collection
@@ -4177,7 +4051,7 @@ namedFunctions:
                     End If
                 End If
                 vAssignment calleeVal, EvalExprNode(calleeExpr, progScope)
-                If typeName(calleeVal) = "ASF_Map" Then
+                If TypeName(calleeVal) = "ASF_Map" Then
                     Dim cM As ASF_Map: Set cM = calleeVal
                     If calleeVal.Exists("type") Then
                         Dim calleeType As String: calleeType = calleeVal.GetValue("type")
@@ -4311,7 +4185,7 @@ err_Handler:
     ArrayIsInit = False
 End Function
 ' Call function program by index (AST). "args" is Collection of evaluated arg values.
-Private Function CallFuncByIndex_AST(funcIdx As Long, args As Collection, Optional thisVal As Variant) As Variant
+Private Function CallFuncByIndex_AST(funcIdx As Long, args As Collection) As Variant
     Dim p As Variant: p = GLOBALS_.gPrograms(funcIdx)
     Dim rawScope As Collection: Set rawScope = p(2)
     Dim callScope As New ASF_ScopeStack
@@ -4335,16 +4209,12 @@ Private Function CallFuncByIndex_AST(funcIdx As Long, args As Collection, Option
             End If
         Next i
     End If
-    ' Set 'this' if provided (for COM prototype methods)
-    If Not IsMissing(thisVal) Then
-        callScope.SetLocalValue "this", thisVal
-    End If
-    callScope.SetLocalValue "__option_base", 1
     Dim stmts As Collection: Set stmts = p(1)
     Dim retVal As Variant
-    
     retVal = Empty
+    
     On Error GoTo FuncError
+    
     For i = 1 To stmts.Count
         Dim ctrl As String: ctrl = ExecuteStmtNode(stmts(i), callScope)
         If ctrl = "RETURN" Then
@@ -4394,7 +4264,7 @@ Private Function IsBoolean(ByRef expression As String) As Boolean
 End Function
 
 Private Function SafeAdd(a As Variant, b As Variant) As Variant
-    If typeName(a) <> "String" And typeName(b) <> "String" Then
+    If TypeName(a) <> "String" And TypeName(b) <> "String" Then
         SafeAdd = a + b
     Else
         SafeAdd = IIf(IsNull(a), a, CStr(a)) & IIf(IsNull(b), b, CStr(b))
@@ -4461,14 +4331,14 @@ Private Function ValueToStringWithCtx(v As Variant, visited As Collection, depth
         If Not IsObject(v) Then
             ValueToStringWithCtx = ArrayToString(v, visited, depth)
         Else
-            ValueToStringWithCtx = "<" & typeName(v) & ">"
+            ValueToStringWithCtx = "<" & TypeName(v) & ">"
         End If
         Exit Function
     End If
 
     ' Objects
     If IsObject(v) Then
-        Dim tn As String: tn = typeName(v)
+        Dim tn As String: tn = TypeName(v)
         Select Case tn
             Case "ASF_Map"
                 ' cycle detection by object identity
@@ -4628,7 +4498,7 @@ End Function
 ' - Else TypeName + simple to-string
 Private Function ObjectToString(obj As Variant, visited As Collection, depth As Long) As String
     On Error GoTo fallback
-    Dim tn As String: tn = typeName(obj)
+    Dim tn As String: tn = TypeName(obj)
 
     ' Attempt Map-like duck typing: presence of Keys and GetValue
     ' (use On Error to bail out if methods missing)
@@ -4875,10 +4745,10 @@ Private Sub HandleAssignment(left As ASF_Map, ByVal rval As Variant, progScope A
                 progScope.SetValue CStr(key), rval
             End If
         Case "prop"
-            If typeName(container) <> "ASF_Map" Then
+            If TypeName(container) <> "ASF_Map" Then
                 Dim tValue As Variant
                 vAssignment tValue, ResolveIndexProp(lval)
-                Select Case typeName(tValue)
+                Select Case TypeName(tValue)
                     Case "ASF_Map", "ASF_ScopeStack"
                         tValue.SetValue CStr(key), rval
                     Case Else
@@ -4907,9 +4777,9 @@ Private Sub HandleAssignment(left As ASF_Map, ByVal rval As Variant, progScope A
             If Not IsEmpty(parentKey) Then
                 ' parent container holds the array under parentKey (could be progScope or Map)
                 Dim arrVal As Variant
-                If typeName(container) = "ASF_Map" Then
+                If TypeName(container) = "ASF_Map" Then
                     vAssignment arrVal, container.GetValue(CStr(parentKey))
-                ElseIf typeName(container) = "ASF_ScopeStack" Then
+                ElseIf TypeName(container) = "ASF_ScopeStack" Then
                     vAssignment arrVal, container.GetValue(CStr(parentKey))
                 Else
                     ' fallback: maybe container itself is the array
@@ -4924,9 +4794,9 @@ Private Sub HandleAssignment(left As ASF_Map, ByVal rval As Variant, progScope A
                     Call AssignToArrayValueInPlace(arrVal, pos, rval)
                 End If
                 ' Write the updated array back into the parent container
-                If typeName(container) = "ASF_Map" Then
+                If TypeName(container) = "ASF_Map" Then
                     container.SetValue CStr(parentKey), arrVal
-                ElseIf typeName(container) = "ASF_ScopeStack" Then
+                ElseIf TypeName(container) = "ASF_ScopeStack" Then
                     container.SetValue CStr(parentKey), arrVal
                 Else
                     ' if container itself was an array variable, try to overwrite it:
@@ -4942,7 +4812,7 @@ Private Sub HandleAssignment(left As ASF_Map, ByVal rval As Variant, progScope A
             End If
         Case "Member"
             Dim baseVal As Variant: vAssignment baseVal, EvalExprNode(left.GetValue("base"), progScope)
-            If typeName(baseVal) <> "ASF_Map" Then err.Raise vbObjectError + 5007, "VM.HandleAssignment", "Cannot set property on non-map"
+            If TypeName(baseVal) <> "ASF_Map" Then err.Raise vbObjectError + 5007, "VM.HandleAssignment", "Cannot set property on non-map"
             Dim propKey As String: propKey = IIf(left.Exists("prop"), "prop", "property")
             baseVal.SetValue left.GetValue(propKey), rval
     End Select
@@ -5164,7 +5034,7 @@ Private Function ResolveIndexProp(ByRef lval) As Variant
     End If
     
     baseVariable = pObject("key")
-    Select Case typeName(container)
+    Select Case TypeName(container)
         Case "ASF_Map", "ASF_ScopeStack"
             ' Container is an ASF structure
             vAssignment pObject, container.GetValue(baseVariable)
@@ -5384,7 +5254,7 @@ Private Function GetElementMapFromIndexNode(indexNode As ASF_Map, progScope As A
             progScope.SetValue arrName, arrVal
             Set GetElementMapFromIndexNode = nm
             Exit Function
-        ElseIf typeName(elem) = "ASF_Map" Then
+        ElseIf TypeName(elem) = "ASF_Map" Then
             Set GetElementMapFromIndexNode = elem
             Exit Function
         Else
@@ -5414,7 +5284,7 @@ Private Function GetElementMapFromIndexNode(indexNode As ASF_Map, progScope As A
             mapObj.SetValue propName, arrVal2
             Set GetElementMapFromIndexNode = nm2
             Exit Function
-        ElseIf typeName(elem2) = "ASF_Map" Then
+        ElseIf TypeName(elem2) = "ASF_Map" Then
             Set GetElementMapFromIndexNode = elem2
             Exit Function
         Else
@@ -5534,7 +5404,7 @@ Private Function builtin_clone(v As Variant, progScope As ASF_ScopeStack) As Var
         Exit Function
     End If
     If IsObject(v) Then
-        If typeName(v) = "ASF_Map" Then
+        If TypeName(v) = "ASF_Map" Then
             Dim m As ASF_Map: Set m = v
             Dim mc As ASF_Map: Set mc = m.Clone()
             vAssignment builtin_clone, mc
@@ -5629,7 +5499,7 @@ Private Function builtin_typeof(v As Variant) As String
         If Not IsObject(v) Then
             builtin_typeof = "array"
         Else
-            builtin_typeof = "object" & ": <" & typeName(v) & ">"
+            builtin_typeof = "object" & ": <" & TypeName(v) & ">"
         End If
         Exit Function
     End If
@@ -5637,8 +5507,7 @@ Private Function builtin_typeof(v As Variant) As String
     ' ASF_Map (objects and closures) — detect function closures specially
     If IsObject(v) Then
         ' if it's an ASF_Map, look inside for "type" = "Closure"
-        Dim typeN As String: typeN = typeName(v)
-        If typeN = "ASF_Map" Then
+        If TypeName(v) = "ASF_Map" Then
             If v.Exists("type") Then
                 Dim tP As Variant: tP = v.GetValue("type")
                 If CStr(tP) = "Closure" Then
@@ -5646,9 +5515,12 @@ Private Function builtin_typeof(v As Variant) As String
                     Exit Function
                 End If
             End If
+            ' generic ASF_Map object
+            builtin_typeof = "object"
+            Exit Function
         End If
-        ' generic object or COM/host objects
-        builtin_typeof = "object" & ": <" & typeN & ">"
+        ' other COM/host objects
+        builtin_typeof = "object" & ": <" & TypeName(v) & ">"
         Exit Function
     End If
 
@@ -5712,7 +5584,7 @@ Private Function DeepEqual(a As Variant, b As Variant) As Boolean
     On Error GoTo notEqual
     ' same reference?
     If IsObject(a) And IsObject(b) Then
-        If typeName(a) = "ASF_Map" And typeName(b) = "ASF_Map" Then
+        If TypeName(a) = "ASF_Map" And TypeName(b) = "ASF_Map" Then
             ' compare keys count and values
             Dim keysA As Collection: Set keysA = a.keys()
             Dim keysB As Collection: Set keysB = b.keys()
@@ -5870,7 +5742,7 @@ Private Sub WriteToContainer(ByRef calleeExpr As ASF_Map, ByRef progScope As ASF
                 vAssignment cont, ResolveProp(rp)
                 propKey = CStr(rp.GetValue("key"))
                 If IsObject(cont) Then
-                    Select Case typeName(cont)
+                    Select Case TypeName(cont)
                         Case "ASF_Map"
                             ' set property on map
                             cont.SetValue propKey, tValue
@@ -5995,7 +5867,7 @@ Private Function GetMapKeys(mapObj As Variant) As Collection
     Dim out As New Collection
     On Error GoTo GetKeysFallback
 
-    If typeName(mapObj) <> "ASF_Map" Then
+    If TypeName(mapObj) <> "ASF_Map" Then
         Set GetMapKeys = out
         Exit Function
     End If
@@ -6024,7 +5896,7 @@ End Function
 Private Function VM_StringReplacementText(ByVal replRaw As Variant, ByVal matchStr As String, ByVal matchIndexZeroBased As Long, ByVal originalString As String) As String
     On Error GoTo fallback_str
 
-    If Not IsEmpty(replRaw) And typeName(replRaw) = "ASF_Map" Then
+    If Not IsEmpty(replRaw) And TypeName(replRaw) = "ASF_Map" Then
         If replRaw.Exists("type") And CStr(replRaw.GetValue("type")) = "Closure" Then
             Dim callArgsR As New Collection
             callArgsR.Add matchStr
@@ -6034,7 +5906,7 @@ Private Function VM_StringReplacementText(ByVal replRaw As Variant, ByVal matchS
             Dim tmpMapObj As ASF_Map
             vAssignment tmpMapObj, replRaw
             vAssignment callRes, CallClosure(tmpMapObj, callArgsR, originalString)
-            If IsArray(callRes) Or (IsObject(callRes) And typeName(callRes) = "ASF_Map") Then
+            If IsArray(callRes) Or (IsObject(callRes) And TypeName(callRes) = "ASF_Map") Then
                 VM_StringReplacementText = ValueToStringForPrint(callRes)
                 Exit Function
             ElseIf IsNull(callRes) Then
@@ -6095,7 +5967,7 @@ Private Function VM_ExpandReplacementFromCapturesJS( _
                     i = i + 2
                 Case "&"
                     If nCaps >= 1 Then
-                        out = out & CStr(caps.Item(1))
+                        out = out & CStr(caps.item(1))
                     End If
                     i = i + 2
                 Case "`"
@@ -6116,7 +5988,7 @@ Private Function VM_ExpandReplacementFromCapturesJS( _
                         Dim idx As Long: idx = CLng(numStr)
                         ' JS: $1 maps to capture group 1 (caps.Item(2) in our caps layout)
                         If idx >= 1 And idx <= (nCaps - 1) Then
-                            out = out & CStr(caps.Item(idx + 1))
+                            out = out & CStr(caps.item(idx + 1))
                         Else
                             ' unknown group -> empty string
                             out = out & vbNullString
@@ -6151,7 +6023,7 @@ Private Function VM_CapturesToArray(ByVal caps As Collection) As Variant
     Dim arr() As Variant: ReDim arr(1 To n)
     Dim i As Long
     For i = 1 To n
-        arr(i) = caps.Item(i)
+        arr(i) = caps.item(i)
     Next i
     VM_CapturesToArray = arr
 End Function
@@ -6198,10 +6070,10 @@ Private Function RegexCapsToVariantArray(ByVal caps As Collection) As Variant
 
     Dim i As Long
     For i = 1 To n
-        Dim v As Variant: v = caps.Item(i)
+        Dim v As Variant: v = caps.item(i)
         If IsObject(v) Then
             On Error Resume Next
-            Dim tn As String: tn = typeName(v)
+            Dim tn As String: tn = TypeName(v)
             On Error GoTo 0
             If tn = "Collection" Then
                 out(i - 1) = RegexCapsToVariantArray(v) ' recursive
@@ -6237,7 +6109,7 @@ Private Function RegexMatchesToVariantArray(ByVal matches As Collection) As Vari
     Dim i As Long
     For i = 1 To m
         Dim caps As Collection
-        Set caps = matches.Item(i)
+        Set caps = matches.item(i)
         out(i - 1) = RegexCapsToVariantArray(caps)
     Next i
 
@@ -6262,9 +6134,9 @@ Private Function RegexCapsToStringArray(ByVal caps As Collection) As Variant
 
     Dim i As Long
     For i = 1 To n
-        Dim v As Variant: v = caps.Item(i)
+        Dim v As Variant: v = caps.item(i)
         If IsObject(v) Then
-            If typeName(v) = "Collection" Then
+            If TypeName(v) = "Collection" Then
                 ' we can't store an array in a String() direct; return a Variant array for caller
                 ' so fall back to RegexCapsToVariantArray if nested structure detected
                 RegexCapsToStringArray = RegexCapsToVariantArray(caps)
@@ -6498,7 +6370,7 @@ Private Function InstantiateClass(classMap As ASF_Map, args As Collection, progS
         Dim superClassMap As Variant
         vAssignment superClassMap, progScope.GetValue(superClassName)
         
-        If typeName(superClassMap) = "ASF_Map" And superClassMap.GetValue("type") = "Class" Then
+        If TypeName(superClassMap) = "ASF_Map" And superClassMap.GetValue("type") = "Class" Then
             ' Initialize parent fields
             If superClassMap.Exists("fields") Then
                 Call InitializeFields(instance, superClassMap.GetValue("fields"), progScope)
@@ -6552,7 +6424,7 @@ Private Function InstantiateClass(classMap As ASF_Map, args As Collection, progS
         Dim superClassMap2 As Variant
         vAssignment superClassMap2, progScope.GetValue(superClassName2)
         
-        If typeName(superClassMap2) = "ASF_Map" And superClassMap2.Exists("constructor") Then
+        If TypeName(superClassMap2) = "ASF_Map" And superClassMap2.Exists("constructor") Then
             Dim parentCtor As ASF_Map: Set parentCtor = superClassMap2.GetValue("constructor")
             Call ExecuteConstructor(parentCtor, instance, args, progScope)
         End If
@@ -7055,100 +6927,85 @@ Private Sub SetObjectProperty(obj As Variant, propName As Variant, propValue As 
     PopCallTrace CStr(propName), vbaParam
 End Sub
 Private Function CallObjectMethod(obj As Variant, methodName As Variant, Optional args As Collection) As Variant
+    ' Trace: Push call
+    PushCallTrace CStr(methodName), args
     Dim tmpResult As Variant
-    If HasCOMPrototype(obj, CStr(methodName)) Then
-        Dim prototypeInfo As ASF_Map: Set prototypeInfo = GetCOMPrototype(obj, CStr(methodName))
-        If Not prototypeInfo Is Nothing Then
-            Dim funcIdx As Long: funcIdx = prototypeInfo.GetValue("funcIndex")
-            Dim prototypeArgs As Collection
-            If Not IsMissing(args) And Not args Is Nothing Then
-                Set prototypeArgs = args
-            Else
-                Set prototypeArgs = New Collection
-            End If
-            ' Trace: Push call
-            PushCallTrace CStr(methodName), prototypeArgs
-            vAssignment tmpResult, CallFuncByIndex_AST(funcIdx, prototypeArgs, obj)
-        End If
+    If args Is Nothing Then
+        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod)
     Else
-        PushCallTrace CStr(methodName), args
-        If args Is Nothing Then
-            vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod)
-        Else
-            Dim nArgs As Long: nArgs = args.Count
-            If nArgs = 1 Then
-                If IsEmpty(args(1)) Then nArgs = nArgs - 1
-            End If
-            With args
-                'A lengthy and visually overwhelming implementation.
-                Select Case nArgs
-                    Case 0
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod)
-                    Case 1
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)))
-                    Case 2
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)))
-                    Case 3
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)))
-                    Case 4
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)))
-                    Case 5
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)))
-                    Case 6
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)))
-                    Case 7
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)))
-                    Case 8
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)))
-                    Case 9
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)))
-                    Case 10
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)))
-                    Case 11
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)))
-                    Case 12
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)))
-                    Case 13
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)))
-                    Case 14
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)))
-                    Case 15
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)))
-                    Case 16
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)))
-                    Case 17
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)))
-                    Case 18
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)))
-                    Case 19
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)))
-                    Case 20
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)), CastVBAparam(.Item(20)))
-                    Case 21
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)), CastVBAparam(.Item(20)), CastVBAparam(.Item(21)))
-                    Case 22
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)), CastVBAparam(.Item(20)), CastVBAparam(.Item(21)), CastVBAparam(.Item(22)))
-                    Case 23
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)), CastVBAparam(.Item(20)), CastVBAparam(.Item(21)), CastVBAparam(.Item(22)), CastVBAparam(.Item(23)))
-                    Case 24
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)), CastVBAparam(.Item(20)), CastVBAparam(.Item(21)), CastVBAparam(.Item(22)), CastVBAparam(.Item(23)), CastVBAparam(.Item(24)))
-                    Case 25
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)), CastVBAparam(.Item(20)), CastVBAparam(.Item(21)), CastVBAparam(.Item(22)), CastVBAparam(.Item(23)), CastVBAparam(.Item(24)), CastVBAparam(.Item(25)))
-                    Case 26
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)), CastVBAparam(.Item(20)), CastVBAparam(.Item(21)), CastVBAparam(.Item(22)), CastVBAparam(.Item(23)), CastVBAparam(.Item(24)), CastVBAparam(.Item(25)), CastVBAparam(.Item(26)))
-                    Case 27
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)), CastVBAparam(.Item(20)), CastVBAparam(.Item(21)), CastVBAparam(.Item(22)), CastVBAparam(.Item(23)), CastVBAparam(.Item(24)), CastVBAparam(.Item(25)), CastVBAparam(.Item(26)), CastVBAparam(.Item(27)))
-                    Case 28
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)), CastVBAparam(.Item(20)), CastVBAparam(.Item(21)), CastVBAparam(.Item(22)), CastVBAparam(.Item(23)), CastVBAparam(.Item(24)), CastVBAparam(.Item(25)), CastVBAparam(.Item(26)), CastVBAparam(.Item(27)), CastVBAparam(.Item(28)))
-                    Case 29
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)), CastVBAparam(.Item(20)), CastVBAparam(.Item(21)), CastVBAparam(.Item(22)), CastVBAparam(.Item(23)), CastVBAparam(.Item(24)), CastVBAparam(.Item(25)), CastVBAparam(.Item(26)), CastVBAparam(.Item(27)), CastVBAparam(.Item(28)), CastVBAparam(.Item(29)))
-                    Case 30
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)), CastVBAparam(.Item(20)), CastVBAparam(.Item(21)), CastVBAparam(.Item(22)), CastVBAparam(.Item(23)), CastVBAparam(.Item(24)), CastVBAparam(.Item(25)), CastVBAparam(.Item(26)), CastVBAparam(.Item(27)), CastVBAparam(.Item(28)), CastVBAparam(.Item(29)), CastVBAparam(.Item(30)))
-                    Case Else
-                        err.Raise vbObjectError + 513, "CallObjectMethod", "Too many arguments: maximum supported is 30."
-                End Select
-            End With
+        Dim nArgs As Long: nArgs = args.Count
+        If nArgs = 1 Then
+            If IsEmpty(args(1)) Then nArgs = nArgs - 1
         End If
+        With args
+            'A lengthy and visually overwhelming implementation.
+            Select Case nArgs
+                Case 0
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod)
+                Case 1
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)))
+                Case 2
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)))
+                Case 3
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)))
+                Case 4
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)))
+                Case 5
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)))
+                Case 6
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)))
+                Case 7
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)))
+                Case 8
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)))
+                Case 9
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)))
+                Case 10
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)))
+                Case 11
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)))
+                Case 12
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)))
+                Case 13
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)))
+                Case 14
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)))
+                Case 15
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)))
+                Case 16
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)))
+                Case 17
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)))
+                Case 18
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)))
+                Case 19
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)))
+                Case 20
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)), CastVBAparam(.item(20)))
+                Case 21
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)), CastVBAparam(.item(20)), CastVBAparam(.item(21)))
+                Case 22
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)), CastVBAparam(.item(20)), CastVBAparam(.item(21)), CastVBAparam(.item(22)))
+                Case 23
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)), CastVBAparam(.item(20)), CastVBAparam(.item(21)), CastVBAparam(.item(22)), CastVBAparam(.item(23)))
+                Case 24
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)), CastVBAparam(.item(20)), CastVBAparam(.item(21)), CastVBAparam(.item(22)), CastVBAparam(.item(23)), CastVBAparam(.item(24)))
+                Case 25
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)), CastVBAparam(.item(20)), CastVBAparam(.item(21)), CastVBAparam(.item(22)), CastVBAparam(.item(23)), CastVBAparam(.item(24)), CastVBAparam(.item(25)))
+                Case 26
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)), CastVBAparam(.item(20)), CastVBAparam(.item(21)), CastVBAparam(.item(22)), CastVBAparam(.item(23)), CastVBAparam(.item(24)), CastVBAparam(.item(25)), CastVBAparam(.item(26)))
+                Case 27
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)), CastVBAparam(.item(20)), CastVBAparam(.item(21)), CastVBAparam(.item(22)), CastVBAparam(.item(23)), CastVBAparam(.item(24)), CastVBAparam(.item(25)), CastVBAparam(.item(26)), CastVBAparam(.item(27)))
+                Case 28
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)), CastVBAparam(.item(20)), CastVBAparam(.item(21)), CastVBAparam(.item(22)), CastVBAparam(.item(23)), CastVBAparam(.item(24)), CastVBAparam(.item(25)), CastVBAparam(.item(26)), CastVBAparam(.item(27)), CastVBAparam(.item(28)))
+                Case 29
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)), CastVBAparam(.item(20)), CastVBAparam(.item(21)), CastVBAparam(.item(22)), CastVBAparam(.item(23)), CastVBAparam(.item(24)), CastVBAparam(.item(25)), CastVBAparam(.item(26)), CastVBAparam(.item(27)), CastVBAparam(.item(28)), CastVBAparam(.item(29)))
+                Case 30
+                    vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.item(1)), CastVBAparam(.item(2)), CastVBAparam(.item(3)), CastVBAparam(.item(4)), CastVBAparam(.item(5)), CastVBAparam(.item(6)), CastVBAparam(.item(7)), CastVBAparam(.item(8)), CastVBAparam(.item(9)), CastVBAparam(.item(10)), CastVBAparam(.item(11)), CastVBAparam(.item(12)), CastVBAparam(.item(13)), CastVBAparam(.item(14)), CastVBAparam(.item(15)), CastVBAparam(.item(16)), CastVBAparam(.item(17)), CastVBAparam(.item(18)), CastVBAparam(.item(19)), CastVBAparam(.item(20)), CastVBAparam(.item(21)), CastVBAparam(.item(22)), CastVBAparam(.item(23)), CastVBAparam(.item(24)), CastVBAparam(.item(25)), CastVBAparam(.item(26)), CastVBAparam(.item(27)), CastVBAparam(.item(28)), CastVBAparam(.item(29)), CastVBAparam(.item(30)))
+                Case Else
+                    err.Raise vbObjectError + 513, "CallObjectMethod", "Too many arguments: maximum supported is 30."
+            End Select
+        End With
     End If
     If IsArray(tmpResult) And Not IsObject(tmpResult) Then
         CallObjectMethod = ArrayToASF2(tmpResult)
@@ -7165,44 +7022,6 @@ Private Function CastVBAparam(aValue As Variant) As Variant
     Else
         vAssignment CastVBAparam, aValue
     End If
-End Function
-Private Function IsVBAcollection(obj As Variant) As Boolean
-    Dim typeN As String: typeN = typeName(obj)
-    IsVBAcollection = (BinarySearch(GLOBALS_.knownMSOcollections, typeN) <> -1)
-End Function
-
-' Searches for an item in an 1D array. Returns
-' the index of the item when found and -1 when missing values.
-' The data must be supplied sorted
-Private Function BinarySearch(ByRef TargetArr As Variant, ByRef Target As Variant) As Long
-
-    Dim tmpR As Boolean
-    Dim BottomIdx As Double
-    Dim TopIdx As Double
-    Dim MiddleIdx As Double
-    
-    BottomIdx = LBound(TargetArr)
-    TopIdx = UBound(TargetArr)
-    Do
-        MiddleIdx = BottomIdx + Ceiling((TopIdx - BottomIdx) / 2)
-        tmpR = (Target = TargetArr(MiddleIdx))
-        If Target > TargetArr(MiddleIdx) Then
-            BottomIdx = MiddleIdx + 1
-        Else
-            TopIdx = MiddleIdx - 1
-        End If
-    Loop While Not tmpR And TopIdx >= BottomIdx
-    If tmpR Then
-        BinarySearch = MiddleIdx
-    Else
-        BinarySearch = -1
-    End If
-End Function
-Private Function Ceiling(ByRef value As Double) As Double
-    Dim tmpResult As Double
-    
-    tmpResult = Fix(value)
-    Ceiling = tmpResult - ((value <> tmpResult) And (value > 0))
 End Function
 ' ---------------------
 ' End VM class

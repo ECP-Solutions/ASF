@@ -2295,7 +2295,7 @@ End Sub
 Private Sub regex_object_constructor()
     On Error GoTo TestFail
     actual = CStr(GetResult("re=regex(); return(typeOf(re));"))
-    expected = "object: <ASF_RegexEngine>"
+    expected = "object"
     Assert.AreEqual expected, actual
 TestExit:
     Exit Sub
@@ -4019,9 +4019,9 @@ Private Sub calling_native_function_app_level()
         .AppAccess = True
         progIdx = .Compile("/*Get collection item*/ return($1.item('myNumber'))")
         .Run progIdx, col
-        actual = .OUTPUT_
+        actual = CStr(.OUTPUT_)
     End With
-    expected = 5
+    expected = "5"
     Assert.AreEqual expected, actual
 TestExit:
     Exit Sub
@@ -4051,50 +4051,4 @@ TestFail:
     Resume TestExit
 End Sub
 
-'@TestMethod("calling_native_app_level")
-Private Sub calling_array_method_from_collection()
-    On Error GoTo TestFail
-    Set scriptEngine = New ASF
-    Dim progIdx As Long
-    
-    With scriptEngine
-        Dim col As New Collection
-        col.Add "Jhon", "Name1"
-        col.Add "Marie", "Name2"
-        .AppAccess = True
-        progIdx = .Compile("return $1.filter(fun(name){ return name.startsWith('M')})[1]")
-        .Run progIdx, col
-        actual = .OUTPUT_
-    End With
-    expected = "Marie"
-    Assert.AreEqual expected, actual
-TestExit:
-    Exit Sub
-TestFail:
-    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
-    Resume TestExit
-End Sub
-'@TestMethod("advanced_prototyping")
-Private Sub monkey_patch_worksheets_name()
-    On Error GoTo TestFail
-    Set scriptEngine = New ASF
-    Dim progIdx As Long
-    
-    With scriptEngine
-        .AppAccess = True
-        .OverrideCollMethods = True
-        progIdx = .Compile(" prototype.COM.Worksheet Name() {" & _
-                            "   return 'PATCHED';" & _
-                            "};" & _
-                            "return $1.Name")
-        .Run progIdx, ThisWorkbook.Sheets(2)
-        actual = .OUTPUT_
-    End With
-    expected = "PATCHED"
-    Assert.AreEqual expected, actual
-TestExit:
-    Exit Sub
-TestFail:
-    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
-    Resume TestExit
-End Sub
+
