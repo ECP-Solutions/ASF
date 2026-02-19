@@ -65,6 +65,7 @@
             line-height: 1.7;
             font-weight: 300;
             overflow-x: hidden;
+            min-height: 100vh;
             padding: 20px;
         }
 
@@ -144,9 +145,16 @@
             animation: fadeUp 0.8s ease forwards;
         }
 
-        .example-card:nth-child(2) { animation-delay: 0.1s; }
-        .example-card:nth-child(3) { animation-delay: 0.2s; }
-        .example-card:nth-child(4) { animation-delay: 0.3s; }
+        .example-card:nth-child(1) { animation-delay: 0.1s; }
+        .example-card:nth-child(2) { animation-delay: 0.2s; }
+        .example-card:nth-child(3) { animation-delay: 0.3s; }
+        .example-card:nth-child(4) { animation-delay: 0.4s; }
+        .example-card:nth-child(5) { animation-delay: 0.5s; }
+        .example-card:nth-child(6) { animation-delay: 0.6s; }
+        .example-card:nth-child(7) { animation-delay: 0.7s; }
+        .example-card:nth-child(8) { animation-delay: 0.8s; }
+        .example-card:nth-child(9) { animation-delay: 0.9s; }
+        .example-card:nth-child(10) { animation-delay: 1.0s; }
 
         .example-card:hover {
             transform: translateY(-0.25rem);
@@ -335,6 +343,18 @@
             font-weight: 600;
         }
 
+        /* Pain point styling */
+        .advantage[style*="background: #ffe0e0"],
+        .advantage[style*="color: #c62828"] {
+            background: var(--bg-secondary) !important;
+            color: var(--accent-red) !important;
+            border-left-color: var(--accent-red) !important;
+        }
+
+        .advantage[style*="color: #c62828"] strong {
+            color: var(--accent-red) !important;
+        }
+
         @keyframes fadeUp {
             from { opacity: 0; transform: translateY(30px); }
             to { opacity: 1; transform: translateY(0); }
@@ -375,242 +395,589 @@
 <body>
     <div class="container">
         <header>
-            <h1>🏆 ASF vs JavaScript</h1>
-            <p>Object Methods Comparison</p>
+            <h1>🚀 ASF Ergonomics vs JavaScript</h1>
+            <p>10 Examples Where ASF's Object Methods Are Simply Better</p>
         </header>
 
         <div class="examples-container">
-            <!-- Example 1: Array Processing -->
+            <!-- Example 1: Filter Object -->
             <div class="example-card">
                 <div class="example-header" onclick="toggleExample(this)">
-                    <h2>Array Processing</h2>
+                    <h2>1. Filter Objects Naturally 🏆</h2>
                     <span class="toggle-icon">▼</span>
                 </div>
                 <div class="example-content">
                     <div class="code-section">
-                        <h3><span class="badge">ASF</span> Native Objects</h3>
+                        <h3><span class="badge">ASF</span> 3 Lines, Crystal Clear</h3>
                         <div class="description">
-                            ASF arrays are native VBA arrays enhanced with methods. No conversion needed - direct manipulation of data.
+                            Filter object properties like you would filter an array. Natural and intuitive.
                         </div>
-                        
-                        <pre><span class="keyword">let</span> <span class="variable">numbers</span> <span class="operator">=</span> [<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>];
+                        <pre><span class="keyword">let</span> <span class="variable">config</span> <span class="operator">=</span> {
+    <span class="property">darkMode</span>: <span class="boolean">true</span>, <span class="property">notifications</span>: <span class="boolean">false</span>,
+    <span class="property">autoSave</span>: <span class="boolean">true</span>, <span class="property">analytics</span>: <span class="boolean">false</span>
+};
 
-<span class="comment">// Native VBA Collection methods</span>
-<span class="keyword">let</span> <span class="variable">doubled</span> <span class="operator">=</span> <span class="variable">numbers</span>.<span class="method">map</span>(<span class="function">fun</span>(<span class="variable">n</span>) { 
-    <span class="keyword">return</span> <span class="variable">n</span> <span class="operator">*</span> <span class="number">2</span>; 
-});
-
-<span class="keyword">let</span> <span class="variable">filtered</span> <span class="operator">=</span> <span class="variable">numbers</span>.<span class="method">filter</span>(<span class="function">fun</span>(<span class="variable">n</span>) { 
-    <span class="keyword">return</span> <span class="variable">n</span> <span class="operator">></span> <span class="number">3</span>; 
-});
-
-<span class="keyword">let</span> <span class="variable">sum</span> <span class="operator">=</span> <span class="variable">numbers</span>.<span class="method">reduce</span>(<span class="function">fun</span>(<span class="variable">acc</span>, <span class="variable">n</span>) { 
-    <span class="keyword">return</span> <span class="variable">acc</span> <span class="operator">+</span> <span class="variable">n</span>; 
-}, <span class="number">0</span>);
-
-<span class="comment">// Works directly with VBA objects</span>
-<span class="variable">print</span>(<span class="variable">doubled</span>);   <span class="comment">// [2, 4, 6, 8, 10]</span>
-<span class="variable">print</span>(<span class="variable">filtered</span>); <span class="comment">// [4, 5]</span>
-<span class="variable">print</span>(<span class="variable">sum</span>);      <span class="comment">// 15</span></pre>
-
+<span class="keyword">let</span> <span class="variable">enabled</span> <span class="operator">=</span> <span class="variable">config</span>.<span class="method">filter</span>(<span class="function">fun</span>(<span class="variable">val</span>) {
+    <span class="keyword">return</span> <span class="variable">val</span> <span class="operator">==</span> <span class="boolean">true</span>;
+});</pre>
                         <div class="advantage">
-                            <strong>ASF Advantage:</strong> Direct manipulation of VBA Collections. No overhead, no conversion. Native performance with modern syntax.
+                            <strong>Why ASF Wins:</strong> Objects are collections too! One method call, stays an object. No conversions needed.
                         </div>
                     </div>
-
                     <div class="code-section">
-                        <h3><span class="badge js">JS</span> Array Conversion</h3>
+                        <h3><span class="badge js">JS</span> 6 Lines, Mental Gymnastics</h3>
                         <div class="description">
-                            JavaScript requires converting VBA objects to JS arrays first, then back to VBA. Performance overhead and type conversion issues.
+                            JavaScript makes you convert object → array → object. Every. Single. Time.
                         </div>
+                        <pre><span class="keyword">const</span> <span class="variable">config</span> <span class="operator">=</span> {
+    <span class="property">darkMode</span>: <span class="boolean">true</span>, <span class="property">notifications</span>: <span class="boolean">false</span>,
+    <span class="property">autoSave</span>: <span class="boolean">true</span>, <span class="property">analytics</span>: <span class="boolean">false</span>
+};
 
-                        <pre><span class="comment">// Must convert VBA Collection to Array</span>
-<span class="keyword">let</span> <span class="variable">vbaCollection</span> <span class="operator">=</span> <span class="variable">getVBAData</span>();
-<span class="keyword">let</span> <span class="variable">jsArray</span> <span class="operator">=</span> <span class="variable">Array</span>.<span class="method">from</span>(<span class="variable">vbaCollection</span>);
+<span class="keyword">const</span> <span class="variable">enabled</span> <span class="operator">=</span> <span class="variable">Object</span>.<span class="method">fromEntries</span>(
+    <span class="variable">Object</span>.<span class="method">entries</span>(<span class="variable">config</span>)
+        .<span class="method">filter</span>(([<span class="variable">key</span>, <span class="variable">val</span>]) <span class="operator">=></span> <span class="variable">val</span> <span class="operator">===</span> <span class="boolean">true</span>)
+);
 
-<span class="comment">// Process in JavaScript</span>
-<span class="keyword">let</span> <span class="variable">doubled</span> <span class="operator">=</span> <span class="variable">jsArray</span>.<span class="method">map</span>(<span class="variable">n</span> <span class="operator">=></span> <span class="variable">n</span> <span class="operator">*</span> <span class="number">2</span>);
-<span class="keyword">let</span> <span class="variable">filtered</span> <span class="operator">=</span> <span class="variable">jsArray</span>.<span class="method">filter</span>(<span class="variable">n</span> <span class="operator">=></span> <span class="variable">n</span> <span class="operator">></span> <span class="number">3</span>);
-<span class="keyword">let</span> <span class="variable">sum</span> <span class="operator">=</span> <span class="variable">jsArray</span>.<span class="method">reduce</span>((<span class="variable">acc</span>, <span class="variable">n</span>) <span class="operator">=></span> <span class="variable">acc</span> <span class="operator">+</span> <span class="variable">n</span>, <span class="number">0</span>);
-
-<span class="comment">// Convert back to VBA Collection</span>
-<span class="keyword">let</span> <span class="variable">doubledVBA</span> <span class="operator">=</span> <span class="variable">convertToVBA</span>(<span class="variable">doubled</span>);
-<span class="keyword">let</span> <span class="variable">filteredVBA</span> <span class="operator">=</span> <span class="variable">convertToVBA</span>(<span class="variable">filtered</span>);
-
-<span class="comment">// Performance penalty from conversions</span>
-<span class="variable">console</span>.<span class="method">log</span>(<span class="variable">doubled</span>);   <span class="comment">// [2, 4, 6, 8, 10]</span>
-<span class="variable">console</span>.<span class="method">log</span>(<span class="variable">filtered</span>); <span class="comment">// [4, 5]</span>
-<span class="variable">console</span>.<span class="method">log</span>(<span class="variable">sum</span>);      <span class="comment">// 15</span></pre>
-
-                        <div class="advantage" style="color: var(--accent-red); border-left-color: var(--accent-red);">
-                            <strong>JavaScript Limitation:</strong> Conversion overhead between VBA and JS types. Memory usage increase. Type safety issues at boundaries.
+<span class="comment">// Must remember to destructure [key, val]</span>
+<span class="comment">// Must remember Object.fromEntries at the end</span></pre>
+                        <div class="advantage" style="background: #ffe0e0; color: #c62828; border-left-color: #e53935;">
+                            <strong>The Pain:</strong> Object → Array → Object dance. Destructuring syntax. Easy to forget fromEntries and end up with an array.
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Example 2: Object Manipulation -->
+            <!-- Example 2: Map Object Values -->
             <div class="example-card">
                 <div class="example-header" onclick="toggleExample(this)">
-                    <h2>Object Property Access</h2>
+                    <h2>2. Transform All Values at Once 🎯</h2>
                     <span class="toggle-icon">▼</span>
                 </div>
                 <div class="example-content">
                     <div class="code-section">
-                        <h3><span class="badge">ASF</span> VBA Integration</h3>
+                        <h3><span class="badge">ASF</span> Intuitive Transformation</h3>
                         <div class="description">
-                            ASF objects are native VBA Arrays wrapped in a class with methods. Direct object access and manipulation.
+                            Transform all values, keep all keys. As simple as array.map().
                         </div>
+                        <pre><span class="keyword">let</span> <span class="variable">prices</span> <span class="operator">=</span> {
+    <span class="property">laptop</span>: <span class="number">1200</span>,
+    <span class="property">mouse</span>: <span class="number">25</span>,
+    <span class="property">keyboard</span>: <span class="number">75</span>
+};
 
-                        <pre><span class="keyword">let</span> <span class="variable">employees</span> <span class="operator">=</span> [
-    {<span class="property">name</span>: <span class="string">'Alice'</span>, <span class="property">salary</span>: <span class="number">75000</span>, <span class="property">dept</span>: <span class="string">'Engineering'</span>},
-    {<span class="property">name</span>: <span class="string">'Bob'</span>, <span class="property">salary</span>: <span class="number">65000</span>, <span class="property">dept</span>: <span class="string">'Marketing'</span>},
-    {<span class="property">name</span>: <span class="string">'Carol'</span>, <span class="property">salary</span>: <span class="number">80000</span>, <span class="property">dept</span>: <span class="string">'Engineering'</span>}
-];
-
-<span class="comment">// Native Dictionary access</span>
-<span class="keyword">let</span> <span class="variable">highEarners</span> <span class="operator">=</span> <span class="variable">employees</span>
-    .<span class="method">filter</span>(<span class="function">fun</span>(<span class="variable">emp</span>) { <span class="keyword">return</span> <span class="variable">emp</span>.<span class="property">salary</span> <span class="operator">></span> <span class="number">70000</span>; })
-    .<span class="method">map</span>(<span class="function">fun</span>(<span class="variable">emp</span>) { <span class="keyword">return</span> <span class="variable">emp</span>.<span class="property">name</span>; });
-
-<span class="comment">// Group by department (no external libs needed)</span>
-<span class="keyword">let</span> <span class="variable">byDept</span> <span class="operator">=</span> <span class="variable">employees</span>.<span class="method">groupBy</span>(<span class="string">'dept'</span>);
-
-<span class="comment">// Direct VBA COM object integration</span>
-<span class="variable">employees</span>.<span class="method">forEach</span>(<span class="function">fun</span>(<span class="variable">emp</span>) {
-    <span class="variable">$1</span>.<span class="property">Cells</span>(<span class="variable">emp</span>.<span class="property">id</span>, <span class="number">1</span>).<span class="property">Value</span> <span class="operator">=</span> <span class="variable">emp</span>.<span class="property">name</span>;
-});
-
-<span class="variable">print</span>(<span class="variable">highEarners</span>); <span class="comment">// ['Alice', 'Carol']</span></pre>
-
+<span class="comment">// Apply 20% discount to everything</span>
+<span class="keyword">let</span> <span class="variable">sale</span> <span class="operator">=</span> <span class="variable">prices</span>.<span class="method">map</span>(<span class="function">fun</span>(<span class="variable">price</span>) {
+    <span class="keyword">return</span> <span class="variable">price</span> <span class="operator">*</span> <span class="number">0.8</span>;
+});</pre>
                         <div class="advantage">
-                            <strong>ASF Advantage:</strong> Native VBA Dictionary operations. Built-in groupBy, direct COM object access. No marshalling overhead.
+                            <strong>Why ASF Wins:</strong> Works exactly like array.map(). Keys preserved automatically. One clean operation.
                         </div>
                     </div>
-
                     <div class="code-section">
-                        <h3><span class="badge js">JS</span> Object Conversion</h3>
+                        <h3><span class="badge js">JS</span> Manual Key Management</h3>
                         <div class="description">
-                            JavaScript objects must be converted to/from VBA. Complex marshalling for COM objects. Additional libraries needed for advanced operations.
+                            You must manually preserve keys in the returned array pairs. Easy to mess up.
                         </div>
+                        <pre><span class="keyword">const</span> <span class="variable">prices</span> <span class="operator">=</span> {
+    <span class="property">laptop</span>: <span class="number">1200</span>,
+    <span class="property">mouse</span>: <span class="number">25</span>,
+    <span class="property">keyboard</span>: <span class="number">75</span>
+};
 
-                        <pre><span class="comment">// Convert VBA objects to JS</span>
-<span class="keyword">let</span> <span class="variable">vbaEmployees</span> <span class="operator">=</span> <span class="variable">getVBAEmployees</span>();
-<span class="keyword">let</span> <span class="variable">jsEmployees</span> <span class="operator">=</span> <span class="variable">convertToJSObjects</span>(<span class="variable">vbaEmployees</span>);
+<span class="comment">// Remember: must return [key, value] pairs!</span>
+<span class="keyword">const</span> <span class="variable">sale</span> <span class="operator">=</span> <span class="variable">Object</span>.<span class="method">fromEntries</span>(
+    <span class="variable">Object</span>.<span class="method">entries</span>(<span class="variable">prices</span>)
+        .<span class="method">map</span>(([<span class="variable">key</span>, <span class="variable">price</span>]) <span class="operator">=></span> [<span class="variable">key</span>, <span class="variable">price</span> <span class="operator">*</span> <span class="number">0.8</span>])
+);
 
-<span class="comment">// Process in JavaScript</span>
-<span class="keyword">let</span> <span class="variable">highEarners</span> <span class="operator">=</span> <span class="variable">jsEmployees</span>
-    .<span class="method">filter</span>(<span class="variable">emp</span> <span class="operator">=></span> <span class="variable">emp</span>.<span class="property">salary</span> <span class="operator">></span> <span class="number">70000</span>)
-    .<span class="method">map</span>(<span class="variable">emp</span> <span class="operator">=></span> <span class="variable">emp</span>.<span class="property">name</span>);
-
-<span class="comment">// Group by - need external library</span>
-<span class="keyword">import</span> <span class="variable">_</span> <span class="keyword">from</span> <span class="string">'lodash'</span>;
-<span class="keyword">let</span> <span class="variable">byDept</span> <span class="operator">=</span> <span class="variable">_</span>.<span class="method">groupBy</span>(<span class="variable">jsEmployees</span>, <span class="string">'dept'</span>);
-
-<span class="comment">// VBA COM access requires conversion</span>
-<span class="variable">jsEmployees</span>.<span class="method">forEach</span>(<span class="variable">emp</span> <span class="operator">=></span> {
-    <span class="keyword">let</span> <span class="variable">vbaRange</span> <span class="operator">=</span> <span class="variable">getVBARange</span>(<span class="variable">emp</span>.<span class="property">id</span>, <span class="number">1</span>);
-    <span class="variable">vbaRange</span>.<span class="property">Value</span> <span class="operator">=</span> <span class="variable">emp</span>.<span class="property">name</span>;
-});
-
-<span class="variable">console</span>.<span class="method">log</span>(<span class="variable">highEarners</span>); <span class="comment">// ['Alice', 'Carol']</span></pre>
-
-                        <div class="advantage" style="color: var(--accent-red); border-left-color: var(--accent-red);">
-                            <strong>JavaScript Limitation:</strong> Conversion overhead, external dependencies, complex VBA COM marshalling, type safety issues.
+<span class="comment">// Forgot to preserve key? Broken.</span>
+<span class="comment">// Forgot fromEntries? You get an array.</span></pre>
+                        <div class="advantage" style="background: #ffe0e0; color: #c62828; border-left-color: #e53935;">
+                            <strong>The Pain:</strong> Must manually return [key, value] pairs. One mistake = bugs. ASF does this automatically.
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Example 3: String Processing -->
+            <!-- Example 3: Validate with every() -->
             <div class="example-card">
                 <div class="example-header" onclick="toggleExample(this)">
-                    <h2>String Manipulation</h2>
+                    <h2>3. Validate All Properties Elegantly 💯</h2>
                     <span class="toggle-icon">▼</span>
                 </div>
                 <div class="example-content">
                     <div class="code-section">
-                        <h3><span class="badge">ASF</span> Native Strings</h3>
+                        <h3><span class="badge">ASF</span> Direct Validation</h3>
                         <div class="description">
-                            ASF strings are VBA Strings with JavaScript-like methods. Native VBA performance with modern ergonomics.
+                            Check if all properties pass validation with access to both key and value.
                         </div>
+                        <pre><span class="keyword">let</span> <span class="variable">user</span> <span class="operator">=</span> {
+    <span class="property">username</span>: <span class="string">'alice'</span>,
+    <span class="property">email</span>: <span class="string">'<a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="51303d383234113429303c213d347f323e3c">[email&#160;protected]</a>'</span>,
+    <span class="property">age</span>: <span class="number">25</span>
+};
 
-                        <pre><span class="keyword">let</span> <span class="variable">text</span> <span class="operator">=</span> <span class="string">'Hello, World! This is ASF.'</span>;
-
-<span class="comment">// Native VBA String with JS methods</span>
-<span class="keyword">let</span> <span class="variable">upper</span> <span class="operator">=</span> <span class="variable">text</span>.<span class="method">toUpperCase</span>();
-<span class="keyword">let</span> <span class="variable">words</span> <span class="operator">=</span> <span class="variable">text</span>.<span class="method">split</span>(<span class="string">' '</span>);
-<span class="keyword">let</span> <span class="variable">filtered</span> <span class="operator">=</span> <span class="variable">words</span>.<span class="method">filter</span>(<span class="function">fun</span>(<span class="variable">w</span>) { 
-    <span class="keyword">return</span> <span class="variable">w</span>.<span class="property">length</span> <span class="operator">></span> <span class="number">4</span>; 
+<span class="comment">// Check all fields present and valid</span>
+<span class="keyword">let</span> <span class="variable">valid</span> <span class="operator">=</span> <span class="variable">user</span>.<span class="method">every</span>(<span class="function">fun</span>(<span class="variable">val</span>, <span class="variable">key</span>) {
+    <span class="keyword">return</span> <span class="variable">val</span> <span class="operator">!=</span> <span class="null">null</span> <span class="operator">&&</span> <span class="variable">val</span> <span class="operator">!=</span> <span class="string">''</span>;
 });
 
-<span class="comment">// Template literals with VBA integration</span>
-<span class="keyword">let</span> <span class="variable">result</span> <span class="operator">=</span> <span class="string">`Found ${filtered.length} words: ${filtered.join(', ')}`</span>;
-
-<span class="comment">// Direct Excel integration</span>
-<span class="variable">$1</span>.<span class="property">Cells</span>(<span class="number">1</span>, <span class="number">1</span>).<span class="property">Value</span> <span class="operator">=</span> <span class="variable">result</span>;
-
-<span class="comment">// Regex support</span>
-<span class="keyword">let</span> <span class="variable">pattern</span> <span class="operator">=</span> <span class="regex">/\b\w{5,}\b/g</span>;
-<span class="keyword">let</span> <span class="variable">longWords</span> <span class="operator">=</span> <span class="variable">text</span>.<span class="method">match</span>(<span class="variable">pattern</span>);
-
-<span class="variable">print</span>(<span class="variable">result</span>);    <span class="comment">// Found 2 words: 'Hello', 'World'</span>
-<span class="variable">print</span>(<span class="variable">longWords</span>); <span class="comment">// ['Hello', 'World']</span></pre>
-
+<span class="comment">// Can also validate by key name!</span>
+<span class="keyword">let</span> <span class="variable">hasRequired</span> <span class="operator">=</span> <span class="variable">user</span>.<span class="method">every</span>(<span class="function">fun</span>(<span class="variable">val</span>, <span class="variable">key</span>) {
+    <span class="keyword">return</span> <span class="variable">key</span> <span class="operator">==</span> <span class="string">'age'</span> <span class="operator">||</span> <span class="keyword">typeof</span> <span class="variable">val</span> <span class="operator">==</span> <span class="string">'string'</span>;
+});</pre>
                         <div class="advantage">
-                            <strong>ASF Advantage:</strong> Native VBA String performance. Built-in regex engine. Template literals. Direct Excel/Word integration.
+                            <strong>Why ASF Wins:</strong> .every() works on objects! Get both key and value. No conversions. Natural validation pattern.
                         </div>
                     </div>
-
                     <div class="code-section">
-                        <h3><span class="badge js">JS</span> String Conversion</h3>
+                        <h3><span class="badge js">JS</span> Limited Access</h3>
                         <div class="description">
-                            JavaScript string operations on VBA strings require conversion. Unicode and encoding issues. No direct VBA integration.
+                            Object.values() loses the keys. Need Object.entries() for key access. More verbose.
                         </div>
+                        <pre>const user = {
+    username: 'alice',
+    email: '<a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="70111c191315301508111d001c155e131f1d">[email&#160;protected]</a>',
+    age: 25
+};
 
-                        <pre><span class="comment">// Convert VBA String to JS String</span>
-<span class="keyword">let</span> <span class="variable">vbaText</span> <span class="operator">=</span> <span class="variable">getVBAString</span>();
-<span class="keyword">let</span> <span class="variable">jsText</span> <span class="operator">=</span> <span class="variable">String</span>(<span class="variable">vbaText</span>);
+// Loses key information!
+const valid = Object.values(user)
+    .every(val => val != null && val !== '');
 
-<span class="comment">// Process in JavaScript</span>
-<span class="keyword">let</span> <span class="variable">upper</span> <span class="operator">=</span> <span class="variable">jsText</span>.<span class="method">toUpperCase</span>();
-<span class="keyword">let</span> <span class="variable">words</span> <span class="operator">=</span> <span class="variable">jsText</span>.<span class="method">split</span>(<span class="string">' '</span>);
-<span class="keyword">let</span> <span class="variable">filtered</span> <span class="operator">=</span> <span class="variable">words</span>.<span class="method">filter</span>(<span class="variable">w</span> <span class="operator">=></span> <span class="variable">w</span>.<span class="property">length</span> <span class="operator">></span> <span class="number">4</span>);
+// Need entries for key access
+const hasRequired = Object.entries(user)
+    .every(([key, val]) => 
+        key === 'age' || typeof val === 'string'
+    );
 
-<span class="comment">// Template literals work but need conversion back</span>
-<span class="keyword">let</span> <span class="variable">result</span> <span class="operator">=</span> <span class="string">`Found ${filtered.length} words: ${filtered.join(', ')}`</span>;
-<span class="keyword">let</span> <span class="variable">vbaResult</span> <span class="operator">=</span> <span class="variable">convertToVBAString</span>(<span class="variable">result</span>);
-
-<span class="comment">// Excel integration requires VBA conversion</span>
-<span class="keyword">let</span> <span class="variable">excelRange</span> <span class="operator">=</span> <span class="variable">getExcelRange</span>(<span class="number">1</span>, <span class="number">1</span>);
-<span class="variable">excelRange</span>.<span class="property">Value</span> <span class="operator">=</span> <span class="variable">vbaResult</span>;
-
-<span class="comment">// Regex works but conversion overhead</span>
-<span class="keyword">let</span> <span class="variable">pattern</span> <span class="operator">=</span> <span class="regex">/\b\w{5,}\b/g</span>;
-<span class="keyword">let</span> <span class="variable">longWords</span> <span class="operator">=</span> <span class="variable">jsText</span>.<span class="method">match</span>(<span class="variable">pattern</span>);
-
-<span class="variable">console</span>.<span class="method">log</span>(<span class="variable">result</span>);    <span class="comment">// "Found 2 words: Hello, World"</span>
-<span class="variable">console</span>.<span class="method">log</span>(<span class="variable">longWords</span>); <span class="comment">// ["Hello", "World"]</span></pre>
-
-                        <div class="advantage" style="color: var(--accent-red); border-left-color: var(--accent-red);">
-                            <strong>JavaScript Limitation:</strong> String conversion overhead. Unicode encoding issues. No direct Excel/VBA integration. Memory duplication.
+// Choose: lose keys or use verbose syntax?</pre>
+                        <div class="advantage" style="background: #ffe0e0; color: #c62828; border-left-color: #e53935;">
+                            <strong>The Pain:</strong> Object.values() = no keys. Object.entries() = destructuring everywhere. Pick your poison.
                         </div>
                     </div>
                 </div>
             </div>
+
+            <!-- Example 4: Check with some() -->
+            <div class="example-card">
+                <div class="example-header" onclick="toggleExample(this)">
+                    <h2>4. Find What You Need Fast 🔍</h2>
+                    <span class="toggle-icon">▼</span>
+                </div>
+                <div class="example-content">
+                    <div class="code-section">
+                        <h3><span class="badge">ASF</span> Search by Key or Value</h3>
+                        <div class="description">
+                            Check if any property matches condition. Get both key and value in callback.
+                        </div>
+                        <pre><span class="keyword">let</span> <span class="variable">features</span> <span class="operator">=</span> {
+    <span class="property">darkMode</span>: <span class="boolean">false</span>,
+    <span class="property">analytics</span>: <span class="boolean">false</span>,
+    <span class="property">logging</span>: <span class="boolean">true</span>,
+    <span class="property">debugging</span>: <span class="boolean">true</span>
+};
+
+<span class="comment">// Any feature starting with 'log' enabled?</span>
+<span class="keyword">let</span> <span class="variable">hasLogging</span> <span class="operator">=</span> <span class="variable">features</span>.<span class="method">some</span>(<span class="function">fun</span>(<span class="variable">val</span>, <span class="variable">key</span>) {
+    <span class="keyword">return</span> <span class="variable">val</span> <span class="operator">&&</span> <span class="variable">key</span>.<span class="method">startsWith</span>(<span class="string">'log'</span>);
+});
+
+<span class="comment">// Any feature enabled at all?</span>
+<span class="keyword">let</span> <span class="variable">anyEnabled</span> <span class="operator">=</span> <span class="variable">features</span>.<span class="method">some</span>(<span class="function">fun</span>(<span class="variable">val</span>) {
+    <span class="keyword">return</span> <span class="variable">val</span> <span class="operator">==</span> <span class="boolean">true</span>;
+});</pre>
+                        <div class="advantage">
+                            <strong>Why ASF Wins:</strong> Search by key name, value, or both. One method. Clean and powerful.
+                        </div>
+                    </div>
+                    <div class="code-section">
+                        <h3><span class="badge js">JS</span> Always Need Entries</h3>
+                        <div class="description">
+                            Want key access? You're using Object.entries(). Every time.
+                        </div>
+                        <pre><span class="keyword">const</span> <span class="variable">features</span> <span class="operator">=</span> {
+    <span class="property">darkMode</span>: <span class="boolean">false</span>,
+    <span class="property">analytics</span>: <span class="boolean">false</span>,
+    <span class="property">logging</span>: <span class="boolean">true</span>,
+    <span class="property">debugging</span>: <span class="boolean">true</span>
+};
+
+<span class="comment">// Need that [key, val] destructuring again...</span>
+<span class="keyword">const</span> <span class="variable">hasLogging</span> <span class="operator">=</span> <span class="variable">Object</span>.<span class="method">entries</span>(<span class="variable">features</span>)
+    .<span class="method">some</span>(([<span class="variable">key</span>, <span class="variable">val</span>]) <span class="operator">=></span> 
+        <span class="variable">val</span> <span class="operator">&&</span> <span class="variable">key</span>.<span class="method">startsWith</span>(<span class="string">'log'</span>)
+    );
+
+<span class="comment">// At least this one's simpler</span>
+<span class="keyword">const</span> <span class="variable">anyEnabled</span> <span class="operator">=</span> <span class="variable">Object</span>.<span class="method">values</span>(<span class="variable">features</span>)
+    .<span class="method">some</span>(<span class="variable">val</span> <span class="operator">=></span> <span class="variable">val</span> <span class="operator">===</span> <span class="boolean">true</span>);
+
+<span class="comment">// Different patterns for different needs</span></pre>
+                        <div class="advantage" style="background: #ffe0e0; color: #c62828; border-left-color: #e53935;">
+                            <strong>The Pain:</strong> Remember .entries() vs .values() vs .keys(). Destructure [key, val]. More to remember, more to type.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Example 5: forEach on Objects -->
+            <div class="example-card">
+                <div class="example-header" onclick="toggleExample(this)">
+                    <h2>5. Loop Objects Like Arrays 🔄</h2>
+                    <span class="toggle-icon">▼</span>
+                </div>
+                <div class="example-content">
+                    <div class="code-section">
+                        <h3><span class="badge">ASF</span> forEach Works Everywhere</h3>
+                        <div class="description">
+                            Same forEach pattern for arrays and objects. Consistent and intuitive.
+                        </div>
+                        <pre><span class="keyword">let</span> <span class="variable">scores</span> <span class="operator">=</span> {
+    <span class="property">math</span>: <span class="number">85</span>,
+    <span class="property">english</span>: <span class="number">92</span>,
+    <span class="property">science</span>: <span class="number">78</span>
+};
+
+<span class="comment">// Process each property</span>
+<span class="variable">scores</span>.<span class="method">forEach</span>(<span class="function">fun</span>(<span class="variable">val</span>, <span class="variable">key</span>) {
+    <span class="variable">print</span>(<span class="variable">key</span> <span class="operator">+</span> <span class="string">': '</span> <span class="operator">+</span> <span class="variable">val</span>);
+});
+
+<span class="comment">// Works just like array.forEach()</span>
+<span class="comment">// Get value, key, and even the object itself!</span></pre>
+                        <div class="advantage">
+                            <strong>Why ASF Wins:</strong> One forEach pattern for everything. Arrays, objects, strings. Consistency = easier to learn and remember.
+                        </div>
+                    </div>
+                    <div class="code-section">
+                        <h3><span class="badge js">JS</span> Objects Are Second-Class</h3>
+                        <div class="description">
+                            No object.forEach(). Must convert first. Arrays get forEach, objects don't.
+                        </div>
+                        <pre><span class="keyword">const</span> <span class="variable">scores</span> <span class="operator">=</span> {
+    <span class="property">math</span>: <span class="number">85</span>,
+    <span class="property">english</span>: <span class="number">92</span>,
+    <span class="property">science</span>: <span class="number">78</span>
+};
+
+<span class="comment">// No scores.forEach() - objects aren't iterable</span>
+<span class="comment">// Must convert to array first</span>
+<span class="variable">Object</span>.<span class="method">entries</span>(<span class="variable">scores</span>).<span class="method">forEach</span>(([<span class="variable">key</span>, <span class="variable">val</span>]) <span class="operator">=></span> {
+    <span class="variable">console</span>.<span class="method">log</span>(<span class="variable">key</span> <span class="operator">+</span> <span class="string">': '</span> <span class="operator">+</span> <span class="variable">val</span>);
+});
+
+<span class="comment">// Or use for...in (but that has prototype issues)</span>
+<span class="comment">// Or use Object.keys() then loop...</span>
+<span class="comment">// Multiple ways, none direct</span></pre>
+                        <div class="advantage" style="background: #ffe0e0; color: #c62828; border-left-color: #e53935;">
+                            <strong>The Pain:</strong> Objects don't have .forEach(). Always converting. Arrays are first-class, objects are not.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Example 6: Object Merge -->
+            <div class="example-card">
+                <div class="example-header" onclick="toggleExample(this)">
+                    <h2>6. Smart Object Merging</h2>
+                    <span class="toggle-icon">▼</span>
+                </div>
+                <div class="example-content">
+                    <div class="code-section">
+                        <h3><span class="badge">ASF</span> Elegant Solution</h3>
+                        <div class="description">
+                            Merge objects with built-in method.
+                        </div>
+                        <pre><span class="keyword">let</span> <span class="variable">defaults</span> <span class="operator">=</span> {
+    <span class="property">timeout</span>: <span class="number">30</span>,
+    <span class="property">retry</span>: <span class="number">3</span>,
+    <span class="property">verbose</span>: <span class="boolean">false</span>
+};
+
+<span class="keyword">let</span> <span class="variable">userConfig</span> <span class="operator">=</span> {
+    <span class="property">timeout</span>: <span class="number">60</span>,
+    <span class="property">cache</span>: <span class="boolean">true</span>
+};
+
+<span class="variable">defaults</span>.<span class="method">merge</span>(<span class="variable">userConfig</span>);
+
+<span class="comment">// Result:</span> 
+<span class="comment">// { timeout: 60, retry: 3, verbose: false, cache: true }</span></pre>
+                        <div class="advantage">
+                            <strong>ASF Advantage:</strong> Built-in <span class="highlight">.merge()</span> method modifies in place.
+                        </div>
+                    </div>
+                    <div class="code-section">
+                        <h3><span class="badge js">JS</span> Standard Approach</h3>
+                        <div class="description">
+                            JavaScript uses Object.assign() or spread operator.
+                        </div>
+                        <pre><span class="keyword">const</span> <span class="variable">defaults</span> <span class="operator">=</span> {
+    <span class="property">timeout</span>: <span class="number">30</span>,
+    <span class="property">retry</span>: <span class="number">3</span>,
+    <span class="property">verbose</span>: <span class="boolean">false</span>
+};
+
+<span class="keyword">const</span> <span class="variable">userConfig</span> <span class="operator">=</span> {
+    <span class="property">timeout</span>: <span class="number">60</span>,
+    <span class="property">cache</span>: <span class="boolean">true</span>
+};
+
+<span class="variable">Object</span>.<span class="method">assign</span>(<span class="variable">defaults</span>, <span class="variable">userConfig</span>);
+<span class="comment">// or: const merged = { ...defaults, ...userConfig };</span>
+
+<span class="comment">// Result:</span> 
+<span class="comment">// { timeout: 60, retry: 3, verbose: false, cache: true }</span></pre>
+                        <div class="advantage" style="background: #fff3cd; color: #856404; border-left-color: #ffc107;">
+                            <strong>JavaScript Note:</strong> Has Object.assign() and spread, but no .merge() method.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Example 6: Object Size -->
+            <div class="example-card">
+                <div class="example-header" onclick="toggleExample(this)">
+                    <h2>7. Check Size Naturally 📏</h2>
+                    <span class="toggle-icon">▼</span>
+                </div>
+                <div class="example-content">
+                    <div class="code-section">
+                        <h3><span class="badge">ASF</span> Built-in Size Methods</h3>
+                        <div class="description">
+                            Get property count or check if empty with dedicated methods.
+                        </div>
+                        <pre><span class="keyword">let</span> <span class="variable">config</span> <span class="operator">=</span> { <span class="property">a</span>: <span class="number">1</span>, <span class="property">b</span>: <span class="number">2</span>, <span class="property">c</span>: <span class="number">3</span> };
+
+<span class="keyword">let</span> <span class="variable">count</span> <span class="operator">=</span> <span class="variable">config</span>.<span class="method">size</span>();     <span class="comment">// 3</span>
+<span class="keyword">let</span> <span class="variable">empty</span> <span class="operator">=</span> <span class="variable">config</span>.<span class="method">isEmpty</span>();  <span class="comment">// false</span>
+
+<span class="variable">config</span>.<span class="method">clear</span>();
+<span class="variable">empty</span> <span class="operator">=</span> <span class="variable">config</span>.<span class="method">isEmpty</span>();      <span class="comment">// true</span>
+
+<span class="comment">// Readable, discoverable, obvious</span>
+<span class="comment">// Works like .length for arrays</span></pre>
+                        <div class="advantage">
+                            <strong>Why ASF Wins:</strong> Dedicated methods. .size() and .isEmpty() are self-documenting. No tricks, no patterns to remember.
+                        </div>
+                    </div>
+                    <div class="code-section">
+                        <h3><span class="badge js">JS</span> The Length Workaround</h3>
+                        <div class="description">
+                            Objects don't have .length. Must count keys manually every time.
+                        </div>
+                        <pre><span class="keyword">const</span> <span class="variable">config</span> <span class="operator">=</span> { <span class="property">a</span>: <span class="number">1</span>, <span class="property">b</span>: <span class="number">2</span>, <span class="property">c</span>: <span class="number">3</span> };
+
+<span class="keyword">const</span> <span class="variable">count</span> <span class="operator">=</span> <span class="variable">Object</span>.<span class="method">keys</span>(<span class="variable">config</span>).<span class="property">length</span>;
+<span class="keyword">const</span> <span class="variable">empty</span> <span class="operator">=</span> <span class="variable">Object</span>.<span class="method">keys</span>(<span class="variable">config</span>).<span class="property">length</span> <span class="operator">===</span> <span class="number">0</span>;
+
+<span class="comment">// Or with newer syntax</span>
+<span class="keyword">const</span> <span class="variable">empty2</span> <span class="operator">=</span> <span class="variable">Object</span>.<span class="method">keys</span>(<span class="variable">config</span>).<span class="property">length</span> <span class="operator">===</span> <span class="number">0</span>;
+
+<span class="comment">// Always: convert to array → get length</span>
+<span class="comment">// Every. Single. Time.</span>
+<span class="comment">// No .isEmpty(), must compare === 0</span></pre>
+                        <div class="advantage" style="background: #ffe0e0; color: #c62828; border-left-color: #e53935;">
+                            <strong>The Pain:</strong> Object.keys().length everywhere. No .isEmpty(). Array has .length, objects don't. Inconsistent.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Example 8: Complex Pipeline -->
+            <div class="example-card">
+                <div class="example-header" onclick="toggleExample(this)">
+                    <h2>8. Chain Operations Smoothly ⛓️</h2>
+                    <span class="toggle-icon">▼</span>
+                </div>
+                <div class="example-content">
+                    <div class="code-section">
+                        <h3><span class="badge">ASF</span> Natural Method Chaining</h3>
+                        <div class="description">
+                            Chain filter → map → filter. Object stays an object throughout.
+                        </div>
+                        <pre><span class="keyword">let</span> <span class="variable">products</span> <span class="operator">=</span> {
+    <span class="property">p1</span>: { <span class="property">name</span>: <span class="string">'Widget'</span>, <span class="property">cost</span>: <span class="number">10</span>, <span class="property">stock</span>: <span class="number">15</span> },
+    <span class="property">p2</span>: { <span class="property">name</span>: <span class="string">'Gadget'</span>, <span class="property">cost</span>: <span class="number">25</span>, <span class="property">stock</span>: <span class="number">0</span> },
+    <span class="property">p3</span>: { <span class="property">name</span>: <span class="string">'Tool'</span>, <span class="property">cost</span>: <span class="number">30</span>, <span class="property">stock</span>: <span class="number">8</span> }
+};
+
+<span class="keyword">let</span> <span class="variable">result</span> <span class="operator">=</span> <span class="variable">products</span>
+    .<span class="method">filter</span>(<span class="function">fun</span>(<span class="variable">item</span>) { 
+        <span class="keyword">return</span> <span class="variable">item</span>.<span class="property">stock</span> <span class="operator">></span> <span class="number">0</span>; 
+    })
+    .<span class="method">map</span>(<span class="function">fun</span>(<span class="variable">item</span>) {
+        <span class="keyword">return</span> { <span class="property">name</span>: <span class="variable">item</span>.<span class="property">name</span>, <span class="property">price</span>: <span class="variable">item</span>.<span class="property">cost</span> <span class="operator">*</span> <span class="number">1.5</span> };
+    })
+    .<span class="method">filter</span>(<span class="function">fun</span>(<span class="variable">item</span>) { 
+        <span class="keyword">return</span> <span class="variable">item</span>.<span class="property">price</span> <span class="operator">></span> <span class="number">30</span>; 
+    });
+
+<span class="comment">// Clean pipeline. Object → Object → Object</span>
+<span class="comment">// No type conversions!</span></pre>
+                        <div class="advantage">
+                            <strong>Why ASF Wins:</strong> Object methods return objects. Chain naturally. Read top-to-bottom. No conversion noise.
+                        </div>
+                    </div>
+                    <div class="code-section">
+                        <h3><span class="badge js">JS</span> Conversion Chaos</h3>
+                        <div class="description">
+                            Object → Array → Object → Array → Object. Conversions everywhere.
+                        </div>
+                        <pre><span class="keyword">const</span> <span class="variable">products</span> <span class="operator">=</span> {
+    <span class="property">p1</span>: { <span class="property">name</span>: <span class="string">'Widget'</span>, <span class="property">cost</span>: <span class="number">10</span>, <span class="property">stock</span>: <span class="number">15</span> },
+    <span class="property">p2</span>: { <span class="property">name</span>: <span class="string">'Gadget'</span>, <span class="property">cost</span>: <span class="number">25</span>, <span class="property">stock</span>: <span class="number">0</span> },
+    <span class="property">p3</span>: { <span class="property">name</span>: <span class="string">'Tool'</span>, <span class="property">cost</span>: <span class="number">30</span>, <span class="property">stock</span>: <span class="number">8</span> }
+};
+
+<span class="keyword">const</span> <span class="variable">result</span> <span class="operator">=</span> <span class="variable">Object</span>.<span class="method">fromEntries</span>(    <span class="comment">// Array → Object</span>
+    <span class="variable">Object</span>.<span class="method">entries</span>(                   <span class="comment">// Object → Array</span>
+        <span class="variable">Object</span>.<span class="method">fromEntries</span>(           <span class="comment">// Array → Object</span>
+            <span class="variable">Object</span>.<span class="method">entries</span>(<span class="variable">products</span>)  <span class="comment">// Object → Array</span>
+                .<span class="method">filter</span>(([<span class="variable">k</span>, <span class="variable">item</span>]) <span class="operator">=></span> <span class="variable">item</span>.<span class="property">stock</span> <span class="operator">></span> <span class="number">0</span>)
+                .<span class="method">map</span>(([<span class="variable">k</span>, <span class="variable">item</span>]) <span class="operator">=></span> [<span class="variable">k</span>, { 
+                    <span class="property">name</span>: <span class="variable">item</span>.<span class="property">name</span>, 
+                    <span class="property">price</span>: <span class="variable">item</span>.<span class="property">cost</span> <span class="operator">*</span> <span class="number">1.5</span> 
+                }])
+        )
+    ).<span class="method">filter</span>(([<span class="variable">k</span>, <span class="variable">item</span>]) <span class="operator">=></span> <span class="variable">item</span>.<span class="property">price</span> <span class="operator">></span> <span class="number">30</span>)
+);
+
+<span class="comment">// Nested conversions. Hard to read. Easy to mess up.</span></pre>
+                        <div class="advantage" style="background: #ffe0e0; color: #c62828; border-left-color: #e53935;">
+                            <strong>The Pain:</strong> fromEntries/entries spaghetti. Type ping-pong. Bracket juggling. Unreadable mess.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Example 9: Object Clone -->
+            <div class="example-card">
+                <div class="example-header" onclick="toggleExample(this)">
+                    <h2>9. Deep Clone Instantly 📋</h2>
+                    <span class="toggle-icon">▼</span>
+                </div>
+                <div class="example-content">
+                    <div class="code-section">
+                        <h3><span class="badge">ASF</span> One Method Call</h3>
+                        <div class="description">
+                            Deep copy nested objects with one simple method. Always works.
+                        </div>
+                        <pre><span class="keyword">let</span> <span class="variable">user</span> <span class="operator">=</span> {
+    <span class="property">name</span>: <span class="string">'John'</span>,
+    <span class="property">scores</span>: [<span class="number">85</span>, <span class="number">90</span>],
+    <span class="property">address</span>: { <span class="property">city</span>: <span class="string">'Boston'</span> }
+};
+
+<span class="keyword">let</span> <span class="variable">copy</span> <span class="operator">=</span> <span class="variable">user</span>.<span class="method">clone</span>();
+
+<span class="comment">// Modify copy</span>
+<span class="variable">copy</span>.<span class="property">name</span> <span class="operator">=</span> <span class="string">'Jane'</span>;
+<span class="variable">copy</span>.<span class="property">scores</span>[<span class="number">1</span>] <span class="operator">=</span> <span class="number">95</span>;
+<span class="variable">copy</span>.<span class="property">address</span>.<span class="property">city</span> <span class="operator">=</span> <span class="string">'NYC'</span>;
+
+<span class="comment">// Original untouched!</span>
+<span class="comment">// user.name = 'John'</span>
+<span class="comment">// user.address.city = 'Boston'</span></pre>
+                        <div class="advantage">
+                            <strong>Why ASF Wins:</strong> .clone() just works. Deep copies. No tricks. No limitations. Always reliable.
+                        </div>
+                    </div>
+                    <div class="code-section">
+                        <h3><span class="badge js">JS</span> Three Bad Options</h3>
+                        <div class="description">
+                            structuredClone is new. JSON breaks with functions. Spread is shallow.
+                        </div>
+                        <pre><span class="keyword">const</span> <span class="variable">user</span> <span class="operator">=</span> {
+    <span class="property">name</span>: <span class="string">'John'</span>,
+    <span class="property">scores</span>: [<span class="number">85</span>, <span class="number">90</span>],
+    <span class="property">address</span>: { <span class="property">city</span>: <span class="string">'Boston'</span> }
+};
+
+<span class="comment">// Option 1: Modern but new (2022+)</span>
+<span class="keyword">const</span> <span class="variable">copy1</span> <span class="operator">=</span> <span class="function">structuredClone</span>(<span class="variable">user</span>);
+
+<span class="comment">// Option 2: JSON trick (breaks with functions, dates, etc)</span>
+<span class="keyword">const</span> <span class="variable">copy2</span> <span class="operator">=</span> <span class="variable">JSON</span>.<span class="method">parse</span>(<span class="variable">JSON</span>.<span class="method">stringify</span>(<span class="variable">user</span>));
+
+<span class="comment">// Option 3: Spread (SHALLOW only!)</span>
+<span class="keyword">const</span> <span class="variable">copy3</span> <span class="operator">=</span> { <span class="operator">...</span><span class="variable">user</span> };
+<span class="variable">copy3</span>.<span class="property">address</span>.<span class="property">city</span> <span class="operator">=</span> <span class="string">'NYC'</span>;
+<span class="comment">// OOPS! user.address.city is now 'NYC' too!</span>
+
+<span class="comment">// No simple, universal solution</span></pre>
+                        <div class="advantage" style="background: #ffe0e0; color: #c62828; border-left-color: #e53935;">
+                            <strong>The Pain:</strong> structuredClone is recent. JSON.parse/stringify has bugs. Spread isn't deep. No good answer until 2022.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Example 7: Safe Property Access -->
+            <div class="example-card">
+                <div class="example-header" onclick="toggleExample(this)">
+                    <h2>10. Safe Defaults Built-in 🛡️</h2>
+                    <span class="toggle-icon">▼</span>
+                </div>
+                <div class="example-content">
+                    <div class="code-section">
+                        <h3><span class="badge">ASF</span> .get() with Fallback</h3>
+                        <div class="description">
+                            Get property with automatic fallback value. No undefined surprises.
+                        </div>
+                        <pre><span class="keyword">let</span> <span class="variable">config</span> <span class="operator">=</span> {
+    <span class="property">timeout</span>: <span class="number">30</span>,
+    <span class="property">retry</span>: <span class="number">3</span>
+};
+
+<span class="comment">// Property exists → return its value</span>
+<span class="keyword">let</span> <span class="variable">timeout</span> <span class="operator">=</span> <span class="variable">config</span>.<span class="method">get</span>(<span class="string">'timeout'</span>, <span class="number">60</span>);  <span class="comment">// 30</span>
+
+<span class="comment">// Property missing → return default</span>
+<span class="keyword">let</span> <span class="variable">port</span> <span class="operator">=</span> <span class="variable">config</span>.<span class="method">get</span>(<span class="string">'port'</span>, <span class="number">8080</span>);      <span class="comment">// 8080</span>
+
+<span class="comment">// Clean, safe, readable</span>
+<span class="comment">// No ?? or || operators needed</span></pre>
+                        <div class="advantage">
+                            <strong>Why ASF Wins:</strong> Built-in .get() method with defaults. No operators, no edge cases. Just works.
+                        </div>
+                    </div>
+                    <div class="code-section">
+                        <h3><span class="badge js">JS</span> Operator Soup</h3>
+                        <div class="description">
+                            Choose your operator: ??, ||, or manual checks. Each with gotchas.
+                        </div>
+                        <pre><span class="keyword">const</span> <span class="variable">config</span> <span class="operator">=</span> {
+    <span class="property">timeout</span>: <span class="number">30</span>,
+    <span class="property">retry</span>: <span class="number">3</span>
+};
+
+<span class="comment">// Nullish coalescing (newer, better)</span>
+<span class="keyword">let</span> <span class="variable">port</span> <span class="operator">=</span> <span class="variable">config</span>.<span class="property">port</span> <span class="operator">??</span> <span class="number">8080</span>;
+
+<span class="comment">// Logical OR (watch out for 0 and '')</span>
+<span class="keyword">let</span> <span class="variable">port2</span> <span class="operator">=</span> <span class="variable">config</span>.<span class="property">port</span> <span class="operator">||</span> <span class="number">8080</span>;
+
+<span class="comment">// Manual check (verbose)</span>
+<span class="keyword">let</span> <span class="variable">port3</span> <span class="operator">=</span> <span class="variable">config</span>.<span class="property">port</span> <span class="operator">!==</span> <span class="null">undefined</span> 
+    <span class="operator">?</span> <span class="variable">config</span>.<span class="property">port</span> <span class="operator">:</span> <span class="number">8080</span>;
+
+<span class="comment">// ?? vs || behave differently!</span>
+<span class="comment">// 0, '', false with || → use default</span>
+<span class="comment">// Only null/undefined with ?? → use default</span></pre>
+                        <div class="advantage" style="background: #ffe0e0; color: #c62828; border-left-color: #e53935;">
+                            <strong>The Pain:</strong> ?? vs || gotchas. No method, just operators. Need to remember which handles 0/''/false correctly.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 
-    <script>
+    <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
         function toggleExample(header) {
             const card = header.parentElement;
-            card.classList.toggle('collapsed');
-        }
-
-        // Auto-expand first example
-        document.addEventListener('DOMContentLoaded', function() {
-            // All examples start expanded
-        });
-    </script>
-</body>
-</html>
+            card
