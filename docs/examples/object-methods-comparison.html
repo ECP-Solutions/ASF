@@ -403,7 +403,7 @@ const enabled = Object.fromEntries(
 
 // Must remember to destructure [key, val]
 // Must remember Object.fromEntries at the end</pre>
-                        <div class="advantage" style="background: #ffe0e0; color: #c62828; border-left-color: #e53935;">
+                        <div class="advantage">
                             <strong>The Pain:</strong> Object → Array → Object dance. Destructuring syntax. Easy to forget fromEntries and end up with an array.
                         </div>
                     </div>
@@ -455,7 +455,7 @@ const sale = Object.fromEntries(
 
 // Forgot to preserve key? Broken.
 // Forgot fromEntries? You get an array.</pre>
-                        <div class="advantage" style="background: #ffe0e0; color: #c62828; border-left-color: #e53935;">
+                        <div class="advantage">
                             <strong>The Pain:</strong> Must manually return [key, value] pairs. One mistake = bugs. ASF does this automatically.
                         </div>
                     </div>
@@ -515,7 +515,7 @@ const hasRequired = Object.entries(user)
     );
 
 // Choose: lose keys or use verbose syntax?</pre>
-                        <div class="advantage" style="background: #ffe0e0; color: #c62828; border-left-color: #e53935;">
+                        <div class="advantage">
                             <strong>The Pain:</strong> Object.values() = no keys. Object.entries() = destructuring everywhere. Pick your poison.
                         </div>
                     </div>
@@ -577,7 +577,7 @@ const anyEnabled = Object.values(features)
     .some(val => val === true);
 
 // Different patterns for different needs</pre>
-                        <div class="advantage" style="background: #ffe0e0; color: #c62828; border-left-color: #e53935;">
+                        <div class="advantage">
                             <strong>The Pain:</strong> Remember .entries() vs .values() vs .keys(). Destructure [key, val]. More to remember, more to type.
                         </div>
                     </div>
@@ -633,7 +633,7 @@ Object.entries(scores).forEach(([key, val]) => {
 // Or use for...in (but that has prototype issues)
 // Or use Object.keys() then loop...
 // Multiple ways, none direct</pre>
-                        <div class="advantage" style="background: #ffe0e0; color: #c62828; border-left-color: #e53935;">
+                        <div class="advantage">
                             <strong>The Pain:</strong> Objects don't have .forEach(). Always converting. Arrays are first-class, objects are not.
                         </div>
                     </div>
@@ -692,7 +692,7 @@ Object.assign(defaults, userConfig);
 
 // Result: 
 // { timeout: 60, retry: 3, verbose: false, cache: true }</pre>
-                        <div class="advantage" style="background: #fff3cd; color: #856404; border-left-color: #ffc107;">
+                        <div class="advantage">
                             <strong>JavaScript Note:</strong> Has Object.assign() and spread, but no .merge() method.
                         </div>
                     </div>
@@ -741,7 +741,7 @@ const empty2 = Object.keys(config).length === 0;
 // Always: convert to array → get length
 // Every. Single. Time.
 // No .isEmpty(), must compare === 0</pre>
-                        <div class="advantage" style="background: #ffe0e0; color: #c62828; border-left-color: #e53935;">
+                        <div class="advantage">
                             <strong>The Pain:</strong> Object.keys().length everywhere. No .isEmpty(). Array has .length, objects don't. Inconsistent.
                         </div>
                     </div>
@@ -808,7 +808,7 @@ const result = Object.fromEntries(    // Array → Object
 );
 
 // Nested conversions. Hard to read. Easy to mess up.</pre>
-                        <div class="advantage" style="background: #ffe0e0; color: #c62828; border-left-color: #e53935;">
+                        <div class="advantage">
                             <strong>The Pain:</strong> fromEntries/entries spaghetti. Type ping-pong. Bracket juggling. Unreadable mess.
                         </div>
                     </div>
@@ -870,7 +870,7 @@ copy3.address.city = 'NYC';
 // OOPS! user.address.city is now 'NYC' too!
 
 // No simple, universal solution</pre>
-                        <div class="advantage" style="background: #ffe0e0; color: #c62828; border-left-color: #e53935;">
+                        <div class="advantage">
                             <strong>The Pain:</strong> structuredClone is recent. JSON.parse/stringify has bugs. Spread isn't deep. No good answer until 2022.
                         </div>
                     </div>
@@ -929,7 +929,7 @@ let port3 = config.port !== undefined
 // ?? vs || behave differently!
 // 0, '', false with || → use default
 // Only null/undefined with ?? → use default</pre>
-                        <div class="advantage" style="background: #ffe0e0; color: #c62828; border-left-color: #e53935;">
+                        <div class="advantage">
                             <strong>The Pain:</strong> ?? vs || gotchas. No method, just operators. Need to remember which handles 0/''/false correctly.
                         </div>
                     </div>
