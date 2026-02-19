@@ -293,6 +293,26 @@
             color: var(--text-primary);
         }
 
+        /* VS Code Syntax Colors */
+        .keyword { color: #569cd6; font-weight: bold; }
+        .string { color: #ce9178; }
+        .comment { color: #6a9955; font-style: italic; }
+        .function { color: #dcdcaa; }
+        .property { color: #9cdcfe; }
+        .number { color: #b5cea8; }
+        .operator { color: #d4d4d4; }
+        .punctuation { color: #d4d4d4; }
+        .variable { color: #4fc1ff; }
+        .type { color: #4ec9b0; }
+        .method { color: #dcdcaa; }
+        .control { color: #c586c0; }
+        .boolean { color: #569cd6; }
+        .null { color: #569cd6; }
+        .regex { color: #d16969; }
+        .tag { color: #92c5f8; }
+        .attribute { color: #9cdcfe; }
+        .value { color: #ce9178; }
+
         .usage-example {
             background: var(--bg-primary);
             border: 1px solid var(--border);
@@ -414,33 +434,33 @@
                     
                     <div class="code-block">
                         <h3><span class="badge new">Simple Methods</span></h3>
-                        <pre>// Add currency formatting
-prototype.COM.Range currency() {
-    this.NumberFormat = "$#,##0.00";
-    return this;
+                        <pre><span class="comment">// Add currency formatting</span>
+<span class="keyword">prototype</span>.<span class="type">COM</span>.<span class="type">Range</span> <span class="function">currency</span>() {
+    <span class="keyword">this</span>.<span class="property">NumberFormat</span> <span class="operator">=</span> <span class="string">"$#,##0.00"</span>;
+    <span class="keyword">return</span> <span class="keyword">this</span>;
 }
 
-// Add highlighting
-prototype.COM.Range highlight() {
-    this.Interior.Color = 65535;
-    return this;
+<span class="comment">// Add highlighting</span>
+<span class="keyword">prototype</span>.<span class="type">COM</span>.<span class="type">Range</span> <span class="function">highlight</span>() {
+    <span class="keyword">this</span>.<span class="property">Interior</span>.<span class="property">Color</span> <span class="operator">=</span> <span class="number">65535</span>;
+    <span class="keyword">return</span> <span class="keyword">this</span>;
 }</pre>
                     </div>
 
                     <div class="usage-example">
                         <h4>Test It:</h4>
-                        <pre>With scriptEngine
-    .AppAccess = True
+                        <pre><span class="keyword">With</span> <span class="variable">scriptEngine</span>
+    .<span class="property">AppAccess</span> <span class="operator">=</span> <span class="boolean">True</span>
     
-    ' Define methods and use them in a single script
-    pid = .Compile("prototype.COM.Range currency() { " & _
-                   "this.NumberFormat = '$#,##0.00'; return this; }; " & _
-                   "prototype.COM.Range highlight() { " & _
-                   "this.Interior.Color = 65535; return this; }; " & _
-                   "$1.Range('A1:A3').currency(); " & _
-                   "$1.Range('B1:B3').currency().highlight();")
-    .Run pid, ActiveSheet
-End With</pre>
+    <span class="comment">' Define methods and use them in a single script</span>
+    <span class="variable">pid</span> <span class="operator">=</span> .<span class="method">Compile</span>(<span class="string">"prototype.COM.Range currency() { "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"this.NumberFormat = '$#,##0.00'; return this; }; "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"prototype.COM.Range highlight() { "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"this.Interior.Color = 65535; return this; }; "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"$1.Range('A1:A3').currency(); "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"$1.Range('B1:B3').currency().highlight();"</span>)
+    .<span class="method">Run</span> <span class="variable">pid</span>, <span class="variable">ActiveSheet</span>
+<span class="keyword">End With</span></pre>
                     </div>
 
                     <div class="feature-highlight">
@@ -462,32 +482,32 @@ End With</pre>
                     
                     <div class="code-block">
                         <h3><span class="badge new">Document Methods</span></h3>
-                        <pre>// Get word count
-prototype.COM.Document wordCount() {
-    return this.Range.Words.Count - 1;
+                        <pre><span class="comment">// Get word count</span>
+<span class="keyword">prototype</span>.<span class="type">COM</span>.<span class="type">Document</span> <span class="function">wordCount</span>() {
+    <span class="keyword">return</span> <span class="keyword">this</span>.<span class="property">Range</span>.<span class="property">Words</span>.<span class="property">Count</span> <span class="operator">-</span> <span class="number">1</span>;
 }
 
-// Make title
-prototype.COM.Document makeTitle() {
-    this.Paragraphs(1).Range.Style = 'Title';
-    return this;
+<span class="comment">// Make title</span>
+<span class="keyword">prototype</span>.<span class="type">COM</span>.<span class="type">Document</span> <span class="function">makeTitle</span>() {
+    <span class="keyword">this</span>.<span class="method">Paragraphs</span>(<span class="number">1</span>).<span class="property">Range</span>.<span class="property">Style</span> <span class="operator">=</span> <span class="string">'Title'</span>;
+    <span class="keyword">return</span> <span class="keyword">this</span>;
 }</pre>
                     </div>
 
                     <div class="usage-example">
                         <h4>Test It:</h4>
-                        <pre>With scriptEngine
-    .AppAccess = True
+                        <pre><span class="keyword">With</span> <span class="variable">scriptEngine</span>
+    .<span class="property">AppAccess</span> <span class="operator">=</span> <span class="boolean">True</span>
     
-    ' Define methods and use them in a single script
-    pid = .Compile("prototype.COM.Document wordCount() { " & _
-                   "return this.Range.Words.Count - 1; }; " & _
-                   "prototype.COM.Document makeTitle() { " & _
-                   "this.Paragraphs(1).Range.Style = 'Title'; return this; }; " & _
-                   "let words = $1.wordCount(); print(`Words: ${words}`); " & _
-                   "$1.makeTitle();")
-    .Run pid, ActiveDocument
-End With</pre>
+    <span class="comment">' Define methods and use them in a single script</span>
+    <span class="variable">pid</span> <span class="operator">=</span> .<span class="method">Compile</span>(<span class="string">"prototype.COM.Document wordCount() { "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"return this.Range.Words.Count - 1; }; "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"prototype.COM.Document makeTitle() { "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"this.Paragraphs(1).Range.Style = 'Title'; return this; }; "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"let words = $1.wordCount(); print(`Words: ${words}`); "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"$1.makeTitle();"</span>)
+    .<span class="method">Run</span> <span class="variable">pid</span>, <span class="variable">ActiveDocument</span>
+<span class="keyword">End With</span></pre>
                     </div>
 
                     <div class="feature-highlight">
@@ -509,40 +529,40 @@ End With</pre>
                     
                     <div class="code-block">
                         <h3><span class="badge new">Slide Methods</span></h3>
-                        <pre>// Apply theme
-prototype.COM.Slide theme() {
-    this.Background.Fill.ForeColor.RGB = 16777215;
-    if (this.Shapes.Count > 0) {
-        this.Shapes(1).TextFrame.TextRange.Font.Size = 28;
+                        <pre><span class="comment">// Apply theme</span>
+<span class="keyword">prototype</span>.<span class="type">COM</span>.<span class="type">Slide</span> <span class="function">theme</span>() {
+    <span class="keyword">this</span>.<span class="property">Background</span>.<span class="property">Fill</span>.<span class="property">ForeColor</span>.<span class="property">RGB</span> <span class="operator">=</span> <span class="number">16777215</span>;
+    <span class="control">if</span> (<span class="keyword">this</span>.<span class="property">Shapes</span>.<span class="property">Count</span> <span class="operator">></span> <span class="number">0</span>) {
+        <span class="keyword">this</span>.<span class="method">Shapes</span>(<span class="number">1</span>).<span class="property">TextFrame</span>.<span class="property">TextRange</span>.<span class="property">Font</span>.<span class="property">Size</span> <span class="operator">=</span> <span class="number">28</span>;
     }
-    return this;
+    <span class="keyword">return</span> <span class="keyword">this</span>;
 }
 
-// Add footer
-prototype.COM.Slide footer(text) {
-    this.Shapes.AddTextbox(1, 30, 500, 660, 30)
-        .TextFrame.TextRange.Text = text;
-    return this;
+<span class="comment">// Add footer</span>
+<span class="keyword">prototype</span>.<span class="type">COM</span>.<span class="type">Slide</span> <span class="function">footer</span>(<span class="variable">text</span>) {
+    <span class="keyword">this</span>.<span class="property">Shapes</span>.<span class="method">AddTextbox</span>(<span class="number">1</span>, <span class="number">30</span>, <span class="number">500</span>, <span class="number">660</span>, <span class="number">30</span>)
+        .<span class="property">TextFrame</span>.<span class="property">TextRange</span>.<span class="property">Text</span> <span class="operator">=</span> <span class="variable">text</span>;
+    <span class="keyword">return</span> <span class="keyword">this</span>;
 }</pre>
                     </div>
 
                     <div class="usage-example">
                         <h4>Test It:</h4>
-                        <pre>With scriptEngine
-    .AppAccess = True
+                        <pre><span class="keyword">With</span> <span class="variable">scriptEngine</span>
+    .<span class="property">AppAccess</span> <span class="operator">=</span> <span class="boolean">True</span>
     
-    ' Define methods and use them in a single script
-    pid = .Compile("prototype.COM.Slide theme() { " & _
-                   "this.Background.Fill.ForeColor.RGB = 16777215; " & _
-                   "if (this.Shapes.Count > 0) { this.Shapes(1).TextFrame.TextRange.Font.Size = 28; } " & _
-                   "return this; }; " & _
-                   "prototype.COM.Slide footer(text) { " & _
-                   "this.Shapes.AddTextbox(1, 30, 500, 660, 30).TextFrame.TextRange.Text = text; " & _
-                   "return this; }; " & _
-                   "$1.Slides(1).theme(); " & _
-                   "$1.Slides(1).theme().footer('My Company');")
-    .Run pid, ActivePresentation
-End With</pre>
+    <span class="comment">' Define methods and use them in a single script</span>
+    <span class="variable">pid</span> <span class="operator">=</span> .<span class="method">Compile</span>(<span class="string">"prototype.COM.Slide theme() { "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"this.Background.Fill.ForeColor.RGB = 16777215; "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"if (this.Shapes.Count > 0) { this.Shapes(1).TextFrame.TextRange.Font.Size = 28; } "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"return this; }; "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"prototype.COM.Slide footer(text) { "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"this.Shapes.AddTextbox(1, 30, 500, 660, 30).TextFrame.TextRange.Text = text; "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"return this; }; "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"$1.Slides(1).theme(); "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"$1.Slides(1).theme().footer('My Company');"</span>)
+    .<span class="method">Run</span> <span class="variable">pid</span>, <span class="variable">ActivePresentation</span>
+<span class="keyword">End With</span></pre>
                     </div>
 
                     <div class="feature-highlight">
@@ -564,17 +584,17 @@ End With</pre>
                     
                     <div class="code-block">
                         <h3><span class="badge new">Smart Tables</span></h3>
-                        <pre>// Row to dictionary
-prototype.COM.ListRow asDict() {
-    let headers = this.parent.listcolumns;
-    let values = this.range.value2;
-    let dict = {};
+                        <pre><span class="comment">// Row to dictionary</span>
+<span class="keyword">prototype</span>.<span class="type">COM</span>.<span class="type">ListRow</span> <span class="function">asDict</span>() {
+    <span class="keyword">let</span> <span class="variable">headers</span> <span class="operator">=</span> <span class="keyword">this</span>.<span class="property">parent</span>.<span class="property">listcolumns</span>;
+    <span class="keyword">let</span> <span class="variable">values</span> <span class="operator">=</span> <span class="keyword">this</span>.<span class="property">range</span>.<span class="property">value2</span>;
+    <span class="keyword">let</span> <span class="variable">dict</span> <span class="operator">=</span> {};
     
-    for (let i = 1; i <= headers.count; i += 1) {
-        dict.set(headers.item(i).name, values[1][i]);
+    <span class="control">for</span> (<span class="keyword">let</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">1</span>; <span class="variable">i</span> <span class="operator"><=</span> <span class="variable">headers</span>.<span class="property">count</span>; <span class="variable">i</span> <span class="operator">+=</span> <span class="number">1</span>) {
+        <span class="variable">dict</span>.<span class="method">set</span>(<span class="variable">headers</span>.<span class="method">item</span>(<span class="variable">i</span>).<span class="property">name</span>, <span class="variable">values</span>[<span class="number">1</span>][<span class="variable">i</span>]);
     }
     
-    return dict;
+    <span class="keyword">return</span> <span class="variable">dict</span>;
 }</pre>
                     </div>
 
@@ -583,21 +603,21 @@ prototype.COM.ListRow asDict() {
                         <div style="background: #f80000; border: 1px solid #ffc107; border-radius: 6px; padding: 10px; margin-bottom: 10px; font-size: 0.9em;">
                             ⚠️ <strong>Collection Methods Required:</strong> This example uses array methods on ListRows collection, requiring OverrideCollMethods = True
                         </div>
-                        <pre>With scriptEngine
-    .AppAccess = True
-    .OverrideCollMethods = True  ' Required for array methods on collections
+                        <pre><span class="keyword">With</span> <span class="variable">scriptEngine</span>
+    .<span class="property">AppAccess</span> <span class="operator">=</span> <span class="boolean">True</span>
+    .<span class="property">OverrideCollMethods</span> <span class="operator">=</span> <span class="boolean">True</span>  <span class="comment">' Required for array methods on collections</span>
     
-    ' Define method and use it in a single script
-    pid = .Compile("prototype.COM.ListRow asDict() { " & _
-                   "let headers = this.parent.listcolumns; " & _
-                   "let values = this.range.value2; let dict = {}; " & _
-                   "for (let i = 1; i <= headers.count; i += 1) { " & _
-                   "dict.set(headers.item(i).name, values[1][i]); } return dict; }; " & _
-                   "let row = $1.ListObjects('Table1').ListRows(1).asDict(); " & _
-                   "let name = row.get('Name'); let email = row.get('Email'); " & _
-                   "print('Name: ' + name + ', Email: ' + email);")
-    .Run pid, ActiveSheet
-End With</pre>
+    <span class="comment">' Define method and use it in a single script</span>
+    <span class="variable">pid</span> <span class="operator">=</span> .<span class="method">Compile</span>(<span class="string">"prototype.COM.ListRow asDict() { "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"let headers = this.parent.listcolumns; "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"let values = this.range.value2; let dict = {}; "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"for (let i = 1; i <= headers.count; i += 1) { "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"dict.set(headers.item(i).name, values[1][i]); } return dict; }; "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"let row = $1.ListObjects('Table1').ListRows(1).asDict(); "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"let name = row.get('Name'); let email = row.get('Email'); "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"print('Name: ' + name + ', Email: ' + email);"</span>)
+    .<span class="method">Run</span> <span class="variable">pid</span>, <span class="variable">ActiveSheet</span>
+<span class="keyword">End With</span></pre>
                     </div>
 
                     <div class="feature-highlight">
@@ -619,35 +639,35 @@ End With</pre>
                     
                     <div class="code-block">
                         <h3><span class="badge new">Simple Integration</span></h3>
-                        <pre>// Excel to Word
-prototype.COM.Range toWord() {
-    let word = @(CreateObject("Word.Application"));
-    word.Visible = true;
-    let doc = word.Documents.Add();
+                        <pre><span class="comment">// Excel to Word</span>
+<span class="keyword">prototype</span>.<span class="type">COM</span>.<span class="type">Range</span> <span class="function">toWord</span>() {
+    <span class="keyword">let</span> <span class="variable">word</span> <span class="operator">=</span> @(<span class="method">CreateObject</span>(<span class="string">"Word.Application"</span>));
+    <span class="variable">word</span>.<span class="property">Visible</span> <span class="operator">=</span> <span class="boolean">true</span>;
+    <span class="keyword">let</span> <span class="variable">doc</span> <span class="operator">=</span> <span class="variable">word</span>.<span class="property">Documents</span>.<span class="method">Add</span>();
     
-    let data = this.value2;
-    doc.Range().Text = data.map(fun(row) { 
-        return row.join('\t'); 
-    }).join('\n');
+    <span class="keyword">let</span> <span class="variable">data</span> <span class="operator">=</span> <span class="keyword">this</span>.<span class="property">value2</span>;
+    <span class="variable">doc</span>.<span class="method">Range</span>().<span class="property">Text</span> <span class="operator">=</span> <span class="variable">data</span>.<span class="method">map</span>(<span class="function">fun</span>(<span class="variable">row</span>) { 
+        <span class="keyword">return</span> <span class="variable">row</span>.<span class="method">join</span>(<span class="string">'\t'</span>); 
+    }).<span class="method">join</span>(<span class="string">'\n'</span>);
     
-    return doc;
+    <span class="keyword">return</span> <span class="variable">doc</span>;
 }</pre>
                     </div>
 
                     <div class="usage-example">
                         <h4>Test It:</h4>
-                        <pre>With scriptEngine
-    .AppAccess = True
+                        <pre><span class="keyword">With</span> <span class="variable">scriptEngine</span>
+    .<span class="property">AppAccess</span> <span class="operator">=</span> <span class="boolean">True</span>
     
-    ' Define method and use it in a single script
-    pid = .Compile("prototype.COM.Range toWord() { " & _
-                   "let word = @(CreateObject('Word.Application')); word.Visible = true; " & _
-                   "let doc = word.Documents.Add(); let data = this.value2; " & _
-                   "doc.Range().Text = data.map(fun(row) { return row.join('\t'); }).join('\n'); " & _
-                   "return doc; }; " & _
-                   "let doc = $1.Range('A1:C3').toWord(); print('Created Word document');")
-    .Run pid, ActiveSheet
-End With</pre>
+    <span class="comment">' Define method and use it in a single script</span>
+    <span class="variable">pid</span> <span class="operator">=</span> .<span class="method">Compile</span>(<span class="string">"prototype.COM.Range toWord() { "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"let word = @(CreateObject('Word.Application')); word.Visible = true; "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"let doc = word.Documents.Add(); let data = this.value2; "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"doc.Range().Text = data.map(fun(row) { return row.join('\t'); }).join('\n'); "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"return doc; }; "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"let doc = $1.Range('A1:C3').toWord(); print('Created Word document');"</span>)
+    .<span class="method">Run</span> <span class="variable">pid</span>, <span class="variable">ActiveSheet</span>
+<span class="keyword">End With</span></pre>
                     </div>
 
                     <div class="feature-highlight">
@@ -669,15 +689,17 @@ End With</pre>
                     
                     <div class="code-block">
                         <h3><span class="badge new">Array Power</span></h3>
-                        <pre>// Process sheets
-let names = $1.Sheets
-    .map(fun(sheet) { return sheet.Name; })
-    .filter(fun(name) { return !name.startsWith('_'); });
+                        <pre><span class="comment">// Process sheets</span>
+<span class="keyword">let</span> <span class="variable">names</span> <span class="operator">=</span> <span class="variable">$1</span>.<span class="property">Sheets</span>
+    .<span class="method">map</span>(<span class="function">fun</span>(<span class="variable">sheet</span>) { <span class="keyword">return</span> <span class="variable">sheet</span>.<span class="property">Name</span>; })
+    .<span class="method">filter</span>(<span class="function">fun</span>(<span class="variable">name</span>) { <span class="keyword">return</span> !<span class="variable">name</span>.<span class="method">startsWith</span>(<span class="string">'_'</span>); });
 
-// Process slides
-$1.Slides
-    .filter(fun(slide) { return slide.Shapes.Count > 0; })
-    .forEach(fun(slide) { slide.theme(); });</pre>
+<span class="comment">// Process slides</span>
+<span class="variable">$1</span>.<span class="property">Slides</span>
+    .<span class="method">filter</span>(<span class="function">fun</span>(<span class="variable">slide</span>) { <span class="keyword">return</span> <span class="variable">slide</span>.<span class="property">Shapes</span>.<span class="property">Count</span> <span class="operator">></span> <span class="number">0</span>; })
+    .<span class="method">forEach</span>(<span class="function">fun</span>(<span class="variable">slide</span>) { 
+        <span class="variable">slide</span>.<span class="method">theme</span>(); 
+    });</pre>
                     </div>
 
                     <div class="usage-example">
@@ -685,24 +707,24 @@ $1.Slides
                         <div style="background: #f80000; border: 1px solid #ffc107; border-radius: 6px; padding: 10px; margin-bottom: 10px; font-size: 0.9em;">
                             ⚠️ <strong>Collection Methods Required:</strong> This example uses array methods on Office collections, requiring OverrideCollMethods = True
                         </div>
-                        <pre>With scriptEngine
-    .AppAccess = True
-    .OverrideCollMethods = True  ' Required for array methods on collections
+                        <pre><span class="keyword">With</span> <span class="variable">scriptEngine</span>
+    .<span class="property">AppAccess</span> <span class="operator">=</span> <span class="boolean">True</span>
+    .<span class="property">OverrideCollMethods</span> <span class="operator">=</span> <span class="boolean">True</span>  <span class="comment">' Required for array methods on collections</span>
     
-    ' Process collections in a single script
-    pid = .Compile("let names = $1.Sheets" & _
-                   ".map(fun(sheet) { return sheet.Name; })" & _
-                   ".filter(fun(name) { return !name.startsWith('_'); }); " & _
-                   "print('Sheets: ' + names.join(', '));")
-    .Run pid, ActiveWorkbook
+    <span class="comment">' Process collections in a single script</span>
+    <span class="variable">pid</span> <span class="operator">=</span> .<span class="method">Compile</span>(<span class="string">"let names = $1.Sheets"</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">".map(fun(sheet) { return sheet.Name; })"</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">".filter(fun(name) { return !name.startsWith('_'); }); "</span> <span class="operator">&</span> <span class="operator">_</span>
+                   <span class="string">"print('Sheets: ' + names.join(', '));"</span>)
+    .<span class="method">Run</span> <span class="variable">pid</span>, <span class="variable">ActiveWorkbook</span>
     
-    ' For PowerPoint (separate script for different object type)
-    ' pid = .Compile("$1.Slides" & _
-    '                ".filter(fun(slide) { return slide.Shapes.Count > 0; })" & _
-    '                ".forEach(fun(slide) { slide.theme(); }); " & _
-    '                "print('Themed slides with shapes');")
-    ' .Run pid, ActivePresentation
-End With</pre>
+    <span class="comment">' For PowerPoint (separate script for different object type)</span>
+    <span class="comment">' pid = .Compile("$1.Slides" & _</span>
+    <span class="comment">'                ".filter(fun(slide) { return slide.Shapes.Count > 0; })" & _</span>
+    <span class="comment">'                ".forEach(fun(slide) { slide.theme(); }); " & _</span>
+    <span class="comment">'                "print('Themed slides with shapes');")</span>
+    <span class="comment">' .Run pid, ActivePresentation</span>
+<span class="keyword">End With</span></pre>
                     </div>
 
                     <div class="feature-highlight">
