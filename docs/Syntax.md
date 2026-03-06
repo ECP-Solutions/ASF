@@ -270,7 +270,7 @@ From highest precedence to lowest:
 7. Shifts `<< >>`
 8. Relational `< <= > >=`
 9. Equality `== !=`
-10. Bitwise/logic levels (|, ^, &, ...)
+10. Bitwise/logic levels (`|, ^, &, ...`)
 11. Logical AND `&&`
 12. Logical OR `||`
 13. Ternary `?:`
