@@ -83,7 +83,7 @@ These are callable as top-level functions or via the helper bridge; some are als
 
 ---
 
-## Array methods (exposed as properties — e.g. `arr.map`)
+## Array methods
 
 All array methods are available as **properties** on arrays. Accessing `a.map` returns a bound builtin object you can call immediately: `a.map(fn)` or assign to a variable and call later `m = a.map; m(fn)`.
 
@@ -188,13 +188,13 @@ Below is a compact table (name — signature — brief behavior — example):
   
 ---
 
-## string methods (exposed as properties — e.g. `str.toLowercase`)
+## string methods
 
 All string indexing in ASF is **zero-based**. String methods that accept negative indexes treat them as offset from the end (like JavaScript `.slice()` / `.at()`).
 
 > Templates and regex patterns must be enclosed by the backtick character "\`".
 
-### Instance methods (call on a string value, e.g. 'hello'.method(...))
+### Instance methods
 - `length` — `str.length` — Number of UTF-16 code units in the string (like JS `length`). — `'abc'.length -> 3`
 
 - `at(index)` — `str.at(index)` — Return character at `index`. Supports negative indexes (e.g. `-1` is last char). Returns `''` for out-of-range. — `'abc'.at(1) -> 'b'`, `'abc'.at(-1) -> 'c'`
