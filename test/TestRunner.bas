@@ -1744,7 +1744,7 @@ Private Sub typeof_object()
         actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " _
                 & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
-    expected = "PRINT:'object', PRINT:'boolean'"
+    expected = "PRINT:'object: <ASF_Map>', PRINT:'boolean'"
     Assert.AreEqual expected, actual
 TestExit:
     Exit Sub
@@ -3992,6 +3992,26 @@ TestFail:
     Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
+'@TestMethod("module_system")
+Private Sub module_system_prototype_imports()
+    Dim wd As String
+    Dim eng As New ASF
+    wd = ThisWorkbook.path
+    With eng
+        .AppAccess = True
+        .InjectVariable "wd", wd
+        On Error GoTo TestFail
+        actual = CLng(.Execute(wd & "\main_prototype.vas", ThisWorkbook))
+        Debug.Print .GetCallStackTrace
+    End With
+    expected = CLng(255)
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
 '@TestMethod("math")
 Private Sub math_basic()
     On Error GoTo TestFail
@@ -4061,7 +4081,6 @@ Private Sub calling_array_method_from_collection()
         Dim col As New Collection
         col.Add "Jhon", "Name1"
         col.Add "Marie", "Name2"
-        .AppAccess = True
         progIdx = .Compile("return $1.filter(fun(name){ return name.startsWith('M')})[1]")
         .Run progIdx, col
         actual = .OUTPUT_

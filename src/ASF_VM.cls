@@ -26,6 +26,7 @@ Private tmpVar As Variant
 Private emptyColl As New Collection
 Private COM_PROTOTYPES_ As Collection ' COM Prototype storage for monkey patching
 Private COLLECTIONS_METHOD_OVERRIDE_ As Boolean
+Private MathObj As Collection
 
 ' Executes AST nodes produced by Compiler (AST).
 ' Uses Map node types and ScopeStack. Logs to gRuntimeLog.
@@ -424,7 +425,6 @@ Private Function MakeNode(nodeType As String) As ASF_Map
 End Function
 
 Public Sub RunProgramByIndex(idx As Long, Optional params As Variant = Empty)
-    GLOBALS_.ASF_InitGlobals
     If idx < 1 Or idx > GLOBALS_.gPrograms.Count Then Exit Sub
     Dim p As Variant: p = GLOBALS_.gPrograms(idx)
     Dim progName As String: progName = p(0)
@@ -435,7 +435,7 @@ Public Sub RunProgramByIndex(idx As Long, Optional params As Variant = Empty)
     progScope.LoadRaw rawScope
 '    progScope.SetValue "__option_base", optionBase
     progScope.SetValue "__option_base", 1 'Enforce option base=1
-    Dim MathObj As New Collection
+    Set MathObj = New Collection
     progScope.SetValue "Math", MathObj
     ' Variables injection
     If Not INJECTED_VARIABLES_ Is Nothing Then
@@ -843,7 +843,7 @@ Private Function ResolvePath(node As ASF_Map, progScope As ASF_ScopeStack, Optio
         If (InStr(node.GetValue("name"), ".") > 0 Or InStr(node.GetValue("name"), "[") > 0) Then
             ' Fallback for flat names (if Compiler didn't nest)
             Dim path As String: path = node.GetValue("name")
-            Dim parts As Collection: Set parts = ParsePath(path) ' Add ParsePath from previous patch
+            Dim parts As Collection: Set parts = ParsePath(path)
             Dim current As Variant
             vAssignment current, progScope.GetValue(CStr(parts(1)))
             Dim ii As Long
@@ -1138,10 +1138,10 @@ ForInEnd:
         initType = initNode.GetValue("type")
         Select Case initType
             Case "Assign", "Print", "If", "For", "While", "TryCatch", "Switch", "Return", "Break", "Continue", "ExprStmt"
-                ' Already a statement node — execute directly so side-effects happen.
+                ' Already a statement node Â— execute directly so side-effects happen.
                 ExecuteStmtNode initNode, progScope
             Case Else
-                ' Expression node — wrap into ExprStmt for side-effect evaluation.
+                ' Expression node Â— wrap into ExprStmt for side-effect evaluation.
                 ExecuteStmtNode MakeNodeExprStmt(initNode), progScope
         End Select
     End If
@@ -1181,7 +1181,7 @@ ExecForErr:
     ' propagate error as VM runtime error marker
     ExecForNode = "ERR"
     If err.Number <> 0 Then
-        ' You may prefer to re-raise or log error — currently we return "ERR" for caller to handle
+        ' You may prefer to re-raise or log error Â— currently we return "ERR" for caller to handle
     End If
 End Function
 
@@ -1478,7 +1478,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
             Dim vVal As Variant
             vAssignment vVal, progScope.GetValue(vname)
 
-            ' If scope contains a non-empty value, return it — this covers closures
+            ' If scope contains a non-empty value, return it Â— this covers closures
             ' stored As ASF_Map/AST nodes (FuncLiteral/Closure/etc.).
             If Not IsEmpty(vVal) Then
                 ' If it's a Map and looks like a function node, return as callable
@@ -1498,7 +1498,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                         End If
                     End If
                 End If
-                ' Not necessarily a function-like Map — still return stored value.
+                ' Not necessarily a function-like Map Â— still return stored value.
                 vAssignment tmpResult, vVal
                 GoTo exitfun
             End If
@@ -1533,7 +1533,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                 paramsCol.Add vbNullString
                             End If
                         ElseIf typeName(paVar) = "Collection" Then
-                            ' already a collection — copy it
+                            ' already a collection Â— copy it
                             For Each it In paVar
                                 paramsCol.Add it
                             Next it
@@ -1547,7 +1547,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                     pinfo = GLOBALS_.gPrograms(funcIdx)
                     If err.Number <> 0 Then
                         err.Clear
-                        ' fallback: no program info — return Empty
+                        ' fallback: no program info Â— return Empty
                         EvalExprNode = Empty
                         Exit Function
                     End If
@@ -1583,7 +1583,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
             End If
             On Error GoTo 0
 
-            ' Not found — log and return Empty
+            ' Not found Â— log and return Empty
             If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "VM: Variable '" & vname & "' is undefined or not callable (returned Empty)."
             vAssignment tmpResult, Empty
             GoTo exitfun
@@ -1701,19 +1701,27 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                     Dim baseValLocal As Variant
                     
                     vAssignment baseValLocal, EvalExprNode(calleeExpr.GetValue("base"), progScope)
-                    If IsVBAcollection(baseValLocal) And COLLECTIONS_METHOD_OVERRIDE_ Then
-                        Dim knownMethod As Boolean
-                        knownMethod = (BinarySearch(GLOBALS_.builtinArrayMethods, propN) <> -1)
-                        If Not knownMethod Then
-                            Dim isSpecialColl As Boolean
-                            Dim tmpBase As Variant
-                            Dim tmpBaseLocal As Variant
-                            vAssignment tmpBaseLocal, calleeExpr.GetValue("base")
-                            If tmpBaseLocal.Exists("name") Then
-                                isSpecialColl = tmpBaseLocal.GetValue("name") = "Math"
+                    Dim origBaseVal As Variant
+                    vAssignment origBaseVal, baseValLocal
+                    If IsVBAcollection(baseValLocal) Then
+                        If HasCOMPrototype(baseValLocal, propN) Then
+                            vAssignment tmpResult, CallObjectMethod(baseValLocal, propN, evaluated)
+                            GoTo exitfun
+                        End If
+                        Dim isSpecialColl As Boolean
+                        Dim tmpBaseLocal As Variant
+                        vAssignment tmpBaseLocal, calleeExpr.GetValue("base")
+                        If tmpBaseLocal.Exists("name") Then
+                            isSpecialColl = tmpBaseLocal.GetValue("name") = "Math"
+                        End If
+                        If COLLECTIONS_METHOD_OVERRIDE_ Then
+                            Dim knownMethod As Boolean
+                            knownMethod = (BinarySearch(GLOBALS_.builtinArrayMethods, propN) <> -1)
+                            If Not knownMethod Then
+                                GoTo CallCollMethod
                             End If
-                            GoTo CallCollMethod
-                        Else
+                        End If
+                        If Not isSpecialColl And Not APPLICATION_ACCESS_ Then
                             baseValLocal = CollToASF(baseValLocal, False)
                         End If
                     End If
@@ -1883,7 +1891,7 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                                 Dim ob2 As Long: ob2 = optBase
                             
                                 If cnt <= 0 Then
-                                    ' Produce minimal array using same option base — keep conservative behavior:
+                                    ' Produce minimal array using same option base Â— keep conservative behavior:
                                     ' if you prefer an empty array representation, you can return Empty instead.
                                     ReDim outS(ob2 To ob2)
                                 Else
@@ -3950,6 +3958,14 @@ CallCollMethod:
                 End If
             End If
 namedFunctions:
+            If Not calleeExpr Is Nothing Then
+                If calleeExpr.Exists("type") And CStr(calleeExpr.GetValue("type")) = "Member" Then
+                    If HasCOMPrototype(origBaseVal, propN) Then
+                        vAssignment tmpResult, CallObjectMethod(origBaseVal, propN, evaluated)
+                        GoTo exitfun
+                    End If
+                End If
+            End If
             ' If callee is a Variable AST -> treat as named call (builtins like range, IsArray, IsNumeric, flatten, clone)
             If fname = vbNullString Then
                 If Not calleeExpr Is Nothing Then
@@ -4875,18 +4891,40 @@ Private Sub HandleAssignment(left As ASF_Map, ByVal rval As Variant, progScope A
                 progScope.SetValue CStr(key), rval
             End If
         Case "prop"
-            If typeName(container) <> "ASF_Map" Then
+            If typeName(container) = "ASF_Map" Then
+                ' Container is already the target ASF_Map; set directly.
+                container.SetValue CStr(key), rval
+            ElseIf Not left Is Nothing _
+                And left.Exists("type") _
+                And CStr(left.GetValue("type")) = "Member" Then
+                ' Evaluate the penultimate expression (left.base) with the full
+                ' expression evaluator to obtain the actual container object.
+                '
+                ' This replaces the ResolveIndexProp chain traversal for all
+                ' Member-typed LHS nodes.  It handles COM property chains such as
+                '   this.Interior.Color = color
+                ' where the old traversal could not navigate the COM object graph:
+                '   EvalExprNode(Member(Variable("this"),"Interior"), callScope)
+                '   -> EvalMemberNode -> CallObjectMethod(Range,"Interior")
+                '   -> native CallByName(Range,"Interior",VbGet) -> Interior COM obj
+                ' and equally handles plain ASF_Map chains:
+                '   EvalExprNode(Variable("obj"), scope) -> ASF_Map -> SetValue
                 Dim tValue As Variant
+                vAssignment tValue, EvalExprNode(left.GetValue("base"), progScope)
+                Select Case typeName(tValue)
+                    Case "ASF_Map", "ASF_ScopeStack"
+                        tValue.SetValue CStr(key), rval
+                    Case Else
+                        SetObjectProperty tValue, key, rval
+                End Select
+            Else
                 vAssignment tValue, ResolveIndexProp(lval)
                 Select Case typeName(tValue)
                     Case "ASF_Map", "ASF_ScopeStack"
                         tValue.SetValue CStr(key), rval
                     Case Else
-                        ' Perform a call by name
                         SetObjectProperty tValue, key, rval
                 End Select
-            Else
-                container.SetValue CStr(key), rval
             End If
         Case "index"
             Dim pos As Long: pos = CLng(key)
@@ -5166,13 +5204,47 @@ Private Function ResolveIndexProp(ByRef lval) As Variant
     baseVariable = pObject("key")
     Select Case typeName(container)
         Case "ASF_Map", "ASF_ScopeStack"
-            ' Container is an ASF structure
+            ' Container is an ASF structure; base variable gives the root object
             vAssignment pObject, container.GetValue(baseVariable)
             If keys.Count > 0 Then
+                ' Navigate intermediate chain. pObject can now be any type:
+                ' ASF_Map/ScopeStack -> .GetValue; raw VBA Array -> index access;
+                ' everything else (VBA Collection, Scripting.Dictionary, COM app objects
+                ' like Excel.Range, etc.) -> try default member first (.Item), then
+                ' fall back to CallByName for named COM properties (e.g. Range.Interior).
+                ' This preserves all pre-existing behavior while adding support for
+                ' chained property assignment in COM prototype bodies (this.Interior.Color).
                 For i = keys.Count To 2 Step -1
-                    vAssignment pObject, pObject.GetValue(keys(i))
+                    If typeName(pObject) = "ASF_Map" Or typeName(pObject) = "ASF_ScopeStack" Then
+                        vAssignment pObject, pObject.GetValue(CStr(keys(i)))
+                    ElseIf IsArray(pObject) Then
+                        vAssignment pObject, pObject(CLng(keys(i)))
+                    Else
+                        On Error Resume Next
+                        vAssignment pObject, pObject(keys(i))
+                        If err.Number <> 0 Then
+                            err.Clear: On Error GoTo 0
+                            vAssignment pObject, CallByName(pObject, CStr(keys(i)), VbGet)
+                        Else
+                            On Error GoTo 0
+                        End If
+                    End If
                 Next
-                vAssignment ResolveIndexProp, pObject(keys(1))
+                ' Final step: return the object that owns the property being assigned
+                If typeName(pObject) = "ASF_Map" Or typeName(pObject) = "ASF_ScopeStack" Then
+                    vAssignment ResolveIndexProp, pObject.GetValue(CStr(keys(1)))
+                ElseIf IsArray(pObject) Then
+                    vAssignment ResolveIndexProp, pObject(CLng(keys(1)))
+                Else
+                    On Error Resume Next
+                    vAssignment ResolveIndexProp, pObject(keys(1))
+                    If err.Number <> 0 Then
+                        err.Clear: On Error GoTo 0
+                        vAssignment ResolveIndexProp, CallByName(pObject, CStr(keys(1)), VbGet)
+                    Else
+                        On Error GoTo 0
+                    End If
+                End If
             Else
                 vAssignment ResolveIndexProp, pObject
             End If
@@ -5508,7 +5580,7 @@ End Sub
 Private Sub flatten_recursive_depth(v As Variant, ByRef col As Collection, ByVal maxDepth As Long)
     If IsArray(v) Then
         If maxDepth < 0 Then
-            ' Do not flatten this array level — push the array object as an element.
+            ' Do not flatten this array level Â— push the array object as an element.
             col.Add v
         Else
             Dim i As Long
@@ -5634,7 +5706,7 @@ Private Function builtin_typeof(v As Variant) As String
         Exit Function
     End If
 
-    ' ASF_Map (objects and closures) — detect function closures specially
+    ' ASF_Map (objects and closures) Â— detect function closures specially
     If IsObject(v) Then
         ' if it's an ASF_Map, look inside for "type" = "Closure"
         Dim typeN As String: typeN = typeName(v)
@@ -5887,7 +5959,7 @@ Private Sub WriteToContainer(ByRef calleeExpr As ASF_Map, ByRef progScope As ASF
                             End If
                     End Select
                 Else
-                    ' couldn't resolve a container object — fall back to storing in current scope
+                    ' couldn't resolve a container object Â— fall back to storing in current scope
                     progScope.SetValue propKey, tValue
                 End If
         End Select
@@ -6419,7 +6491,32 @@ Private Function ExecModImport(node As ASF_Map, progScope As ASF_ScopeStack) As 
             
             Dim exportsMap2 As ASF_Map: Set exportsMap2 = moduleObj.GetValue("exports")
             If exportsMap2.Exists(importedName) Then
-                progScope.SetValue localName, exportsMap2.GetValue(importedName)
+                Dim importedVal As Variant
+                vAssignment importedVal, exportsMap2.GetValue(importedName)
+                If IsObject(importedVal) Then
+                    If typeName(importedVal) = "ASF_Map" Then
+                        Dim importedDesc As ASF_Map: Set importedDesc = importedVal
+                        If importedDesc.Exists("type") Then
+                            If importedDesc.GetValue("type") = "PrototypeDescriptor" Then
+                                ' Execute a Prototype node exactly as if the user had written
+                                '   prototype.COM.<classType> <methodName>(...) { body }
+                                ' directly in the importing script.  ExecuteStmtNode Case
+                                ' "Prototype" calls RegisterCOMPrototype on the *main* VM's
+                                ' COM_PROTOTYPES_ at the correct moment â€” after LoadModule
+                                ' returns, before any COM method call on rng is evaluated.
+                                Dim protoInlineNode As ASF_Map
+                                Set protoInlineNode = New ASF_Map
+                                protoInlineNode.SetValue "type", "Prototype"
+                                protoInlineNode.SetValue "classType", importedDesc.GetValue("classType")
+                                protoInlineNode.SetValue "methodName", importedDesc.GetValue("methodName")
+                                protoInlineNode.SetValue "funcIndex", CLng(importedDesc.GetValue("funcIndex"))
+                                protoInlineNode.SetValue "params", importedDesc.GetValue("params")
+                                ExecuteStmtNode protoInlineNode, progScope
+                            End If
+                        End If
+                    End If
+                End If
+                progScope.SetValue localName, importedVal
             Else
                 err.Raise vbObjectError + 9001, "VM.ExecuteStmtNode", "Export '" & importedName & "' not found in module '" & resolvedPath & "'"
             End If
@@ -6477,6 +6574,26 @@ Private Function ExecModExport(node As ASF_Map, progScope As ASF_ScopeStack) As 
             If GLOBALS_.gModuleExports.Exists(GLOBALS_.CURRENT_MODULE_PATH) Then
                 Set modExports = GLOBALS_.gModuleExports.GetValue(GLOBALS_.CURRENT_MODULE_PATH)
                 modExports.SetValue "__pending_" & declName, True
+            End If
+        ElseIf node.Exists("exportType") Then
+            If node.GetValue("exportType") = "prototype" Then
+                Dim protoExportNode As ASF_Map
+                Set protoExportNode = node.GetValue("prototypeNode")
+                Dim pClassType  As String: pClassType = protoExportNode.GetValue("classType")
+                Dim pMethodName As String: pMethodName = protoExportNode.GetValue("methodName")
+                Dim pFuncIdx    As Long:   pFuncIdx = CLng(protoExportNode.GetValue("funcIndex"))
+                Dim pParams As Collection: Set pParams = protoExportNode.GetValue("params")
+                If GLOBALS_.gModuleExports.Exists(GLOBALS_.CURRENT_MODULE_PATH) Then
+                    Dim protoDesc As New ASF_Map
+                    protoDesc.SetValue "type", "PrototypeDescriptor"
+                    protoDesc.SetValue "classType", pClassType
+                    protoDesc.SetValue "methodName", pMethodName
+                    protoDesc.SetValue "funcIndex", pFuncIdx
+                    protoDesc.SetValue "internalFuncName", protoExportNode.GetValue("internalFuncName")
+                    protoDesc.SetValue "params", pParams
+                    Set modExports = GLOBALS_.gModuleExports.GetValue(GLOBALS_.CURRENT_MODULE_PATH)
+                    modExports.SetValue node.GetValue("exportName"), protoDesc
+                End If
             End If
         End If
     End If

@@ -50,9 +50,9 @@ Private Function CloneCollectionOfVariants(src As Variant) As Collection
     Dim it As Variant
     For Each it In src
         If IsObject(it) Then
-            If typeName(it) = "ASF_Map" Then
+            If TypeName(it) = "ASF_Map" Then
                 out.Add it.Clone
-            ElseIf typeName(it) = "Collection" Then
+            ElseIf TypeName(it) = "Collection" Then
                 out.Add CloneCollectionOfVariants(it)
             Else
                 out.Add it
@@ -3958,6 +3958,17 @@ Private Function ParseExportStatement(toks As Collection, ByRef i As Long) As AS
         Exit Function
     End If
     
+    ' Export prototype: export prototype.COM.<classtype> <methodname>(<params>){<body>}
+    If toks(i)(0) = "IDENT" And toks(i)(1) = "prototype" Then
+        Dim protoNode As ASF_Map: Set protoNode = ParsePrototypeStatement(toks, i)
+        exportNode.SetValue "isDefault", False
+        exportNode.SetValue "exportType", "prototype"
+        exportNode.SetValue "prototypeNode", protoNode
+        exportNode.SetValue "exportName", protoNode.GetValue("classType") & "_" & protoNode.GetValue("methodName")
+        Set ParseExportStatement = exportNode
+        Exit Function
+    End If
+
     err.Raise vbObjectError + 8013, "Compiler.ParseExportStatement", "Invalid export syntax"
 End Function
 ' ---------------------

@@ -1,0 +1,7 @@
+export prototype.COM.Range addStyle(color) {
+    this.Interior.Color = color;
+};
+
+export prototype.COM.Worksheet highlight(rng, color) {
+    rng.addStyle(color);
+};

@@ -95,12 +95,32 @@ Private Sub INIT_()
     VM_.AppAccess = False
     VM_.CastInjectedVars = True
     VM_.OverrideCollMethods = False
+    Set VM_.Globals = GLOBALS_
 End Sub
 Public Property Get OUTPUT_() As Variant
     vAssignment OUTPUT_, OUTPUT__
 End Property
-Public Function Execute(scriptPath As String) As Variant
-    vAssignment Execute, Run(Compile(ReadTextFile(scriptPath)))
+Public Function Execute(scriptPath As String, ParamArray params() As Variant) As Variant
+    If Not GLOBALS_ Is Nothing Then
+        With VM_
+            Set .Globals = GLOBALS_
+            If Not IsMissing(params) Then
+                Dim params_ As Variant: params_ = params
+                .RunProgramByIndex Compile(ReadTextFile(scriptPath)), params_
+            Else
+                .RunProgramByIndex Compile(ReadTextFile(scriptPath))
+            End If
+            vAssignment OUTPUT__, .OUTPUT_
+            vAssignment Execute, .OUTPUT_
+                If .verbose Then
+                    Debug.Print "=== Runtime Log ==="
+                    Dim elm As Variant
+                    For Each elm In GLOBALS_.gRuntimeLog
+                        Debug.Print elm
+                    Next elm
+                End If
+        End With
+    End If
 End Function
 Public Function Eval(Optional strValues As String) As String
     With EVALUATOR_

@@ -1,0 +1,8 @@
+scwd(wd);
+import { Range_addStyle, Worksheet_highlight } from './prototypes.vas';
+
+let ws = $1.ActiveSheet;
+let rng = ws.Range('J1:L3');
+rng.addStyle(65535);          // yellow
+ws.highlight(rng, 255);       // red
+return rng.Interior.Color

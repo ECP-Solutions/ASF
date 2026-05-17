@@ -65,7 +65,7 @@ Public Sub LoadRaw(framesCol As Collection) 'expects a collection
     Set pFrames = New Collection
     Dim f As Variant
     For Each f In framesCol
-        If typeName(f) = "ASF_Map" Then
+        If TypeName(f) = "ASF_Map" Then
             pFrames.Add f.Clone
         Else
             Dim tmp As New ASF_Map
@@ -83,7 +83,7 @@ Public Sub LoadRawByRef(framesCol As Collection)
     Set pFrames = New Collection
     Dim f As Variant
     For Each f In framesCol
-        If typeName(f) = "ASF_Map" Then
+        If TypeName(f) = "ASF_Map" Then
             pFrames.Add f
         Else
             Dim tmp As New ASF_Map

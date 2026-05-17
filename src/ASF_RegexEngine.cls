@@ -144,9 +144,11 @@ End Function
 
 ' ---------------- Parser & AST precomputation ----------------------------
 Private Function CompilePattern(ByVal pat As String) As Collection
-    ' Reject unsupported inline-comment syntax early
-    DetectUnsupportedCommentSyntax pat
-    
+    ' Validate pattern structure before any parsing (raises on bad syntax).
+    ' This subsumes DetectUnsupportedCommentSyntax and adds paren-balance,
+    ' unclosed class, dangling backslash, and quantifier-operand checks.
+    ValidatePattern pat
+
     Dim ast As New Collection
     NodeAdd ast, "raw", pat
 
@@ -2276,8 +2278,8 @@ Private Function ComputeMaxLen(ByVal node As Collection) As Long
                     ' child unbounded but quant bounded by explicit max
                 End If
             End If
-            Dim qmax As Long: qmax = NodeGet(node, "max")
-            If qmax = -1 Then
+            Dim qMax As Long: qMax = NodeGet(node, "max")
+            If qMax = -1 Then
                 If mxChild = -1 Then
                     ComputeMaxLen = -1
                 Else
@@ -2287,7 +2289,7 @@ Private Function ComputeMaxLen(ByVal node As Collection) As Long
                 If mxChild = -1 Then
                     ComputeMaxLen = -1
                 Else
-                    ComputeMaxLen = qmax * mxChild
+                    ComputeMaxLen = qMax * mxChild
                 End If
             End If
         Case "lookahead_pos", "lookahead_neg"
@@ -2479,6 +2481,254 @@ Private Sub DetectUnsupportedCommentSyntax(ByVal pat As String)
 ContinueLoop:
     Next i
 End Sub
+
+' Error codes (vbObjectError + N):
+'   20  (?# comment syntax (unsupported)
+'   31  Dangling backslash at end of pattern
+'   32  Unclosed character class [
+'   33  Incomplete (?...) specifier or conditional
+'   34  Named group (?<name missing closing >
+'   35  Named group (?<> has empty name
+'   36  Unknown (?< variant (not =, !, or valid name start)
+'   37  Unknown (?X specifier
+'   38  Unmatched closing )
+'   39  Quantifier (*, +, ?, {m,n}) with no preceding quantifiable token
+'   40  {m,n} quantifier where min > max
+'   43  Unclosed group(s): unmatched ( at end of pattern
+Private Sub ValidatePattern(ByVal pat As String)
+    Dim L As Long: L = Len(pat)
+    If L = 0 Then Exit Sub
+
+    Dim i As Long: i = 1
+    Dim c As String
+    Dim depth As Long: depth = 0
+    Dim prevQ As Boolean: prevQ = False
+    Dim esc As Boolean: esc = False
+    Dim advance As Long
+    Dim spec As String
+    Dim clEnd As Long
+    Dim lbCh As String
+    Dim gtPos As Long
+    Dim condClose As Long
+    Dim ri As Long
+    Dim fi As Long
+    Dim flagCh As String
+    Dim nextMod As String
+    Dim closeB As Long
+    Dim qcontent As String
+    Dim qparts() As String
+    Dim qMin As Long
+    Dim qMax As Long
+    Dim qValid As Boolean
+
+    Do While i <= L
+        c = mid$(pat, i, 1)
+        advance = 1
+        If esc Then
+            esc = False
+            prevQ = True
+        Else
+            Select Case c
+                Case "\"
+                    If i = L Then
+                        err.Raise vbObjectError + 31, "RegexEngine", _
+                            "Invalid pattern: dangling backslash at end of pattern"
+                    End If
+                    esc = True
+                Case "["
+                    clEnd = FindClassEnd(pat, i, L)
+                    If clEnd = -1 Then
+                        err.Raise vbObjectError + 32, "RegexEngine", _
+                            "Invalid pattern: unclosed character class '[' at position " & i
+                    End If
+                    advance = clEnd - i + 1
+                    prevQ = True
+                Case "("
+                    depth = depth + 1
+                    If i + 1 <= L And mid$(pat, i + 1, 1) = "?" Then
+                        If i + 2 > L Then
+                            err.Raise vbObjectError + 33, "RegexEngine", _
+                                "Invalid pattern: '(?' at end of pattern (position " & i & ")"
+                        End If
+                        spec = mid$(pat, i + 2, 1)
+                        Select Case spec
+                            Case ":", "=", "!", ">", "R"
+                                advance = 3
+                            Case "<"
+                                ' lookbehind (?<= (?<! or named group (?<name>
+                                If i + 3 > L Then
+                                    err.Raise vbObjectError + 33, "RegexEngine", _
+                                        "Invalid pattern: '(?<' at end of pattern (position " & i & ")"
+                                End If
+                                lbCh = mid$(pat, i + 3, 1)
+                                If lbCh = "=" Or lbCh = "!" Then
+                                    advance = 4
+                                ElseIf lbCh = ">" Then
+                                    err.Raise vbObjectError + 35, "RegexEngine", _
+                                        "Invalid pattern: empty named group name '(?<>' at position " & i
+                                ElseIf (lbCh >= "A" And lbCh <= "Z") Or _
+                                       (lbCh >= "a" And lbCh <= "z") Or lbCh = "_" Then
+                                    gtPos = InStr(i + 3, pat, ">")
+                                    If gtPos = 0 Then
+                                        err.Raise vbObjectError + 34, "RegexEngine", _
+                                            "Invalid pattern: unclosed named group '(?<name' - missing '>' at position " & i
+                                    End If
+                                    advance = gtPos - i + 1
+                                Else
+                                    err.Raise vbObjectError + 36, "RegexEngine", _
+                                        "Invalid pattern: unknown '(?<" & lbCh & _
+                                        "' at position " & i & " (expected '=', '!' or a name start char)"
+                                End If
+                            Case "#"
+                                ' inline comment - unsupported
+                                err.Raise vbObjectError + 20, "RegexEngine", _
+                                    "Invalid pattern: (?# comments are not supported (position " & i & ")"
+                            Case "("
+                                condClose = InStr(i + 3, pat, ")")
+                                If condClose = 0 Then
+                                    err.Raise vbObjectError + 33, "RegexEngine", _
+                                        "Invalid pattern: unclosed conditional '(?(' at position " & i
+                                End If
+                                advance = condClose - i + 1
+                            Case "0" To "9"
+                                ri = i + 2
+                                Do While ri <= L
+                                    If mid$(pat, ri, 1) >= "0" And mid$(pat, ri, 1) <= "9" Then
+                                        ri = ri + 1
+                                    Else
+                                        Exit Do
+                                    End If
+                                Loop
+                                advance = ri - i
+                            Case Else
+                                fi = i + 2
+                                Do While fi <= L
+                                    flagCh = mid$(pat, fi, 1)
+                                    If flagCh = ":" Or flagCh = ")" Then Exit Do
+                                    If (flagCh >= "a" And flagCh <= "z") Or _
+                                       (flagCh >= "A" And flagCh <= "Z") Or flagCh = "-" Then
+                                        fi = fi + 1
+                                    Else
+                                        Exit Do
+                                    End If
+                                Loop
+                                If fi <= L And _
+                                   (mid$(pat, fi, 1) = ":" Or mid$(pat, fi, 1) = ")") Then
+                                    advance = fi - i + 1
+                                    If mid$(pat, fi, 1) = ")" Then
+                                        depth = depth - 1
+                                        If depth < 0 Then
+                                            err.Raise vbObjectError + 38, "RegexEngine", _
+                                                "Invalid pattern: unmatched ')' at position " & fi
+                                        End If
+                                    End If
+                                Else
+                                    err.Raise vbObjectError + 37, "RegexEngine", _
+                                        "Invalid pattern: unknown group specifier '(?" & _
+                                        spec & "' at position " & i
+                                End If
+
+                        End Select
+                    End If
+                    prevQ = False
+                Case ")"
+                    depth = depth - 1
+                    If depth < 0 Then
+                        err.Raise vbObjectError + 38, "RegexEngine", _
+                            "Invalid pattern: unmatched ')' at position " & i
+                    End If
+                    prevQ = True
+                Case "*", "+", "?"
+                    If Not prevQ Then
+                        err.Raise vbObjectError + 39, "RegexEngine", _
+                            "Invalid pattern: quantifier '" & c & "' at position " & i & _
+                            " has nothing to quantify"
+                    End If
+                    If i + 1 <= L Then
+                        nextMod = mid$(pat, i + 1, 1)
+                        If nextMod = "?" Or nextMod = "+" Then advance = 2
+                    End If
+                    prevQ = False
+                Case "{"
+                    closeB = InStr(i, pat, "}")
+                    If closeB > 0 Then
+                        qcontent = mid$(pat, i + 1, closeB - i - 1)
+                        qparts = VBA.Split(qcontent, ",")
+                        qValid = True
+                        qMin = 0: qMax = -1
+                        If UBound(qparts) = 0 Then
+                            If Not IsNumeric(Trim$(qparts(0))) Then
+                                qValid = False
+                            Else
+                                qMin = CLng(Trim$(qparts(0))): qMax = qMin
+                            End If
+                        ElseIf UBound(qparts) = 1 Then
+                            If Not IsNumeric(Trim$(qparts(0))) Then
+                                qValid = False
+                            Else
+                                qMin = CLng(Trim$(qparts(0)))
+                                If Len(Trim$(qparts(1))) > 0 Then
+                                    If Not IsNumeric(Trim$(qparts(1))) Then
+                                        qValid = False
+                                    Else
+                                        qMax = CLng(Trim$(qparts(1)))
+                                        If qMax < qMin Then
+                                            err.Raise vbObjectError + 40, "RegexEngine", _
+                                                "Invalid pattern: quantifier {" & qcontent & _
+                                                "} has min > max (min=" & qMin & _
+                                                ", max=" & qMax & ") at position " & i
+                                        End If
+                                    End If
+                                End If
+                            End If
+                        Else
+                            qValid = False
+                        End If
+
+                        If qValid Then
+                            If Not prevQ Then
+                                err.Raise vbObjectError + 39, "RegexEngine", _
+                                    "Invalid pattern: quantifier '{" & qcontent & _
+                                    "}' at position " & i & " has nothing to quantify"
+                            End If
+                            advance = closeB - i + 1
+                            If i + advance <= L Then
+                                nextMod = mid$(pat, i + advance, 1)
+                                If nextMod = "?" Or nextMod = "+" Then advance = advance + 1
+                            End If
+                            prevQ = False
+                        Else
+                            prevQ = True
+                        End If
+                    Else
+                        prevQ = True
+                    End If
+                Case "|"
+                    prevQ = False
+                Case "^", "$"
+                    prevQ = False
+                Case Else
+                    prevQ = True
+            End Select
+        End If
+        i = i + advance
+    Loop
+    If depth > 0 Then
+        err.Raise vbObjectError + 43, "RegexEngine", _
+            "Invalid pattern: " & depth & " unclosed group(s) - " & _
+            depth & " unmatched '(' in pattern"
+    End If
+End Sub
+
+Public Function Validate(ByVal pat As String) As Boolean
+    On Error GoTo fail_
+    ValidatePattern pat
+    Validate = True
+    Exit Function
+fail_:
+    Validate = False
+    err.Clear
+End Function
 
 ' Escape a string so it can be used as a literal regex pattern.
 ' Escapes the common regex metacharacters: \ . ^ $ * + ? ( ) [ ] { } | /

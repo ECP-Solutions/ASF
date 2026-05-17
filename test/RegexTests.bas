@@ -20,7 +20,7 @@ Public Sub RunAllRegexTests()
     g_totalTests = 0
     g_passedTests = 0
     g_failedTests = 0
-    g_lastError = ""
+    g_lastError = vbNullString
 
     Debug.Print "=== Starting ASF_RegexEngine standalone test suite ==="
     Debug.Print "Printing to the Immediate/Debug window."
@@ -409,9 +409,9 @@ Public Sub ReportTest(ByVal testName As String, ByVal result As Boolean)
         Debug.Print "[PASS] " & testName
     Else
         g_failedTests = g_failedTests + 1
-        If g_lastError = "" Then g_lastError = "unspecified failure"
+        If g_lastError = vbNullString Then g_lastError = "unspecified failure"
         Debug.Print "[FAIL] " & testName & " -> " & g_lastError
-        g_lastError = "" ' clear for next test
+        g_lastError = vbNullString ' clear for next test
     End If
 End Sub
 
@@ -453,31 +453,31 @@ EH:
     err.Clear
 End Function
 
-Private Function AssertTrue(ByVal cond As Boolean, Optional ByVal message As String = "") As Boolean
+Private Function AssertTrue(ByVal cond As Boolean, Optional ByVal message As String = vbNullString) As Boolean
     If cond Then
         AssertTrue = True
     Else
-        If message = "" Then message = "AssertTrue failed"
+        If message = vbNullString Then message = "AssertTrue failed"
         g_lastError = message
         AssertTrue = False
     End If
 End Function
 
-Private Function AssertFalse(ByVal cond As Boolean, Optional ByVal message As String = "") As Boolean
+Private Function AssertFalse(ByVal cond As Boolean, Optional ByVal message As String = vbNullString) As Boolean
     If Not cond Then
         AssertFalse = True
     Else
-        If message = "" Then message = "AssertFalse failed"
+        If message = vbNullString Then message = "AssertFalse failed"
         g_lastError = message
         AssertFalse = False
     End If
 End Function
 
-Private Function AssertEqual(ByVal a As Variant, ByVal b As Variant, Optional ByVal message As String = "") As Boolean
+Private Function AssertEqual(ByVal a As Variant, ByVal b As Variant, Optional ByVal message As String = vbNullString) As Boolean
     If CStr(a) = CStr(b) Then
         AssertEqual = True
     Else
-        If message = "" Then message = "AssertEqual failed: expected '" & CStr(b) & "' got '" & CStr(a) & "'"
+        If message = vbNullString Then message = "AssertEqual failed: expected '" & CStr(b) & "' got '" & CStr(a) & "'"
         g_lastError = message
         AssertEqual = False
     End If
@@ -490,8 +490,8 @@ Private Function AssertCollEquals(ByRef coll As Collection, ByRef expected() As 
         AssertCollEquals = False: Exit Function
     End If
     Dim expCount As Long: expCount = UBound(expected) - LBound(expected) + 1
-    If coll.count <> expCount Then
-        g_lastError = "Collection length mismatch: expected " & expCount & " got " & coll.count
+    If coll.Count <> expCount Then
+        g_lastError = "Collection length mismatch: expected " & expCount & " got " & coll.Count
         AssertCollEquals = False: Exit Function
     End If
     Dim i As Long, idx As Long
@@ -551,7 +551,7 @@ End Function
 Public Function T_1_04_dot_requires_at_least_one() As Boolean
     Dim r As New ASF_RegexEngine
     If Not InitRegexAndHandle(r, ".") Then Exit Function
-    If Not AssertTrue(ExecColl(r, "") Is Nothing, "expected '.' not to match empty") Then Exit Function
+    If Not AssertTrue(ExecColl(r, vbNullString) Is Nothing, "expected '.' not to match empty") Then Exit Function
     T_1_04_dot_requires_at_least_one = True
 End Function
 
@@ -755,7 +755,7 @@ End Function
 ' Category 4 (quantifiers) - many tests below, similar pattern
 Public Function T_4_01_quant_a_star_empty() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a*") Then Exit Function
-    If Not AssertTrue(Not (ExecColl(r, "") Is Nothing), "a* should match empty") Then Exit Function
+    If Not AssertTrue(Not (ExecColl(r, vbNullString) Is Nothing), "a* should match empty") Then Exit Function
     T_4_01_quant_a_star_empty = True
 End Function
 
@@ -771,7 +771,7 @@ Public Function T_4_03_quant_a_star_lazy_exec() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a*?") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "aaa")
     If Not AssertTrue(Not (c Is Nothing), "a*? should return something") Then Exit Function
-    If Not AssertCollEquals(c, a("")) Then Exit Function
+    If Not AssertCollEquals(c, a(vbNullString)) Then Exit Function
     T_4_03_quant_a_star_lazy_exec = True
 End Function
 
@@ -808,7 +808,7 @@ End Function
 
 Public Function T_4_08_quant_a_question() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a?") Then Exit Function
-    If Not AssertTrue(Not (ExecColl(r, "") Is Nothing), "a? should match empty") Then Exit Function
+    If Not AssertTrue(Not (ExecColl(r, vbNullString) Is Nothing), "a? should match empty") Then Exit Function
     If Not AssertTrue(Not (ExecColl(r, "a") Is Nothing), "a? should match 'a'") Then Exit Function
     T_4_08_quant_a_question = True
 End Function
@@ -817,7 +817,7 @@ Public Function T_4_09_quant_a_question_lazy() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a??") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "a")
     If Not AssertTrue(Not (c Is Nothing), "a?? should match 'a'") Then Exit Function
-    If Not AssertCollEquals(c, a("")) Then Exit Function
+    If Not AssertCollEquals(c, a(vbNullString)) Then Exit Function
     T_4_09_quant_a_question_lazy = True
 End Function
 
@@ -903,7 +903,7 @@ Public Function T_4_21_wildcard_lazy() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, ".*?") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "anything")
     If Not AssertTrue(Not (c Is Nothing), ".*? expected to produce a match") Then Exit Function
-    If Not AssertCollEquals(c, a("")) Then Exit Function
+    If Not AssertCollEquals(c, a(vbNullString)) Then Exit Function
     T_4_21_wildcard_lazy = True
 End Function
 
@@ -1044,9 +1044,9 @@ End Function
 
 Public Function T_6_06_optional_empty_exec_blank() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(a)?") Then Exit Function
-    Dim c As Collection: Set c = ExecColl(r, "")
+    Dim c As Collection: Set c = ExecColl(r, vbNullString)
     If Not AssertTrue(Not (c Is Nothing), "expected (a)? to match empty") Then Exit Function
-    If Not AssertCollEquals(c, a("", "")) Then Exit Function
+    If Not AssertCollEquals(c, a(vbNullString, vbNullString)) Then Exit Function
     T_6_06_optional_empty_exec_blank = True
 End Function
 
@@ -1438,20 +1438,20 @@ End Function
 
 ' Category 14 - edge cases & combos
 Public Function T_14_01_empty_pattern_empty_input() As Boolean
-    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "") Then Exit Function
-    If Not AssertTrue(Not (ExecColl(r, "") Is Nothing), "empty pattern should match empty") Then Exit Function
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, vbNullString) Then Exit Function
+    If Not AssertTrue(Not (ExecColl(r, vbNullString) Is Nothing), "empty pattern should match empty") Then Exit Function
     T_14_01_empty_pattern_empty_input = True
 End Function
 
 Public Function T_14_02_empty_pattern_nonempty_input() As Boolean
-    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "") Then Exit Function
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, vbNullString) Then Exit Function
     If Not AssertTrue(Not (ExecColl(r, "a") Is Nothing), "empty pattern should match anywhere") Then Exit Function
     T_14_02_empty_pattern_nonempty_input = True
 End Function
 
 Public Function T_14_03_anchor_empty_string_true() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "^$") Then Exit Function
-    If Not AssertTrue(Not (ExecColl(r, "") Is Nothing), "^$ should match empty") Then Exit Function
+    If Not AssertTrue(Not (ExecColl(r, vbNullString) Is Nothing), "^$ should match empty") Then Exit Function
     T_14_03_anchor_empty_string_true = True
 End Function
 
@@ -1465,7 +1465,7 @@ Public Function T_14_05_optional_group_exec() As Boolean
     Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a(b*)?") Then Exit Function
     Dim c As Collection: Set c = ExecColl(r, "a")
     If Not AssertTrue(Not (c Is Nothing), "a(b*)? should match 'a'") Then Exit Function
-    If Not AssertCollEquals(c, a("a", "")) Then Exit Function
+    If Not AssertCollEquals(c, a("a", vbNullString)) Then Exit Function
     T_14_05_optional_group_exec = True
 End Function
 
@@ -1607,7 +1607,7 @@ Public Function T_15_07_conditionals_supported() As Boolean
         g_lastError = "expected capture for (?:(1)a|b)"
         Exit Function
     End If
-    If Not AssertCollEquals(c, a("b", "")) Then Exit Function
+    If Not AssertCollEquals(c, a("b", vbNullString)) Then Exit Function
     T_15_07_conditionals_supported = True
 End Function
 
