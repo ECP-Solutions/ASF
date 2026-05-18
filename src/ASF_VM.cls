@@ -1704,10 +1704,6 @@ Private Function EvalExprNode(node As ASF_Map, progScope As ASF_ScopeStack) As V
                     Dim origBaseVal As Variant
                     vAssignment origBaseVal, baseValLocal
                     If IsVBAcollection(baseValLocal) Then
-                        If HasCOMPrototype(baseValLocal, propN) Then
-                            vAssignment tmpResult, CallObjectMethod(baseValLocal, propN, evaluated)
-                            GoTo exitfun
-                        End If
                         Dim isSpecialColl As Boolean
                         Dim tmpBaseLocal As Variant
                         vAssignment tmpBaseLocal, calleeExpr.GetValue("base")
