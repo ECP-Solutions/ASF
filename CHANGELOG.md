@@ -2,6 +2,189 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [v3.1.3] - 2026-05-17
+https://github.com/ECP-Solutions/ASF/releases/tag/v3.1.2
+
+## Summary
+ASF v3.1.3 completes the COM prototype system introduced in v3.1.2 by making prototypes **fully portable across modules**. Prototype definitions can now be exported and imported like any other ASF symbol, enabling shared prototype libraries. This release also resolves two critical correctness bugs: chained property assignment inside prototype bodies (`this.Interior.Color = x`) now works correctly, and a long-standing `ResolveIndexProp` container-type check inversion is fixed. The regex engine gains a pre-parse structural validator that raises actionable errors instead of silently mangling bad patterns.
+
+---
+
+## Highlights
+
+- **Added**
+    - **Cross-Module Prototype Portability** — COM prototype definitions can now be exported from a module and imported into any other script, making shared prototype libraries practical:
+        ```javascript
+        // prototypes.vas
+		export prototype.COM.Range addStyle(color) {
+            this.Interior.Color = color;
+        };
+        
+        export prototype.COM.Worksheet highlight(rng, color) {
+            rng.addStyle(color);
+        };
+        ```
+        ```javascript
+        // main_prototype.vas
+        scwd(wd);
+        import { Range_addStyle, Worksheet_highlight } from './prototypes.vas';
+        // Prototypes are live immediately after import
+        let ws = $1.ActiveSheet;
+        let rng = ws.Range('J1:L3');
+        rng.addStyle(65535);          // yellow
+        ws.highlight(rng, 255);       // red
+        return rng.Interior.Color
+        ```
+
+    - **Chained Property Assignment in Prototype Bodies** — `this.Property.SubProperty = value` chains now resolve correctly through COM object graphs inside prototype method bodies:
+        ```javascript
+        prototype.COM.Range styleCell(color, bold) {
+            this.Interior.Color = color;   // was broken: Interior not reachable
+            this.Font.Bold = bold;         // now works: full COM chain traversal
+            this.Font.Size = 12;
+            return this;
+        };
+        ```
+
+    - **`Execute()` Parameters** — The top-level `Execute` method now accepts a `ParamArray`, matching the existing `Run` signature and allowing direct parameter injection when executing script files:
+        ```vb
+        ' Pass injected variables directly to Execute
+        engine.Execute "path\report.vas", wsData, wsOutput, reportDate
+        ```
+
+    - **Regex Pattern Validator** — `ASF_RegexEngine` now validates structural pattern correctness before the AST builder runs, raising descriptive errors instead of silently degrading bad patterns into wrong-but-runnable match trees:
+        ```vb
+        Dim re As New ASF_RegexEngine
+
+        ' New public Validate method: returns True if valid, False otherwise
+        If Not re.Validate("(9|") Then
+            MsgBox "Bad pattern"   ' "1 unclosed group(s) - unmatched '('"
+        End If
+
+        ' Init now raises immediately on bad input instead of producing
+        ' a pattern that matches something completely unintended
+        re.Init "(9|"    ' raises: Invalid pattern: 1 unclosed group(s)
+        re.Init "9)"     ' raises: Invalid pattern: unmatched ')' at position 2
+        re.Init "*foo"   ' raises: Invalid pattern: quantifier '*' has nothing to quantify
+        re.Init "a{5,2}" ' raises: Invalid pattern: quantifier {5,2} has min > max
+        ```
+
+- **Fixed**
+    - **`ResolveIndexProp` Container-Type Inversion** — A `<>` vs `=` inversion in the container-type branch caused assignment to always take the wrong path, breaking `this.property = value` in prototype bodies.
+    - **Chained COM Assignment Traversal** — `ResolveIndexProp` now navigates non-ASF-Map nodes (COM objects, VBA arrays, `Scripting.Dictionary`) via `CallByName` fallback instead of crashing or silently discarding the assignment.
+    - **`MathObj` State Loss** — `MathObj` was re-declared as a local variable on each `Init` call, resetting Math object state. Promoted to module-level; `Init` now assigns into the existing instance.
+    - **Double Globals Initialization** — `GLOBALS_.ASF_InitGlobals` was called in `VM.Init` after `ASF.Init` had already initialized globals, overwriting injected state. The redundant call is removed.
+    - **`Globals` Wiring Timing** — `VM_.Globals` is now assigned at `ASF.Init` time in addition to execute time, ensuring the VM has a valid globals reference before any `Run` call.
+    - **`TypeName` Case Sensitivity in Compiler** — Two `typeName(...)` calls in `ASF_Compiler` were lowercase, which fails on case-sensitive VBA hosts. Changed to `TypeName(...)`.
+    - **Prototype Dispatch on Evaluated Arguments** — A second `HasCOMPrototype` check after argument evaluation handles cases where the base object type was only determinable post-evaluation (e.g., member expressions).
+
+- **Enhanced**
+    - **`SetObjectProperty` Helper** — Extracted COM property assignment into a dedicated `SetObjectProperty` sub that correctly dispatches `VbLet` vs `VbSet` based on whether the value is an object, replacing ad-hoc `CallByName` calls scattered through assignment paths.
+    - **Verbose Runtime Log** — `Execute` and `Run` now print the runtime log to the Immediate window when `engine.verbose = True`, consistent with each other.
+
+- **Internal core changes**:
+    - **Compiler** (`ASF_Compiler.cls`):
+        - **Added** `export prototype` path in `ParseExportStatement`: detects `prototype` identifier, delegates to `ParsePrototypeStatement`, and emits an export node with `exportType = "prototype"` and `exportName = classType & "_" & methodName`
+        - **Fixed** `TypeName` casing in two call sites
+
+    - **VM** (`ASF_VM.cls`):
+        - **Added** `HasCOMPrototype()`, `GetCOMObjectType()`, `SetObjectProperty()`
+        - **Added** `Private MathObj As Collection` at module level
+        - **Enhanced** `EvalExprNode` call dispatch: COM prototype check fires before `COLLECTIONS_METHOD_OVERRIDE_` check; added `origBaseVal` snapshot for post-eval dispatch
+        - **Fixed** `ResolveIndexProp` container branch (type check inversion + full COM chain traversal)
+        - **Enhanced** import pipeline: `PrototypeDescriptor` ASF_Maps are recognized on import and re-registered as live prototypes via a synthesized `Prototype` statement node
+        - **Enhanced** export pipeline: prototype export nodes emit `PrototypeDescriptor` maps into `gModuleExports`
+        - **Removed** `GLOBALS_.ASF_InitGlobals` call from `Init`
+        - **Removed** stale comment "Add ParsePath from previous patch"
+
+    - **ASF** (`ASF.cls`):
+        - **Enhanced** `Execute` to accept `ParamArray params()` and delegate to `VM_.RunProgramByIndex`
+        - **Added** `Set VM_.Globals = GLOBALS_` in `Init`
+        - **Added** verbose runtime log output in both `Execute` and `Run`
+
+    - **RegexEngine** (`ASF_RegexEngine.cls`):
+        - **Added** `ValidatePattern` private pre-parse structural scan (replaces `DetectUnsupportedCommentSyntax`)
+        - **Added** `Validate(pat As String) As Boolean` public API
+        - **Fixed** `qMax` variable name casing in `ComputeMaxLen`
+
+- **Technical Implementation Details**:
+    - **Prototype Export/Import Flow**:
+        ```
+        Export side (rangeHelpers.vas):
+          1. Compiler sees: export prototype.COM.Range formatCurrency() { ... }
+          2. ParsePrototypeStatement() compiles body, assigns funcIndex
+          3. Export node: exportType="prototype", exportName="Range_formatCurrency"
+          4. VM stores PrototypeDescriptor { classType, methodName, funcIndex, params }
+             in gModuleExports[modulePath]["Range_formatCurrency"]
+
+        Import side (main.vas):
+          1. import { formatCurrency } from 'rangeHelpers.vas'
+          2. VM finds PrototypeDescriptor in exportsMap
+          3. Synthesizes Prototype AST node, calls ExecuteStmtNode
+          4. RegisterCOMPrototype("Range", "formatCurrency", funcIndex, params)
+          5. Prototype is live: any Range object now responds to .formatCurrency()
+        ```
+
+    - **Chained COM Assignment Resolution**:
+        ```
+        Old path (broken):
+          this.Interior.Color = x
+          ResolveIndexProp: container type check inverted -> wrong branch
+          -> crash or silent discard
+
+        New path:
+          LHS is Member node -> EvalExprNode(left.base, progScope)
+          -> CallByName(Range, "Interior", VbGet) -> Interior COM object
+          -> SetObjectProperty(Interior, "Color", x)
+          -> CallByName(Interior, "Color", VbLet, x)  OK
+        ```
+
+    - **`ResolveIndexProp` Chain Traversal**:
+        ```
+        For each intermediate key in chain:
+          If ASF_Map or ASF_ScopeStack  -> .GetValue(key)
+          ElseIf IsArray                -> array(CLng(key))
+          Else (COM object, Collection) -> try .Item(key)
+                                          on error: CallByName(obj, key, VbGet)
+
+        Final step: same dispatch, returning the owner object for
+        SetValue / SetObjectProperty to write into.
+        ```
+
+    - **Regex Validation Error Codes** (`vbObjectError + N`):
+        ```
+        20  (?# comment syntax (not supported)
+        31  Dangling backslash at end of pattern
+        32  Unclosed character class [
+        33  Incomplete (?...) specifier
+        34  Named group (?<name missing >
+        35  Empty named group (?<>
+        36  Unknown (?< variant
+        37  Unknown (?X specifier
+        38  Unmatched )
+        39  Quantifier with no preceding quantifiable token
+        40  {m,n} with min > max
+        43  Unclosed group(s) at end of pattern
+        ```
+
+- **Compatibility**:
+    - **Office Versions**: 2016, 2019, 2021, 365 (Windows & Mac)
+    - **Architecture**: 32-bit and 64-bit Office
+    - **Applications**: Excel, Word, PowerPoint, Access, Outlook
+    - **VBA Version**: 7.0+ required
+
+---
+
+## Breaking Changes
+
+**None.** This release maintains full backward compatibility.
+
+`Execute` now accepts optional trailing parameters; no existing call site requires modification.
+
+---
+
+**Full Changelog**: https://github.com/ECP-Solutions/ASF/compare/v3.1.2...v3.1.3
+
 ## [v3.1.2] - 2026-02-17
 https://github.com/ECP-Solutions/ASF/releases/tag/v3.1.2
 
