@@ -4117,3 +4117,17 @@ TestFail:
     Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
+'@TestMethod("Nullish coalescing")
+Private Sub nullish_coalescing()
+    On Error GoTo TestFail
+    
+    actual = CStr(GetResult("let foo = null ?? empty ?? 'default string'; return foo;"))
+    expected = "default string"
+    Assert.AreEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub

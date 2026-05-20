@@ -50,9 +50,9 @@ Private Function CloneCollectionOfVariants(src As Variant) As Collection
     Dim it As Variant
     For Each it In src
         If IsObject(it) Then
-            If TypeName(it) = "ASF_Map" Then
+            If typeName(it) = "ASF_Map" Then
                 out.Add it.Clone
-            ElseIf TypeName(it) = "Collection" Then
+            ElseIf typeName(it) = "Collection" Then
                 out.Add CloneCollectionOfVariants(it)
             Else
                 out.Add it
@@ -867,7 +867,7 @@ End Function
 Private Function ParseTernaryNode(types() As String, vals() As Variant, n As Long, ByRef idx As Long) As ASF_Map
     ' parse cond ? trueExpr : falseExpr (right-assoc)
     Dim cond As ASF_Map
-    Set cond = ParseLogicalOrNode(types, vals, n, idx)
+    Set cond = ParseCoalesceNode(types, vals, n, idx)
     If idx < n Then
         If safeTVRet(types, idx) = "OP" And safeTVRet(vals, idx) = "?" Then
             idx = idx + 1
@@ -891,6 +891,29 @@ Private Function ParseTernaryNode(types() As String, vals() As Variant, n As Lon
         End If
     End If
     Set ParseTernaryNode = cond
+End Function
+
+Private Function ParseCoalesceNode(types() As String, vals() As Variant, n As Long, ByRef idx As Long) As ASF_Map
+    Dim left_ As ASF_Map
+    Dim right_ As ASF_Map
+    Dim node As ASF_Map
+    Dim op As String
+    Set left_ = ParseLogicalOrNode(types, vals, n, idx)
+    Do While idx < n
+        If Not (safeTVRet(types, idx) = "OP" And safeTVRet(vals, idx) = "??") Then Exit Do
+        op = safeTVRet(vals, idx)
+        idx = idx + 1
+        Set right_ = ParseCoalesceNode(types, vals, n, idx)
+        Set node = MakeNode("Binary")
+        node.SetValue "op", op
+        node.SetValue "left", left_.Clone
+        node.SetValue "right", right_.Clone
+        Set left_ = node
+    Loop
+    Set ParseCoalesceNode = left_.Clone
+    Set left_ = Nothing
+    Set right_ = Nothing
+    Set node = Nothing
 End Function
 
 Private Function ParseLogicalOrNode(types() As String, vals() As Variant, n As Long, ByRef idx As Long) As ASF_Map

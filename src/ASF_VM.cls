@@ -4262,6 +4262,10 @@ namedFunctions:
                 vAssignment rop, EvalExprNode(node.GetValue("right"), progScope)
                 vAssignment tmpResult, (IsTruthy(lop) Or IsTruthy(rop))
                 GoTo exitfun
+            ElseIf op2 = "??" Then
+                If (Not IsNull(lop) And Not IsEmpty(lop)) Then vAssignment tmpResult, lop: GoTo exitfun
+                vAssignment tmpResult, EvalExprNode(node.GetValue("right"), progScope)
+                GoTo exitfun
             Else
                 vAssignment rop, EvalExprNode(node.GetValue("right"), progScope)
                 Select Case op2

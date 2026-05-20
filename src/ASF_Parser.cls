@@ -28,6 +28,27 @@ Public Function Tokenize(src As String) As Collection
     Dim tmpIdent As String
     Dim j As Long, jC As Long, jB As Long
     Dim sourceCode As String: sourceCode = ReplaceDQuotes(src)
+    Dim tk As Variant
+    Dim idx As Long
+    Dim out As New Collection
+    Dim cjvb As String
+    Dim vbContent As String
+    Dim depthVB As Long
+    Dim jvb As Long
+    Dim j3 As Long
+    Dim j2 As Long
+    Dim nx As String
+    Dim cj As String
+    Dim sb As String
+    Dim two As String
+    Dim three As String
+    Dim c As String
+    Dim Ls As Long
+    Dim curLit As String
+    Dim PH As Long
+    Dim jH As Long
+    Dim foundClose As Boolean
+    
     n = Len(sourceCode)
     i = 1
 
@@ -48,7 +69,7 @@ Tokenize_MainLoop:
                 GoTo Tokenize_SkipToLoopEnd
             ElseIf nxt = "*" Then
                 jB = i + 2
-                Dim foundClose As Boolean: foundClose = False
+                foundClose = False
                 Do While jB <= n - 1
                     If mid$(sourceCode, jB, 2) = "*/" Then
                         foundClose = True
@@ -69,7 +90,7 @@ Tokenize_MainLoop:
         End If
 
         If ch = "#" Then
-            Dim jH As Long: jH = i + 1
+            jH = i + 1
             Do While jH <= n And mid$(sourceCode, jH, 1) <> vbCr And mid$(sourceCode, jH, 1) <> vbLf
                 jH = jH + 1
             Loop
@@ -87,7 +108,7 @@ Tokenize_MainLoop:
         End If
         ' Placeholders variables ($1, $2,...)
         If ch = "$" And i + 1 <= n Then
-            Dim PH As Long: PH = i + 1
+            PH = i + 1
             Do While PH <= n And mid$(sourceCode, PH, 1) Like "[0-9]"
                 PH = PH + 1
             Loop
@@ -105,10 +126,8 @@ Tokenize_MainLoop:
             Case "`"
                 ' consume opening backtick
                 i = i + 1
-                Dim curLit As String: curLit = "`"
-                Dim Ls As Long: Ls = n
-                Dim c As String
-                
+                curLit = "`"
+                Ls = n
                 Do While i <= Ls
                     c = mid$(sourceCode, i, 1)
             
@@ -162,8 +181,6 @@ ContinueTemplateLoop:
                 If i < n And mid$(sourceCode, i + 1, 1) = "=" Then toks.Add Array("OP", "!="): i = i + 2 Else toks.Add Array("OP", "!"): i = i + 1
                 GoTo Tokenize_SkipToLoopEnd
             Case "<", ">"
-                Dim two As String
-                Dim three As String
                 If i < n Then two = mid$(sourceCode, i, 2) Else two = vbNullString
                 If two = ">=" Or two = "<=" Then
                     toks.Add Array("OP", two): i = i + 2
@@ -184,17 +201,22 @@ ContinueTemplateLoop:
                 If i < n And mid$(sourceCode, i + 1, 1) = "=" Then toks.Add Array("OP", "=="): i = i + 2 Else toks.Add Array("OP", "="): i = i + 1
                 GoTo Tokenize_SkipToLoopEnd
             Case "?"
-                toks.Add Array("OP", ch): i = i + 1: GoTo Tokenize_SkipToLoopEnd
+                If i < n Then two = mid$(sourceCode, i, 2) Else two = vbNullString
+                If two = "??" Then 'Null coalescing support
+                    toks.Add Array("OP", two): i = i + 2: GoTo Tokenize_SkipToLoopEnd
+                Else
+                    toks.Add Array("OP", ch): i = i + 1: GoTo Tokenize_SkipToLoopEnd
+                End If
             Case ":"
                 toks.Add Array("OP", ch): i = i + 1: GoTo Tokenize_SkipToLoopEnd
             Case "'"
                 j = i + 1
-                Dim sb As String: sb = vbNullString
+                sb = vbNullString
                 Do While j <= n
-                    Dim cj As String: cj = mid$(sourceCode, j, 1)
+                    cj = mid$(sourceCode, j, 1)
                     If cj = "\" Then
                         If j + 1 <= n Then
-                            Dim nx As String: nx = mid$(sourceCode, j + 1, 1)
+                            nx = mid$(sourceCode, j + 1, 1)
                             Select Case nx
                                 Case "'": sb = sb & "'": j = j + 2: GoTo ContinueDo
                                 Case "\": sb = sb & "\": j = j + 2: GoTo ContinueDo
@@ -228,7 +250,7 @@ ContinueDo:
                 End If
             Case Else
                 If ch Like "[0-9]" Then
-                    Dim j2 As Long: j2 = i
+                    j2 = i
                     Do While j2 <= n And mid$(sourceCode, j2, 1) Like "[0-9.]"
                         j2 = j2 + 1
                     Loop
@@ -236,7 +258,7 @@ ContinueDo:
                     i = j2
                     GoTo Tokenize_SkipToLoopEnd
                 ElseIf ch Like "[A-Za-z_]" Then
-                    Dim j3 As Long: j3 = i
+                    j3 = i
                     Do While j3 <= n And mid$(sourceCode, j3, 1) Like "[A-Za-z0-9_]"
                         j3 = j3 + 1
                     Loop
@@ -259,11 +281,11 @@ ContinueDo:
                     GoTo Tokenize_SkipToLoopEnd
                 ' forced VBAexpression: @(...). Capture whole balanced parentheses block as a single VBEXPR token.
                 ElseIf ch = "@" And i < n And mid$(sourceCode, i + 1, 1) = "(" Then
-                    Dim jvb As Long: jvb = i + 2
-                    Dim depthVB As Long: depthVB = 1
-                    Dim vbContent As String: vbContent = vbNullString
+                    jvb = i + 2
+                    depthVB = 1
+                    vbContent = vbNullString
                     Do While jvb <= n And depthVB > 0
-                        Dim cjvb As String: cjvb = mid$(sourceCode, jvb, 1)
+                        cjvb = mid$(sourceCode, jvb, 1)
                         If cjvb = "(" Then
                             depthVB = depthVB + 1
                             vbContent = vbContent & cjvb
@@ -297,13 +319,11 @@ Tokenize_SkipToLoopEnd:
     Loop
 
     ' collapse array index tokens: IDENT [ NUMBER ] -> IDENT "name[index]"
-    Dim out As New Collection
-    Dim idx As Long
     idx = 1
 Tokenize_CollapseLoop:
     Do While idx <= toks.Count
         If idx > toks.Count Then Exit Do ' FIX: Bounds
-        Dim tk As Variant: tk = toks(idx)
+        tk = toks(idx)
         If tk(0) = "IDENT" And idx + 3 <= toks.Count Then
             If toks(idx + 1)(0) = "PAREN" And toks(idx + 1)(1) = "[" And toks(idx + 2)(0) = "NUMBER" And toks(idx + 3)(0) = "PAREN" And toks(idx + 3)(1) = "]" Then
                 out.Add Array("IDENT", tk(1) & "[" & toks(idx + 2)(1) & "]")
