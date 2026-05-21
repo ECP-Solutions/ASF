@@ -2,6 +2,66 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [v3.1.4] - 2026-05-20
+https://github.com/ECP-Solutions/ASF/releases/tag/v3.1.4
+
+## Summary
+ASF v3.1.4 implements the **nullish coalescing operator** (`??`) across all three layers: tokenizer, compiler, and VM. Prior to this release the `?` character was tokenized but `??` was never recognized as a distinct token, so the operator was silently unreachable. This release adds a two-character lookahead in the tokenizer, inserts a dedicated `ParseCoalesceNode` parsing function in the precedence chain, and adds the short-circuit evaluation branch in the VM.
+
+---
+
+## Highlights
+
+- **Added**
+    - **Nullish Coalescing Operator (`??`)** — Returns the left operand when it is not `null` or `Empty`; otherwise evaluates and returns the right operand. Short-circuits: the right side is not evaluated when the left is non-nullish. Chains naturally because `ParseCoalesceNode` is right-recursive:
+        ```javascript
+        let foo = null ?? empty ?? 'default string';
+        return foo; // => 'default string'
+
+        let port = config.port ?? 8080;
+        let label = user.name ?? user.id ?? 'anonymous';
+        ```
+        Unlike `||`, the nullish check is `Not IsNull(lop) And Not IsEmpty(lop)`. Values `false`, `0`, and `''` are not nullish and short-circuit normally.
+
+        **Precedence:** `??` sits between ternary (`? :`) and logical-or (`||`) in the parser chain. `||` and `&&` bind tighter: `a || b ?? c` parses as `(a || b) ?? c`.
+
+- **Internal core changes**:
+
+    - **Parser** (`ASF_Parser.cls`):
+        - **Fixed** `Case "?"` tokenization. Previously the branch emitted `Array("OP","?")` via an unconditional `GoTo` before any lookahead could occur, making `??` impossible to tokenize. The branch now performs a two-character lookahead: if the next two source characters are `??`, emits `Array("OP","??")` and advances the index by 2; otherwise emits `Array("OP","?")` and advances by 1.
+
+    - **Compiler** (`ASF_Compiler.cls`):
+        - **Added** `ParseCoalesceNode` — a new `Private Function` inserted between `ParseTernaryNode` and `ParseLogicalOrNode` in the recursive-descent precedence hierarchy. Implementation: loops on `??` tokens; for each token calls `ParseLogicalOrNode` for the left side and recurses into `ParseCoalesceNode` for the right side (making the AST right-recursive), then builds a `Binary` AST node with `op = "??"` from `MakeNode("Binary")`.
+        - **Modified** `ParseTernaryNode` — the first call inside the function changed from `ParseLogicalOrNode` to `ParseCoalesceNode`. Full precedence chain from v3.1.4: Ternary → Coalesce (`??`) → LogicalOr (`||`) → LogicalAnd (`&&`) → Equality → Relational → Shift → Add → Mul → Pow → Unary → Primary.
+
+    - **VM** (`ASF_VM.cls`):
+        - **Added** `ElseIf op2 = "??"` branch in the Binary operator `Select Case` inside `EvalExprNode`. The left operand is already evaluated as `lop`. Guard: `Not IsNull(lop) And Not IsEmpty(lop)` — if true, assigns `lop` to `tmpResult` and `GoTo exitfun` (right operand not evaluated). If false, evaluates `node.GetValue("right")` through a recursive `EvalExprNode` call and assigns that result.
+
+- **Test coverage**:
+    ```vb
+    '@TestMethod("Nullish coalescing")
+    Private Sub nullish_coalescing()
+        actual = CStr(GetResult("let foo = null ?? empty ?? 'default string'; return foo;"))
+        Assert.AreEqual "default string", actual
+    End Sub
+    ```
+
+- **Compatibility**:
+    - **Office Versions**: 2016, 2019, 2021, 365 (Windows & Mac)
+    - **Architecture**: 32-bit and 64-bit Office
+    - **Applications**: Excel, Word, PowerPoint, Access, Outlook
+    - **VBA Version**: 7.0+ required
+
+---
+
+## Breaking Changes
+
+**None.** The single-character `?` token continues to be produced for ternary expressions. The `??` token is new and was previously unreachable; no existing script could have used it.
+
+---
+
+**Full Changelog**: https://github.com/ECP-Solutions/ASF/compare/v3.1.3...v3.1.4
+
 ## [v3.1.3] - 2026-05-17
 https://github.com/ECP-Solutions/ASF/releases/tag/v3.1.2
 
