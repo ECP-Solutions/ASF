@@ -1271,6 +1271,18 @@ Private Function MatchNode(ByVal node As Collection, ByVal subj As String, ByVal
 End Function
 
 
+' Flatten nested sequences.
+Private Sub AppendNodeToMatchSequence(ByRef target As Collection, ByVal sourceNode As Collection)
+    If CStr(NodeGet(sourceNode, "type")) = "seq" Then
+        Dim sourceChild As Variant
+        For Each sourceChild In NodeGet(sourceNode, "child")
+            target.Add sourceChild
+        Next sourceChild
+    Else
+        target.Add sourceNode
+    End If
+End Sub
+
 Private Function MatchSequence(ByVal children As Collection, ByVal subj As String, ByVal pos As Long, Optional ByRef outEnd As Variant) As Boolean
     If DEBUG_TRACE Then Debug.Print "TRACE MatchSequence start pos=" & pos & " children=" & children.Count
     Dim seqSnap() As Long
@@ -1338,24 +1350,33 @@ Private Function MatchSequence(ByVal children As Collection, ByVal subj As Strin
                 ' attempt remainder only with k = occCount
                 If DEBUG_TRACE Then Debug.Print "TRACE  quant possessive trying k=" & occCount & " (mn=" & mn & " occCount=" & occCount & ")"
                 RestoreCaps seqSnap
-                ' restore capture state corresponding to occCount (if >0)
-                tmpSnaps = occSnaps(occCount)
-                If occCount >= 1 Then RestoreCaps tmpSnaps
-                Dim posTryP As Long: posTryP = IIf(occCount >= 1, occEnds(occCount) + 1, curPos)
+                ' Restore maximal capture state.
+                Dim posTryP As Long
+                If occCount >= 1 Then
+                    tmpSnaps = occSnaps(occCount)
+                    RestoreCaps tmpSnaps
+                    posTryP = occEnds(occCount) + 1
+                Else
+                    posTryP = curPos
+                End If
+
+                ' Match the full remainder, including capture markers.
                 Dim remSuccessP As Boolean: remSuccessP = True
+                Dim remChildrenP As Collection
+                Dim remEndP As Variant
                 Dim jP As Long
-                Dim nxtEndP As Variant
-                For jP = i + 1 To children.Count
-                    Dim nxtNodeP As Collection: Set nxtNodeP = children(jP)
-                    If DEBUG_TRACE Then Debug.Print "TRACE   quant possessive trying remainder child j=" & jP & " at posTry=" & posTryP & " type=" & NodeGet(nxtNodeP, "type")
-                    If Not MatchNode(nxtNodeP, subj, posTryP, nxtEndP) Then
+                If i + 1 <= children.Count Then
+                    Set remChildrenP = New Collection
+                    For jP = i + 1 To children.Count
+                        remChildrenP.Add children(jP)
+                    Next jP
+
+                    If Not MatchSequence(remChildrenP, subj, posTryP, remEndP) Then
                         remSuccessP = False
-                        If DEBUG_TRACE Then Debug.Print "TRACE   possessive remainder child j=" & jP & " failed at pos=" & posTryP
-                        Exit For
                     Else
-                        posTryP = CLng(nxtEndP) + 1
+                        posTryP = CLng(remEndP) + 1
                     End If
-                Next jP
+                End If
         
                 If remSuccessP Then
                     outEnd = posTryP - 1
@@ -1436,32 +1457,47 @@ Private Function MatchSequence(ByVal children As Collection, ByVal subj As Strin
             MatchSequence = False: Exit Function
             
         ElseIf nodeType = "group" Then
-            Dim childEnd As Variant
             Dim gidx As Long
-            ' guard: some group nodes may have idx=0 (non-capturing wrapper) — only touch capture arrays for idx>=1
+            ' idx=0 is non-capturing.
             If NodeExists(node, "idx") Then
                 gidx = CLng(NodeGet(node, "idx"))
             Else
                 gidx = 0
             End If
-            
-            ' save sequence baseline snapshot
-            grpSnap = CopyCaps()
-            
-            If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " group idx=" & gidx & " set start=" & curPos
 
+            ' Match group and tail as one backtracking sequence.
+            grpSnap = CopyCaps()
             If gidx >= 1 Then capsStart(gidx) = curPos
 
-            If Not MatchNode(NodeGet(node, "child"), subj, curPos, childEnd) Then
-                If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " group FAILED, restoring seqSnap"
-                ' restore everything (seqSnap contains the capture arrays)
-                RestoreCaps grpSnap
-                MatchSequence = False: Exit Function
-            Else
-                If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " group OK nodeEnd=" & childEnd
-                If gidx >= 1 Then capsEnd(gidx) = childEnd
-                curPos = CLng(childEnd) + 1
+            Dim groupCombinedSeq As New Collection
+            Dim captureEndNode As Collection
+            Dim groupCombinedEnd As Variant
+            Dim groupTailIdx As Long
+
+            AppendNodeToMatchSequence groupCombinedSeq, NodeGet(node, "child")
+            Set captureEndNode = newNode("capture_end")
+            NodeAdd captureEndNode, "idx", gidx
+            groupCombinedSeq.Add captureEndNode
+            For groupTailIdx = i + 1 To children.Count
+                groupCombinedSeq.Add children(groupTailIdx)
+            Next groupTailIdx
+
+            If MatchSequence(groupCombinedSeq, subj, curPos, groupCombinedEnd) Then
+                outEnd = groupCombinedEnd
+                capsEnd(0) = CLng(outEnd)
+                If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " group idx=" & gidx & " OK outEnd=" & outEnd
+                MatchSequence = True: Exit Function
             End If
+
+            RestoreCaps grpSnap
+            If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " group idx=" & gidx & " FAILED"
+            MatchSequence = False: Exit Function
+
+        ElseIf nodeType = "capture_end" Then
+            ' Record the capture boundary.
+            Dim captureEndIdx As Long: captureEndIdx = CLng(NodeGet(node, "idx"))
+            If captureEndIdx >= 1 Then capsEnd(captureEndIdx) = curPos - 1
+            If DEBUG_TRACE Then Debug.Print "TRACE   capture_end idx=" & captureEndIdx & " end=" & (curPos - 1)
         Else
             If Not MatchNode(node, subj, curPos, nodeEnd) Then
                 If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " node FAILED, restoring seqSnap"
@@ -2920,6 +2956,3 @@ Private Sub UpdateNamedCapturesFromAST()
         pNamedCaptures.Add (Array(gname, val)), gname
     Next i
 End Sub
-
-
-
