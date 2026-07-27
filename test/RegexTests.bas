@@ -146,6 +146,7 @@ Public Sub RunAllRegexTests()
     ReportTest "10_replace_full_ref", GetTestResult("10_replace_full_ref")
     ReportTest "10_replace_partial", GetTestResult("10_replace_partial")
     ReportTest "10_replace_no_match", GetTestResult("10_replace_no_match")
+    ReportTest "10_replace_issue_27", GetTestResult("10_replace_issue_27")
 
     ' --- Category 11 ---
     ReportTest "11_lookahead_positive_simple", GetTestResult("11_lookahead_positive_simple")
@@ -339,6 +340,7 @@ Public Function GetTestResult(testName As String) As Boolean
         Case "10_replace_full_ref": GetTestResult = T_10_03_replace_full_ref()
         Case "10_replace_partial": GetTestResult = T_10_04_replace_partial()
         Case "10_replace_no_match": GetTestResult = T_10_05_replace_no_match()
+        Case "10_replace_issue_27": GetTestResult = T_10_07_replace_issue_27()
     
         ' --- Category 11 ---
         Case "11_lookahead_positive_simple": GetTestResult = T_11_01_lookahead_positive_simple()
@@ -1247,6 +1249,13 @@ Public Function T_10_05_replace_no_match() As Boolean
     Dim out As String: out = ReplaceStr(r, "axc", "x$1y")
     If Not AssertEqual(out, "axc", "replace when no match should return original") Then Exit Function
     T_10_05_replace_no_match = True
+End Function
+
+Public Function T_10_07_replace_issue_27() As Boolean
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(\S+), (\S+)") Then Exit Function
+    Dim out As String: out = ReplaceStr(r, "Myer, Ken", "$2 $1")
+    If Not AssertEqual(out, "Ken Myer", "replace issue #27 fail") Then Exit Function
+    T_10_07_replace_issue_27 = True
 End Function
 
 ' Category 11 - Lookahead
