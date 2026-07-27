@@ -1371,9 +1371,12 @@ Private Function MatchSequence(ByVal children As Collection, ByVal subj As Strin
                         remChildrenP.Add children(jP)
                     Next jP
 
+                    If DEBUG_TRACE Then Debug.Print "TRACE   quant possessive trying remainder child j=" & (i + 1) & " at posTry=" & posTryP & " type=" & NodeGet(children(i + 1), "type")
                     If Not MatchSequence(remChildrenP, subj, posTryP, remEndP) Then
                         remSuccessP = False
+                        If DEBUG_TRACE Then Debug.Print "TRACE   possessive remainder failed at pos=" & posTryP
                     Else
+                        If DEBUG_TRACE Then Debug.Print "TRACE   possessive remainder OK outEnd=" & remEndP
                         posTryP = CLng(remEndP) + 1
                     End If
                 End If
@@ -1467,6 +1470,7 @@ Private Function MatchSequence(ByVal children As Collection, ByVal subj As Strin
 
             ' Match group and tail as one backtracking sequence.
             grpSnap = CopyCaps()
+            If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " group idx=" & gidx & " set start=" & curPos
             If gidx >= 1 Then capsStart(gidx) = curPos
 
             Dim groupCombinedSeq As New Collection
@@ -1489,8 +1493,8 @@ Private Function MatchSequence(ByVal children As Collection, ByVal subj As Strin
                 MatchSequence = True: Exit Function
             End If
 
+            If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " group idx=" & gidx & " FAILED, restoring grpSnap"
             RestoreCaps grpSnap
-            If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " group idx=" & gidx & " FAILED"
             MatchSequence = False: Exit Function
 
         ElseIf nodeType = "capture_end" Then
