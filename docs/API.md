@@ -254,7 +254,7 @@ All string indexing in ASF is **zero-based**. String methods that accept negativ
 			'a1b'.replace(`/(\\d)/`, fun(m,p,off,s){ return '[' & p & ']'}) // -> 'a[1]b'
 			```
 
-- `replaceAll(searchValue, replaceValue)` — `str.replaceAll(search, repl)` — Same as `replace` but replaces **all** matches. Accepts slash-regex `g` or will do global if called as `replaceAll` (or if regex flag `g` present). Function replacement, `$` expansions supported. Safeguards for zero-length matches (engine advances one char to avoid infinite loops).
+- `replaceAll(searchValue, replaceValue)` — `str.replaceAll(search, repl)` — Same as `replace` but replaces **all** matches. A slash-regex search value must carry the `g` flag, otherwise `vbObjectError + 103` is raised (as JavaScript throws a `TypeError`). Function replacement, `$` expansions supported. Safeguards for zero-length matches (engine advances one char to avoid infinite loops).
 
 - `slice(start?, end?)` — `str.slice(start?, end?)` — Extracts substring from `start` up to (but not including) `end`. Supports negative indices counted from end. Non-mutating. — `'abcdef'.slice(1,4) -> 'bcd'`
 

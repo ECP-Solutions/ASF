@@ -2609,6 +2609,10 @@ print(str.replace('hello', 'hi'));     // 'hi world hello'
 // Replace all occurrences
 print(str.replaceAll('hello', 'hi'));  // 'hi world hi'
 
+// A regex passed to replaceAll needs the g flag
+print(str.replaceAll(`/hel+o/g`, 'hi')); // 'hi world hi'
+// str.replaceAll(`/hel+o/`, 'hi');      // error 103: missing 'g' flag
+
 // With function
 let result = str.replace('hello', fun(match) {
     return match.toUpperCase();
@@ -2808,11 +2812,11 @@ print(parts);  // ['apple', 'banana', 'orange']
 
 #### escape
 
-Escape special regex characters, and the first character of the given string:
+Escape special regex characters so the text matches literally:
 
 ```javascript
 let escaped = regex().escape('a.b*c?');
-print(escaped);  // '\a\.b\*c\?'
+print(escaped);  // 'a\.b\*c\?'
 ```
 
 ### Regex Properties

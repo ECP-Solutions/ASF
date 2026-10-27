@@ -2292,6 +2292,103 @@ TestFail:
 End Sub
 
 '@TestMethod("regex")
+Private Sub regex_replace_empty_alternative_global()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return('999'.replace(`/(9|)/g`, 'x'));"))
+    expected = "xxxx"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex")
+Private Sub regex_replace_empty_match_keeps_chars()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return('a9'.replace(`/(9|)/g`, 'x'));"))
+    expected = "xaxx"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex")
+Private Sub regex_replace_lookahead_insertion()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return('ab'.replace(`/(?=b)/`, 'x'));"))
+    expected = "axb"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex")
+Private Sub regex_replace_empty_match_at_start()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return('999'.replace(`/x*/`, 'y'));"))
+    expected = "y999"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex")
+Private Sub regex_match_global_empty_alternative()
+    On Error GoTo TestFail
+    Dim Globals As ASF_Globals
+    GetResult "print('999'.match(`/9|/g`));", True
+    Set Globals = scriptEngine.GetGlobals
+    With Globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
+    End With
+    expected = "PRINT:[ '9', '9', '9', '' ]"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex")
+Private Sub regex_replaceall_requires_global_flag()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("try { 'a-b-c'.replaceAll(`/-/`, '+'); return('no error') }" & _
+                            "catch { return('caught') }"))
+    expected = "caught"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex")
+Private Sub regex_replaceall_with_global_flag()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return('a-b-c'.replaceAll(`/-/g`, '+'));"))
+    expected = "a+b+c"
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+'@TestMethod("regex")
 Private Sub regex_object_constructor()
     On Error GoTo TestFail
     actual = CStr(GetResult("re=regex(); return(typeOf(re));"))
@@ -2407,7 +2504,7 @@ Private Sub regex_object_conditional_simple()
     With Globals
         actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
-    expected = "PRINT:[ 'aX', 'a', 'X' ]"
+    expected = "PRINT:[ 'aX', 'a', '', 'X', '' ]"
     Assert.AreEqual expected, actual
 TestExit:
     Exit Sub
@@ -2425,7 +2522,7 @@ Private Sub regex_object_conditional_inline_flags()
     With Globals
         actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
-    expected = "PRINT:[ 'aX', 'a' ]"
+    expected = "PRINT:[ 'aX', 'a', '' ]"
     Assert.AreEqual expected, actual
 TestExit:
     Exit Sub
@@ -2443,7 +2540,7 @@ Private Sub regex_object_conditional_inline_flags_off()
     With Globals
         actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
-    expected = "PRINT:[ 'BY', 'B' ]"
+    expected = "PRINT:[ 'BY', '', 'B' ]"
     Assert.AreEqual expected, actual
 TestExit:
     Exit Sub
@@ -2461,7 +2558,7 @@ Private Sub regex_object_inline_dotAll_flags()
     With Globals
         actual = ConvertNewLines(CStr(.gRuntimeLog(.gRuntimeLog.Count)))
     End With
-    expected = "PRINT:[ 'a\n', 'a' ]"
+    expected = "PRINT:[ 'a\n', 'a', '' ]"
     Assert.AreEqual expected, actual
 TestExit:
     Exit Sub
@@ -2492,7 +2589,7 @@ Private Sub regex_object_Named_Conditionals()
     With Globals
         actual = ConvertNewLines(CStr(.gRuntimeLog(.gRuntimeLog.Count)))
     End With
-    expected = "PRINT:[ 'bY', 'b' ]"
+    expected = "PRINT:[ 'bY', '', 'b' ]"
     Assert.AreEqual expected, actual
 TestExit:
     Exit Sub

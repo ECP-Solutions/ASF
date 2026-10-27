@@ -3044,11 +3044,11 @@ init_Error_Handler:
                                         Dim resultsColl As New Collection
                                         Dim sPosA As Long: sPosA = 1
                                         Dim Lsrc As Long: Lsrc = Len(sourceStr)
-                                        Do While sPosA <= Lsrc
+                                        Do While sPosA <= Lsrc + 1
                                             Dim capsA As Collection
                                             Dim tryStartA As Long
                                             Dim foundAtA As Long: foundAtA = 0
-                                            For tryStartA = sPosA To Lsrc
+                                            For tryStartA = sPosA To Lsrc + 1
                                                 Set capsA = r2.ExecAt(sourceStr, tryStartA)
                                                 If Not (capsA Is Nothing) Then
                                                     foundAtA = tryStartA
@@ -3064,7 +3064,7 @@ init_Error_Handler:
                                             Dim fullMatchA As String: fullMatchA = CStr(capsA.Item(1))
                                             Dim fLenA As Long: fLenA = Len(fullMatchA)
                                             If fLenA = 0 Then
-                                                sPosA = IIf(foundAtA + 1 > Lsrc, Lsrc + 1, foundAtA + 1)
+                                                sPosA = foundAtA + 1
                                             Else
                                                 sPosA = foundAtA + fLenA
                                             End If
@@ -3095,11 +3095,11 @@ init_Error_Handler:
                                         Dim L2 As Long: L2 = Len(sourceStr)
                                         Dim idxOut As Long: idxOut = 0
                                     
-                                        Do While sPos <= L2
+                                        Do While sPos <= L2 + 1
                                             Dim caps2 As Collection
                                             Dim sTry As Long
                                             Dim foundAt2 As Long: foundAt2 = 0
-                                            For sTry = sPos To L2
+                                            For sTry = sPos To L2 + 1
                                                 Set caps2 = r2.ExecAt(sourceStr, sTry)
                                                 If Not (caps2 Is Nothing) Then
                                                     foundAt2 = sTry
@@ -3115,7 +3115,7 @@ init_Error_Handler:
                                     
                                             Dim fLen As Long: fLen = Len(outMatches(idxOut))
                                             If fLen = 0 Then
-                                                sPos = IIf(foundAt2 + 1 > L2, L2 + 1, foundAt2 + 1)
+                                                sPos = foundAt2 + 1
                                             Else
                                                 sPos = foundAt2 + fLen
                                             End If
@@ -3207,6 +3207,9 @@ init_Error_Handler:
                                     Dim flag_m As Boolean: flag_m = (InStr(flags, "m") > 0)
                                     Dim flag_s As Boolean: flag_s = (InStr(flags, "s") > 0)
                                     Dim flag_g As Boolean: flag_g = (InStr(flags, "g") > 0)
+                                    If isGlobal And Not flag_g Then
+                                        err.Raise vbObjectError + 103, "VM", "replaceAll must be called with a global regular expression (missing 'g' flag)"
+                                    End If
     
                                     Dim doGlobal As Boolean: doGlobal = flag_g Or isGlobal
     
@@ -3218,13 +3221,13 @@ init_Error_Handler:
                                         Dim L As Long: L = Len(src)
                                         Dim searchPos As Long: searchPos = 1
     
-                                        Do While searchPos <= L
+                                        Do While searchPos <= L + 1
                                             Dim caps As Collection
                                             Dim startTry As Long
                                             Dim foundAt As Long: foundAt = 0
     
                                             ' locate the next match by trying ExecAt at increasing start positions
-                                            For startTry = searchPos To L
+                                            For startTry = searchPos To L + 1
                                                 Set caps = .ExecAt(src, startTry)
                                                 If Not (caps Is Nothing) Then
                                                     foundAt = startTry
@@ -3234,29 +3237,13 @@ init_Error_Handler:
     
                                             If foundAt = 0 Then
                                                 ' append remainder and break
-                                                outRepStr = outRepStr & mid$(src, searchPos)
+                                                If searchPos <= L Then outRepStr = outRepStr & mid$(src, searchPos)
                                                 Exit Do
                                             Else
                                                 Dim fullMatch As String: fullMatch = CStr(caps.Item(1))
                                                 Dim matchLen As Long: matchLen = Len(fullMatch)
                                                 Dim matchStart As Long: matchStart = foundAt
                                                 Dim matchEnd As Long: matchEnd = matchStart + matchLen - 1
-    
-                                                ' Safety: avoid infinite loop for zero-length matches
-                                                If matchLen = 0 Then
-                                                    ' append the next char (if any) and advance
-                                                    If searchPos <= L Then outRepStr = outRepStr & mid$(src, searchPos, 1)
-                                                    searchPos = searchPos + 1
-                                                    If searchPos > L Then Exit Do
-                                                    If Not doGlobal Then
-                                                        ' single replacement only -> append remainder and exit
-                                                        outRepStr = outRepStr & mid$(src, searchPos)
-                                                        Exit Do
-                                                    Else
-                                                        ' continue global
-                                                        GoTo ContinueDo
-                                                    End If
-                                                End If
     
                                                 ' append chunk before match
                                                 If matchStart > searchPos Then outRepStr = outRepStr & mid$(src, searchPos, matchStart - searchPos)
@@ -3297,15 +3284,19 @@ init_Error_Handler:
     
                                                 outRepStr = outRepStr & replacedText
     
-                                                ' advance search position according to global / single replacement
-                                                searchPos = matchEnd + 1
+                                                ' advance search position; a zero-length match keeps the char at its position
+                                                If matchLen = 0 Then
+                                                    If matchStart <= L Then outRepStr = outRepStr & mid$(src, matchStart, 1)
+                                                    searchPos = matchStart + 1
+                                                Else
+                                                    searchPos = matchEnd + 1
+                                                End If
                                                 If Not doGlobal Then
                                                     ' append remainder and exit
                                                     If searchPos <= L Then outRepStr = outRepStr & mid$(src, searchPos)
                                                     Exit Do
                                                 End If
                                             End If
-ContinueDo:
                                         Loop
     
                                         vAssignment tmpResult, outRepStr

@@ -200,12 +200,38 @@ Public Sub RunAllRegexTests()
     ReportTest "14_noncapturing_groups", GetTestResult("14_noncapturing_groups")
 
     ' --- Category 15 ---
-    ReportTest "15_backref_in_pattern", GetTestResult("15_backref_in_pattern")
     ReportTest "15_unicode_property", GetTestResult("15_unicode_property")
     ReportTest "15_comment_syntax_unsupported", GetTestResult("15_comment_syntax_unsupported")
     ReportTest "15_variable_lookbehind_error", GetTestResult("15_variable_lookbehind_error")
     ReportTest "15_inline_flags_not_supported", GetTestResult("15_inline_flags_not_supported")
     ReportTest "15_conditionals_supported", GetTestResult("15_conditionals_supported")
+
+    ' --- Category 16 ---
+    ReportTest "16_backref_numbered", GetTestResult("16_backref_numbered")
+    ReportTest "16_backref_word_repeat", GetTestResult("16_backref_word_repeat")
+    ReportTest "16_backref_named", GetTestResult("16_backref_named")
+    ReportTest "16_backref_ignorecase", GetTestResult("16_backref_ignorecase")
+    ReportTest "16_backref_unset_group", GetTestResult("16_backref_unset_group")
+    ReportTest "16_backref_in_lookahead", GetTestResult("16_backref_in_lookahead")
+    ReportTest "16_backref_undefined_error", GetTestResult("16_backref_undefined_error")
+    ReportTest "16_word_boundary", GetTestResult("16_word_boundary")
+    ReportTest "16_non_word_boundary", GetTestResult("16_non_word_boundary")
+    ReportTest "16_word_boundary_replace", GetTestResult("16_word_boundary_replace")
+    ReportTest "16_escape_plain_text", GetTestResult("16_escape_plain_text")
+    ReportTest "16_empty_alt_execall", GetTestResult("16_empty_alt_execall")
+    ReportTest "16_empty_alt_replace", GetTestResult("16_empty_alt_replace")
+    ReportTest "16_unbalanced_groups_rejected", GetTestResult("16_unbalanced_groups_rejected")
+    ReportTest "16_quant_backtrack_restores_caps", GetTestResult("16_quant_backtrack_restores_caps")
+    ReportTest "16_alt_backtracking", GetTestResult("16_alt_backtracking")
+    ReportTest "16_quant_alt_backtracking", GetTestResult("16_quant_alt_backtracking")
+    ReportTest "16_anchors_anywhere", GetTestResult("16_anchors_anywhere")
+    ReportTest "16_groups_keep_positions", GetTestResult("16_groups_keep_positions")
+    ReportTest "16_brace_literals", GetTestResult("16_brace_literals")
+    ReportTest "16_code_point_escapes", GetTestResult("16_code_point_escapes")
+    ReportTest "16_nested_lookbehind", GetTestResult("16_nested_lookbehind")
+    ReportTest "16_malformed_patterns_rejected", GetTestResult("16_malformed_patterns_rejected")
+    ReportTest "16_recursion_guarded", GetTestResult("16_recursion_guarded")
+    ReportTest "16_api_guards", GetTestResult("16_api_guards")
 
     Debug.Print "=== Test run complete ==="
     Debug.Print "Total: " & g_totalTests & "  Passed: " & g_passedTests & "  Failed: " & g_failedTests
@@ -395,12 +421,38 @@ Public Function GetTestResult(testName As String) As Boolean
         Case "14_noncapturing_groups": GetTestResult = T_14_15_noncapturing_groups()
     
         ' --- Category 15 ---
-        Case "15_backref_in_pattern": GetTestResult = T_15_01_backref_in_pattern()
         Case "15_unicode_property": GetTestResult = T_15_02_unicode_property()
         Case "15_comment_syntax_unsupported": GetTestResult = T_15_03_comment_syntax_unsupported()
         Case "15_variable_lookbehind_error": GetTestResult = T_15_05_variable_lookbehind_error()
         Case "15_inline_flags_not_supported": GetTestResult = T_15_06_inline_flags_not_supported()
         Case "15_conditionals_supported": GetTestResult = T_15_07_conditionals_supported()
+
+        ' --- Category 16 ---
+        Case "16_backref_numbered": GetTestResult = T_16_01_backref_numbered()
+        Case "16_backref_word_repeat": GetTestResult = T_16_02_backref_word_repeat()
+        Case "16_backref_named": GetTestResult = T_16_03_backref_named()
+        Case "16_backref_ignorecase": GetTestResult = T_16_04_backref_ignorecase()
+        Case "16_backref_unset_group": GetTestResult = T_16_05_backref_unset_group()
+        Case "16_backref_in_lookahead": GetTestResult = T_16_06_backref_in_lookahead()
+        Case "16_backref_undefined_error": GetTestResult = T_16_07_backref_undefined_error()
+        Case "16_word_boundary": GetTestResult = T_16_08_word_boundary()
+        Case "16_non_word_boundary": GetTestResult = T_16_09_non_word_boundary()
+        Case "16_word_boundary_replace": GetTestResult = T_16_10_word_boundary_replace()
+        Case "16_escape_plain_text": GetTestResult = T_16_11_escape_plain_text()
+        Case "16_empty_alt_execall": GetTestResult = T_16_12_empty_alt_execall()
+        Case "16_empty_alt_replace": GetTestResult = T_16_13_empty_alt_replace()
+        Case "16_unbalanced_groups_rejected": GetTestResult = T_16_14_unbalanced_groups_rejected()
+        Case "16_quant_backtrack_restores_caps": GetTestResult = T_16_15_quant_backtrack_restores_caps()
+        Case "16_alt_backtracking": GetTestResult = T_16_16_alt_backtracking()
+        Case "16_quant_alt_backtracking": GetTestResult = T_16_17_quant_alt_backtracking()
+        Case "16_anchors_anywhere": GetTestResult = T_16_18_anchors_anywhere()
+        Case "16_groups_keep_positions": GetTestResult = T_16_19_groups_keep_positions()
+        Case "16_brace_literals": GetTestResult = T_16_20_brace_literals()
+        Case "16_code_point_escapes": GetTestResult = T_16_21_code_point_escapes()
+        Case "16_nested_lookbehind": GetTestResult = T_16_22_nested_lookbehind()
+        Case "16_malformed_patterns_rejected": GetTestResult = T_16_23_malformed_patterns_rejected()
+        Case "16_recursion_guarded": GetTestResult = T_16_24_recursion_guarded()
+        Case "16_api_guards": GetTestResult = T_16_25_api_guards()
     End Select
 End Function
 ' Helper used by the runner
@@ -567,7 +619,7 @@ End Function
 Public Function T_1_06_dot_dotall_true_newline() As Boolean
     Dim r As New ASF_RegexEngine
     If Not InitRegexAndHandle(r, "a.c", False, -1, False, True) Then Exit Function
-    If Not AssertTrue(Not (ExecColl(r, "a\nc") Is Nothing), "dotAll True expected match across newline") Then Exit Function
+    If Not AssertTrue(Not (ExecColl(r, "a" & vbLf & "c") Is Nothing), "dotAll True expected match across newline") Then Exit Function
     T_1_06_dot_dotall_true_newline = True
 End Function
 
@@ -1555,24 +1607,6 @@ Public Function T_14_15_noncapturing_groups() As Boolean
 End Function
 
 ' Category 15 - unsupported
-Public Function T_15_01_backref_in_pattern() As Boolean
-    Dim r As New ASF_RegexEngine
-    If InitRegexAndHandle(r, "(a)\1") Then
-        ' If engine accepted, Exec should not match or behave unexpectedly — accept either no match or a specific behavior
-        If ExecColl(r, "aa") Is Nothing Then
-            T_15_01_backref_in_pattern = True
-            Exit Function
-        Else
-            ' engine matched - that's considered unsupported or ambiguous, mark fail
-            g_lastError = "Engine unexpectedly supported backref in pattern and produced a match"
-            Exit Function
-        End If
-    Else
-        ' Init failed — acceptable
-        T_15_01_backref_in_pattern = True
-    End If
-End Function
-
 Public Function T_15_02_unicode_property() As Boolean
     Dim r As New ASF_RegexEngine
     If InitRegexAndHandle(r, "\p{L}") Then
@@ -1618,6 +1652,289 @@ Public Function T_15_07_conditionals_supported() As Boolean
     End If
     If Not AssertCollEquals(c, a("b", vbNullString)) Then Exit Function
     T_15_07_conditionals_supported = True
+End Function
+
+' Category 16 - backreferences and word boundaries
+Public Function T_16_01_backref_numbered() As Boolean
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(a)\1") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "aa"), a("aa", "a")) Then Exit Function
+    If Not AssertTrue(ExecColl(r, "ab") Is Nothing, "(a)\1 should not match 'ab'") Then Exit Function
+    T_16_01_backref_numbered = True
+End Function
+
+Public Function T_16_02_backref_word_repeat() As Boolean
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(\w+) \1") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "say the the end"), a("the the", "the")) Then Exit Function
+    T_16_02_backref_word_repeat = True
+End Function
+
+Public Function T_16_03_backref_named() As Boolean
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(?<q>['""]).*?\k<q>") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "say 'hi"" there' now"), a("'hi"" there'", "'")) Then Exit Function
+    T_16_03_backref_named = True
+End Function
+
+Public Function T_16_04_backref_ignorecase() As Boolean
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(a)\1", True) Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "aA"), a("aA", "a")) Then Exit Function
+    T_16_04_backref_ignorecase = True
+End Function
+
+Public Function T_16_05_backref_unset_group() As Boolean
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(a)?b\1") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "b"), a("b", vbNullString)) Then Exit Function
+    T_16_05_backref_unset_group = True
+End Function
+
+' stdVBA issue 141 pattern
+Public Function T_16_06_backref_in_lookahead() As Boolean
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(.)(?=.*\1)", True, , True) Then Exit Function
+    On Error GoTo EH
+    Dim m As Collection: Set m = r.ExecAll("ss")
+    If Not AssertTrue(Not m Is Nothing, "expected a match in 'ss'") Then Exit Function
+    If Not AssertEqual(m.Count, 1) Then Exit Function
+    Dim c As Collection: Set c = m(1)
+    If Not AssertCollEquals(c, a("s", "s")) Then Exit Function
+    Set m = r.ExecAll("abcab")
+    If Not AssertEqual(m.Count, 2) Then Exit Function
+    Set c = m(2)
+    If Not AssertCollEquals(c, a("b", "b")) Then Exit Function
+    T_16_06_backref_in_lookahead = True
+    Exit Function
+EH:
+    g_lastError = "ExecAll error: #" & err.Number & " - " & err.Description
+    err.Clear
+End Function
+
+Public Function T_16_07_backref_undefined_error() As Boolean
+    Dim r As New ASF_RegexEngine
+    If Not AssertFalse(InitRegexAndHandle(r, "(a)\2"), "expected Init error for (a)\2") Then Exit Function
+    If Not AssertFalse(r.Validate("(?<x>a)\k<y>"), "expected Validate False for undefined \k<y>") Then Exit Function
+    If Not AssertFalse(r.Validate("(a)\k<a"), "expected Validate False for unclosed \k<") Then Exit Function
+    If Not AssertTrue(r.Validate("(?<x>a)\k<x>(b)\2"), "expected Validate True for defined refs") Then Exit Function
+    T_16_07_backref_undefined_error = True
+End Function
+
+Public Function T_16_08_word_boundary() As Boolean
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "\bcat\b") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "a cat!"), a("cat")) Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "cat"), a("cat")) Then Exit Function
+    If Not AssertTrue(ExecColl(r, "concat") Is Nothing, "\bcat\b should not match 'concat'") Then Exit Function
+    T_16_08_word_boundary = True
+End Function
+
+Public Function T_16_09_non_word_boundary() As Boolean
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "\Bcat") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "concat"), a("cat")) Then Exit Function
+    If Not AssertTrue(ExecColl(r, "a cat") Is Nothing, "\Bcat should not match 'a cat'") Then Exit Function
+    T_16_09_non_word_boundary = True
+End Function
+
+Public Function T_16_10_word_boundary_replace() As Boolean
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "\bis\b") Then Exit Function
+    If Not AssertEqual(ReplaceStr(r, "this is it", "IS"), "this IS it") Then Exit Function
+    T_16_10_word_boundary_replace = True
+End Function
+
+Public Function T_16_11_escape_plain_text() As Boolean
+    Dim r As New ASF_RegexEngine
+    If Not AssertEqual(r.Escape("bar"), "bar") Then Exit Function
+    If Not AssertEqual(r.Escape("1.5"), "1\.5") Then Exit Function
+    If Not InitRegexAndHandle(r, r.Escape("bar")) Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "a bar"), a("bar")) Then Exit Function
+    T_16_11_escape_plain_text = True
+End Function
+
+' vbforums report: empty alternative must also match at the end of the subject
+Public Function T_16_12_empty_alt_execall() As Boolean
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(9|)") Then Exit Function
+    On Error GoTo EH
+    Dim m As Collection: Set m = r.ExecAll("999")
+    If Not AssertEqual(m.Count, 4) Then Exit Function
+    Dim c As Collection: Set c = m(3)
+    If Not AssertCollEquals(c, a("9", "9")) Then Exit Function
+    Set c = m(4)
+    If Not AssertCollEquals(c, a(vbNullString, vbNullString)) Then Exit Function
+    If Not InitRegexAndHandle(r, "(?:9|)") Then Exit Function
+    Set m = r.ExecAll("999")
+    If Not AssertEqual(m.Count, 4) Then Exit Function
+    Set c = m(4)
+    If Not AssertCollEquals(c, a(vbNullString)) Then Exit Function
+    T_16_12_empty_alt_execall = True
+    Exit Function
+EH:
+    g_lastError = "ExecAll error: #" & err.Number & " - " & err.Description
+    err.Clear
+End Function
+
+Public Function T_16_13_empty_alt_replace() As Boolean
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(9|)") Then Exit Function
+    If Not AssertEqual(ReplaceStr(r, "999", "x"), "xxxx") Then Exit Function
+    If Not AssertEqual(ReplaceStr(r, "a9", "x"), "xaxx") Then Exit Function
+    If Not InitRegexAndHandle(r, "9") Then Exit Function
+    If Not AssertEqual(ReplaceStr(r, "a9b9", "x"), "axbx") Then Exit Function
+    T_16_13_empty_alt_replace = True
+End Function
+
+Public Function T_16_14_unbalanced_groups_rejected() As Boolean
+    Dim r As New ASF_RegexEngine
+    If Not AssertFalse(r.Validate("(9|"), "(9| should be rejected") Then Exit Function
+    If Not AssertFalse(r.Validate("(?:9|"), "(?:9| should be rejected") Then Exit Function
+    If Not AssertFalse(r.Validate("(9"), "(9 should be rejected") Then Exit Function
+    If Not AssertFalse(r.Validate("9)"), "9) should be rejected") Then Exit Function
+    If Not AssertTrue(r.Validate("(9|)"), "(9|) should be accepted") Then Exit Function
+    If Not AssertTrue(r.Validate("(?:9|)"), "(?:9|) should be accepted") Then Exit Function
+    If Not AssertFalse(InitRegexAndHandle(r, "9)"), "Init should raise for 9)") Then Exit Function
+    T_16_14_unbalanced_groups_rejected = True
+End Function
+
+' Each backtracking step of a quantifier must start from the pre-quantifier captures
+Public Function T_16_15_quant_backtrack_restores_caps() As Boolean
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(a)*ab") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "ab"), a("ab", vbNullString)) Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "aab"), a("aab", "a")) Then Exit Function
+    If Not InitRegexAndHandle(r, "(.)(?=.*\1)") Then Exit Function
+    If Not AssertTrue(r.ExecAt("abcab", 3) Is Nothing, "'c' has no later repeat") Then Exit Function
+    T_16_15_quant_backtrack_restores_caps = True
+End Function
+
+' Alternation followed by more pattern backtracks into the alternatives
+Public Function T_16_16_alt_backtracking() As Boolean
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(a|ab)c") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "abc"), a("abc", "ab")) Then Exit Function
+    If Not InitRegexAndHandle(r, "a(?:b|bc)d") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "abcd"), a("abcd")) Then Exit Function
+    If Not InitRegexAndHandle(r, "(a|ab)$") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "ab"), a("ab", "ab")) Then Exit Function
+    T_16_16_alt_backtracking = True
+End Function
+
+' Quantified atoms with internal choices backtrack per iteration (ECMAScript)
+Public Function T_16_17_quant_alt_backtracking() As Boolean
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(?:a|ab)+c") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "ababc"), a("ababc")) Then Exit Function
+    If Not InitRegexAndHandle(r, "(a|ab)*c") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "abc"), a("abc", "ab")) Then Exit Function
+    If Not InitRegexAndHandle(r, "(?:(a)|b)+") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "ab"), a("ab", vbNullString)) Then Exit Function
+    If Not InitRegexAndHandle(r, "x(y?)+$") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "x"), a("x", vbNullString)) Then Exit Function
+    T_16_17_quant_alt_backtracking = True
+End Function
+
+Public Function T_16_18_anchors_anywhere() As Boolean
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "^a|b") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "cb"), a("b")) Then Exit Function
+    If Not InitRegexAndHandle(r, "(^|,)x") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "a,x"), a(",x", ",")) Then Exit Function
+    If Not InitRegexAndHandle(r, "a\$") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "a$"), a("a$")) Then Exit Function
+    If Not InitRegexAndHandle(r, "a+?$") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "aaa"), a("aaa")) Then Exit Function
+    If Not InitRegexAndHandle(r, "^a") Then Exit Function
+    If Not AssertEqual(ReplaceStr(r, "ba", "x"), "ba") Then Exit Function
+    If Not InitRegexAndHandle(r, "^", False, -1, True) Then Exit Function
+    On Error GoTo EH
+    If Not AssertEqual(r.ExecAll("a" & vbLf).Count, 2) Then Exit Function
+    T_16_18_anchors_anywhere = True
+    Exit Function
+EH:
+    g_lastError = "ExecAll error: #" & err.Number & " - " & err.Description
+    err.Clear
+End Function
+
+' Unset groups keep their slot, so $n and positional captures stay aligned
+Public Function T_16_19_groups_keep_positions() As Boolean
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(a)|(b)") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "b"), a("b", vbNullString, "b")) Then Exit Function
+    If Not AssertEqual(ReplaceStr(r, "b", "[$2]"), "[b]") Then Exit Function
+    If Not InitRegexAndHandle(r, "(?=(a))a") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "a"), a("a", "a")) Then Exit Function
+    If Not InitRegexAndHandle(r, "b") Then Exit Function
+    If Not AssertEqual(ReplaceStr(r, "ab", "[$1]"), "a[$1]") Then Exit Function
+    T_16_19_groups_keep_positions = True
+End Function
+
+' Malformed braces are literals, as in VBScript and JavaScript
+Public Function T_16_20_brace_literals() As Boolean
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "a{x}") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "a{x}"), a("a{x}")) Then Exit Function
+    If Not InitRegexAndHandle(r, "a{,2}") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "a{,2}"), a("a{,2}")) Then Exit Function
+    If Not InitRegexAndHandle(r, "a{2") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "a{2"), a("a{2")) Then Exit Function
+    T_16_20_brace_literals = True
+End Function
+
+Public Function T_16_21_code_point_escapes() As Boolean
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "\x41") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "A"), a("A")) Then Exit Function
+    If Not InitRegexAndHandle(r, "\u00e9") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, ChrW(&HE9)), a(ChrW(&HE9))) Then Exit Function
+    If Not InitRegexAndHandle(r, "[\x61-c]+") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "abc"), a("abc")) Then Exit Function
+    If Not InitRegexAndHandle(r, "[\D]+") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "ab1"), a("ab")) Then Exit Function
+    If Not InitRegexAndHandle(r, "[^\u00e0-\u00ff]+") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "-" & ChrW(&HE9)), a("-")) Then Exit Function
+    If Not AssertFalse(r.Validate("[z-a]"), "expected [z-a] to be rejected") Then Exit Function
+    T_16_21_code_point_escapes = True
+End Function
+
+' Lookbehinds nested in lookaheads get their width too
+Public Function T_16_22_nested_lookbehind() As Boolean
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(?!a(?<!.x))") Then Exit Function
+    If Not AssertTrue(r.ExecAt("b" & vbTab & "a ", 3) Is Nothing, "(?!a(?<!.x)) must fail before 'a'") Then Exit Function
+    If Not InitRegexAndHandle(r, "(?=(?<=a)b)b") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "ab"), a("b")) Then Exit Function
+    T_16_22_nested_lookbehind = True
+End Function
+
+' Bad input is refused by Validate and by Init with an engine error, never a VBA runtime error
+Public Function T_16_23_malformed_patterns_rejected() As Boolean
+    Dim r As New ASF_RegexEngine
+    Dim pat As Variant, errNum As Long
+    For Each pat In Array("[z-a]", "\p{L}", "[\p{L}]", "(?<=a+)b", "a{2,1}", "{3}", "a{99999999999}", "\b*", "\B+", _
+                          "(", ")", "(?<>a)", "\k<x", "(a)\2", "a\", "[a", "(?#c)", String(101, "(") & String(101, ")"))
+        If Not AssertFalse(r.Validate(pat), "Validate accepted " & pat) Then Exit Function
+        On Error Resume Next
+        r.Init pat
+        errNum = err.Number
+        err.Clear
+        On Error GoTo 0
+        If Not AssertTrue(errNum > vbObjectError And errNum < vbObjectError + 200, "Init of " & pat & " raised #" & errNum) Then Exit Function
+    Next pat
+    T_16_23_malformed_patterns_rejected = True
+End Function
+
+' (?R) re-entering itself at the same position fails instead of recursing forever
+Public Function T_16_24_recursion_guarded() As Boolean
+    Dim r As New ASF_RegexEngine: If Not InitRegexAndHandle(r, "(?R)a") Then Exit Function
+    If Not AssertTrue(ExecColl(r, "aaa") Is Nothing, "(?R)a has no finite match") Then Exit Function
+    If Not InitRegexAndHandle(r, "a(?R)?b") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "aaabbb"), a("aaabbb")) Then Exit Function
+    T_16_24_recursion_guarded = True
+End Function
+
+' Matching without a pattern, a rejected Init and out-of-range start positions fail cleanly
+Public Function T_16_25_api_guards() As Boolean
+    Dim r As New ASF_RegexEngine
+    Dim c As Collection, errNum As Long
+    On Error Resume Next
+    Set c = r.Exec("a")
+    errNum = err.Number
+    err.Clear
+    On Error GoTo 0
+    If Not AssertEqual(errNum, vbObjectError + 4, "Exec before Init should raise vbObjectError + 4") Then Exit Function
+    If Not InitRegexAndHandle(r, "a") Then Exit Function
+    If Not AssertFalse(InitRegexAndHandle(r, "("), "Init of '(' should fail") Then Exit Function
+    If Not AssertEqual(r.pattern, "a", "a rejected Init must keep the previous pattern") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "a"), a("a")) Then Exit Function
+    If Not AssertTrue(r.ExecAt("abc", 0) Is Nothing, "ExecAt before the subject") Then Exit Function
+    If Not AssertTrue(r.ExecAt("abc", 5) Is Nothing, "ExecAt past the subject") Then Exit Function
+    If Not InitRegexAndHandle(r, "$") Then Exit Function
+    If Not AssertTrue(Not r.ExecAt("abc", 4) Is Nothing, "ExecAt at Len + 1 is a valid position") Then Exit Function
+    T_16_25_api_guards = True
 End Function
 
 Public Function testNewG() As Boolean

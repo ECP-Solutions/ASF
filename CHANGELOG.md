@@ -2,6 +2,88 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [Unreleased]
+
+## Summary
+`ASF_RegexEngine` gains pattern backreferences and word boundaries, the two features required for stdRegex compatibility and for patterns such as `(.)(?=.*\1)` from [stdVBA#141](https://github.com/sancarn/stdVBA/issues/141). The pre-parse validator now rejects backreferences to groups that do not exist.
+
+The matcher now backtracks like ECMAScript: into alternations, into quantified atoms that have internal choices, and through `^`/`$`, which are real assertions anywhere in the pattern. Results were checked against JavaScript's engine on randomly generated patterns (see Test coverage).
+
+---
+
+## Highlights
+
+- **Added**
+    - **Backreferences** — `\1`..`\n` and named `\k<name>`. Matching honours `ignoreCase` and `(?i:...)`/`(?-i:...)` scopes. A reference to a group that did not participate matches the empty string (ECMAScript/VBScript semantics).
+    - **Word boundaries** — `\b` and `\B`, zero-width, using the same ASCII word set as `\w`. Usable inside lookbehinds (zero width).
+    - **`[\b]`** inside a character class now means backspace (`Chr$(8)`).
+    - **Code point escapes** — `\xhh`, `\uhhhh`, `\f`, `\v` and `\0`, inside and outside classes; class ranges may use escaped ends (`[\x61-c]`, `[à-ÿ]`) and cover the whole BMP.
+    - **Shorthand negations inside classes** — `[\D]`, `[\W]`, `[\S]`. `\s` also matches `\v` and `\f`, as in VBScript.
+    - **Anchors anywhere** — `^`/`$` are zero-width assertions (`^a|b`, `(^|,)x`, `a$|b`); with `multiline` they match at every line start/end, including after a trailing newline.
+
+- **Internal core changes**:
+    - **RegexEngine** (`ASF_RegexEngine.cls`):
+        - **Added** `backref` and `wordb` AST nodes, parsed in `ParseSequence`/`ParseEscapeNode` and matched in `MatchNode`; `IsWordCharAt` helper.
+        - **Modified** `ComputeMaxLen`/`ComputeFixedWidth` to treat `wordb` as zero width; `PropagateFlags` now reaches `backref` nodes.
+        - **Modified** `ValidatePattern` to count capturing groups and validate `\n`/`\k<name>` references before the AST builder runs.
+        - **Fixed** `Escape` prefixing the first character with `\` regardless of its kind (`Escape("bar")` produced `\bar`).
+        - **Fixed** `Exec`/`ExecAll`/`Replace` never trying the position after the last character, so patterns that can match empty missed the final match (`(9|)` on `"999"` gave 3 matches instead of 4, as reported on vbforums).
+        - **Fixed** `Replace` dropping the character at an empty match (`(9|)` on `"a9"` with `x` gave `"xxx"` instead of `"xaxx"`).
+        - **Fixed** `RestoreCaps` erasing the caller's snapshot (`Erase` on a `ByRef` array), so every backtracking step of a quantifier after the first ran with stale captures (`(a)*ab` on `"ab"` reported group 1 = `"a"`; `(.)(?=.*\1)` matched characters that never repeat).
+        - **Fixed** alternation never backtracking when followed by more pattern (`(a|ab)c` did not match `"abc"`). `MatchSequence` now tries each alternative together with the rest of the sequence.
+        - **Fixed** quantified atoms with internal choices never backtracking (`(?:a|ab)+c` did not match `"ababc"`). Such atoms are matched one iteration at a time with ECMAScript's empty-iteration rule and per-iteration capture reset (`MatchQuant`); atoms without choices keep the fast occurrence scan (`MatchQuantIter`), which is also the fallback past `QUANT_REC_LIMIT` (100) iterations to bound stack use.
+        - **Fixed** unbounded quantifiers at the end of the subject (`x(y?)+$` did not match `"x"`).
+        - **Fixed** `$` being checked only after the first match was found (`a+?$` gave `"a"`, `(a|ab)$` failed on `"ab"`); `^`/`$` are now `bol`/`eol` nodes instead of being stripped from the pattern ends, so a trailing `\$` is no longer taken for an anchor and `Replace`, `Split` and `ExecAt` honour `^`.
+        - **Fixed** capture collections dropping unset or empty groups when the pattern has two or more groups, which shifted later groups and broke `$n` (`(a)|(b)` replaced with `[$2]` on `"b"` gave `"[]"`).
+        - **Fixed** positive lookarounds discarding their captures (`(?=(a))a`).
+        - **Fixed** lookbehinds nested in lookaheads, atomic groups or conditionals never receiving their width, which made `(?!a(?<!.x))` behave as if the lookbehind failed.
+        - **Fixed** malformed braces: `a{x}` and `a{,2}` raised a Type mismatch and `a{2` was read as `a?`; all are literals now, as in VBScript/JavaScript.
+        - **Fixed** inline flags: `(?-im:...)` parsing, `(?i:[a-z])` classes ignoring `i`, and flag groups matched through a quantifier calling `NodeExists(Me, ...)` (a Type mismatch in VBA). Flags now live on the leaf nodes instead of being toggled on the engine during a match.
+        - **Fixed** `$n` / `$<name>` in replacements for groups that do not exist: kept literally, as in ECMAScript, instead of being dropped.
+        - **Fixed** `Replace` returning `""` for an empty subject even when the pattern matches empty.
+        - **Modified** `Validate` compiles the pattern, so it also reports class range, `\p{...}` and lookbehind-width errors. `Validate(p)` is `True` exactly when `Init(p)` succeeds.
+        - **Hardened** against malformed input: thousands of generated bad patterns never produce a VBA runtime error from `Validate`/`Init`, only documented engine errors, and no accepted pattern fails at match time except through the step/recursion limits.
+        - **Fixed** `(?R)`/`(?n)` re-entering the same target at the same position recursing until the stack overflowed (`(?R)a`); such left recursion now fails, and recursion deeper than `RECURSE_LIMIT` (200) raises error 3.
+        - **Fixed** `{99999999999}` being taken as literal text and `\b*`/`\B+` being accepted; both are quantifier errors now, as in JavaScript.
+        - **Fixed** `Init` with a rejected pattern updating the `pattern` property and flags while still matching with the previous pattern; `Init` now commits nothing unless the pattern compiles.
+        - **Fixed** matching before `Init` failing with a Type mismatch; it raises error 4. `ExecAt` returns `Nothing` for start positions outside `1..Len(subject) + 1`.
+        - **Removed** the `Exec`-only conversion of literal `\n`/`\r` text in the subject (`ReplaceNewLines`); captures were sliced from the unconverted text. ASF single-quoted strings already turn `\n` into a line feed.
+
+    - **VM** (`ASF_VM.cls`):
+        - **Fixed** `string.replace`/`replaceAll` with a regex never inserting the replacement for zero-length matches (`'ab'.replace(/(?=b)/, 'x')` returned `'ab'` instead of `'axb'`).
+        - **Fixed** `string.replace`/`replaceAll`/`match`/`matchAll` skipping the empty match at the end of the subject (`'999'.replace(/(9|)/g, 'x')` returned `'xxx'` instead of `'xxxx'`).
+        - **Modified** `string.replaceAll` with a regex lacking the `g` flag now raises `vbObjectError + 103`, matching JavaScript's `TypeError` (previously it silently replaced every match).
+
+- **Regex Validation Error Codes** (`vbObjectError + N`):
+    - `44` — Backreference to a non-existent group (`\n` or `\k<name>`).
+    - `45` — Named backreference `\k<` missing closing `>`.
+    - `41` — Character class range out of order (`[z-a]`).
+    - `46` — Unicode property escapes `\p{...}` / `\P{...}` (unsupported; previously `\p{L}` only failed through a Type mismatch).
+    - `47` — Groups nested deeper than 100 levels (`MAX_GROUP_NESTING`).
+    - `48` — Quantifier bound longer than 9 digits.
+    - Match time: `1`/`2` too many steps, `3` recursion too deep, `4` no pattern (`Init` not called).
+
+- **Test coverage**: new category 16 in `test/RegexTests.bas` (backreferences, issue 141 pattern, word boundaries, `Escape`, backtracking, anchors, capture positions, escapes). `15_backref_in_pattern` removed, the feature is no longer unsupported. `1_dot_dotall_true_newline` now passes a real line feed instead of relying on the removed `\n` conversion. The engine was also run against JavaScript's `RegExp` on thousands of randomly generated patterns covering the syntax both support.
+
+---
+
+## Breaking Changes
+
+- `\b`, `\B`, `\1`..`\9` and `\k<name>` previously matched the literal character; they now have regex meaning. `\n` with fewer than `n` groups raises error 44.
+- `Escape` output no longer escapes a leading non-special character.
+- `ExecAll`/`Replace` with patterns that can match empty (`.*`, `a?`, `(x|)`) now also report the empty match at the end of the subject, as VBScript/JavaScript do.
+- `str.replaceAll(/pattern/, ...)` without the `g` flag raises error 103; add `g` to the regex.
+- Capture collections (`Exec`, `ExecAll`, `ExecAt`, and the arrays ASF scripts get from `exec`/`match`) always hold one entry per group, `""` when the group did not take part; previously unset groups were removed when the pattern had two or more groups.
+- `^` and `$` in the middle of a pattern are anchors, no longer literal characters; escape them (`\^`, `\$`) to match the characters.
+- `Exec` no longer converts the two-character text `\n`/`\r` in the subject into line breaks; pass `vbLf`/`vbCr` (VBA) or a single-quoted ASF string.
+- `\xhh`, `\uhhhh`, `\f`, `\v`, `\0`, `[\D]`, `[\W]` and `[\S]` now have their regex meaning instead of matching literal letters; `[z-a]` and `\p{...}` raise errors 41 and 46.
+- Quantified word boundaries (`\b*`), quantifier bounds over 9 digits and groups nested deeper than 100 levels are rejected.
+
+## Known Limitations
+
+- A quantified atom with internal choices (`(?:a|ab)+`) backtracks into each of its first 100 iterations (`QUANT_REC_LIMIT`); later iterations take the first alternative that matches, to keep VBA stack use bounded. Results differ from JavaScript only when the alternatives overlap and the repetition runs past 100 iterations.
+- Deliberately stricter than JavaScript's legacy (non-`u`) syntax: `\1` without enough groups, `\p{`/`\P{` and an unclosed `\k<` are errors instead of literal text; lookbehind must be fixed-width. `(?R)`, `(?n)`, atomic groups, possessive quantifiers, conditionals and inline flag groups are ASF extensions that JavaScript rejects.
+
 ## [v3.1.4] - 2026-05-20
 https://github.com/ECP-Solutions/ASF/releases/tag/v3.1.4
 
