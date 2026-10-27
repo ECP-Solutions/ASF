@@ -1,0 +1,7 @@
+scwd(wd);
+import './prototypes.vas';
+
+let ws = $1.ActiveSheet;
+let rng = ws.Range('J1:L3');
+rng.addStyle(65535);          // yellow
+return rng.Interior.Color

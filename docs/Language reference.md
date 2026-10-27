@@ -2058,6 +2058,14 @@ name = utils.formatName('John', 'Doe');
 upperName = utils.uppercase(name);
 ```
 
+#### Side-Effect Import
+
+Run a module only for its side effects, such as registering the prototypes of a prototype library:
+
+```javascript
+import './prototypes.vas';
+```
+
 #### Mixed Import
 
 Import both default and named exports:
@@ -3524,6 +3532,36 @@ prototype.COM.ListRow convert() { }  // Unclear what it converts to
 - Collection override (`OverrideCollMethods = True`) can impact memory usage
 - Consider caching frequently accessed properties within method implementations
 - Use prototype methods for complex operations rather than simple property access
+
+### Prototype Libraries
+
+Put related prototypes in a module and `export` them to build a reusable library:
+
+```javascript
+// prototypes.vas
+export prototype.COM.Range addStyle(color) {
+    this.Interior.Color = color;
+};
+
+export prototype.COM.Worksheet highlight(rng, color) {
+    rng.addStyle(color);
+};
+```
+
+Each exported prototype is exported under the name `<ObjectType>_<methodName>`. Prototype patches are global, as in JavaScript: once a library is imported, all of its exported prototypes are live, whichever form of import is used. A library's methods can therefore call each other, and libraries can import other libraries.
+
+```javascript
+scwd(wd);
+import { Range_addStyle, Worksheet_highlight } from './prototypes.vas';  // named
+// import * as protos from './prototypes.vas';                         // namespace
+// import './prototypes.vas';                                          // side effects only
+
+let ws = $1.ActiveSheet;
+let rng = ws.Range('J1:L3');
+rng.addStyle(65535);          // yellow
+ws.highlight(rng, 255);       // red, highlight calls addStyle internally
+return rng.Interior.Color
+```
 
 ---
 

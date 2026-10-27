@@ -4109,6 +4109,67 @@ TestFail:
     Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
+
+'@TestMethod("Modules")
+Private Sub module_system_prototype_single_import()
+    ' importing one prototype still activates the library's others (highlight calls addStyle)
+    Dim wd As String
+    Dim eng As New ASF
+    wd = ThisWorkbook.path
+    With eng
+        .AppAccess = True
+        .InjectVariable "wd", wd
+        On Error GoTo TestFail
+        actual = CLng(.Execute(wd & "\main_prototype_single.vas", ThisWorkbook))
+    End With
+    expected = CLng(255)
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("Modules")
+Private Sub module_system_prototype_namespace_import()
+    ' a namespace import activates the library's prototypes
+    Dim wd As String
+    Dim eng As New ASF
+    wd = ThisWorkbook.path
+    With eng
+        .AppAccess = True
+        .InjectVariable "wd", wd
+        On Error GoTo TestFail
+        actual = CLng(.Execute(wd & "\main_prototype_namespace.vas", ThisWorkbook))
+    End With
+    expected = CLng(255)
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+'@TestMethod("Modules")
+Private Sub module_system_prototype_side_effect_import()
+    ' a side-effect import activates the library's prototypes
+    Dim wd As String
+    Dim eng As New ASF
+    wd = ThisWorkbook.path
+    With eng
+        .AppAccess = True
+        .InjectVariable "wd", wd
+        On Error GoTo TestFail
+        actual = CLng(.Execute(wd & "\main_prototype_side_effect.vas", ThisWorkbook))
+    End With
+    expected = CLng(65535)
+    Assert.AreEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    Assert.Fail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
 '@TestMethod("math")
 Private Sub math_basic()
     On Error GoTo TestFail

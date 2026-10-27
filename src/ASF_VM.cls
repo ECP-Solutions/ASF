@@ -6447,6 +6447,10 @@ Private Function ExecModImport(node As ASF_Map, progScope As ASF_ScopeStack) As 
     Dim moduleObj As ASF_Map
     Set moduleObj = LoadModule(resolvedPath)
     
+    ' Prototype patches are global, as in JS: whatever is imported from the module, all of
+    ' its exported prototypes go live, so the library's own methods can call each other
+    RegisterModulePrototypes moduleObj
+    
     ' Import default
     If node.Exists("defaultImport") Then
         Dim defaultName As String: defaultName = node.GetValue("defaultImport")
@@ -6484,29 +6488,6 @@ Private Function ExecModImport(node As ASF_Map, progScope As ASF_ScopeStack) As 
             If exportsMap2.Exists(importedName) Then
                 Dim importedVal As Variant
                 vAssignment importedVal, exportsMap2.GetValue(importedName)
-                If IsObject(importedVal) Then
-                    If typeName(importedVal) = "ASF_Map" Then
-                        Dim importedDesc As ASF_Map: Set importedDesc = importedVal
-                        If importedDesc.Exists("type") Then
-                            If importedDesc.GetValue("type") = "PrototypeDescriptor" Then
-                                ' Execute a Prototype node exactly as if the user had written
-                                '   prototype.COM.<classType> <methodName>(...) { body }
-                                ' directly in the importing script.  ExecuteStmtNode Case
-                                ' "Prototype" calls RegisterCOMPrototype on the *main* VM's
-                                ' COM_PROTOTYPES_ at the correct moment — after LoadModule
-                                ' returns, before any COM method call on rng is evaluated.
-                                Dim protoInlineNode As ASF_Map
-                                Set protoInlineNode = New ASF_Map
-                                protoInlineNode.SetValue "type", "Prototype"
-                                protoInlineNode.SetValue "classType", importedDesc.GetValue("classType")
-                                protoInlineNode.SetValue "methodName", importedDesc.GetValue("methodName")
-                                protoInlineNode.SetValue "funcIndex", CLng(importedDesc.GetValue("funcIndex"))
-                                protoInlineNode.SetValue "params", importedDesc.GetValue("params")
-                                ExecuteStmtNode protoInlineNode, progScope
-                            End If
-                        End If
-                    End If
-                End If
                 progScope.SetValue localName, importedVal
             Else
                 err.Raise vbObjectError + 9001, "VM.ExecuteStmtNode", "Export '" & importedName & "' not found in module '" & resolvedPath & "'"
@@ -6515,6 +6496,31 @@ Private Function ExecModImport(node As ASF_Map, progScope As ASF_ScopeStack) As 
     End If
     ExecModImport = vbNullString
 End Function
+' Register every PrototypeDescriptor a loaded module exports (also re-registers for cached modules)
+Private Sub RegisterModulePrototypes(moduleObj As ASF_Map)
+    Dim exportsMap As ASF_Map: Set exportsMap = moduleObj.GetValue("exports")
+    Dim expKey As Variant
+    Dim expVal As Variant
+    Dim desc As ASF_Map
+    Dim classType As String, methodName As String
+    Dim params As Collection
+    For Each expKey In exportsMap.keys
+        vAssignment expVal, exportsMap.GetValue(CStr(expKey))
+        If IsObject(expVal) Then
+            If typeName(expVal) = "ASF_Map" Then
+                Set desc = expVal
+                If desc.Exists("type") Then
+                    If desc.GetValue("type") = "PrototypeDescriptor" Then
+                        classType = desc.GetValue("classType")
+                        methodName = desc.GetValue("methodName")
+                        Set params = desc.GetValue("params")
+                        RegisterCOMPrototype classType, methodName, CLng(desc.GetValue("funcIndex")), params
+                    End If
+                End If
+            End If
+        End If
+    Next expKey
+End Sub
 ' Execute module export
 Private Function ExecModExport(node As ASF_Map, progScope As ASF_ScopeStack) As String
     ' Handle export statement
@@ -6585,6 +6591,8 @@ Private Function ExecModExport(node As ASF_Map, progScope As ASF_ScopeStack) As 
                     Set modExports = GLOBALS_.gModuleExports.GetValue(GLOBALS_.CURRENT_MODULE_PATH)
                     modExports.SetValue node.GetValue("exportName"), protoDesc
                 End If
+                ' live from here on, so the module's own top-level code can use it
+                RegisterCOMPrototype pClassType, pMethodName, pFuncIdx, pParams
             End If
         End If
     End If

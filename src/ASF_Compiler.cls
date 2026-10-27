@@ -3645,6 +3645,7 @@ Private Function ParseImportStatement(toks As Collection, ByRef i As Long) As AS
     ' import defaultName from 'module'
     ' import * as namespace from 'module'
     ' import defaultName, { name1 } from 'module'
+    ' import 'module'   (side effects only, e.g. a prototype library)
     
     Dim importNode As ASF_Map: Set importNode = MakeNode("Import")
     Dim namedImports As New Collection
@@ -3660,6 +3661,14 @@ Private Function ParseImportStatement(toks As Collection, ByRef i As Long) As AS
     Loop
     
     If i > toks.Count Then err.Raise vbObjectError + 8001, "Compiler.ParseImportStatement", "Unexpected end after import"
+    
+    ' Side-effect import: import 'module'
+    If toks(i)(0) = "STRING" Then
+        importNode.SetValue "source", toks(i)(1)
+        i = i + 1
+        Set ParseImportStatement = importNode
+        Exit Function
+    End If
     
     ' Check for namespace import: import * as name from 'module'
     If toks(i)(0) = "OP" And toks(i)(1) = "*" Then

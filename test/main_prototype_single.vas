@@ -1,0 +1,7 @@
+scwd(wd);
+import { Worksheet_highlight } from './prototypes.vas';
+
+let ws = $1.ActiveSheet;
+let rng = ws.Range('J1:L3');
+ws.highlight(rng, 255);       // highlight calls rng.addStyle, which was not imported by name
+return rng.Interior.Color

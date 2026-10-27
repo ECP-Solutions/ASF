@@ -9,6 +9,8 @@ All notable changes for ASF. This file combines the release notes from the proje
 
 The matcher now backtracks like ECMAScript: into alternations, into quantified atoms that have internal choices, and through `^`/`$`, which are real assertions anywhere in the pattern. Results were checked against JavaScript's engine on randomly generated patterns (see Test coverage).
 
+COM prototype libraries: importing a module now activates all of its exported prototypes, whichever import form is used, so a library's methods can call each other and libraries can build on other libraries. A side-effect import form, `import './lib.vas';`, loads a prototype library without naming its exports.
+
 ---
 
 ## Highlights
@@ -19,9 +21,11 @@ The matcher now backtracks like ECMAScript: into alternations, into quantified a
     - **`[\b]`** inside a character class now means backspace (`Chr$(8)`).
     - **Code point escapes** — `\xhh`, `\uhhhh`, `\f`, `\v` and `\0`, inside and outside classes; class ranges may use escaped ends (`[\x61-c]`, `[à-ÿ]`) and cover the whole BMP.
     - **Shorthand negations inside classes** — `[\D]`, `[\W]`, `[\S]`. `\s` also matches `\v` and `\f`, as in VBScript.
+    - **Side-effect import** — `import './prototypes.vas';` loads and runs a module without binding any name.
     - **Anchors anywhere** — `^`/`$` are zero-width assertions (`^a|b`, `(^|,)x`, `a$|b`); with `multiline` they match at every line start/end, including after a trailing newline.
 
 - **Internal core changes**:
+    - **Compiler** (`ASF_Compiler.cls`): `ParseImportStatement` accepts a string literal right after `import` (side-effect import).
     - **RegexEngine** (`ASF_RegexEngine.cls`):
         - **Added** `backref` and `wordb` AST nodes, parsed in `ParseSequence`/`ParseEscapeNode` and matched in `MatchNode`; `IsWordCharAt` helper.
         - **Modified** `ComputeMaxLen`/`ComputeFixedWidth` to treat `wordb` as zero width; `PropagateFlags` now reaches `backref` nodes.
@@ -50,6 +54,7 @@ The matcher now backtracks like ECMAScript: into alternations, into quantified a
         - **Removed** the `Exec`-only conversion of literal `\n`/`\r` text in the subject (`ReplaceNewLines`); captures were sliced from the unconverted text. ASF single-quoted strings already turn `\n` into a line feed.
 
     - **VM** (`ASF_VM.cls`):
+        - **Fixed** exported COM prototypes being registered only when imported by name: `import { Worksheet_highlight }` broke as soon as `highlight` called the library's own `addStyle`, and `import * as lib` registered nothing. `ExecModExport` registers an exported prototype as soon as it runs, and `ExecModImport` calls the new `RegisterModulePrototypes` for every import form, which also covers modules already cached; the per-name registration in the named-import path is removed as redundant.
         - **Fixed** `string.replace`/`replaceAll` with a regex never inserting the replacement for zero-length matches (`'ab'.replace(/(?=b)/, 'x')` returned `'ab'` instead of `'axb'`).
         - **Fixed** `string.replace`/`replaceAll`/`match`/`matchAll` skipping the empty match at the end of the subject (`'999'.replace(/(9|)/g, 'x')` returned `'xxx'` instead of `'xxxx'`).
         - **Modified** `string.replaceAll` with a regex lacking the `g` flag now raises `vbObjectError + 103`, matching JavaScript's `TypeError` (previously it silently replaced every match).
@@ -63,7 +68,7 @@ The matcher now backtracks like ECMAScript: into alternations, into quantified a
     - `48` — Quantifier bound longer than 9 digits.
     - Match time: `1`/`2` too many steps, `3` recursion too deep, `4` no pattern (`Init` not called).
 
-- **Test coverage**: new category 16 in `test/RegexTests.bas` (backreferences, issue 141 pattern, word boundaries, `Escape`, backtracking, anchors, capture positions, escapes). `15_backref_in_pattern` removed, the feature is no longer unsupported. `1_dot_dotall_true_newline` now passes a real line feed instead of relying on the removed `\n` conversion. The engine was also run against JavaScript's `RegExp` on thousands of randomly generated patterns covering the syntax both support.
+- **Test coverage**: new category 16 in `test/RegexTests.bas` (backreferences, issue 141 pattern, word boundaries, `Escape`, backtracking, anchors, capture positions, escapes). `15_backref_in_pattern` removed, the feature is no longer unsupported. `1_dot_dotall_true_newline` now passes a real line feed instead of relying on the removed `\n` conversion. The engine was also run against JavaScript's `RegExp` on thousands of randomly generated patterns covering the syntax both support. `module_system_prototype_single_import`, `module_system_prototype_namespace_import` and `module_system_prototype_side_effect_import` in `test/TestRunner.bas` cover prototype libraries with `test/main_prototype_single.vas`, `test/main_prototype_namespace.vas` and `test/main_prototype_side_effect.vas` (Excel only: they drive `Range`/`Worksheet` objects).
 
 ---
 
