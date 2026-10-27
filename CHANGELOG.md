@@ -11,6 +11,8 @@ The matcher now backtracks like ECMAScript: into alternations, into quantified a
 
 COM prototype libraries: importing a module now activates all of its exported prototypes, whichever import form is used, so a library's methods can call each other and libraries can build on other libraries. A side-effect import form, `import './lib.vas';`, loads a prototype library without naming its exports.
 
+Matching is several times faster: start positions that cannot begin a match are skipped, quantified single characters run in a tight loop, and character class maps are no longer copied per character (see Performance).
+
 ---
 
 ## Highlights
@@ -23,6 +25,24 @@ COM prototype libraries: importing a module now activates all of its exported pr
     - **Shorthand negations inside classes** — `[\D]`, `[\W]`, `[\S]`. `\s` also matches `\v` and `\f`, as in VBScript.
     - **Side-effect import** — `import './prototypes.vas';` loads and runs a module without binding any name.
     - **Anchors anywhere** — `^`/`$` are zero-width assertions (`^a|b`, `(^|,)x`, `a$|b`); with `multiline` they match at every line start/end, including after a trailing newline.
+
+- **Performance** (`ASF_RegexEngine.cls`), same results on the test suite and on the JavaScript comparison corpora. Times for ~4 KB of text, measured under LibreOffice Basic's VBA mode (relative figures; absolute VBA times differ):
+
+    | Pattern | Before | After |
+    |---|---|---|
+    | `a.*?z` (`Exec`) | 2288 ms | 13 ms |
+    | `zebra\d+` (no match) | 1211 ms | 123 ms |
+    | `(\d{3})-(\d{4})` (`ExecAll`) | 4893 ms | 603 ms |
+    | `(?:foo\|bar)+baz` | 5051 ms | 634 ms |
+    | `GAMMA\|DELTA`, ignoreCase | 2727 ms | 390 ms |
+    | `\s+` (`Replace`) | 2767 ms | 606 ms |
+    | `[\w.]+@\w+\.\w+` | 7063 ms | 2145 ms |
+    | `\b\w+\b` | 3639 ms | 1272 ms |
+
+    - **First-char filter** — `Init` computes the chars that can start a match (`AddFirstChars`); `ExecAt` rejects other start positions before allocating anything, which also speeds up `Replace`, `Split` and the VM's string methods. Patterns that can match empty, or start with a backreference, conditional or recursion, are not filtered.
+    - **Leaf runs** — a quantifier over a single char (`a*`, `\w+`, `.*?`, `[a-z]{2,5}`) scans characters directly (`MatchLeafRun`) instead of a `MatchNode` call, two capture snapshots and a `ReDim Preserve` per char; lazy runs extend one char at a time instead of scanning to the end first. Other quantified atoms grow their occurrence arrays geometrically.
+    - **Class maps** — bitmaps live in an engine-level `Boolean` array indexed by class (`pClassMaps`) instead of a 256-element array copied out of the node's Collection on every char test.
+    - **Hot-path reads** — node type and fixed keys are read directly (`node(1)`, `node("child")`) instead of through `NodeGet`, the `capture_end` marker is built once per group, and runtime nodes are filled with `Collection.Add` instead of `NodeAdd`, whose existence check traps an error for every new key.
 
 - **Internal core changes**:
     - **Compiler** (`ASF_Compiler.cls`): `ParseImportStatement` accepts a string literal right after `import` (side-effect import).
