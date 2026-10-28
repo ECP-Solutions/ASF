@@ -232,6 +232,11 @@ Public Sub RunAllRegexTests()
     ReportTest "16_malformed_patterns_rejected", GetTestResult("16_malformed_patterns_rejected")
     ReportTest "16_recursion_guarded", GetTestResult("16_recursion_guarded")
     ReportTest "16_api_guards", GetTestResult("16_api_guards")
+    ReportTest "16_step_budget_per_call", GetTestResult("16_step_budget_per_call")
+    ReportTest "16_pattern_cache", GetTestResult("16_pattern_cache")
+    ReportTest "16_start_filters_follow_flags", GetTestResult("16_start_filters_follow_flags")
+    ReportTest "16_named_after_execall", GetTestResult("16_named_after_execall")
+    ReportTest "16_replacement_tokens", GetTestResult("16_replacement_tokens")
 
     Debug.Print "=== Test run complete ==="
     Debug.Print "Total: " & g_totalTests & "  Passed: " & g_passedTests & "  Failed: " & g_failedTests
@@ -453,6 +458,11 @@ Public Function GetTestResult(testName As String) As Boolean
         Case "16_malformed_patterns_rejected": GetTestResult = T_16_23_malformed_patterns_rejected()
         Case "16_recursion_guarded": GetTestResult = T_16_24_recursion_guarded()
         Case "16_api_guards": GetTestResult = T_16_25_api_guards()
+        Case "16_step_budget_per_call": GetTestResult = T_16_26_step_budget_per_call()
+        Case "16_pattern_cache": GetTestResult = T_16_27_pattern_cache()
+        Case "16_start_filters_follow_flags": GetTestResult = T_16_28_start_filters_follow_flags()
+        Case "16_named_after_execall": GetTestResult = T_16_29_named_after_execall()
+        Case "16_replacement_tokens": GetTestResult = T_16_30_replacement_tokens()
     End Select
 End Function
 ' Helper used by the runner
@@ -1935,6 +1945,93 @@ Public Function T_16_25_api_guards() As Boolean
     If Not InitRegexAndHandle(r, "$") Then Exit Function
     If Not AssertTrue(Not r.ExecAt("abc", 4) Is Nothing, "ExecAt at Len + 1 is a valid position") Then Exit Function
     T_16_25_api_guards = True
+End Function
+
+' The step budget applies to each call: repeated calls on one engine must not use it up
+Public Function T_16_26_step_budget_per_call() As Boolean
+    Dim r As New ASF_RegexEngine, k As Long, s As String
+    If Not InitRegexAndHandle(r, "a", False, 100) Then Exit Function
+    On Error GoTo EH
+    For k = 1 To 50
+        s = r.Replace("aaaaaaaaaa", "b")
+        If Not AssertTrue(Not r.ExecAt("xa", 2) Is Nothing, "ExecAt on call " & k) Then Exit Function
+        If Not AssertEqual(r.Split("bab").Count, 2, "Split on call " & k) Then Exit Function
+    Next k
+    If Not AssertEqual(s, "bbbbbbbbbb", "Replace after 50 calls") Then Exit Function
+    T_16_26_step_budget_per_call = True
+    Exit Function
+EH:
+    g_lastError = "repeated calls raised #" & err.Number & " - " & err.Description
+End Function
+
+' Switching patterns, and engines sharing a cache, reuse compiled patterns without mixing them up
+Public Function T_16_27_pattern_cache() As Boolean
+    Dim r As New ASF_RegexEngine, r2 As New ASF_RegexEngine
+    If Not InitRegexAndHandle(r, "([A-Z]{2})(\d+)") Then Exit Function
+    If Not InitRegexAndHandle(r, "x(y)") Then Exit Function
+    If Not InitRegexAndHandle(r, "([A-Z]{2})(\d+)") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "id GB123"), a("GB123", "GB", "123")) Then Exit Function
+    Set r2.SharedCache = r.SharedCache
+    If Not InitRegexAndHandle(r2, "x(y)") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r2, "axy"), a("xy", "y")) Then Exit Function
+    If Not AssertEqual(r.SharedCache.Count, 2, "both engines use one cache of two patterns") Then Exit Function
+    ' patterns differing only in case are different patterns
+    If Not InitRegexAndHandle(r, "AB") Then Exit Function
+    If Not InitRegexAndHandle(r, "ab") Then Exit Function
+    If Not AssertTrue(r.test("ab"), "'ab' matches ab") Then Exit Function
+    If Not AssertFalse(r.test("AB"), "'ab' must not reuse the compiled 'AB'") Then Exit Function
+    T_16_27_pattern_cache = True
+End Function
+
+' The leading-literal and ^ shortcuts follow flags changed after Init
+Public Function T_16_28_start_filters_follow_flags() As Boolean
+    Dim r As New ASF_RegexEngine
+    If Not InitRegexAndHandle(r, "abc") Then Exit Function
+    If Not AssertFalse(r.test("xABC"), "case-sensitive literal") Then Exit Function
+    r.ignoreCase = True
+    If Not AssertTrue(r.test("xABC"), "ignoreCase set after Init") Then Exit Function
+    If Not InitRegexAndHandle(r, "^b") Then Exit Function
+    If Not AssertFalse(r.test("a" & vbLf & "b"), "^ without multiline") Then Exit Function
+    r.multiline = True
+    If Not AssertTrue(r.test("a" & vbLf & "b"), "multiline set after Init") Then Exit Function
+    If Not AssertEqual(r.ExecAll("b" & vbLf & "b" & vbCr & "b ab").Count, 3, "^ after LF and CR") Then Exit Function
+    If Not InitRegexAndHandle(r, "needle") Then Exit Function
+    If Not AssertEqual(r.Replace("hay needle needl needle", "X"), "hay X needl X", "literal scan") Then Exit Function
+    If Not AssertTrue(r.ExecAt("a needle", 2) Is Nothing, "ExecAt before the literal") Then Exit Function
+    If Not AssertCollEquals(r.ExecAt("a needle", 3), a("needle")) Then Exit Function
+    If Not InitRegexAndHandle(r, "(?<=a)bc") Then Exit Function
+    If Not AssertCollEquals(ExecColl(r, "xbc abc"), a("bc")) Then Exit Function
+    T_16_28_start_filters_follow_flags = True
+End Function
+
+' After ExecAll, LastNamedCaptures holds the groups of the last match
+Public Function T_16_29_named_after_execall() As Boolean
+    Dim r As New ASF_RegexEngine
+    If Not InitRegexAndHandle(r, "x(?<n>a|b)") Then Exit Function
+    If Not AssertEqual(r.ExecAll("xa xb xc").Count, 2, "two matches") Then Exit Function
+    Dim named As Collection: Set named = r.LastNamedCaptures
+    Dim pair As Variant: pair = named("n")
+    If Not AssertEqual(pair(1), "b", "named group of the last match") Then Exit Function
+    T_16_29_named_after_execall = True
+End Function
+
+' Replacement templates: $n, two-digit $nn, $<name>, $$, $` and $'
+Public Function T_16_30_replacement_tokens() As Boolean
+    Dim r As New ASF_RegexEngine
+    If Not InitRegexAndHandle(r, "(?<n>b)(c)") Then Exit Function
+    If Not AssertEqual(r.Replace("abcd", "$<n>"), "abd", "$<n>") Then Exit Function
+    If Not AssertEqual(r.Replace("abcd", "$2$1"), "acbd", "$2$1") Then Exit Function
+    If Not AssertEqual(r.Replace("abcd", "$01"), "abd", "$01") Then Exit Function
+    If Not AssertEqual(r.Replace("abcd", "$10"), "ab0d", "$10 is $1 then 0") Then Exit Function
+    If Not AssertEqual(r.Replace("abcd", "$9"), "a$9d", "$9 with no group 9") Then Exit Function
+    If Not AssertEqual(r.Replace("abcd", "$$"), "a$d", "$$") Then Exit Function
+    If Not AssertEqual(r.Replace("abcd", "[$`|$']"), "a[a|d]d", "$` and $'") Then Exit Function
+    If Not AssertEqual(r.Replace("abcd", "$<x>"), "ad", "unknown name") Then Exit Function
+    If Not AssertEqual(r.Replace("abcd", "$<n"), "a$<nd", "unclosed $<") Then Exit Function
+    If Not InitRegexAndHandle(r, "(b)") Then Exit Function
+    If Not AssertEqual(r.Replace("abc", "$<n>"), "a$<n>c", "$<n> without named groups") Then Exit Function
+    If Not AssertEqual(r.Replace("abc", "<$&>$"), "a<b>$c", "$& and a trailing $") Then Exit Function
+    T_16_30_replacement_tokens = True
 End Function
 
 Public Function testNewG() As Boolean

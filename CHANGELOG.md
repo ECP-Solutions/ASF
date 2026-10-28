@@ -44,6 +44,22 @@ Matching is several times faster: start positions that cannot begin a match are 
     - **Class maps** — bitmaps live in an engine-level `Boolean` array indexed by class (`pClassMaps`) instead of a 256-element array copied out of the node's Collection on every char test.
     - **Hot-path reads** — node type and fixed keys are read directly (`node(1)`, `node("child")`) instead of through `NodeGet`, the `capture_end` marker is built once per group, and runtime nodes are filled with `Collection.Add` instead of `NodeAdd`, whose existence check traps an error for every new key.
 
+- **Performance, second pass** (`ASF_RegexEngine.cls`): start positions, per-call overhead and compilation. Output is unchanged on the 15,000 JavaScript-comparison patterns and on 768 extra cases that exercise every public method, flags changed after `Init` and re-`Init` from the cache, except for the two fixes listed below. LibreOffice Basic times for the workloads of the stdVBA benchmark report (relative figures; absolute VBA times differ):
+
+    | Workload | Operation | Before | After |
+    |---|---|---|---|
+    | `needle` in 2 KB | `test` / `ExecAll` / `Replace` | 28.6 / 63.3 / 51.5 ms | 3.6 / 3.8 / 3.8 ms |
+    | `Z\d{4}`, no match in 1 KB | `test` / `ExecAll` / `Replace` | 26.6 / 28.2 / 26.1 ms | 0.5 / 0.5 / 0.5 ms |
+    | 8 workloads | compile + first `test` | 6.0–32.3 ms | 3.6–12.7 ms |
+    | 100 `([A-Z]{3})-(\d{4})` records | `ExecAll` / `Replace` | 318 / 366 ms | 272 / 308 ms |
+
+    - **Leading literal and `^`** — compilation records the literal every match starts with and a leading `^` (`AnalyzeStart`). Scans jump between occurrences of the literal with `InStr`, try only position 1 for `^` (only line starts with `multiline`), and test the first-char map on the subject's bytes inside the scan loop instead of calling `ExecAt` for every position (`NextCandidate`, `CanStartAt`). The shortcuts read `ignoreCase`/`multiline` at match time, so changing them after `Init` keeps working.
+    - **No unread results** — `test` no longer builds a capture collection, `Exec`/`ExecAll` build it once per match instead of twice, and named captures are computed only for patterns with named groups. Every public method goes through one attempt routine (`TryAt`), which reuses the capture arrays between attempts.
+    - **Subject by reference** — the matcher's internal functions take the subject `ByRef` instead of copying it on every call.
+    - **`Replace`** — the replacement is parsed once per call into tokens (`CompileReplacement`) that are filled straight from the capture positions, and the output grows in a buffer instead of being concatenated piece by piece.
+    - **Compilation** — `NodeAdd` adds first and replaces only an existing key (it trapped an error for every new key), group nodes always carry `idx` and `name`, the group count comes from the parser, named groups are collected by a typed walk (`CollectNamedGroups`), and the lookbehind pass runs once.
+    - **Compiled-pattern cache** — `Init` reuses the compiled state of a pattern it has seen, keyed by its exact text (up to 64 patterns). Engines can share a cache through the new `SharedCache` property; all engines of an ASF instance share `GLOBALS_.regexCache`, including `GLOBALS_.re`, which the VM re-initialises for every string `replace`.
+
 - **Internal core changes**:
     - **Compiler** (`ASF_Compiler.cls`): `ParseImportStatement` accepts a string literal right after `import` (side-effect import).
     - **RegexEngine** (`ASF_RegexEngine.cls`):
@@ -71,6 +87,8 @@ Matching is several times faster: start positions that cannot begin a match are 
         - **Fixed** `{99999999999}` being taken as literal text and `\b*`/`\B+` being accepted; both are quantifier errors now, as in JavaScript.
         - **Fixed** `Init` with a rejected pattern updating the `pattern` property and flags while still matching with the previous pattern; `Init` now commits nothing unless the pattern compiles.
         - **Fixed** matching before `Init` failing with a Type mismatch; it raises error 4. `ExecAt` returns `Nothing` for start positions outside `1..Len(subject) + 1`.
+        - **Fixed** the step budget never being reset by `Replace`, `Split` and `ExecAt`: a reused engine, the VM's shared one included, used it up over many calls and eventually raised "too many steps" on harmless input. Every public call now starts with a fresh budget.
+        - **Fixed** `LastNamedCaptures` after `ExecAll` holding the groups of the failed attempt that followed the last match (usually empty strings); it now holds the last match's groups.
         - **Removed** the `Exec`-only conversion of literal `\n`/`\r` text in the subject (`ReplaceNewLines`); captures were sliced from the unconverted text. ASF single-quoted strings already turn `\n` into a line feed.
 
     - **VM** (`ASF_VM.cls`):
@@ -90,7 +108,7 @@ Matching is several times faster: start positions that cannot begin a match are 
     - `48` — Quantifier bound longer than 9 digits.
     - Match time: `1`/`2` too many steps, `3` recursion too deep, `4` no pattern (`Init` not called).
 
-- **Test coverage**: new category 16 in `test/RegexTests.bas` (backreferences, issue 141 pattern, word boundaries, `Escape`, backtracking, anchors, capture positions, escapes). `15_backref_in_pattern` removed, the feature is no longer unsupported. `1_dot_dotall_true_newline` now passes a real line feed instead of relying on the removed `\n` conversion. The engine was also run against JavaScript's `RegExp` on thousands of randomly generated patterns covering the syntax both support. `push_nested_member` covers mutating methods on nested members. `module_system_prototype_single_import`, `module_system_prototype_namespace_import` and `module_system_prototype_side_effect_import` in `test/TestRunner.bas` cover prototype libraries with `test/main_prototype_single.vas`, `test/main_prototype_namespace.vas` and `test/main_prototype_side_effect.vas` (Excel only: they drive `Range`/`Worksheet` objects).
+- **Test coverage**: new category 16 in `test/RegexTests.bas` (backreferences, issue 141 pattern, word boundaries, `Escape`, backtracking, anchors, capture positions, escapes). `15_backref_in_pattern` removed, the feature is no longer unsupported. `1_dot_dotall_true_newline` now passes a real line feed instead of relying on the removed `\n` conversion. The engine was also run against JavaScript's `RegExp` on thousands of randomly generated patterns covering the syntax both support. `16_step_budget_per_call`, `16_pattern_cache`, `16_start_filters_follow_flags`, `16_named_after_execall` and `16_replacement_tokens` cover the second performance pass. `push_nested_member` covers mutating methods on nested members. `module_system_prototype_single_import`, `module_system_prototype_namespace_import` and `module_system_prototype_side_effect_import` in `test/TestRunner.bas` cover prototype libraries with `test/main_prototype_single.vas`, `test/main_prototype_namespace.vas` and `test/main_prototype_side_effect.vas` (Excel only: they drive `Range`/`Worksheet` objects).
 
 ---
 

@@ -1996,6 +1996,7 @@ Private Function EvalNamedBuiltin(ByVal fname As String, node As ASF_Map, evalua
     End If
     If nameLcase = "regex" Then
         Set tmpResult = New ASF_RegexEngine
+        Set tmpResult.SharedCache = GLOBALS_.regexCache
         Select Case evaluated.Count
             Case 1
                 ' pattern
@@ -3390,6 +3391,7 @@ init_Error_Handler:
                     Dim fi_g As Boolean: fi_g = (InStr(f2, "g") > 0)
 
                     Dim r2 As New ASF_RegexEngine
+                    Set r2.SharedCache = GLOBALS_.regexCache
                     r2.Init pat2, fi_i, GLOBALS_.re.MaxMatchSteps, fi_m, fi_s
 
                     ' If caller asked for matchAll method

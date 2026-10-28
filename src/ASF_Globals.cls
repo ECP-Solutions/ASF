@@ -25,6 +25,8 @@ Public STRICT_STRINGS As Boolean
 Public gCallStack As Collection
 Public gExprEvaluator As VBAexpressions
 Public re As ASF_RegexEngine
+' compiled regex patterns shared by every engine of this ASF instance
+Public regexCache As Collection
 Private MAX_CALL_DEPTH_ As Long
 Public builtinArrayMethods As Variant
 Public knownMSOcollections  As Variant
@@ -57,7 +59,8 @@ Public Function ASF_InitGlobals() As ASF_Globals
     If gModuleExports Is Nothing Then Set gModuleExports = New ASF_Map
     If gLoadingModules Is Nothing Then Set gLoadingModules = New Collection
     If gExprEvaluator Is Nothing Then Set gExprEvaluator = New VBAexpressions
-    If re Is Nothing Then Set re = New ASF_RegexEngine
+    If regexCache Is Nothing Then Set regexCache = New Collection
+    If re Is Nothing Then Set re = New ASF_RegexEngine: Set re.SharedCache = regexCache
     DEBUG_TRACE = True
     STRICT_STRINGS = True
     MAX_CALL_DEPTH_ = 512
