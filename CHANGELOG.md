@@ -2,7 +2,8 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
-## [Unreleased]
+## [v3.2.0] - 2026-05-20
+https://github.com/ECP-Solutions/ASF/releases/tag/v3.2.0
 
 ## Summary
 `ASF_RegexEngine` gains pattern backreferences and word boundaries, the two features required for stdRegex compatibility and for patterns such as `(.)(?=.*\1)` from [stdVBA#141](https://github.com/sancarn/stdVBA/issues/141). The pre-parse validator now rejects backreferences to groups that do not exist.
