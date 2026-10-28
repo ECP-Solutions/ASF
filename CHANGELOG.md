@@ -13,6 +13,8 @@ COM prototype libraries: importing a module now activates all of its exported pr
 
 Matching is several times faster: start positions that cannot begin a match are skipped, quantified single characters run in a tight loop, and character class maps are no longer copied per character (see Performance).
 
+ASF now runs on LibreOffice. `libreoffice/tools/build.py` generates a LibreOffice Basic edition from `src/` and packages it as the `ASF.oxt` extension; `@(...)` expressions run on the VBA Expressions extension for LibreOffice. See [`libreoffice/README.md`](libreoffice/README.md).
+
 ---
 
 ## Highlights
@@ -25,6 +27,7 @@ Matching is several times faster: start positions that cannot begin a match are 
     - **Shorthand negations inside classes** — `[\D]`, `[\W]`, `[\S]`. `\s` also matches `\v` and `\f`, as in VBScript.
     - **Side-effect import** — `import './prototypes.vas';` loads and runs a module without binding any name.
     - **Anchors anywhere** — `^`/`$` are zero-width assertions (`^a|b`, `(^|,)x`, `a$|b`); with `multiline` they match at every line start/end, including after a trailing newline.
+    - **LibreOffice edition** — `libreoffice/`: `build.py` rewrites the VBA classes for LibreOffice Basic and writes the `ASF` library and `ASF.oxt`; `run_tests.py` runs `test/RegexTests.bas` and `test/TestRunner.bas` on a headless LibreOffice (all regex tests and the 237 TestRunner tests that do not need Excel or the UDFs of `src/UDFunctions.cls`). `@(...)` uses `VBAExpressionsLib` from the VBA Expressions extension, loaded on first use. Scripts with `AppAccess` call methods and properties of UNO objects, such as Calc documents and cells. Other libraries create engines through `ASF_LOCompat.NewASF()`, `NewRegex()` and `NewASFMap()`, and read `print()` output with `GetOutput()`.
 
 - **Performance** (`ASF_RegexEngine.cls`), same results on the test suite and on the JavaScript comparison corpora. Times for ~4 KB of text, measured under LibreOffice Basic's VBA mode (relative figures; absolute VBA times differ):
 
@@ -125,6 +128,8 @@ Matching is several times faster: start positions that cannot begin a match are 
 - Quantified word boundaries (`\b*`), quantifier bounds over 9 digits and groups nested deeper than 100 levels are rejected.
 
 ## Known Limitations
+
+- LibreOffice edition: no Excel object model, so the Excel COM prototype libraries do not apply. `@(...)` needs VBA Expressions 1.2.1 or later on LibreOffice 24.2: with 1.2.0, expressions that contain variables return nothing because of a LibreOffice Basic issue with omitted optional parameters.
 
 - A quantified atom with internal choices (`(?:a|ab)+`) backtracks into each of its first 100 iterations (`QUANT_REC_LIMIT`); later iterations take the first alternative that matches, to keep VBA stack use bounded. Results differ from JavaScript only when the alternatives overlap and the repetition runs past 100 iterations.
 - Deliberately stricter than JavaScript's legacy (non-`u`) syntax: `\1` without enough groups, `\p{`/`\P{` and an unclosed `\k<` are errors instead of literal text; lookbehind must be fixed-width. `(?R)`, `(?n)`, atomic groups, possessive quantifiers, conditionals and inline flag groups are ASF extensions that JavaScript rejects.

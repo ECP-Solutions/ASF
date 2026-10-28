@@ -1,134 +1,132 @@
-=== ASF test suite 2026-10-28 01:29:17 ===
+=== ASF test suite 2026-10-27 20:48:55 ===
 RUN  arith/arith_simple
-PASS arith/arith_simple (0 ms)
+PASS arith/arith_simple (86 ms)
 RUN  arith/arith_precedence
-PASS arith/arith_precedence (16 ms)
+PASS arith/arith_precedence (0 ms)
 RUN  paren/paren_grouping
-PASS paren/paren_grouping (0 ms)
+PASS paren/paren_grouping (8 ms)
 RUN  negation/negation_unary
 PASS negation/negation_unary (16 ms)
 RUN  power/power_right_assoc
 PASS power/power_right_assoc (0 ms)
 RUN  shortc/shortc_and
-PASS shortc/shortc_and (3 ms)
+PASS shortc/shortc_and (23 ms)
 RUN  shortc/shortc_or
 PASS shortc/shortc_or (0 ms)
 RUN  ternary/ternary_operator
-PASS ternary/ternary_operator (16 ms)
+PASS ternary/ternary_operator (8 ms)
 RUN  shift/left_shift
 PASS shift/left_shift (0 ms)
 RUN  shift/right_shift
 PASS shift/right_shift (0 ms)
 RUN  compound_assignment/compound_assignment_plus_equals
-PASS compound_assignment/compound_assignment_plus_equals (16 ms)
+PASS compound_assignment/compound_assignment_plus_equals (0 ms)
 RUN  if/if_chain_same_line
 PASS if/if_chain_same_line (16 ms)
 RUN  if/if_multiline
-PASS if/if_multiline (31 ms)
+PASS if/if_multiline (8 ms)
 RUN  for/for_simple
-PASS for/for_simple (0 ms)
+PASS for/for_simple (8 ms)
 RUN  for/for_break_continue
-PASS for/for_break_continue (5 ms)
+PASS for/for_break_continue (23 ms)
 RUN  while/while_break_continue
-PASS while/while_break_continue (16 ms)
+PASS while/while_break_continue (8 ms)
 RUN  switch/switch_case
 PASS switch/switch_case (0 ms)
 RUN  try/try_catch
-PASS try/try_catch (15 ms)
+PASS try/try_catch (23 ms)
 RUN  function/function_basic
 PASS function/function_basic (0 ms)
 RUN  function/function_scope_isolation
 PASS function/function_scope_isolation (16 ms)
 RUN  recursion/recursion_fib_arrays
-PASS recursion/recursion_fib_arrays (53 ms)
+PASS recursion/recursion_fib_arrays (47 ms)
 RUN  recursion/recursion_fib_single
-PASS recursion/recursion_fib_single (614 ms)
+PASS recursion/recursion_fib_single (563 ms)
 RUN  closure/closure_shared_write
-PASS closure/closure_shared_write (15 ms)
+PASS closure/closure_shared_write (8 ms)
 RUN  closure/closure_multiple_instances
-PASS closure/closure_multiple_instances (40 ms)
+PASS closure/closure_multiple_instances (16 ms)
 RUN  array/array_literal_and_length
-PASS array/array_literal_and_length (15 ms)
+PASS array/array_literal_and_length (31 ms)
 RUN  array/array_of_arrays_length
-PASS array/array_of_arrays_length (31 ms)
+PASS array/array_of_arrays_length (16 ms)
 RUN  object_literal/object_literal_and_member
-PASS object_literal/object_literal_and_member (54 ms)
+PASS object_literal/object_literal_and_member (8 ms)
 RUN  nested_member/nested_member_index_LValue
-PASS nested_member/nested_member_index_LValue (47 ms)
+PASS nested_member/nested_member_index_LValue (16 ms)
 RUN  method_call/method_call_on_member
-PASS method_call/method_call_on_member (0 ms)
+PASS method_call/method_call_on_member (16 ms)
 RUN  anon_func/anon_func_as_arg
-PASS anon_func/anon_func_as_arg (16 ms)
+PASS anon_func/anon_func_as_arg (0 ms)
 RUN  anon_func/anon_func_closure_arg
-PASS anon_func/anon_func_closure_arg (4 ms)
+PASS anon_func/anon_func_closure_arg (16 ms)
 RUN  vbexpr/mutating_VBAexpressions_Arrays
-PASS vbexpr/mutating_VBAexpressions_Arrays (27 ms)
+PASS vbexpr/mutating_VBAexpressions_Arrays (141 ms)
 RUN  vbexpr/vbexpr_embedded
-PASS vbexpr/vbexpr_embedded (15 ms)
+PASS vbexpr/vbexpr_embedded (31 ms)
 RUN  vbexpr/reusing_results_from_VBAexpressions
-PASS vbexpr/reusing_results_from_VBAexpressions (0 ms)
+PASS vbexpr/reusing_results_from_VBAexpressions (16 ms)
 RUN  calling_native/calling_native_function
-PASS calling_native/calling_native_function (16 ms)
+PASS calling_native/calling_native_function (0 ms)
 RUN  host_VBA_Expressions/host_sees_array_mutation
-PASS host_VBA_Expressions/host_sees_array_mutation (0 ms)
+PASS host_VBA_Expressions/host_sees_array_mutation (16 ms)
 RUN  map/map_nested_array
-PASS map/map_nested_array (26 ms)
+PASS map/map_nested_array (16 ms)
 RUN  map/map_array_of_objects
-PASS map/map_array_of_objects (31 ms)
+PASS map/map_array_of_objects (23 ms)
 RUN  map/map_closure_capture
-PASS map/map_closure_capture (16 ms)
+PASS map/map_closure_capture (8 ms)
 RUN  map/map_returning_nested_array
-PASS map/map_returning_nested_array (15 ms)
+PASS map/map_returning_nested_array (0 ms)
 RUN  map/map_returning_objects_and_arrays
-PASS map/map_returning_objects_and_arrays (38 ms)
+PASS map/map_returning_objects_and_arrays (16 ms)
 RUN  mapping/mapping_mixed_types
 PASS mapping/mapping_mixed_types (16 ms)
 RUN  filter/filter_simple
-PASS filter/filter_simple (29 ms)
+PASS filter/filter_simple (16 ms)
 RUN  filter/filter_nested_arrays
-PASS filter/filter_nested_arrays (15 ms)
+PASS filter/filter_nested_arrays (0 ms)
 RUN  reduce/reduce_with_initial
 PASS reduce/reduce_with_initial (0 ms)
 RUN  reduce/reduce_with_NO_initial
-PASS reduce/reduce_with_NO_initial (19 ms)
+PASS reduce/reduce_with_NO_initial (16 ms)
 RUN  slice/slice_tail_only
-PASS slice/slice_tail_only (15 ms)
+PASS slice/slice_tail_only (8 ms)
 RUN  slice/slice_start_end
-PASS slice/slice_start_end (16 ms)
+PASS slice/slice_start_end (0 ms)
 RUN  pop_push/pop_push
-PASS pop_push/pop_push (15 ms)
-RUN  pop_push/push_nested_member
-PASS pop_push/push_nested_member (15 ms)
+PASS pop_push/pop_push (0 ms)
 RUN  range/range_default
-PASS range/range_default (23 ms)
+PASS range/range_default (0 ms)
 RUN  range/range_custom
-PASS range/range_custom (16 ms)
+PASS range/range_custom (0 ms)
 RUN  range/range_with_step
 PASS range/range_with_step (0 ms)
 RUN  flatten/flatten_full
-PASS flatten/flatten_full (14 ms)
+PASS flatten/flatten_full (16 ms)
 RUN  flatten/flatten_depth_one
 PASS flatten/flatten_depth_one (16 ms)
 RUN  clone/clone_array
 PASS clone/clone_array (16 ms)
 RUN  filter/filter_reduce_chain
-PASS filter/filter_reduce_chain (8 ms)
+PASS filter/filter_reduce_chain (0 ms)
 RUN  foreach/foreach_method_updates_outer
-PASS foreach/foreach_method_updates_outer (0 ms)
+PASS foreach/foreach_method_updates_outer (16 ms)
 RUN  variables/variables_injection
 PASS variables/variables_injection (0 ms)
 RUN  variables/variables_injection_collection
-PASS variables/variables_injection_collection (16 ms)
+PASS variables/variables_injection_collection (0 ms)
 RUN  foreach/foreach_passes_index_and_array
-PASS foreach/foreach_passes_index_and_array (0 ms)
+PASS foreach/foreach_passes_index_and_array (16 ms)
 RUN  foreach/foreach_builtin_signature_arrays
-PASS foreach/foreach_builtin_signature_arrays (16 ms)
+PASS foreach/foreach_builtin_signature_arrays (0 ms)
 RUN  foreach/foreach_builtin_signature_objects
-PASS foreach/foreach_builtin_signature_objects (0 ms)
+PASS foreach/foreach_builtin_signature_objects (16 ms)
 RUN  array/array_unique_basic
-PASS array/array_unique_basic (47 ms)
+PASS array/array_unique_basic (16 ms)
 RUN  array/array_unique_nested
-PASS array/array_unique_nested (9 ms)
+PASS array/array_unique_nested (8 ms)
 RUN  array/array_concat
 PASS array/array_concat (16 ms)
 RUN  array/array_join_toString
@@ -138,87 +136,87 @@ PASS array/array_shift_unshift (16 ms)
 RUN  array/array_delete
 PASS array/array_delete (16 ms)
 RUN  array/array_splice_mutating
-PASS array/array_splice_mutating (22 ms)
+PASS array/array_splice_mutating (16 ms)
 RUN  array/array_toSpliced_non_mutating
-PASS array/array_toSpliced_non_mutating (16 ms)
+PASS array/array_toSpliced_non_mutating (0 ms)
 RUN  array/array_at_negative
-PASS array/array_at_negative (15 ms)
+PASS array/array_at_negative (0 ms)
 RUN  array/array_copyWithin
-PASS array/array_copyWithin (16 ms)
+PASS array/array_copyWithin (0 ms)
 RUN  array/array_entries
-PASS array/array_entries (15 ms)
+PASS array/array_entries (0 ms)
 RUN  array/array_every
 PASS array/array_every (0 ms)
 RUN  array/array_find_and_indexes
-PASS array/array_find_and_indexes (32 ms)
+PASS array/array_find_and_indexes (31 ms)
 RUN  array/array_from_string
 PASS array/array_from_string (0 ms)
 RUN  from/from_array_copy
 PASS from/from_array_copy (16 ms)
 RUN  from/from_single_value_wrap
-PASS from/from_single_value_wrap (11 ms)
+PASS from/from_single_value_wrap (0 ms)
 RUN  from/from_with_map_array
 PASS from/from_with_map_array (16 ms)
 RUN  from/from_with_map_string
 PASS from/from_with_map_string (16 ms)
 RUN  from/from_nonclosure_second_arg_ignored
-PASS from/from_nonclosure_second_arg_ignored (15 ms)
+PASS from/from_nonclosure_second_arg_ignored (0 ms)
 RUN  array/array_includes_indexOf_lastIndexOf
-PASS array/array_includes_indexOf_lastIndexOf (11 ms)
+PASS array/array_includes_indexOf_lastIndexOf (23 ms)
 RUN  array/array_of_factory_and_access
-PASS array/array_of_factory_and_access (16 ms)
+PASS array/array_of_factory_and_access (0 ms)
 RUN  array/array_reverse_and_toReversed
-PASS array/array_reverse_and_toReversed (11 ms)
+PASS array/array_reverse_and_toReversed (16 ms)
 RUN  array/array_some
-PASS array/array_some (0 ms)
+PASS array/array_some (8 ms)
 RUN  array/array_with_non_mutating
-PASS array/array_with_non_mutating (15 ms)
+PASS array/array_with_non_mutating (0 ms)
 RUN  array/array_sort_and_toSorted
-PASS array/array_sort_and_toSorted (16 ms)
+PASS array/array_sort_and_toSorted (0 ms)
 RUN  array/array_toSpliced_and_join
-PASS array/array_toSpliced_and_join (41 ms)
+PASS array/array_toSpliced_and_join (8 ms)
 RUN  array/array_entries_and_every_find_combo
-PASS array/array_entries_and_every_find_combo (52 ms)
+PASS array/array_entries_and_every_find_combo (23 ms)
 RUN  array/array_includes_and_index_checks_with_objects
-PASS array/array_includes_and_index_checks_with_objects (30 ms)
+PASS array/array_includes_and_index_checks_with_objects (8 ms)
 RUN  array/array_complex_splice_and_copyWithin
-PASS array/array_complex_splice_and_copyWithin (31 ms)
+PASS array/array_complex_splice_and_copyWithin (16 ms)
 RUN  deeply_nested/deeply_nested_Arrays
 PASS deeply_nested/deeply_nested_Arrays (16 ms)
 RUN  typeof/typeof_array
-PASS typeof/typeof_array (23 ms)
+PASS typeof/typeof_array (0 ms)
 RUN  typeof/typeof_object
-PASS typeof/typeof_object (14 ms)
+PASS typeof/typeof_object (0 ms)
 RUN  typeof/typeof_closures
-PASS typeof/typeof_closures (31 ms)
+PASS typeof/typeof_closures (16 ms)
 RUN  for_in_of/for_of_with_array
-PASS for_in_of/for_of_with_array (0 ms)
+PASS for_in_of/for_of_with_array (16 ms)
 RUN  for_in_of/for_in_with_array_indices
-PASS for_in_of/for_in_with_array_indices (32 ms)
+PASS for_in_of/for_in_with_array_indices (16 ms)
 RUN  for_in_of/for_of_with_string
-PASS for_in_of/for_of_with_string (0 ms)
+PASS for_in_of/for_of_with_string (8 ms)
 RUN  for_in_of/for_in_with_object_properties
-PASS for_in_of/for_in_with_object_properties (18 ms)
+PASS for_in_of/for_in_with_object_properties (0 ms)
 RUN  string/string_at
-PASS string/string_at (4 ms)
+PASS string/string_at (0 ms)
 RUN  string/string_at_negative_index
 PASS string/string_at_negative_index (0 ms)
 RUN  string/string_at_default_index
 PASS string/string_at_default_index (0 ms)
 RUN  string/string_length
-PASS string/string_length (14 ms)
+PASS string/string_length (16 ms)
 RUN  string/string_charAt
 PASS string/string_charAt (0 ms)
 RUN  string/string_charCodeAt
 PASS string/string_charCodeAt (0 ms)
 RUN  string/string_concat
-PASS string/string_concat (13 ms)
+PASS string/string_concat (16 ms)
 RUN  string/string_endsWith
 PASS string/string_endsWith (0 ms)
 RUN  string/string_fromCharCode
 PASS string/string_fromCharCode (0 ms)
 RUN  string/string_includes
-PASS string/string_includes (1 ms)
+PASS string/string_includes (0 ms)
 RUN  string/string_indexOf
 PASS string/string_indexOf (0 ms)
 RUN  string/string_lastIndexOf
@@ -226,21 +224,21 @@ PASS string/string_lastIndexOf (0 ms)
 RUN  string/string_localCompare
 PASS string/string_localCompare (0 ms)
 RUN  string/string_pad
-PASS string/string_pad (0 ms)
+PASS string/string_pad (16 ms)
 RUN  string/string_template
 PASS string/string_template (0 ms)
 RUN  string/string_template_with_arrays
-PASS string/string_template_with_arrays (0 ms)
+PASS string/string_template_with_arrays (8 ms)
 RUN  string/string_replace
 PASS string/string_replace (0 ms)
 RUN  string/string_slice
-PASS string/string_slice (0 ms)
+PASS string/string_slice (16 ms)
 RUN  string/string_splite
-PASS string/string_splite (17 ms)
+PASS string/string_splite (0 ms)
 RUN  string/string_startWith
-PASS string/string_startWith (6 ms)
+PASS string/string_startWith (0 ms)
 RUN  string/string_subString
-PASS string/string_subString (0 ms)
+PASS string/string_subString (16 ms)
 RUN  string/string_toLowercase
 PASS string/string_toLowercase (0 ms)
 RUN  string/string_toUppercase
@@ -248,85 +246,85 @@ PASS string/string_toUppercase (0 ms)
 RUN  string/string_trim
 PASS string/string_trim (0 ms)
 RUN  string/string_trim_start_end
-PASS string/string_trim_start_end (0 ms)
+PASS string/string_trim_start_end (16 ms)
 RUN  regex/regex_replace_from_string_object
-PASS regex/regex_replace_from_string_object (18 ms)
+PASS regex/regex_replace_from_string_object (39 ms)
 RUN  regex/regex_replacer_function_from_string_object
-PASS regex/regex_replacer_function_from_string_object (16 ms)
+PASS regex/regex_replacer_function_from_string_object (31 ms)
 RUN  regex/regex_replace_using_placeholders_from_string_object
 PASS regex/regex_replace_using_placeholders_from_string_object (0 ms)
 RUN  regex/regex_editing_matches_from_string_object
 PASS regex/regex_editing_matches_from_string_object (16 ms)
 RUN  regex/regex_replace_using_templates_from_string_object
-PASS regex/regex_replace_using_templates_from_string_object (0 ms)
+PASS regex/regex_replace_using_templates_from_string_object (16 ms)
 RUN  regex/regex_match_from_string_object
-PASS regex/regex_match_from_string_object (15 ms)
+PASS regex/regex_match_from_string_object (16 ms)
 RUN  regex/regex_match_global_from_string_object
-PASS regex/regex_match_global_from_string_object (9 ms)
+PASS regex/regex_match_global_from_string_object (16 ms)
 RUN  regex/regex_matchall_from_string_object
-PASS regex/regex_matchall_from_string_object (32 ms)
+PASS regex/regex_matchall_from_string_object (8 ms)
 RUN  regex/regex_replace_empty_alternative_global
 PASS regex/regex_replace_empty_alternative_global (0 ms)
 RUN  regex/regex_replace_empty_match_keeps_chars
 PASS regex/regex_replace_empty_match_keeps_chars (0 ms)
 RUN  regex/regex_replace_lookahead_insertion
-PASS regex/regex_replace_lookahead_insertion (15 ms)
+PASS regex/regex_replace_lookahead_insertion (0 ms)
 RUN  regex/regex_replace_empty_match_at_start
-PASS regex/regex_replace_empty_match_at_start (0 ms)
+PASS regex/regex_replace_empty_match_at_start (16 ms)
 RUN  regex/regex_match_global_empty_alternative
-PASS regex/regex_match_global_empty_alternative (32 ms)
+PASS regex/regex_match_global_empty_alternative (0 ms)
 RUN  regex/regex_replaceall_requires_global_flag
-PASS regex/regex_replaceall_requires_global_flag (15 ms)
+PASS regex/regex_replaceall_requires_global_flag (16 ms)
 RUN  regex/regex_replaceall_with_global_flag
 PASS regex/regex_replaceall_with_global_flag (0 ms)
 RUN  regex/regex_object_constructor
 PASS regex/regex_object_constructor (0 ms)
 RUN  regex/regex_object_execute_method
-PASS regex/regex_object_execute_method (50 ms)
+PASS regex/regex_object_execute_method (47 ms)
 RUN  regex/regex_object_replace_method
-PASS regex/regex_object_replace_method (0 ms)
+PASS regex/regex_object_replace_method (23 ms)
 RUN  regex/regex_object_split_method
-PASS regex/regex_object_split_method (24 ms)
+PASS regex/regex_object_split_method (8 ms)
 RUN  regex/regex_object_executeAll_method
-PASS regex/regex_object_executeAll_method (16 ms)
+PASS regex/regex_object_executeAll_method (0 ms)
 RUN  regex/regex_object_method_with_flag_property
-PASS regex/regex_object_method_with_flag_property (15 ms)
+PASS regex/regex_object_method_with_flag_property (0 ms)
 RUN  regex/regex_object_named_captures
 PASS regex/regex_object_named_captures (16 ms)
 RUN  regex/regex_object_conditional_simple
-PASS regex/regex_object_conditional_simple (30 ms)
+PASS regex/regex_object_conditional_simple (39 ms)
 RUN  regex/regex_object_conditional_inline_flags
-PASS regex/regex_object_conditional_inline_flags (23 ms)
+PASS regex/regex_object_conditional_inline_flags (31 ms)
 RUN  regex/regex_object_conditional_inline_flags_off
-PASS regex/regex_object_conditional_inline_flags_off (31 ms)
+PASS regex/regex_object_conditional_inline_flags_off (16 ms)
 RUN  regex/regex_object_inline_dotAll_flags
-PASS regex/regex_object_inline_dotAll_flags (16 ms)
+PASS regex/regex_object_inline_dotAll_flags (31 ms)
 RUN  regex/regex_object_inline_dotAll_flags_off
-PASS regex/regex_object_inline_dotAll_flags_off (15 ms)
+PASS regex/regex_object_inline_dotAll_flags_off (23 ms)
 RUN  regex/regex_object_Named_Conditionals
-PASS regex/regex_object_Named_Conditionals (38 ms)
+PASS regex/regex_object_Named_Conditionals (31 ms)
 RUN  regex/regex_object_Named_Conditionals_NO_Match
 PASS regex/regex_object_Named_Conditionals_NO_Match (16 ms)
 RUN  classes/classes_static_method_declarations
-PASS classes/classes_static_method_declarations (31 ms)
+PASS classes/classes_static_method_declarations (39 ms)
 RUN  classes/classes_field_declarations
-PASS classes/classes_field_declarations (31 ms)
+PASS classes/classes_field_declarations (16 ms)
 RUN  classes/classes_inheritance_with_fields
-PASS classes/classes_inheritance_with_fields (38 ms)
+PASS classes/classes_inheritance_with_fields (31 ms)
 RUN  classes/classes_fields_declarations_with_mixed_syntax
-PASS classes/classes_fields_declarations_with_mixed_syntax (15 ms)
+PASS classes/classes_fields_declarations_with_mixed_syntax (16 ms)
 RUN  classes/classes_fields_with_complex_initializers
-PASS classes/classes_fields_with_complex_initializers (62 ms)
+PASS classes/classes_fields_with_complex_initializers (39 ms)
 RUN  classes/classes_multiple_instances
-PASS classes/classes_multiple_instances (32 ms)
+PASS classes/classes_multiple_instances (31 ms)
 RUN  classes/classes_method_chaining
-PASS classes/classes_method_chaining (31 ms)
+PASS classes/classes_method_chaining (16 ms)
 RUN  object/object_keys
-PASS object/object_keys (4 ms)
+PASS object/object_keys (16 ms)
 RUN  object/object_values
-PASS object/object_values (25 ms)
+PASS object/object_values (16 ms)
 RUN  object/object_entries
-PASS object/object_entries (15 ms)
+PASS object/object_entries (8 ms)
 RUN  object/object_size
 PASS object/object_size (0 ms)
 RUN  object/object_length
@@ -334,99 +332,99 @@ PASS object/object_length (16 ms)
 RUN  object/object_hasKey_true
 PASS object/object_hasKey_true (0 ms)
 RUN  object/object_hasKey_false
-PASS object/object_hasKey_false (11 ms)
+PASS object/object_hasKey_false (0 ms)
 RUN  object/object_has_alias
 PASS object/object_has_alias (0 ms)
 RUN  object/object_isEmpty_true
 PASS object/object_isEmpty_true (0 ms)
 RUN  object/object_isEmpty_false
-PASS object/object_isEmpty_false (17 ms)
+PASS object/object_isEmpty_false (0 ms)
 RUN  object/object_get_existing_key
 PASS object/object_get_existing_key (0 ms)
 RUN  object/object_get_with_default
 PASS object/object_get_with_default (0 ms)
 RUN  object/object_get_without_default_missing_key
-PASS object/object_get_without_default_missing_key (16 ms)
+PASS object/object_get_without_default_missing_key (0 ms)
 RUN  object/object_set_new_key
-PASS object/object_set_new_key (15 ms)
+PASS object/object_set_new_key (0 ms)
 RUN  object/object_set_update_existing
-PASS object/object_set_update_existing (4 ms)
+PASS object/object_set_update_existing (16 ms)
 RUN  object/object_delete_existing_key
-PASS object/object_delete_existing_key (18 ms)
+PASS object/object_delete_existing_key (0 ms)
 RUN  object/object_remove_alias
-PASS object/object_remove_alias (0 ms)
+PASS object/object_remove_alias (16 ms)
 RUN  object/object_clear
-PASS object/object_clear (16 ms)
+PASS object/object_clear (8 ms)
 RUN  object/object_clone_simple
-PASS object/object_clone_simple (16 ms)
+PASS object/object_clone_simple (8 ms)
 RUN  object/object_clone_nested
-PASS object/object_clone_nested (31 ms)
+PASS object/object_clone_nested (23 ms)
 RUN  object/object_merge
-PASS object/object_merge (19 ms)
+PASS object/object_merge (0 ms)
 RUN  object/object_merge_nested
-PASS object/object_merge_nested (15 ms)
+PASS object/object_merge_nested (23 ms)
 RUN  object/object_forEach
-PASS object/object_forEach (16 ms)
+PASS object/object_forEach (0 ms)
 RUN  object/object_forEach_with_key
 PASS object/object_forEach_with_key (0 ms)
 RUN  object/object_map
-PASS object/object_map (15 ms)
+PASS object/object_map (23 ms)
 RUN  object/object_map_with_key
-PASS object/object_map_with_key (16 ms)
+PASS object/object_map_with_key (8 ms)
 RUN  object/object_filter
-PASS object/object_filter (27 ms)
+PASS object/object_filter (16 ms)
 RUN  object/object_filter_by_key
-PASS object/object_filter_by_key (15 ms)
+PASS object/object_filter_by_key (16 ms)
 RUN  object/object_some_true
-PASS object/object_some_true (16 ms)
+PASS object/object_some_true (0 ms)
 RUN  object/object_some_false
-PASS object/object_some_false (0 ms)
+PASS object/object_some_false (16 ms)
 RUN  object/object_every_true
 PASS object/object_every_true (0 ms)
 RUN  object/object_every_false
-PASS object/object_every_false (0 ms)
+PASS object/object_every_false (16 ms)
 RUN  object/object_chaining_methods
-PASS object/object_chaining_methods (44 ms)
+PASS object/object_chaining_methods (16 ms)
 RUN  object/object_with_nested_arrays
-PASS object/object_with_nested_arrays (25 ms)
+PASS object/object_with_nested_arrays (16 ms)
 RUN  object/object_entries_with_forEach
 PASS object/object_entries_with_forEach (0 ms)
 RUN  polymorphism/polymorphism_basic
-PASS polymorphism/polymorphism_basic (26 ms)
+PASS polymorphism/polymorphism_basic (16 ms)
 RUN  polymorphism/polymorphism_three_levels
-PASS polymorphism/polymorphism_three_levels (32 ms)
+PASS polymorphism/polymorphism_three_levels (16 ms)
 RUN  polymorphism/polymorphism_method_delegation
-PASS polymorphism/polymorphism_method_delegation (26 ms)
+PASS polymorphism/polymorphism_method_delegation (16 ms)
 RUN  sort/sort_chain_on_objects
-PASS sort/sort_chain_on_objects (43 ms)
+PASS sort/sort_chain_on_objects (39 ms)
 RUN  injecting/injecting_asf_objects
-PASS injecting/injecting_asf_objects (42 ms)
+PASS injecting/injecting_asf_objects (31 ms)
 RUN  spread/spread_simple
-PASS spread/spread_simple (16 ms)
+PASS spread/spread_simple (0 ms)
 RUN  spread/spread_multiple
-PASS spread/spread_multiple (15 ms)
+PASS spread/spread_multiple (16 ms)
 RUN  spread/spread_with_empty
 PASS spread/spread_with_empty (16 ms)
 RUN  spread/spread_strings
-PASS spread/spread_strings (16 ms)
+PASS spread/spread_strings (0 ms)
 RUN  spread/spread_mixed_string
-PASS spread/spread_mixed_string (21 ms)
+PASS spread/spread_mixed_string (16 ms)
 RUN  spread/spread_combined
-PASS spread/spread_combined (15 ms)
+PASS spread/spread_combined (8 ms)
 RUN  spread/spread_nested
 PASS spread/spread_nested (16 ms)
 RUN  spread/spread_shallow_copy
-PASS spread/spread_shallow_copy (31 ms)
+PASS spread/spread_shallow_copy (16 ms)
 RUN  spread/spread_basic_function_call
-PASS spread/spread_basic_function_call (16 ms)
+PASS spread/spread_basic_function_call (0 ms)
 RUN  spread/spread_many_in_function_call
 PASS spread/spread_many_in_function_call (0 ms)
 RUN  spread/spread_objects_basic
-PASS spread/spread_objects_basic (14 ms)
+PASS spread/spread_objects_basic (16 ms)
 RUN  spread/spread_objects_override
-PASS spread/spread_objects_override (7 ms)
+PASS spread/spread_objects_override (0 ms)
 RUN  spread/spread_multiple_objects
-PASS spread/spread_multiple_objects (8 ms)
+PASS spread/spread_multiple_objects (0 ms)
 RUN  spread/spread_array_in_object
 PASS spread/spread_array_in_object (0 ms)
 RUN  spread/spread_string_in_object
@@ -436,23 +434,23 @@ PASS spread/spread_objects_with_primitives (16 ms)
 RUN  rest_parameter/rest_parameter_basic
 PASS rest_parameter/rest_parameter_basic (0 ms)
 RUN  rest_parameter/rest_parameter_no_arguments
-PASS rest_parameter/rest_parameter_no_arguments (18 ms)
+PASS rest_parameter/rest_parameter_no_arguments (0 ms)
 RUN  rest_parameter/rest_parameter_with_regular_parameters
-PASS rest_parameter/rest_parameter_with_regular_parameters (0 ms)
+PASS rest_parameter/rest_parameter_with_regular_parameters (16 ms)
 RUN  rest_parameter/rest_parameter_with_single_extra_argument
-PASS rest_parameter/rest_parameter_with_single_extra_argument (15 ms)
+PASS rest_parameter/rest_parameter_with_single_extra_argument (0 ms)
 RUN  rest_parameter/rest_parameter_not_at_end
 PASS rest_parameter/rest_parameter_not_at_end (0 ms)
 RUN  rest_parameter/rest_parameter_with_exact_number_of_arguments
-PASS rest_parameter/rest_parameter_with_exact_number_of_arguments (16 ms)
+PASS rest_parameter/rest_parameter_with_exact_number_of_arguments (0 ms)
 RUN  rest_parameter/rest_parameter_receiving_expread_arguments
-PASS rest_parameter/rest_parameter_receiving_expread_arguments (15 ms)
+PASS rest_parameter/rest_parameter_receiving_expread_arguments (0 ms)
 RUN  rest_parameter/rest_parameter_and_expread_chain
-PASS rest_parameter/rest_parameter_and_expread_chain (0 ms)
+PASS rest_parameter/rest_parameter_and_expread_chain (16 ms)
 RUN  array_destructuring/array_destructuring_basic
-PASS array_destructuring/array_destructuring_basic (16 ms)
+PASS array_destructuring/array_destructuring_basic (0 ms)
 RUN  array_destructuring/array_destructuring_fewer_targets
-PASS array_destructuring/array_destructuring_fewer_targets (4 ms)
+PASS array_destructuring/array_destructuring_fewer_targets (16 ms)
 RUN  array_destructuring/array_destructuring_more_targets
 PASS array_destructuring/array_destructuring_more_targets (0 ms)
 RUN  array_destructuring/array_destructuring_with_rest
@@ -462,31 +460,31 @@ PASS array_destructuring/array_destructuring_with_no_remaining_elm (0 ms)
 RUN  module_system/module_system_working_directory
 PASS module_system/module_system_working_directory (0 ms)
 RUN  module_system/module_system_named_exports_imports
-PASS module_system/module_system_named_exports_imports (18 ms)
+PASS module_system/module_system_named_exports_imports (31 ms)
 RUN  module_system/module_system_default_export
 PASS module_system/module_system_default_export (16 ms)
 RUN  module_system/module_system_namespace_import
-PASS module_system/module_system_namespace_import (17 ms)
+PASS module_system/module_system_namespace_import (16 ms)
 RUN  module_system/module_system_mixed_imports
-PASS module_system/module_system_mixed_imports (31 ms)
+PASS module_system/module_system_mixed_imports (16 ms)
 RUN  module_system/module_system_prototype_imports
-PASS module_system/module_system_prototype_imports (33 ms)
+PASS module_system/module_system_prototype_imports (47 ms)
 RUN  Modules/module_system_prototype_single_import
-PASS Modules/module_system_prototype_single_import (21 ms)
+PASS Modules/module_system_prototype_single_import (16 ms)
 RUN  Modules/module_system_prototype_namespace_import
-PASS Modules/module_system_prototype_namespace_import (33 ms)
+PASS Modules/module_system_prototype_namespace_import (16 ms)
 RUN  Modules/module_system_prototype_side_effect_import
-PASS Modules/module_system_prototype_side_effect_import (33 ms)
+PASS Modules/module_system_prototype_side_effect_import (16 ms)
 RUN  math/math_basic
 PASS math/math_basic (0 ms)
 RUN  calling_native_app_level/calling_native_function_app_level
 PASS calling_native_app_level/calling_native_function_app_level (0 ms)
 RUN  calling_native_app_level/calling_native_function_app_level_2
-PASS calling_native_app_level/calling_native_function_app_level_2 (14 ms)
+PASS calling_native_app_level/calling_native_function_app_level_2 (0 ms)
 RUN  calling_native_app_level/calling_array_method_from_collection
-PASS calling_native_app_level/calling_array_method_from_collection (0 ms)
+PASS calling_native_app_level/calling_array_method_from_collection (16 ms)
 RUN  advanced_prototyping/monkey_patch_worksheets_name
 PASS advanced_prototyping/monkey_patch_worksheets_name (0 ms)
 RUN  Nullish coalescing/nullish_coalescing
-PASS Nullish coalescing/nullish_coalescing (16 ms)
-=== 245/245 passed, 0 failed (4.53 s) ===
+PASS Nullish coalescing/nullish_coalescing (0 ms)
+=== 244/244 passed, 0 failed (3.80 s) ===

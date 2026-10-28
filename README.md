@@ -27,6 +27,19 @@ VS Code Integration|![ASF-code](/docs/assets/img/ASF.gif)
 
 ---
 
+## LibreOffice
+
+ASF also runs on LibreOffice as the `ASF.oxt` extension, generated from the same sources. Installation, usage and differences: [libreoffice/README.md](libreoffice/README.md).
+
+```vb
+GlobalScope.BasicLibraries.LoadLibrary "ASF"
+Dim engine As Object: Set engine = ASF.ASF_LOCompat.NewASF()
+engine.Run engine.Compile("return [1,2,3,4,5].filter(fun(x){ return x > 2 }).reduce(fun(a,x){ return a+x }, 0)")
+MsgBox engine.OUTPUT_   ' => 12
+```
+
+---
+
 ## 📚 Documentation
 
 - [API Reference](https://ecp-solutions.github.io/ASF/API.html)
