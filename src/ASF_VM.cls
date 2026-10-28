@@ -2278,7 +2278,7 @@ Private Function EvalMethodCall(calleeExpr As ASF_Map, evaluated As Collection, 
                 Dim oldUB As Long: oldUB = UBound(baseValLocal)
                 Dim oldLen As Long: oldLen = oldUB - oldLB + 1
                 Dim newLen As Long: newLen = oldLen + insertCount
-                Dim newArr() As Variant
+                Dim newArr As Variant
                 ReDim newArr(oldLB To oldLB + newLen - 1 - offs)
                 Dim zz As Long
                 For zz = oldLB To oldUB - offs
@@ -5263,22 +5263,6 @@ Private Function indexDecompose(indexStr As String) As Variant
     
 End Function
 
-Private Function ResolveProp(ByRef lval) As Variant
-    Dim baseVariable As String
-    Dim pObject As Variant
-
-    vAssignment pObject, lval("parentObj")
-    Do While pObject.Exists("parentObj")
-        vAssignment pObject, pObject("parentObj")
-        If Not pObject.Exists("parentKey") Then
-            Exit Do
-        End If
-    Loop
-    baseVariable = pObject("key")
-    Dim container As Variant: vAssignment container, lval("container")
-    vAssignment pObject, container.GetValue(baseVariable)
-    vAssignment ResolveProp, pObject
-End Function
 Private Sub AssignToArrayByName(arrVarName As String, idx As Long, newValue As Variant, progScope As ASF_ScopeStack)
      Dim arrVal As Variant: arrVal = progScope.GetValue(arrVarName)
      If IsEmpty(arrVal) Then
@@ -5945,7 +5929,13 @@ Private Sub WriteToContainer(ByRef calleeExpr As ASF_Map, ByRef progScope As ASF
             Case "scopeVar"
                 progScope.SetValue CStr(rp.GetValue("key")), tValue
             Case "prop"
-                vAssignment cont, ResolveProp(rp)
+                ' the object holding the property: the parent expression's value, at any depth
+                Dim baseNode As ASF_Map: Set baseNode = calleeExpr.GetValue("base")
+                If baseNode.GetValue("type") = "Member" Then
+                    vAssignment cont, EvalExprNode(baseNode.GetValue("base"), progScope)
+                Else
+                    vAssignment cont, rp.GetValue("container")
+                End If
                 propKey = CStr(rp.GetValue("key"))
                 If IsObject(cont) Then
                     Select Case typeName(cont)
