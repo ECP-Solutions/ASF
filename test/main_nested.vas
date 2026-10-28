@@ -1,0 +1,4 @@
+scwd(wd);
+import { sumOfSquares } from './nested_lib.vas';
+import { add } from './math.vas';
+return add(sumOfSquares(3, 4), 1); // => 26

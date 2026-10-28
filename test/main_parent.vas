@@ -1,0 +1,4 @@
+scwd(wd);
+import { squarePlusOne } from './modules/square.vas';
+import { PI } from './math.vas';
+return `${squarePlusOne(4)} ${PI}`; // => 17 3.14159

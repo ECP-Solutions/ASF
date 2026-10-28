@@ -25,13 +25,13 @@ Install the VBA Expressions extension the same way if your scripts use `@(...)`.
 Sub HelloASF
     GlobalScope.BasicLibraries.LoadLibrary "ASF"
     Dim engine As Object
-    Set engine = ASF.ASF_LOCompat.NewASF()
+    Set engine = ASF.LOhelper.NewASF()
     engine.Run engine.Compile("return [1,2,3,4,5].filter(fun(x){ return x > 2 }).reduce(fun(a,x){ return a+x }, 0)")
     MsgBox engine.OUTPUT_   ' => 12
 End Sub
 ```
 
-Code outside the `ASF` library creates objects through the factories in `ASF_LOCompat`:
+Code outside the `ASF` library creates objects through the factories in `LOhelper`:
 
 | Factory | Returns |
 |---|---|
@@ -44,10 +44,10 @@ Code outside the `ASF` library creates objects through the factories in `ASF_LOC
 LibreOffice Basic has no Immediate window. Text that the VBA edition sends there with `Debug.Print`, such as `print()` output and the runtime log of `verbose` engines, is collected instead:
 
 ```vb
-ASF.ASF_LOCompat.SetOutputFile "/tmp/asf.log"   ' also append every line to a file ("" stops it)
+ASF.LOhelper.SetOutputFile "/tmp/asf.log"   ' also append every line to a file ("" stops it)
 engine.Run engine.Compile("print('hello');")
-MsgBox ASF.ASF_LOCompat.GetOutput()             ' everything printed so far
-ASF.ASF_LOCompat.ClearOutput
+MsgBox ASF.LOhelper.GetOutput()             ' everything printed so far
+ASF.LOhelper.ClearOutput
 ```
 
 ### Documents and UNO objects
@@ -66,7 +66,7 @@ UNO members are found case-insensitively; `typeof` reports a UNO object's implem
 
 ### Modules
 
-`import`/`export` work as in the VBA edition. Script and module files are read as UTF-8.
+`import`/`export` work as in the VBA edition. Relative imports start from `engine.WorkingDir` (or `scwd()` inside a script), and inside a module from the module's folder. Script and module files are read as UTF-8.
 
 ### VBA expressions
 
@@ -88,9 +88,10 @@ python3 libreoffice/tools/build.py
 writes the library to `libreoffice/dist/ASF/` and the extension to `libreoffice/dist/ASF.oxt`.
 
 - [`tools/build.py`](tools/build.py): the rewrite passes and the packaging.
-- [`compat/ASF_LOCompat.bas`](compat/ASF_LOCompat.bas): helpers the rewritten code calls, the factories and the output functions.
-- [`compat/ASF_VBAExpressions.bas`](compat/ASF_VBAExpressions.bas): creates `VBAExpressionsLib` evaluators.
+- [`compat/LOhelper.bas`](compat/LOhelper.bas): helpers the rewritten code calls, the factories and the output functions.
+- [`compat/VBAEhelper.bas`](compat/VBAEhelper.bas): creates `VBAExpressionsLib` evaluators.
 - [`overrides/ASF_Map.bas`](overrides/ASF_Map.bas): hand-written `ASF_Map`; keep it in step with `src/ASF_Map.cls`.
+- [`extension-page.html`](extension-page.html): the description for the extension's page on extensions.libreoffice.org.
 
 ## Tests
 

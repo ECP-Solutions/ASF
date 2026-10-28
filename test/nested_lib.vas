@@ -1,0 +1,7 @@
+import { add, multiply } from './math.vas';
+
+fun sumOfSquares(a, b) {
+    return add(multiply(a, a), multiply(b, b));
+};
+
+export { sumOfSquares };

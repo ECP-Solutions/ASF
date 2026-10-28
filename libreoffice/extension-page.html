@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASF for LibreOffice</title>
+<style>
+  body { margin: 0; background: #ffffff; color: #1d1d1f; font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 8px; }
+  h2 { font-size: 1.4rem; margin: 40px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #d8d8dc; }
+  h3 { font-size: 1.1rem; margin: 28px 0 6px; }
+  a { color: #0b6bcb; }
+  .lead { font-size: 1.15rem; margin: 0 0 16px; }
+  .logo { display: block; max-width: 160px; height: auto; margin: 0 0 16px; }
+  pre { background: #f5f5f7; border: 1px solid #e3e3e8; border-radius: 6px; padding: 12px 14px; overflow-x: auto; font-size: 0.88rem; line-height: 1.45; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+  p code, li code, td code { background: #f0f0f3; border-radius: 4px; padding: 1px 4px; font-size: 0.9em; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  th, td { text-align: left; vertical-align: top; border-bottom: 1px solid #e3e3e8; padding: 6px 8px; overflow-wrap: anywhere; }
+  .note { border-left: 4px solid #0b6bcb; background: #f2f7fd; padding: 8px 12px; margin: 12px 0; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #18181b; color: #e8e8ea; }
+    a { color: #6cb4ff; }
+    h2 { border-bottom-color: #3a3a40; }
+    pre { background: #222226; border-color: #33333a; }
+    p code, li code, td code { background: #2a2a2f; }
+    th, td { border-bottom-color: #33333a; }
+    .note { background: #1c2633; border-left-color: #6cb4ff; }
+  }
+</style>
+</head>
+<body>
+<main>
+
+<img class="logo" src="https://raw.githubusercontent.com/ECP-Solutions/ASF/main/docs/assets/img/ASF%20logo.png" alt="ASF logo">
+
+<h1>ASF &mdash; Advanced Scripting Framework for LibreOffice</h1>
+
+<p class="lead"><strong>A JavaScript-like scripting language implemented entirely in LibreOffice Basic.</strong> No external runtime, no Java, no Python: install one extension and run modern scripts from your macros, with direct access to Calc, Writer and every other UNO object.</p>
+
+<pre><code>GlobalScope.BasicLibraries.LoadLibrary &quot;ASF&quot;
+Dim engine As Object: Set engine = ASF.LOhelper.NewASF()
+engine.Run engine.Compile(&quot;return [1,2,3,4,5].filter(fun(x){ return x &gt; 2 }).reduce(fun(a,x){ return a+x }, 0)&quot;)
+MsgBox engine.OUTPUT_   &#x27; =&gt; 12</code></pre>
+
+<h2>Core features</h2>
+
+<h3>Language</h3>
+<ul>
+  <li>JavaScript-like syntax with lexical scoping</li>
+  <li>First-class functions and closures</li>
+  <li>ES6+ array methods: <code>map</code>, <code>filter</code>, <code>reduce</code>, <code>find</code>, <code>forEach</code>, <code>splice</code>, <code>toSorted</code> and more</li>
+  <li>Object and array literals with spread/rest operators, destructuring and template literals</li>
+  <li>Classes with inheritance (<code>extends</code>, <code>super</code>)</li>
+  <li>Built-in regular expression engine with lookarounds, backreferences, named groups and word boundaries</li>
+  <li>Module system with <code>import</code>/<code>export</code></li>
+</ul>
+
+<h3>LibreOffice integration</h3>
+<ul>
+  <li>Scripts call methods and properties of UNO objects passed to them: documents, sheets, cells, text, services</li>
+  <li>Variable injection from Basic into scripts, with Basic arrays turned into script arrays</li>
+  <li>More than 100 mathematical, statistical, financial and matrix functions through the <a href="https://extensions.libreoffice.org/en/extensions/show/70059">VBA Expressions</a> extension, with the <code>@(...)</code> syntax</li>
+  <li>Error containment and a runtime log for debugging</li>
+</ul>
+
+<h3>Architecture</h3>
+<ul>
+  <li>Pure LibreOffice Basic: one Basic library named <code>ASF</code></li>
+  <li>Sandboxed virtual machine with call stack tracing; access to UNO objects is off until you enable it</li>
+  <li>Generated from the same sources as the VBA edition for Microsoft Office, so both editions share the language and its fixes</li>
+</ul>
+
+<h2>Quick start</h2>
+
+<h3>Step 1: Installation</h3>
+<ol>
+  <li>Download <code>ASF.oxt</code> and install it with <em>Tools &gt; Extension Manager &gt; Add&hellip;</em>, or run <code>unopkg add ASF.oxt</code>.</li>
+  <li>Optional, for <code>@(...)</code> expressions: install the <a href="https://extensions.libreoffice.org/en/extensions/show/70059">VBA Expressions</a> extension, version 1.2.1 or later.</li>
+  <li>Restart LibreOffice.</li>
+</ol>
+<p>Requires LibreOffice 7.5 or later (tested on 24.2).</p>
+
+<h3>Step 2: Hello world</h3>
+<p>Load the library, create an engine through the <code>LOhelper</code> factories, compile and run. Basic has no Immediate window, so <code>print()</code> output is collected by <code>LOhelper.GetOutput()</code>.</p>
+<pre><code>Sub HelloASF
+    GlobalScope.BasicLibraries.LoadLibrary &quot;ASF&quot;
+    Dim engine As Object
+    Set engine = ASF.LOhelper.NewASF()
+    engine.Run engine.Compile(&quot;print(&#x27;Hello from ASF!&#x27;)&quot;)
+    MsgBox ASF.LOhelper.GetOutput()   &#x27; =&gt; &#x27;Hello from ASF!&#x27;
+End Sub</code></pre>
+
+<h3>Step 3: Real-world example</h3>
+<p><strong>Scenario:</strong> filter and sum sales over $1000.</p>
+<pre><code>Sub ProcessSalesData
+    GlobalScope.BasicLibraries.LoadLibrary &quot;ASF&quot;
+    Dim engine As Object
+    Set engine = ASF.LOhelper.NewASF()
+    Dim script As String
+    script = _
+        &quot;sales = [850, 1200, 950, 2500, 1100, 600];&quot; &amp; _
+        &quot;highValue = sales.filter(fun(x) { return x &gt; 1000 });&quot; &amp; _
+        &quot;total = highValue.reduce(fun(sum, item) { return sum + item }, 0);&quot; &amp; _
+        &quot;return total;&quot;
+    engine.Run engine.Compile(script)
+    MsgBox &quot;High-value sales total: $&quot; &amp; engine.OUTPUT_   &#x27; =&gt; $4800
+End Sub</code></pre>
+
+<p>Data can also come from Basic. Arrays are injected as script arrays:</p>
+<pre><code>Sub InjectData
+    GlobalScope.BasicLibraries.LoadLibrary &quot;ASF&quot;
+    Dim engine As Object
+    Set engine = ASF.LOhelper.NewASF()
+    engine.InjectVariable &quot;sales&quot;, Array(850, 1200, 950, 2500, 1100, 600)
+    engine.Run engine.Compile(&quot;return sales.filter(fun(x) { return x &gt; 1000 }).length;&quot;)
+    MsgBox engine.OUTPUT_   &#x27; =&gt; 3
+End Sub</code></pre>
+
+<h3>Step 4: Work with your documents</h3>
+<p>Turn on <code>AppAccess</code> and pass UNO objects as <code>$1</code>, <code>$2</code>&hellip; Here the script reads A1:A6 of the current Calc sheet, adds the values over 1000 and writes the result next to them:</p>
+<pre><code>Sub CalcTotals
+    GlobalScope.BasicLibraries.LoadLibrary &quot;ASF&quot;
+    Dim engine As Object
+    Set engine = ASF.LOhelper.NewASF()
+    engine.AppAccess = True
+    Dim script As String
+    script = _
+        &quot;let sheet = $1.getSheets().getByIndex(0);&quot; &amp; _
+        &quot;let total = 0;&quot; &amp; _
+        &quot;for (let r = 0, r &lt; 6, r = r + 1) {&quot; &amp; _
+        &quot;    let v = sheet.getCellByPosition(0, r).Value;&quot; &amp; _
+        &quot;    if (v &gt; 1000) { total = total + v };&quot; &amp; _
+        &quot;};&quot; &amp; _
+        &quot;sheet.getCellByPosition(1, 0).String = &#x27;High-value total&#x27;;&quot; &amp; _
+        &quot;sheet.getCellByPosition(2, 0).Value = total;&quot; &amp; _
+        &quot;return total;&quot;
+    engine.Run engine.Compile(script), ThisComponent
+    MsgBox engine.OUTPUT_   &#x27; =&gt; 4800 for 850, 1200, 950, 2500, 1100, 600 in A1:A6
+End Sub</code></pre>
+<p>UNO methods and properties are found regardless of case, and <code>typeof</code> reports the object&rsquo;s implementation name, for example <code>object: &lt;ScCellObj&gt;</code>.</p>
+
+<h3>Step 5: Regular expressions</h3>
+<p>Regex literals are written between backticks. Replacements support <code>$1</code>&hellip;<code>$n</code>:</p>
+<pre><code>Sub RegexDates
+    GlobalScope.BasicLibraries.LoadLibrary &quot;ASF&quot;
+    Dim engine As Object
+    Set engine = ASF.LOhelper.NewASF()
+    engine.Run engine.Compile(&quot;return &#x27;Due 2026-11-30, paid 2026-12-02&#x27;.replace(`/(\d{4})-(\d{2})-(\d{2})/g`, &#x27;$3/$2/$1&#x27;);&quot;)
+    MsgBox engine.OUTPUT_   &#x27; =&gt; Due 30/11/2026, paid 02/12/2026
+End Sub</code></pre>
+<p>The engine is also available directly from Basic:</p>
+<pre><code>Sub RegexDirect
+    GlobalScope.BasicLibraries.LoadLibrary &quot;ASF&quot;
+    Dim re As Object
+    Set re = ASF.LOhelper.NewRegex()
+    re.Init &quot;\b[A-Z]{3}-\d+\b&quot;
+    MsgBox re.Replace(&quot;Tickets ABC-12 and XYZ-345 are open&quot;, &quot;#&quot;)   &#x27; =&gt; Tickets # and # are open
+End Sub</code></pre>
+
+<h3>Step 6: VBA Expressions</h3>
+<p>With the VBA Expressions extension installed, <code>@(...)</code> evaluates its functions and sees the script&rsquo;s variables. Matrices come back as arrays:</p>
+<pre><code>Sub VBAExpressionsDemo
+    GlobalScope.BasicLibraries.LoadLibrary &quot;ASF&quot;
+    Dim engine As Object
+    Set engine = ASF.LOhelper.NewASF()
+    engine.Run engine.Compile(&quot;x = 4; return @(sqr(x) + lgn(8;2));&quot;)
+    MsgBox engine.OUTPUT_   &#x27; =&gt; 5
+    ASF.LOhelper.ClearOutput
+    engine.Run engine.Compile( _
+        &quot;a = @({1;0;4}); b = @({1;1;6}); c = @({-3;0;-10});&quot; &amp; _
+        &quot;print(@(MROUND(LUDECOMP(ARRAY(a;b;c));4)));&quot;)
+    MsgBox ASF.LOhelper.GetOutput()
+    &#x27; =&gt; [ [ -3, 0, -10 ], [ -0.3333, 1, 2.6667 ], [ -0.3333, 0, 0.6667 ] ]
+End Sub</code></pre>
+
+<p class="note">That&rsquo;s it! You are now writing modern scripts in LibreOffice Basic.</p>
+
+<h2>More of the language</h2>
+
+<h3>Classes</h3>
+<pre><code>Sub ClassesDemo
+    GlobalScope.BasicLibraries.LoadLibrary &quot;ASF&quot;
+    Dim engine As Object
+    Set engine = ASF.LOhelper.NewASF()
+    engine.Run engine.Compile( _
+        &quot;class Shape {&quot; &amp; _
+        &quot;  field name = &#x27;shape&#x27;;&quot; &amp; _
+        &quot;  describe() { return this.name + &#x27; with area &#x27; + this.area(); };&quot; &amp; _
+        &quot;};&quot; &amp; _
+        &quot;class Square extends Shape {&quot; &amp; _
+        &quot;  field side = 1;&quot; &amp; _
+        &quot;  constructor(side) { this.name = &#x27;square&#x27;; this.side = side; };&quot; &amp; _
+        &quot;  area() { return this.side * this.side; };&quot; &amp; _
+        &quot;};&quot; &amp; _
+        &quot;let [first, second] = [new Square(3), new Square(4)];&quot; &amp; _
+        &quot;return first.describe() + &#x27;; &#x27; + second.describe();&quot;)
+    MsgBox engine.OUTPUT_   &#x27; =&gt; square with area 9; square with area 16
+End Sub</code></pre>
+
+<h3>Modules</h3>
+<p>A module exports what other scripts import. <code>math.vas</code>:</p>
+<pre><code>// Named exports
+fun add(a, b) {
+    return a + b;
+};
+
+fun multiply(a, b) {
+    return a * b;
+};
+
+PI = 3.14159;
+
+export { add, multiply, PI };</code></pre>
+<p>Set the folder relative imports start from with <code>WorkingDir</code> (or <code>scwd()</code> inside a script). Inside a module, its own relative imports start from the module&rsquo;s folder, and <code>../</code> goes up one level:</p>
+<pre><code>Sub ModulesDemo
+    GlobalScope.BasicLibraries.LoadLibrary &quot;ASF&quot;
+    Dim engine As Object
+    Set engine = ASF.LOhelper.NewASF()
+    engine.WorkingDir = &quot;/home/me/scripts&quot;   &#x27; folder that holds math.vas
+    engine.Run engine.Compile( _
+        &quot;import { add, multiply, PI } from &#x27;./math.vas&#x27;;&quot; &amp; _
+        &quot;return `5 + 3 = ${add(5, 3)}, circle area: ${PI * multiply(5, 5)}`;&quot;)
+    MsgBox engine.OUTPUT_   &#x27; =&gt; 5 + 3 = 8, circle area: 78.53975
+End Sub</code></pre>
+<p>Script and module files are read as UTF-8. <code>engine.Execute(path)</code> runs a script file directly.</p>
+
+<h2>When to use ASF</h2>
+
+<h3>Good fits</h3>
+<ul>
+  <li><strong>Complex data processing:</strong> transformations of nested data, parsing, text processing with regular expressions</li>
+  <li><strong>Dynamic business logic:</strong> rules stored as text and changed without editing macros</li>
+  <li><strong>Functional programming:</strong> when <code>map</code>/<code>filter</code>/<code>reduce</code> read better than loops</li>
+  <li><strong>Developer productivity:</strong> rapid prototyping with familiar JavaScript syntax</li>
+</ul>
+
+<h3>Use plain LibreOffice Basic for</h3>
+<ul>
+  <li><strong>Performance-critical code:</strong> tight loops over millions of items</li>
+  <li><strong>Heavy document automation:</strong> long sequences of UNO calls with little logic between them</li>
+  <li><strong>Type safety:</strong> when you want the Basic IDE to check types for you</li>
+</ul>
+
+<h3>Hybrid approach</h3>
+<p>Keep the logic in ASF and the bulk document work in Basic: inject the data, let the script decide, and write the result with UNO calls from Basic.</p>
+
+<h2>Common issues</h2>
+<table>
+  <tr><th>Symptom</th><th>Fix</th></tr>
+  <tr><td><code>New ASF</code> fails with &ldquo;Invalid object reference&rdquo;</td><td>Basic resolves <code>New</code> when your module is compiled, before the library is loaded. Use <code>ASF.LOhelper.NewASF()</code>, <code>NewRegex()</code> or <code>NewASFMap()</code>.</td></tr>
+  <tr><td><code>print()</code> shows nothing</td><td>Read the output with <code>ASF.LOhelper.GetOutput()</code>, or mirror it to a file with <code>ASF.LOhelper.SetOutputFile(path)</code>.</td></tr>
+  <tr><td>Arrays built with <code>Join</code> break the script</td><td>Pass data with <code>engine.InjectVariable "name", value</code> instead of concatenating it into the source.</td></tr>
+  <tr><td>Calls on a document do nothing</td><td>Set <code>engine.AppAccess = True</code> and pass the object to <code>Run</code>: <code>engine.Run idx, ThisComponent</code>, then use <code>$1</code> in the script.</td></tr>
+  <tr><td><code>@(...)</code> returns nothing</td><td>Install VBA Expressions 1.2.1 or later. Version 1.2.0 fails on LibreOffice 24.2 when the expression contains variables.</td></tr>
+</table>
+
+<h2>Differences from the Microsoft Office edition</h2>
+<ul>
+  <li>The Excel object model (<code>ThisWorkbook</code>, <code>Worksheet</code>, <code>Range</code>) and the COM prototype libraries written for it do not apply; scripts use UNO objects instead.</li>
+  <li>User-defined functions for <code>@(...)</code> live in the <code>UDFunctions</code> module of the VBA Expressions library.</li>
+</ul>
+
+<h2>Links</h2>
+<ul>
+  <li><a href="https://github.com/ECP-Solutions/ASF">Source code</a> and the <a href="https://github.com/ECP-Solutions/ASF/tree/main/libreoffice">LibreOffice edition guide</a></li>
+  <li><a href="https://ecp-solutions.github.io/ASF/Syntax.html">Language syntax</a>, <a href="https://ecp-solutions.github.io/ASF/Language%20reference.html">complete language reference</a> and <a href="https://ecp-solutions.github.io/ASF/API.html">API reference</a></li>
+  <li><a href="https://github.com/ECP-Solutions/ASF/issues">Issues and feature requests</a></li>
+  <li><a href="https://extensions.libreoffice.org/en/extensions/show/70059">VBA Expressions for LibreOffice</a></li>
+</ul>
+
+<p>MIT License &mdash; Copyright &copy; 2026 W. Garc&iacute;a</p>
+
+</main>
+</body>
+</html>

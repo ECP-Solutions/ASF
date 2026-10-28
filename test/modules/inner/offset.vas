@@ -1,0 +1,7 @@
+import { add } from '../../math.vas';
+
+fun offset(x) {
+    return add(x, 1);
+};
+
+export { offset };

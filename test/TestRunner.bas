@@ -264,10 +264,13 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("array_destructuring",       "array_destructuring_with_rest") Then array_destructuring_with_rest: EndTest
     If StartTest("array_destructuring",       "array_destructuring_with_no_remaining_elm") Then array_destructuring_with_no_remaining_elm: EndTest
     If StartTest("module_system",             "module_system_working_directory") Then module_system_working_directory: EndTest
+    If StartTest("module_system",             "module_system_working_dir_before_compile") Then module_system_working_dir_before_compile: EndTest
     If StartTest("module_system",             "module_system_named_exports_imports") Then module_system_named_exports_imports: EndTest
     If StartTest("module_system",             "module_system_default_export") Then module_system_default_export: EndTest
     If StartTest("module_system",             "module_system_namespace_import") Then module_system_namespace_import: EndTest
     If StartTest("module_system",             "module_system_mixed_imports") Then module_system_mixed_imports: EndTest
+    If StartTest("module_system",             "module_system_nested_relative_import") Then module_system_nested_relative_import: EndTest
+    If StartTest("module_system",             "module_system_parent_relative_import") Then module_system_parent_relative_import: EndTest
     If StartTest("module_system",             "module_system_prototype_imports") Then module_system_prototype_imports: EndTest
     If StartTest("Modules",                   "module_system_prototype_single_import") Then module_system_prototype_single_import: EndTest
     If StartTest("Modules",                   "module_system_prototype_namespace_import") Then module_system_prototype_namespace_import: EndTest
@@ -4156,6 +4159,22 @@ TestFail:
     AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
+Private Sub module_system_working_dir_before_compile()
+    ' WorkingDir set on the host survives Compile: relative imports resolve without scwd
+    Dim eng As New ASF
+    With eng
+        .WorkingDir = ThisWorkbook.path
+        On Error GoTo TestFail
+        actual = CStr(.Run(.Compile("import { add } from './math.vas'; return add(2, 3);")))
+    End With
+    expected = "5"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
 Private Sub module_system_named_exports_imports()
     Dim wd As String
     Dim eng As New ASF
@@ -4217,6 +4236,42 @@ Private Sub module_system_mixed_imports()
         actual = CStr(.Execute(wd & "\app.vas"))
     End With
     expected = "Main function | Helper function | Version: 1.0.0"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub module_system_nested_relative_import()
+    ' a module's relative imports resolve against the module's own directory
+    Dim wd As String
+    Dim eng As New ASF
+    wd = ThisWorkbook.path
+    With eng
+        .InjectVariable "wd", wd
+        On Error GoTo TestFail
+        actual = CStr(.Execute(wd & "\main_nested.vas"))
+    End With
+    expected = "26"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub module_system_parent_relative_import()
+    ' ../ in a module's import goes up from the module's directory, once per segment
+    Dim wd As String
+    Dim eng As New ASF
+    wd = ThisWorkbook.path
+    With eng
+        .InjectVariable "wd", wd
+        On Error GoTo TestFail
+        actual = CStr(.Execute(wd & "\main_parent.vas"))
+    End With
+    expected = "17 3.14159"
     AssertEqual expected, actual
 TestExit:
     Exit Sub

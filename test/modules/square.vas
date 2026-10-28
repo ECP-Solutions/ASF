@@ -1,0 +1,8 @@
+import { multiply } from '../math.vas';
+import { offset } from './inner/offset.vas';
+
+fun squarePlusOne(x) {
+    return offset(multiply(x, x));
+};
+
+export { squarePlusOne };

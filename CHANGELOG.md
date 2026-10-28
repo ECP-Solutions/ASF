@@ -2,6 +2,34 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [Unreleased]
+
+## Summary
+The module system resolves paths the way scripts expect: `WorkingDir` set before `Compile` is kept, a module's own relative imports start from its folder, `../` goes up a directory, and a script keeps its working directory after an import. The LibreOffice edition's helper modules get shorter names.
+
+---
+
+## Highlights
+
+- **Fixed**
+    - **`WorkingDir` before `Compile`** — `ASF_InitGlobals`, which `CompileProgram` calls on every compile, reset `CURRENT_MODULE_PATH`, so a `WorkingDir` set on the host was lost and relative imports failed unless the script called `scwd`. The field starts empty and `ClearModuleCache` still resets it.
+    - **Relative imports inside a module** — `ResolveModulePath` treated the running module's file path as a directory, so `./helpers.vas` written in `lib.vas` resolved to `lib.vas/helpers.vas`. A running module's imports now resolve against its folder.
+    - **Working directory after an import** — `LoadModule` saved the importer's path after compiling the module, which had already reset it: after any import the main script lost its working directory and an importing module lost its own path, dropping its exports. The path is saved before compiling.
+    - **`../` in relative imports** — `'../shared/x.vas'` resolved like `'./shared/x.vas'`. Each leading `./` and `../` segment is now consumed, `../` dropping one directory (staying put at a root); relative paths written with `\` are normalised to `/`.
+
+- **LibreOffice edition**
+    - `ASF_LOCompat` is renamed `LOhelper` and `ASF_VBAExpressions` is renamed `VBAEhelper`; their procedures drop the `ASF`/`LO` prefixes. Macros create engines with `ASF.LOhelper.NewASF()`, `NewRegex()` and `NewASFMap()` and read output with `ASF.LOhelper.GetOutput()`. The rewritten classes call the helpers qualified with the module name; helpers whose plain name is a Basic built-in or keyword are named `TypeNameOf`, `CallMember`, `LetValue`, `RedimField` and `ObjectError`.
+    - `libreoffice/extension-page.html`: the description for the extension's page on extensions.libreoffice.org, with examples run against the installed extension.
+
+- **Test coverage**: `module_system_working_dir_before_compile`, `module_system_nested_relative_import` (`test/main_nested.vas`, `test/nested_lib.vas`) and `module_system_parent_relative_import` (`test/main_parent.vas`, `test/modules/square.vas`, `test/modules/inner/offset.vas`) in `test/TestRunner.bas`. All 240 TestRunner tests that do not need Excel pass on LibreOffice 24.2.
+
+---
+
+## Breaking Changes
+
+- LibreOffice edition: macros that call `ASF.ASF_LOCompat.NewASF()`, `NewRegex()`, `NewASFMap()`, `GetOutput()`, `ClearOutput()` or `SetOutputFile()` must use `ASF.LOhelper` instead.
+- `'../x.vas'` now resolves to the parent folder; scripts that relied on it meaning `'./x.vas'` must use `./`.
+
 ## [v3.2.0] - 2026-10-28
 https://github.com/ECP-Solutions/ASF/releases/tag/v3.2.0
 

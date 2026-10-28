@@ -96,10 +96,10 @@ Public Sub Clear()
     BufferInit
 End Sub
 Public Function LOCloneMap() As ASF_Map
-    Dim m As Object: Set m = NewASFMap()
+    Dim m As Object: Set m = LOhelper.NewASFMap()
     Dim k As Long
     For k = 0 To kIdx
-        If LOTypeName(vSt(k)) = "ASF_Map" Then
+        If LOhelper.TypeNameOf(vSt(k)) = "ASF_Map" Then
             m.Add CStr(kSt(k)), vSt(k).LOCloneMap()
         Else
             m.Add CStr(kSt(k)), vSt(k)

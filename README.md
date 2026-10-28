@@ -33,7 +33,7 @@ ASF also runs on LibreOffice as the `ASF.oxt` extension, generated from the same
 
 ```vb
 GlobalScope.BasicLibraries.LoadLibrary "ASF"
-Dim engine As Object: Set engine = ASF.ASF_LOCompat.NewASF()
+Dim engine As Object: Set engine = ASF.LOhelper.NewASF()
 engine.Run engine.Compile("return [1,2,3,4,5].filter(fun(x){ return x > 2 }).reduce(fun(a,x){ return a+x }, 0)")
 MsgBox engine.OUTPUT_   ' => 12
 ```

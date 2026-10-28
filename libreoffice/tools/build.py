@@ -5,7 +5,7 @@
 src/*.cls stays the single source of truth. Each class is rewritten for LibreOffice Basic
 (Option VBASupport 1) by the passes below; every pass works around one documented
 difference between VBA and LibreOffice Basic. A few classes are replaced by hand-written
-versions in libreoffice/overrides/, and libreoffice/compat/ASF_LOCompat.bas holds the
+versions in libreoffice/overrides/, and libreoffice/compat/LOhelper.bas holds the
 helpers the rewritten code calls and the factories other libraries use. The VBA
 Expressions classes are left out: @(...) runs on VBAExpressionsLib, the library of the
 VBA Expressions extension for LibreOffice.
@@ -121,7 +121,7 @@ def strip_vba_header(s):
 
 
 def debug_print(s):
-    """Debug.Print does not exist in LibreOffice: send it to ASF_LOCompat.LogLine."""
+    """Debug.Print does not exist in LibreOffice: send it to LOhelper.LogLine."""
     out = []
     for ln in s.split("\n"):
         i = find_code(ln, "Debug.Print")
@@ -172,7 +172,7 @@ def hoist_dims(code):
 
 
 # new, empty storage for an array of each type (see fresh_redim)
-FRESH_ARRAY = {"variant": "Array()", "string": "LOEmptyStrings()", "long": "LOEmptyLongs()", "double": "LOEmptyDoubles()"}
+FRESH_ARRAY = {"variant": "Array()", "string": "LOhelper.EmptyStrings()", "long": "LOhelper.EmptyLongs()", "double": "LOhelper.EmptyDoubles()"}
 
 
 def declared_names(decl):
@@ -274,10 +274,10 @@ def generic(s):
     s = s.replace("    vAssignVar NodeGet, node(key)\n", "    Dim ngTmp As Variant: vAssignVar ngTmp, node(key)\n    If IsObject(ngTmp) Then Set NodeGet = ngTmp Else NodeGet = ngTmp\n")
     # functions declared As T() return a Variant array
     s = re.sub(r"^((?:Public |Private )?Function [^\n]*\)) As \w+\(\)[ \t]*$", r"\1 As Variant", s, flags=re.M)
-    s = re.sub(r"\btypeName\(([^()]*(?:\([^()]*\)[^()]*)*)\) = \"Collection\"", r"LOIsColl(\1)", s, flags=re.I)
-    s = re.sub(r"\btypeName\(([^()]*)\) <> \"Collection\"", r"Not LOIsColl(\1)", s, flags=re.I)
+    s = re.sub(r"\btypeName\(([^()]*(?:\([^()]*\)[^()]*)*)\) = \"Collection\"", r"LOhelper.IsColl(\1)", s, flags=re.I)
+    s = re.sub(r"\btypeName\(([^()]*)\) <> \"Collection\"", r"Not LOhelper.IsColl(\1)", s, flags=re.I)
     s = re.sub(r"\bCLng\(", "VBACLng(", s)
-    s = re.sub(r"\bvbObjectError\b", "LOvbObjectError()", s)
+    s = re.sub(r"\bvbObjectError\b", "LOhelper.ObjectError()", s)
     s = re.sub(r" _\n\s*", " ", s)
     s = rewrite_for_each(s)
     s = hoist_dims(s)
@@ -289,9 +289,9 @@ def vba_expressions_bridge(s):
     """Calls into VBAExpressionsLib, whose API differs from the VBA class in a few places."""
     s = re.sub(r"\bAs VBAexpressions\b", "As Object", s)
     s = s.replace("If gExprEvaluator Is Nothing Then Set gExprEvaluator = New VBAexpressions",
-                  "If gExprEvaluator Is Nothing Then Set gExprEvaluator = LOTryEvaluator()")
-    s = s.replace("New VBAexpressions", "LONewEvaluator()")
-    s = s.replace("With GLOBALS_.gExprEvaluator", "With LOEvaluator(GLOBALS_)")
+                  "If gExprEvaluator Is Nothing Then Set gExprEvaluator = LOhelper.TryEvaluator()")
+    s = s.replace("New VBAexpressions", "LOhelper.NewEvaluator()")
+    s = s.replace("With GLOBALS_.gExprEvaluator", "With LOhelper.Evaluator(GLOBALS_)")
     # only the ASF variables the expression can name: VBAExpressionsLib adds every
     # unknown name to its scope, which VBA Expressions 1.2.0 fails on LibreOffice 24.2
     s = s.replace("""                 If IsArray(tmpVal) Then
@@ -303,7 +303,7 @@ def vba_expressions_bridge(s):
     s = re.sub(r"(?m)^(\s*)\.Eval\s*$", r'\1.Eval ""', s)
     s = s.replace("Eval = .Eval(strValues)", 'If IsMissing(strValues) Then\n            Eval = .Eval("")\n        Else\n            Eval = .Eval(strValues)\n        End If')
     # no castTypeData argument
-    s = re.sub(r"\.ArrayFromString2\((.+?), True\)", r"LOExprArray(LOEvaluator(GLOBALS_), \1)", s)
+    s = re.sub(r"\.ArrayFromString2\((.+?), True\)", r"LOhelper.ExprArray(LOhelper.Evaluator(GLOBALS_), \1)", s)
     return s
 
 
@@ -473,7 +473,7 @@ def variant_param_methods(s):
 
 
 def variant_default_member(s):
-    """v("key") on a Variant holding an object: route through LODefault."""
+    """v("key") on a Variant holding an object: route through LOhelper.DefaultValue."""
     names = set()
     for m in re.finditer(r"(?m)^\s*Dim\s+(.*)$", s):
         for part in split_top(m.group(1)):
@@ -486,16 +486,16 @@ def variant_default_member(s):
             if pm and not pm.group(2) and pm.group(3) in (None, "Variant"):
                 names.add(pm.group(1))
     for v in names:
-        s = re.sub(r"(?<![.\w])" + v + r"\((\"[^\"]*\")\)", "LODefault(" + v + r", \1)", s)
+        s = re.sub(r"(?<![.\w])" + v + r"\((\"[^\"]*\")\)", "LOhelper.DefaultValue(" + v + r", \1)", s)
     return s
 
 
 def module_collections(s):
     """coll(i) on a class's module-level Collection fails in LibreOffice: use .Item
-    before a member access, LOItem elsewhere (.Item(i) of an array item misreads)."""
+    before a member access, LOhelper.Item elsewhere (.Item(i) of an array item misreads)."""
     for v in re.findall(r"(?m)^(?:Private|Public|Dim) (\w+) As (?:New )?Collection\b", s):
         s = re.sub(r"(?<![.\w])" + v + r"\(([^()]*)\)(?=\.\w)", v + r".Item(\1)", s)
-        s = re.sub(r"(?<![.\w])" + v + r"\(", "LOItem(" + v + ", ", s)
+        s = re.sub(r"(?<![.\w])" + v + r"\(", "LOhelper.Item(" + v + ", ", s)
     return s
 
 
@@ -503,13 +503,13 @@ def member_collections(code, names):
     """obj.coll(i) for Public Collection members of ASF classes, as above."""
     for v in names:
         code = re.sub(r"\." + v + r"\(([^()]*)\)(?=\.\w)", "." + v + r".Item(\1)", code)
-        code = re.sub(r"((?<![\w.])(?:\w+)?(?:\.\w+)*\.)" + v + r"\(", lambda m: "LOItem(" + m.group(1) + v + ", ", code)
+        code = re.sub(r"((?<![\w.])(?:\w+)?(?:\.\w+)*\.)" + v + r"\(", lambda m: "LOhelper.Item(" + m.group(1) + v + ", ", code)
     return code
 
 
 def asf_passes(name, s):
     s = vba_expressions_bridge(s)
-    s = re.sub(r"((?<![\w.])\w+(?:\.\w+)*\.GetValue\((?:\"[^\"]*\"|\w+)\))\((\w+)\)", r"LOItem(\1, \2)", s)
+    s = re.sub(r"((?<![\w.])\w+(?:\.\w+)*\.GetValue\((?:\"[^\"]*\"|\w+)\))\((\w+)\)", r"LOhelper.Item(\1, \2)", s)
     if name != REGEX_ENGINE:
         # arrays are shared on assignment in LibreOffice: erasing the local after
         # returning it would empty the caller's copy
@@ -527,17 +527,17 @@ def asf_passes(name, s):
         s = variant_param_methods(s)
         s = fresh_redim(s)
     s = re.sub(r"(?m)^(\s*(?:\w+\s*:\s*)?)(?!Set\b|Dim\b|If\b|Else|Case\b)(\w+(?:\(\w+\))?) = ((?:\w+\.)+GetValue\((?:[^()]|\([^()]*\))*\))\s*$",
-               r"\1\2 = LOLet(\3)", s)
+               r"\1\2 = LOhelper.LetValue(\3)", s)
     # a String read with Get in Binary mode starts after a 2-byte length LibreOffice expects
     s = re.sub(r"(?m)^(\s*)(\w+) = FreeFile\n\s*Open (\w+) For Binary As #\2\n\s*(\w+) = LOF\(\2\)\n\s*(\w+) = Space\$\(\4\)\n\s*Get #\2, , \5\n\s*Close #\2$",
-               r"\1\5 = LOReadTextFile(\3)", s)
-    s = re.sub(r"\bCallByName\b", "LOCallByName", s)
+               r"\1\5 = LOhelper.ReadTextFile(\3)", s)
+    s = re.sub(r"\bCallByName\b", "LOhelper.CallMember", s)
     # LibreOffice will not call a method named Clone
     s = re.sub(r"\.Clone\b(\(\))?", ".LOCloneMap", s)
     s = re.sub(r"Public Function Clone\(\)", "Public Function LOCloneMap()", s)
     s = re.sub(r"\bSet Clone = ", "Set LOCloneMap = ", s)
     s = re.sub(r"(?m)^(\s*)ReDim (Preserve )?(\w+)\.Storage\((.+?) To (.+?)\)\s*$",
-               lambda m: f"{m.group(1)}{m.group(3)}.Storage = LORedim({m.group(3)}.Storage, {m.group(4)}, {m.group(5)}, {'True' if m.group(2) else 'False'})", s)
+               lambda m: f"{m.group(1)}{m.group(3)}.Storage = LOhelper.RedimField({m.group(3)}.Storage, {m.group(4)}, {m.group(5)}, {'True' if m.group(2) else 'False'})", s)
     return s
 
 
@@ -549,30 +549,30 @@ def public_collections(repo):
 
 
 def class_module(name, body):
-    body = re.sub(r"(?i)\btypeName\(", "LOTypeName(", body)
+    body = re.sub(r"(?i)\btypeName\(", "LOhelper.TypeNameOf(", body)
     body += f'\nPublic Function LOClassName() As String\n    LOClassName = "{name}"\nEnd Function\n'
     return "Option VBASupport 1\nOption ClassModule\n" + body
 
 
 def call_by_name(max_args=30):
-    """LOCallByName(obj, name, kind, args...): ASF_LOCompat's dispatch, then CallByName."""
+    """LOhelper.CallMember(obj, name, kind, args...): CallSpecial's dispatch, then CallByName."""
     cases = []
     for n in range(max_args + 1):
         args = "".join(f", a({i})" for i in range(n))
         cases.append(f"        Case {n}\n            If (kind And (VbLet Or VbSet)) <> 0 Then\n"
                      f"                CallByName obj, name, kind{args}\n            Else\n"
                      f"                r = CallByName(obj, name, kind{args})\n            End If")
-    return ("\nPublic Function LOCallByName(obj As Object, ByVal name As String, ByVal kind As Integer, ParamArray args() As Variant) As Variant\n"
+    return ("\nPublic Function CallMember(obj As Object, ByVal name As String, ByVal kind As Integer, ParamArray args() As Variant) As Variant\n"
             "    Dim a() As Variant, r As Variant, i As Long\n"
             "    a = Array()\n"
             "    If UBound(args) >= LBound(args) Then ReDim a(0 To UBound(args) - LBound(args))\n"
             "    For i = 0 To UBound(a)\n"
             "        If IsObject(args(LBound(args) + i)) Then Set a(i) = args(LBound(args) + i) Else a(i) = args(LBound(args) + i)\n"
             "    Next i\n"
-            "    If Not LOCallSpecial(obj, name, kind, a, r) Then\n"
+            "    If Not CallSpecial(obj, name, kind, a, r) Then\n"
             "        Select Case UBound(a) + 1\n" + "\n".join("    " + l for c in cases for l in c.split("\n")) + "\n        End Select\n"
             "    End If\n"
-            "    If IsObject(r) Then Set LOCallByName = r Else LOCallByName = r\n"
+            "    If IsObject(r) Then Set CallMember = r Else CallMember = r\n"
             "End Function\n")
 
 
@@ -590,9 +590,9 @@ def library_modules(repo=ROOT):
             body = asf_passes(name, generic(load(path)))
             body = member_collections(body, pub)
         mods.append((name, class_module(name, body), "class"))
-    for name in ("ASF_LOCompat", "ASF_VBAExpressions"):
+    for name in ("LOhelper", "VBAEhelper"):
         code = load(os.path.join(LO_DIR, "compat", name + ".bas"))
-        if name == "ASF_LOCompat":
+        if name == "LOhelper":
             code += call_by_name()
         mods.append((name, "Option VBASupport 1\n" + code, "normal"))
     return mods
@@ -601,7 +601,7 @@ def library_modules(repo=ROOT):
 def normal_module(src, repo=ROOT):
     """A VBA standard module (tests, user code) rewritten like the library's."""
     s = generic(src)
-    s = re.sub(r"(?i)\btypeName\(", "LOTypeName(", s)
+    s = re.sub(r"(?i)\btypeName\(", "LOhelper.TypeNameOf(", s)
     s = member_collections(s, public_collections(repo))
     return "Option VBASupport 1\n" + s
 

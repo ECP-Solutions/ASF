@@ -64,7 +64,6 @@ Public Function ASF_InitGlobals() As ASF_Globals
     DEBUG_TRACE = True
     STRICT_STRINGS = True
     MAX_CALL_DEPTH_ = 512
-    CURRENT_MODULE_PATH = vbNullString
     If IsEmpty(builtinArrayMethods) Then
         builtinArrayMethods = Array("at", "concat", "copywithin", "delete", "entries", "every", "filter", "find", "findindex", _
                                     "findlast", "findlastindex", "foreach", "from", "includes", "indexof", "join", "lastindexof", _

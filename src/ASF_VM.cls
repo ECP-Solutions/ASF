@@ -6971,16 +6971,21 @@ Private Function ResolveModulePath(modulePath As String) As String
     End If
     
     ' For relative paths, resolve against current module directory
-    If left$(cleanPath, 2) = "./" Or left$(cleanPath, 3) = "../" Then
+    Dim relPath As String: relPath = Replace(cleanPath, "\", "/")
+    If left$(relPath, 2) = "./" Or left$(relPath, 3) = "../" Then
         Dim currentDir As String
         If GLOBALS_.CURRENT_MODULE_PATH <> vbNullString Then
+            Dim basePath As String: basePath = Replace(GLOBALS_.CURRENT_MODULE_PATH, "\", "/")
             Dim lastSlash As Long
-            lastSlash = InStrRev(Replace(GLOBALS_.CURRENT_MODULE_PATH, "\", "/"), "/")
+            lastSlash = InStrRev(basePath, "/")
             If lastSlash > 0 Then
-                If lastSlash < Len(GLOBALS_.CURRENT_MODULE_PATH) Then
-                    currentDir = Replace(GLOBALS_.CURRENT_MODULE_PATH, "\", "/") & "/"
+                If GLOBALS_.gModuleExports.Exists(GLOBALS_.CURRENT_MODULE_PATH) Then
+                    ' Inside a running module the path is the module file: use its directory
+                    currentDir = left$(basePath, lastSlash)
+                ElseIf lastSlash < Len(basePath) Then
+                    currentDir = basePath & "/"
                 Else
-                    currentDir = Replace(GLOBALS_.CURRENT_MODULE_PATH, "\", "/")
+                    currentDir = basePath
                 End If
             Else
                 currentDir = vbNullString
@@ -6988,7 +6993,26 @@ Private Function ResolveModulePath(modulePath As String) As String
         Else
             currentDir = vbNullString
         End If
-        ResolveModulePath = currentDir & mid$(cleanPath, InStr(1, cleanPath, "/") + 1)
+        ' Consume the leading ./ and ../ segments: each ../ goes up one directory
+        Dim parentSlash As Long
+        Do
+            If left$(relPath, 2) = "./" Then
+                relPath = mid$(relPath, 3)
+            ElseIf left$(relPath, 3) = "../" Then
+                relPath = mid$(relPath, 4)
+                If currentDir = vbNullString Or right$(currentDir, 3) = "../" Then
+                    ' No directory left to leave: keep the step
+                    currentDir = currentDir & "../"
+                ElseIf Len(currentDir) > 1 Then
+                    parentSlash = InStrRev(currentDir, "/", Len(currentDir) - 1)
+                    ' At a root ("/", "C:/") there is no parent: stay there
+                    If parentSlash > 0 Then currentDir = left$(currentDir, parentSlash)
+                End If
+            Else
+                Exit Do
+            End If
+        Loop
+        ResolveModulePath = currentDir & relPath
     Else
         ' Absolute path or module name
         ResolveModulePath = cleanPath
@@ -7029,6 +7053,9 @@ Public Function LoadModule(modulePath As String) As ASF_Map
     End If
     On Error GoTo 0
     
+    ' Save the importer's path before the module is compiled and run
+    Dim previousModulePath As String: previousModulePath = GLOBALS_.CURRENT_MODULE_PATH
+    
     ' Compile module
     Dim compiler As New ASF_Compiler
     compiler.SetGlobals GLOBALS_
@@ -7049,7 +7076,6 @@ Public Function LoadModule(modulePath As String) As ASF_Map
     GLOBALS_.gModuleExports.SetValue modulePath, moduleExports
     
     ' Store current module path for execution
-    Dim previousModulePath As String: previousModulePath = GLOBALS_.CURRENT_MODULE_PATH
     GLOBALS_.CURRENT_MODULE_PATH = modulePath
     
     ' Execute module
