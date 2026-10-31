@@ -7,7 +7,7 @@ All notable changes for ASF. This file combines the release notes from the proje
 ## Summary
 The module system resolves paths the way scripts expect: `WorkingDir` set before `Compile` is kept, a module's own relative imports start from its folder, `../` goes up a directory, and a script keeps its working directory after an import. The LibreOffice edition's helper modules get shorter names.
 
-The regex matcher's core no longer copies anything while it backtracks: captures are undone through a trail and the rest of a match is a stack of frames, which makes matching 1.7 to 6 times faster (see Performance).
+The regex matcher's core no longer copies anything while it backtracks: captures are undone through a trail and the rest of a match is a stack of frames, which makes matching 1.7 to 6 times faster (see Performance). Each pattern is then compiled to arrays of Longs, so matching reads array slots instead of keyed Collection items: about 1.2 times faster again, up to 1.9 times on backtracking-heavy patterns, for a compile step about 25% slower.
 
 ---
 
@@ -43,6 +43,27 @@ The regex matcher's core no longer copies anything while it backtracks: captures
     | Backtracking into a group | 10 | 23.438 → 13.703 ms (1.7×) | 231.000 → 116.000 ms (2.0×) | 224.250 → 123.625 ms (1.8×) |
 
     The no-match scan never reaches the matcher, so it is unchanged.
+    - **Compiled program instead of keyed Collections** — the parser still builds the AST as Collections, but `LowerProgram` now compiles it once per pattern to parallel Long arrays indexed by node id: node type, operands (char code, class map, capture index, min, max, lookbehind width), child, children list, quantifier bits and inline flags. The matcher, its continuation frames (now Longs instead of objects) and the start-position filters read only those arrays. Named backreferences, conditions and recursion targets are resolved at compile time, deterministic quantifiers and the capture slots each quantifier resets are computed once, and the inline flags are resolved per node once per scan, so `IgnoreCase`, `Multiline` and `DotAll` can still change after `Init`. Cached and shared compiled patterns hold the program.
+    - Results are identical to the previous engine on the 15,768 corpus cases (every public method) and on both test suites. LibreOffice Basic, medians of three alternated runs, milliseconds per call, previous engine → compiled program; the compile column times a fresh engine and `Init`, so every call compiles (`test/RegexBench.bas` patterns):
+
+    | Workload | Matches | `test` | `ExecAll` | `Replace` | Compile (`New` + `Init`) |
+    |---|---|---|---|---|---|
+    | Literal scan | 1 | 1.252 → 1.137 ms (1.10×) | 1.436 → 1.351 ms (1.06×) | 1.470 → 1.543 ms (0.95×) | 1.94 → 3.19 ms (0.61×) |
+    | Short validation | 1 | 0.807 → 0.761 ms (1.06×) | 1.041 → 0.777 ms (1.34×) | 1.073 → 0.852 ms (1.26×) | 10.51 → 11.48 ms (0.92×) |
+    | Capture extraction | 100 | 1.388 → 1.138 ms (1.22×) | 107.750 → 106.000 ms (1.02×) | 140.000 → 132.000 ms (1.06×) | 10.80 → 13.51 ms (0.80×) |
+    | Alternation and ignore case | 100 | 1.865 → 1.442 ms (1.29×) | 143.750 → 145.250 ms (0.99×) | 175.500 → 176.750 ms (0.99×) | 8.00 → 10.95 ms (0.73×) |
+    | Multiline anchors | 100 | 1.902 → 1.457 ms (1.31×) | 149.750 → 143.750 ms (1.04×) | 175.000 → 161.750 ms (1.08×) | 10.50 → 11.82 ms (0.89×) |
+    | No-match scan | 0 | 0.517 → 0.488 ms (1.06×) | 0.538 → 0.513 ms (1.05×) | 0.587 → 0.661 ms (0.89×) | 3.75 → 4.30 ms (0.87×) |
+    | Word boundaries | 40 | 0.711 → 0.616 ms (1.15×) | 27.594 → 26.813 ms (1.03×) | 30.359 → 31.938 ms (0.95×) | 2.10 → 2.85 ms (0.74×) |
+    | Backreference | 160 | 1.842 → 1.105 ms (1.67×) | 282.000 → 174.250 ms (1.62×) | 390.000 → 208.750 ms (1.87×) | 12.05 → 12.21 ms (0.99×) |
+    | E-mail addresses | 50 | 10.734 → 9.422 ms (1.14×) | 477.000 → 475.000 ms (1.00×) | 575.000 → 534.000 ms (1.08×) | 16.58 → 19.73 ms (0.84×) |
+    | Alternation in a quantifier | 30 | 8.035 → 8.281 ms (0.97×) | 216.250 → 163.750 ms (1.32×) | 195.000 → 181.750 ms (1.07×) | 4.18 → 6.78 ms (0.62×) |
+    | Lazy body with backreference | 60 | 2.949 → 2.102 ms (1.40×) | 163.750 → 144.000 ms (1.14×) | 171.500 → 139.750 ms (1.23×) | 6.98 → 8.72 ms (0.80×) |
+    | Lookaheads | 30 | 4.426 → 3.836 ms (1.15×) | 302.500 → 198.000 ms (1.53×) | 295.500 → 196.000 ms (1.51×) | 10.60 → 13.15 ms (0.81×) |
+    | Quantified group | 30 | 5.945 → 3.633 ms (1.64×) | 158.000 → 95.875 ms (1.65×) | 146.250 → 98.500 ms (1.48×) | 9.75 → 11.62 ms (0.84×) |
+    | Backtracking into a group | 10 | 12.125 → 8.000 ms (1.52×) | 133.500 → 72.500 ms (1.84×) | 121.688 → 67.313 ms (1.81×) | 14.21 → 16.52 ms (0.86×) |
+
+    Geometric means: `test` 1.25×, `ExecAll` 1.23×, `Replace` 1.20×, compile 0.80×. Collection lookups with string keys cost LibreOffice 2 to 20 µs each, and the parser still makes them; a compiled pattern is cached per engine (or across engines through `SharedCache`), so its compile cost is paid once. Workloads whose time goes into building the result Collections gain little.
 
 - **LibreOffice edition**
     - `ASF_LOCompat` is renamed `LOhelper` and `ASF_VBAExpressions` is renamed `VBAEhelper`; their procedures drop the `ASF`/`LO` prefixes. Macros create engines with `ASF.LOhelper.NewASF()`, `NewRegex()` and `NewASFMap()` and read output with `ASF.LOhelper.GetOutput()`. The rewritten classes call the helpers qualified with the module name; helpers whose plain name is a Basic built-in or keyword are named `TypeNameOf`, `CallMember`, `LetValue`, `RedimField` and `ObjectError`.

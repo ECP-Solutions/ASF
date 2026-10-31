@@ -28,8 +28,8 @@ Attribute VB_Exposed = False
 '  - Public API: Init, Test, Exec, Replace, Split
 '
 ' Design notes:
-'  - AST nodes are represented as VBA Collections with string keys; helper
-'    accessors (NodeAdd/NodeGet/NodeExists) are provided.
+'  - The parser builds AST nodes as VBA Collections with string keys (NodeAdd/NodeGet/
+'    NodeExists); LowerProgram compiles them to Long arrays, which is all the matcher reads.
 '  - Matching is backtracking-based; defensive limits and optimizations are
 '    implemented to reduce pathological backtracking where practical.
 '
@@ -83,8 +83,9 @@ Private pNamedCaptures As Collection
 Private pNamedCount As Long
 ' match-start filters from the AST: leading literal and ^ at the start of the pattern
 Private pPrefix As String
-Private pPrefixNode As Collection
-Private pAnchorNode As Collection
+Private pPrefixId As Long
+Private pAnchorId As Long
+Private pMinLen As Long
 ' subject as UTF-16 bytes for the start-position scan
 Private pSubjBytes() As Byte
 Private pCapsSize As Long
@@ -95,7 +96,7 @@ Private Const FR_CAPEND As Long = 2
 Private Const FR_QCONT As Long = 3
 Private Const FR_QGUARD As Long = 4
 Private kKind() As Long
-Private kNode() As Object
+Private kNode() As Long
 Private kNum() As Long
 Private kTop As Long
 Private kBase As Long
@@ -104,6 +105,58 @@ Private trSlot() As Long
 Private trOld() As Long
 Private trTop As Long
 Private pTrailCap As Long
+' the compiled program (see LowerProgram); b* and pBuild* are its build arrays
+Private Const T_LIT As Long = 1
+Private Const T_DOT As Long = 2
+Private Const T_CLASS As Long = 3
+Private Const T_BOL As Long = 4
+Private Const T_EOL As Long = 5
+Private Const T_WORDB As Long = 6
+Private Const T_BACKREF As Long = 7
+Private Const T_LA_POS As Long = 8
+Private Const T_LA_NEG As Long = 9
+Private Const T_LB_POS As Long = 10
+Private Const T_LB_NEG As Long = 11
+Private Const T_ATOMIC As Long = 12
+Private Const T_COND As Long = 13
+Private Const T_RECURSE As Long = 14
+Private Const T_SEQ As Long = 15
+Private Const T_GROUP As Long = 16
+Private Const T_ALT As Long = 17
+Private Const T_QUANT As Long = 18
+Private Const Q_LAZY As Long = 1
+Private Const Q_POSS As Long = 2
+Private Const Q_DET As Long = 4
+Private Const E_I As Long = 1
+Private Const E_M As Long = 2
+Private Const E_S As Long = 4
+Private pNodeCount As Long
+Private nType() As Long
+Private nA() As Long
+Private nB() As Long
+Private nKid() As Long
+Private nOpt() As Long
+Private nList() As Long
+Private nCnt() As Long
+Private pKids() As Long
+Private pLo() As Long
+Private pHi() As Long
+Private nEff() As Long
+Private pEffFor As Long
+Private bType() As Long
+Private bA() As Long
+Private bB() As Long
+Private bKid() As Long
+Private bOpt() As Long
+Private bList() As Long
+Private bCnt() As Long
+Private bKids() As Long
+Private bLo() As Long
+Private bHi() As Long
+Private bGroup() As Long
+Private pBuildCount As Long
+Private pBuildKidCount As Long
+Private pBuildRangeCount As Long
 ' compiled patterns keyed by pattern text; engines can share one through SharedCache
 Private pCache As Collection
 Private Const CACHE_LIMIT As Long = 64
@@ -122,7 +175,7 @@ End Property
 Private Function newNode(ByVal typ As String) As Collection
     Dim c As New Collection
     c.Add typ, "type"
-    ' always present so FlagState never pays for a failed key lookup
+    ' always present, so it is read without a key check
     c.Add vbNullString, "flags_on"
     Set newNode = c
 End Function
@@ -203,9 +256,9 @@ Private Function CompileState(ByVal pattern As String) As Variant
     pHasFirst = Not AddFirstChars(ast("body"))
     Dim maps As Variant
     If pBuildMapCount > 0 Then maps = pBuildMaps
-    Dim prefix As String, prefixNode As Collection, anchorNode As Collection
-    AnalyzeStart ast("body"), prefix, prefixNode, anchorNode
-    CompileState = Array(ast, CLng(ast("groupCount")), pFirstMap, pFirstHigh, pHasFirst, maps, prefix, prefixNode, anchorNode, named.Count)
+    Dim prefix As String, prefixId As Long, anchorId As Long
+    Dim prog As Variant: prog = LowerProgram(ast, prefix, prefixId, anchorId)
+    CompileState = Array(ast, CLng(ast("groupCount")), pFirstMap, pFirstHigh, pHasFirst, maps, prefix, prefixId, anchorId, named.Count, CLng(ast("minLen")), prog)
 End Function
 
 Private Sub LoadState(ByRef st As Variant)
@@ -216,9 +269,16 @@ Private Sub LoadState(ByRef st As Variant)
     pHasFirst = st(4)
     If Not IsEmpty(st(5)) Then pClassMaps = st(5)
     pPrefix = st(6)
-    Set pPrefixNode = st(7)
-    Set pAnchorNode = st(8)
+    pPrefixId = st(7)
+    pAnchorId = st(8)
     pNamedCount = st(9)
+    pMinLen = st(10)
+    Dim prog As Variant: prog = st(11)
+    pNodeCount = prog(0)
+    nType = prog(1): nA = prog(2): nB = prog(3): nKid = prog(4)
+    nOpt = prog(5): nList = prog(6): nCnt = prog(7)
+    pKids = prog(8): pLo = prog(9): pHi = prog(10)
+    pEffFor = -1
 End Sub
 
 ' Collection keys ignore case, so the pattern is keyed by its UTF-16 bytes in hex
@@ -231,31 +291,6 @@ Private Function CacheKey(ByRef pat As String) As String
     Next i
     CacheKey = "k" & s
 End Function
-
-' Leading literal and leading ^ of a single-alternative pattern; zero-width assertions before the literal are skipped
-Private Sub AnalyzeStart(ByVal body As Collection, ByRef prefix As String, ByRef prefixNode As Collection, ByRef anchorNode As Collection)
-    Dim seq As Collection: Set seq = body
-    If CStr(seq(1)) = "alt" Then
-        If seq("child").Count <> 1 Then Exit Sub
-        Set seq = seq("child")(1)
-    End If
-    If CStr(seq(1)) <> "seq" Then Exit Sub
-    Dim nd As Variant, k As Long
-    For Each nd In seq("child")
-        k = k + 1
-        Select Case CStr(nd(1))
-            Case "bol", "wordb", "lookahead_pos", "lookahead_neg", "lookbehind_pos", "lookbehind_neg"
-                If Len(prefix) > 0 Then Exit For
-                If k = 1 And CStr(nd(1)) = "bol" Then Set anchorNode = nd
-            Case "lit"
-                If prefixNode Is Nothing Then Set prefixNode = nd
-                If CStr(nd("flags_on")) <> CStr(prefixNode("flags_on")) Then Exit For
-                prefix = prefix & CStr(nd("ch"))
-            Case Else
-                Exit For
-        End Select
-    Next nd
-End Sub
 
 Private Sub EnsureCompiled()
     If pAST Is Nothing Then err.Raise vbObjectError + 4, "RegexEngine", "No pattern: call Init before matching"
@@ -762,17 +797,6 @@ Private Function MergeFlags(ByVal outer As String, ByVal inner As String) As Str
     If Len(offPart) > 0 Then MergeFlags = onPart & "-" & offPart Else MergeFlags = onPart
 End Function
 
-' Effective state of flag f for a node: its inline flags, else the engine default
-Private Function FlagState(ByVal node As Collection, ByVal f As String, ByVal dflt As Boolean) As Boolean
-    FlagState = dflt
-    Dim fl As String: fl = node("flags_on")
-    If Len(fl) = 0 Then Exit Function
-    Select Case ExplicitFlag(fl, f)
-        Case 1: FlagState = True
-        Case -1: FlagState = False
-    End Select
-End Function
-
 ' ---------- Helper: Find matching ] for a class starting at startPos (where pat[startPos] = "[") ----------
 Private Function FindClassEnd(ByVal pat As String, ByVal startPos As Long, ByVal pEnd As Long) As Long
     Dim pos As Long: pos = startPos
@@ -1140,6 +1164,264 @@ Private Function ParseEscapeChar(ByVal ch As String) As String
     End Select
 End Function
 
+' ------------------ Compiled program ----------------------------------------
+' The AST is lowered once per pattern to parallel Long arrays indexed by node id (1 is the body),
+' so matching reads array slots instead of keyed Collection items:
+'   nType   T_* code
+'   nA      lit: char code; class: map index; group: capture index (0: none); quant: min;
+'           backref and cond: group (-1: none); lookbehind: width (-1: none); recurse: target number;
+'           wordb: 1 for \B
+'   nB      lit: lower-case code; class: 1 when negated; quant: max (-1: no limit);
+'           cond: "no" branch (0: none); recurse: target node (0: none)
+'   nKid    child of group, quant, lookaround and atomic; "yes" branch of cond
+'   nList, nCnt  seq and alt: children in pKids; quant: capture indexes in its child, in pKids;
+'                class: ranges in pLo/pHi
+'   nOpt    quant: Q_* bits; lit, dot, class, backref, bol, eol: inline flags (see FlagBits)
+' nEff holds each node's effective flags (E_* bits) for the engine's current defaults.
+
+Private Function LowerProgram(ByVal ast As Collection, ByRef prefix As String, ByRef prefixId As Long, ByRef anchorId As Long) As Variant
+    pBuildCount = 0: pBuildKidCount = 0: pBuildRangeCount = 0
+    ' fresh arrays, never resized in place: a cached program may hold the previous ones
+    FreshLongs bType: FreshLongs bA: FreshLongs bB: FreshLongs bKid: FreshLongs bOpt
+    FreshLongs bList: FreshLongs bCnt: FreshLongs bKids: FreshLongs bLo: FreshLongs bHi
+    ReDim bGroup(0 To CLng(ast("groupCount")))
+    LowerNode ast("body"), ast
+    ' recursion targets and quantifier details need the whole program
+    Dim id As Long, k As Long
+    For id = 1 To pBuildCount
+        Select Case bType(id)
+            Case T_RECURSE
+                If bA(id) = 0 Then
+                    bB(id) = 1
+                ElseIf FindGroupIndexByOrdinal(ast, bA(id)) > 0 Then
+                    bB(id) = bGroup(bA(id))
+                End If
+            Case T_QUANT
+                If IsDeterministic(bKid(id)) Then bOpt(id) = bOpt(id) Or Q_DET
+                k = pBuildKidCount
+                bList(id) = k + 1
+                AddGroupIdx bKid(id)
+                bCnt(id) = pBuildKidCount - k
+        End Select
+    Next id
+    AnalyzeStart prefix, prefixId, anchorId
+    LowerProgram = Array(pBuildCount, bType, bA, bB, bKid, bOpt, bList, bCnt, bKids, bLo, bHi)
+End Function
+
+' True when node nd can match in at most one way at a given position
+Private Function IsDeterministic(ByVal nd As Long) As Boolean
+    Dim k As Long
+    IsDeterministic = True
+    Select Case bType(nd)
+        Case T_SEQ
+            For k = bList(nd) To bList(nd) + bCnt(nd) - 1
+                If Not IsDeterministic(bKids(k)) Then IsDeterministic = False: Exit Function
+            Next k
+        Case T_GROUP
+            IsDeterministic = IsDeterministic(bKid(nd))
+        Case T_QUANT
+            If (bOpt(nd) And Q_POSS) <> 0 Or bA(nd) = bB(nd) Then IsDeterministic = IsDeterministic(bKid(nd)) Else IsDeterministic = False
+        Case T_ALT
+            If bCnt(nd) = 1 Then IsDeterministic = IsDeterministic(bKids(bList(nd))) Else IsDeterministic = False
+    End Select
+End Function
+
+' Append the capture indexes of the groups in nd's subtree to bKids
+Private Sub AddGroupIdx(ByVal nd As Long)
+    Dim k As Long
+    Select Case bType(nd)
+        Case T_SEQ, T_ALT
+            For k = bList(nd) To bList(nd) + bCnt(nd) - 1
+                AddGroupIdx bKids(k)
+            Next k
+        Case T_GROUP
+            If bA(nd) > 0 Then AddKid bA(nd)
+            AddGroupIdx bKid(nd)
+        Case T_QUANT, T_LA_POS, T_LA_NEG, T_LB_POS, T_LB_NEG, T_ATOMIC
+            AddGroupIdx bKid(nd)
+        Case T_COND
+            AddGroupIdx bKid(nd)
+            If bB(nd) > 0 Then AddGroupIdx bB(nd)
+    End Select
+End Sub
+
+' Leading literal and leading ^ of a single-alternative pattern; zero-width assertions before the literal are skipped
+Private Sub AnalyzeStart(ByRef prefix As String, ByRef prefixId As Long, ByRef anchorId As Long)
+    Dim sq As Long: sq = 1
+    If bType(sq) = T_ALT Then
+        If bCnt(sq) <> 1 Then Exit Sub
+        sq = bKids(bList(sq))
+    End If
+    If bType(sq) <> T_SEQ Then Exit Sub
+    Dim k As Long, nd As Long
+    For k = 1 To bCnt(sq)
+        nd = bKids(bList(sq) + k - 1)
+        Select Case bType(nd)
+            Case T_BOL, T_WORDB, T_LA_POS, T_LA_NEG, T_LB_POS, T_LB_NEG
+                If Len(prefix) > 0 Then Exit For
+                If k = 1 And bType(nd) = T_BOL Then anchorId = nd
+            Case T_LIT
+                If prefixId = 0 Then prefixId = nd
+                If bOpt(nd) <> bOpt(prefixId) Then Exit For
+                prefix = prefix & ChrW$(bA(nd))
+            Case Else
+                Exit For
+        End Select
+    Next k
+End Sub
+
+Private Sub FreshLongs(ByRef a() As Long)
+    Dim r() As Long: ReDim r(0 To 15)
+    a = r
+End Sub
+
+Private Function LowerNode(ByVal node As Collection, ByVal ast As Collection) As Long
+    pBuildCount = pBuildCount + 1
+    Dim id As Long: id = pBuildCount
+    If id > UBound(bType) Then
+        Dim cap As Long: cap = 2 * id
+        ReDim Preserve bType(0 To cap): ReDim Preserve bA(0 To cap): ReDim Preserve bB(0 To cap)
+        ReDim Preserve bKid(0 To cap): ReDim Preserve bOpt(0 To cap): ReDim Preserve bList(0 To cap)
+        ReDim Preserve bCnt(0 To cap)
+    End If
+    Dim it As Variant, n As Long, k As Long, ch As String
+    Select Case CStr(node(1))
+        Case "lit"
+            bType(id) = T_LIT
+            ch = node("ch")
+            bA(id) = AscW(ch) And &HFFFF&
+            bB(id) = AscW(LCase$(ch)) And &HFFFF&
+        Case "dot"
+            bType(id) = T_DOT
+        Case "class"
+            bType(id) = T_CLASS
+            bA(id) = node("mapIdx")
+            If node("neg") Then bB(id) = 1
+            bList(id) = pBuildRangeCount + 1
+            For Each it In node("chars")
+                If IsArray(it) Then AddRange CodeOf(it(1)), CodeOf(it(2)) Else AddRange CodeOf(it), CodeOf(it)
+                n = n + 1
+            Next it
+            bCnt(id) = n
+        Case "seq", "alt"
+            If CStr(node(1)) = "seq" Then bType(id) = T_SEQ Else bType(id) = T_ALT
+            Dim kids As Collection: Set kids = node("child")
+            ' the child slots are taken before the children add their own
+            bList(id) = pBuildKidCount + 1
+            bCnt(id) = kids.Count
+            For Each it In kids
+                AddKid 0
+            Next it
+            For Each it In kids
+                k = LowerNode(it, ast)
+                bKids(bList(id) + n) = k
+                n = n + 1
+            Next it
+        Case "group"
+            bType(id) = T_GROUP
+            bA(id) = node("idx")
+            If bA(id) > 0 Then bGroup(bA(id)) = id
+            k = LowerNode(node("child"), ast)
+            bKid(id) = k
+        Case "quant"
+            bType(id) = T_QUANT
+            bA(id) = node("min")
+            bB(id) = node("max")
+            If node("lazy") Then bOpt(id) = Q_LAZY
+            If node("possessive") Then bOpt(id) = bOpt(id) Or Q_POSS
+            k = LowerNode(node("child"), ast)
+            bKid(id) = k
+        Case "bol"
+            bType(id) = T_BOL
+        Case "eol"
+            bType(id) = T_EOL
+        Case "wordb"
+            bType(id) = T_WORDB
+            If node("neg") Then bA(id) = 1
+        Case "backref"
+            bType(id) = T_BACKREF
+            If NodeExists(node, "name") Then bA(id) = FindGroupIndexByName(ast, CStr(node("name"))) Else bA(id) = node("idx")
+        Case "lookahead_pos", "lookahead_neg", "lookbehind_pos", "lookbehind_neg"
+            Select Case CStr(node(1))
+                Case "lookahead_pos": bType(id) = T_LA_POS
+                Case "lookahead_neg": bType(id) = T_LA_NEG
+                Case "lookbehind_pos": bType(id) = T_LB_POS
+                Case Else: bType(id) = T_LB_NEG
+            End Select
+            If NodeExists(node, "width") Then bA(id) = node("width") Else bA(id) = -1
+            k = LowerNode(node("child"), ast)
+            bKid(id) = k
+        Case "atomic"
+            bType(id) = T_ATOMIC
+            k = LowerNode(node("child"), ast)
+            bKid(id) = k
+        Case "cond"
+            bType(id) = T_COND
+            Dim condText As String: condText = node("cond")
+            bA(id) = -1
+            On Error Resume Next
+            If IsNumeric(condText) Then bA(id) = CLng(condText) Else bA(id) = FindGroupIndexByName(ast, condText)
+            On Error GoTo 0
+            k = LowerNode(node("yes"), ast)
+            bKid(id) = k
+            If NodeExists(node, "no") Then
+                k = LowerNode(node("no"), ast)
+                bB(id) = k
+            End If
+        Case "recurse"
+            bType(id) = T_RECURSE
+            bA(id) = node("target")
+    End Select
+    ch = node("flags_on")
+    If Len(ch) > 0 Then bOpt(id) = bOpt(id) Or FlagBits(ch)
+    LowerNode = id
+End Function
+
+Private Sub AddKid(ByVal v As Long)
+    pBuildKidCount = pBuildKidCount + 1
+    If pBuildKidCount > UBound(bKids) Then
+        ReDim Preserve bKids(0 To 2 * pBuildKidCount)
+    End If
+    bKids(pBuildKidCount) = v
+End Sub
+
+Private Sub AddRange(ByVal lo As Long, ByVal hi As Long)
+    pBuildRangeCount = pBuildRangeCount + 1
+    If pBuildRangeCount > UBound(bLo) Then
+        ReDim Preserve bLo(0 To 2 * pBuildRangeCount)
+        ReDim Preserve bHi(0 To 2 * pBuildRangeCount)
+    End If
+    bLo(pBuildRangeCount) = lo
+    bHi(pBuildRangeCount) = hi
+End Sub
+
+' Inline flags of a node as bits: 1, 2 and 4 switch i, m and s on; 8, 16 and 32 switch them off
+Private Function FlagBits(ByVal fl As String) As Long
+    Dim k As Long, bit As Long: bit = 1
+    For k = 1 To 3
+        Select Case ExplicitFlag(fl, mid$("ims", k, 1))
+            Case 1: FlagBits = FlagBits Or bit
+            Case -1: FlagBits = FlagBits Or 8 * bit
+        End Select
+        bit = bit * 2
+    Next k
+End Function
+
+' Effective flags of every node for the current IgnoreCase, Multiline and DotAll
+Private Sub ResolveFlags()
+    Dim dflt As Long
+    If pIgnoreCase Then dflt = E_I
+    If pMultiline Then dflt = dflt Or E_M
+    If pDotAll Then dflt = dflt Or E_S
+    If dflt = pEffFor Then Exit Sub
+    ReDim nEff(0 To pNodeCount)
+    Dim i As Long
+    For i = 1 To pNodeCount
+        nEff(i) = (dflt And Not (nOpt(i) \ 8)) Or (nOpt(i) And 7)
+    Next i
+    pEffFor = dflt
+End Sub
+
 ' ------------------ Matching engine -----------------------------------------
 ' Backtracking in continuation-passing style: MatchHere matches a node followed by the
 ' continuation, the frames on the k* stack above kBase (rest of a sequence, end of a capture,
@@ -1148,64 +1430,64 @@ End Function
 ' attempt undoes the trail back to its mark. Every matcher leaves the trail as it found it
 ' when it returns False.
 
-' Match node at pos, then the continuation; outEnd is the last position of the whole match
-Private Function MatchHere(ByVal node As Collection, ByVal pos As Long, ByRef outEnd As Long) As Boolean
-    Dim t As String: t = node(1)
+' Match node nd at pos, then the continuation; outEnd is the last position of the whole match
+Private Function MatchHere(ByVal nd As Long, ByVal pos As Long, ByRef outEnd As Long) As Boolean
+    Dim t As Long: t = nType(nd)
     Dim nxt As Long
     Select Case t
-        Case "seq"
-            MatchHere = MatchSeq(node("child"), 1, pos, outEnd)
-        Case "group"
-            MatchHere = MatchGroup(node, pos, outEnd)
-        Case "alt"
-            MatchHere = MatchAlt(node, pos, outEnd)
-        Case "quant"
-            MatchHere = MatchQuant(node, 0, pos, outEnd)
+        Case T_SEQ
+            MatchHere = MatchSeq(nd, 1, pos, outEnd)
+        Case T_GROUP
+            MatchHere = MatchGroup(nd, pos, outEnd)
+        Case T_ALT
+            MatchHere = MatchAlt(nd, pos, outEnd)
+        Case T_QUANT
+            MatchHere = MatchQuant(nd, 0, pos, outEnd)
         Case Else
             MatchSteps = MatchSteps + 1
             If MatchSteps > pMaxMatchSteps Then err.Raise vbObjectError + 2, "RegexEngine", "Match aborted: too many steps"
             Select Case t
-                Case "lit", "dot", "class"
-                    If LeafMatches(node, t, pos) Then MatchHere = MatchRest(pos + 1, outEnd)
-                Case "lookahead_pos", "lookahead_neg", "lookbehind_pos", "lookbehind_neg"
-                    MatchHere = MatchLook(node, t, pos, outEnd)
-                Case "atomic", "cond", "recurse"
-                    MatchHere = MatchIsolatedThenRest(node, t, pos, outEnd)
+                Case T_LIT, T_DOT, T_CLASS
+                    If LeafMatches(nd, pos) Then MatchHere = MatchRest(pos + 1, outEnd)
+                Case T_LA_POS, T_LA_NEG, T_LB_POS, T_LB_NEG
+                    MatchHere = MatchLook(nd, t, pos, outEnd)
+                Case T_ATOMIC, T_COND, T_RECURSE
+                    MatchHere = MatchIsolatedThenRest(nd, t, pos, outEnd)
                 Case Else
-                    If MatchSimple(node, t, pos, nxt) Then MatchHere = MatchRest(nxt, outEnd)
+                    If MatchSimple(nd, t, pos, nxt) Then MatchHere = MatchRest(nxt, outEnd)
             End Select
     End Select
 End Function
 
-' children(i..) then the continuation: leaves and assertions are matched here in a loop; any
-' other node is matched with the rest of the sequence pushed as a frame
-Private Function MatchSeq(ByVal children As Collection, ByVal i As Long, ByVal pos As Long, ByRef outEnd As Long) As Boolean
-    Dim n As Long: n = children.Count
-    Dim nd As Collection, t As String, nxt As Long
+' Children i.. of sequence sq, then the continuation: leaves and assertions are matched here in a
+' loop; any other node is matched with the rest of the sequence pushed as a frame
+Private Function MatchSeq(ByVal sq As Long, ByVal i As Long, ByVal pos As Long, ByRef outEnd As Long) As Boolean
+    Dim n As Long: n = nCnt(sq)
+    Dim first As Long: first = nList(sq) - 1
+    Dim nd As Long, t As Long, nxt As Long
     Do While i <= n
-        Set nd = children(i)
-        t = nd(1)
-        Select Case t
-            Case "lit", "dot", "class"
-                MatchSteps = MatchSteps + 1
-                If MatchSteps > pMaxMatchSteps Then err.Raise vbObjectError + 2, "RegexEngine", "Match aborted: too many steps"
-                If Not LeafMatches(nd, t, pos) Then Exit Function
-                pos = pos + 1
-            Case "bol", "eol", "wordb", "backref"
-                MatchSteps = MatchSteps + 1
-                If MatchSteps > pMaxMatchSteps Then err.Raise vbObjectError + 2, "RegexEngine", "Match aborted: too many steps"
-                If Not MatchSimple(nd, t, pos, nxt) Then Exit Function
-                pos = nxt
-            Case Else
-                If i < n Then
-                    PushFrame FR_SEQ, children, i + 1
-                    MatchSeq = MatchHere(nd, pos, outEnd)
-                    kTop = kTop - 1
-                Else
-                    MatchSeq = MatchHere(nd, pos, outEnd)
-                End If
-                Exit Function
-        End Select
+        nd = pKids(first + i)
+        t = nType(nd)
+        If t <= T_CLASS Then
+            MatchSteps = MatchSteps + 1
+            If MatchSteps > pMaxMatchSteps Then err.Raise vbObjectError + 2, "RegexEngine", "Match aborted: too many steps"
+            If Not LeafMatches(nd, pos) Then Exit Function
+            pos = pos + 1
+        ElseIf t <= T_BACKREF Then
+            MatchSteps = MatchSteps + 1
+            If MatchSteps > pMaxMatchSteps Then err.Raise vbObjectError + 2, "RegexEngine", "Match aborted: too many steps"
+            If Not MatchSimple(nd, t, pos, nxt) Then Exit Function
+            pos = nxt
+        Else
+            If i < n Then
+                PushFrame FR_SEQ, sq, i + 1
+                MatchSeq = MatchHere(nd, pos, outEnd)
+                kTop = kTop - 1
+            Else
+                MatchSeq = MatchHere(nd, pos, outEnd)
+            End If
+            Exit Function
+        End If
         i = i + 1
     Loop
     MatchSeq = MatchRest(pos, outEnd)
@@ -1219,7 +1501,7 @@ Private Function MatchRest(ByVal pos As Long, ByRef outEnd As Long) As Boolean
         Exit Function
     End If
     Dim kind As Long: kind = kKind(kTop)
-    Dim nd As Collection: Set nd = kNode(kTop)
+    Dim nd As Long: nd = kNode(kTop)
     Dim num As Long: num = kNum(kTop)
     Dim mark As Long
     kTop = kTop - 1
@@ -1239,19 +1521,19 @@ Private Function MatchRest(ByVal pos As Long, ByRef outEnd As Long) As Boolean
     End Select
     kTop = kTop + 1
     kKind(kTop) = kind
-    Set kNode(kTop) = nd
+    kNode(kTop) = nd
     kNum(kTop) = num
 End Function
 
 ' A node on its own, with no continuation: lookarounds, atomic groups, conditionals, recursion
-Private Function MatchIsolated(ByVal node As Collection, ByVal pos As Long, ByRef outEnd As Long) As Boolean
+Private Function MatchIsolated(ByVal nd As Long, ByVal pos As Long, ByRef outEnd As Long) As Boolean
     Dim saveBase As Long: saveBase = kBase
     kBase = kTop
-    MatchIsolated = MatchHere(node, pos, outEnd)
+    MatchIsolated = MatchHere(nd, pos, outEnd)
     kBase = saveBase
 End Function
 
-Private Sub PushFrame(ByVal kind As Long, ByVal nd As Collection, ByVal num As Long)
+Private Sub PushFrame(ByVal kind As Long, ByVal nd As Long, ByVal num As Long)
     kTop = kTop + 1
     If kTop > pStackCap Then
         pStackCap = 2 * pStackCap + 32
@@ -1260,7 +1542,7 @@ Private Sub PushFrame(ByVal kind As Long, ByVal nd As Collection, ByVal num As L
         ReDim Preserve kNum(1 To pStackCap)
     End If
     kKind(kTop) = kind
-    Set kNode(kTop) = nd
+    kNode(kTop) = nd
     kNum(kTop) = num
 End Sub
 
@@ -1290,34 +1572,34 @@ Private Sub Undo(ByVal mark As Long)
     Loop
 End Sub
 
-Private Function MatchGroup(ByVal node As Collection, ByVal pos As Long, ByRef outEnd As Long) As Boolean
-    Dim gidx As Long: gidx = node("idx")
+Private Function MatchGroup(ByVal nd As Long, ByVal pos As Long, ByRef outEnd As Long) As Boolean
+    Dim gidx As Long: gidx = nA(nd)
     If gidx < 1 Then
-        MatchGroup = MatchHere(node("child"), pos, outEnd)
+        MatchGroup = MatchHere(nKid(nd), pos, outEnd)
         Exit Function
     End If
     Dim mark As Long: mark = trTop
     SetCap gidx, pos
-    PushFrame FR_CAPEND, Nothing, gidx
-    MatchGroup = MatchHere(node("child"), pos, outEnd)
+    PushFrame FR_CAPEND, 0, gidx
+    MatchGroup = MatchHere(nKid(nd), pos, outEnd)
     kTop = kTop - 1
     If Not MatchGroup Then Undo mark
 End Function
 
-Private Function MatchAlt(ByVal node As Collection, ByVal pos As Long, ByRef outEnd As Long) As Boolean
-    Dim alt As Variant
-    For Each alt In node("child")
-        If MatchHere(alt, pos, outEnd) Then MatchAlt = True: Exit Function
-    Next alt
+Private Function MatchAlt(ByVal nd As Long, ByVal pos As Long, ByRef outEnd As Long) As Boolean
+    Dim k As Long
+    For k = nList(nd) To nList(nd) + nCnt(nd) - 1
+        If MatchHere(pKids(k), pos, outEnd) Then MatchAlt = True: Exit Function
+    Next k
 End Function
 
 ' Lookarounds: the inner pattern is matched on its own; a positive one keeps its captures (ECMAScript)
-Private Function MatchLook(ByVal node As Collection, ByVal t As String, ByVal pos As Long, ByRef outEnd As Long) As Boolean
+Private Function MatchLook(ByVal nd As Long, ByVal t As Long, ByVal pos As Long, ByRef outEnd As Long) As Boolean
     Dim at As Long: at = pos
-    Dim negative As Boolean: negative = (t = "lookahead_neg" Or t = "lookbehind_neg")
-    If t = "lookbehind_pos" Or t = "lookbehind_neg" Then
-        If Not NodeExists(node, "width") Then Exit Function
-        at = pos - CLng(node("width"))
+    Dim negative As Boolean: negative = (t = T_LA_NEG Or t = T_LB_NEG)
+    If t = T_LB_POS Or t = T_LB_NEG Then
+        If nA(nd) < 0 Then Exit Function
+        at = pos - nA(nd)
         If at < 1 Then
             ' no room before pos: the inner pattern cannot match
             If negative Then MatchLook = MatchRest(pos, outEnd)
@@ -1326,7 +1608,7 @@ Private Function MatchLook(ByVal node As Collection, ByVal t As String, ByVal po
     End If
     Dim mark As Long: mark = trTop
     Dim e As Long
-    Dim ok As Boolean: ok = MatchIsolated(node("child"), at, e)
+    Dim ok As Boolean: ok = MatchIsolated(nKid(nd), at, e)
     If negative Then
         Undo mark
         If ok Then Exit Function
@@ -1338,13 +1620,13 @@ Private Function MatchLook(ByVal node As Collection, ByVal t As String, ByVal po
 End Function
 
 ' atomic, cond and recurse: the node matches on its own, with no backtracking into it, then the continuation
-Private Function MatchIsolatedThenRest(ByVal node As Collection, ByVal t As String, ByVal pos As Long, ByRef outEnd As Long) As Boolean
+Private Function MatchIsolatedThenRest(ByVal nd As Long, ByVal t As Long, ByVal pos As Long, ByRef outEnd As Long) As Boolean
     Dim mark As Long: mark = trTop
     Dim e As Long, ok As Boolean
     Select Case t
-        Case "atomic": ok = MatchIsolated(node("child"), pos, e)
-        Case "cond": ok = MatchCond(node, pos, e)
-        Case "recurse": ok = MatchRecurse(node, pos, e)
+        Case T_ATOMIC: ok = MatchIsolated(nKid(nd), pos, e)
+        Case T_COND: ok = MatchCond(nd, pos, e)
+        Case T_RECURSE: ok = MatchRecurse(nd, pos, e)
     End Select
     If Not ok Then
         Undo mark
@@ -1355,23 +1637,20 @@ Private Function MatchIsolatedThenRest(ByVal node As Collection, ByVal t As Stri
 End Function
 
 ' (?(cond)yes|no): cond is a group number or name; a missing branch fails
-Private Function MatchCond(ByVal node As Collection, ByVal pos As Long, ByRef outEnd As Long) As Boolean
-    If Not NodeExists(node, "cond") Then Exit Function
-    Dim condText As String: condText = CStr(node("cond"))
-    Dim cIdx As Long
-    If IsNumeric(condText) Then cIdx = CLng(condText) Else cIdx = FindGroupIndexByName(pAST, condText)
-    Dim satisfied As Boolean
-    If cIdx >= 0 And cIdx <= UBound(capsEnd) Then satisfied = (capsEnd(cIdx) <> -1)
-    Dim branch As String
-    If satisfied Then branch = "yes" Else branch = "no"
-    If Not NodeExists(node, branch) Then Exit Function
-    MatchCond = MatchIsolated(node(branch), pos, outEnd)
+Private Function MatchCond(ByVal nd As Long, ByVal pos As Long, ByRef outEnd As Long) As Boolean
+    Dim cIdx As Long: cIdx = nA(nd)
+    Dim branch As Long
+    If cIdx >= 0 And cIdx <= UBound(capsEnd) Then
+        If capsEnd(cIdx) <> -1 Then branch = nKid(nd) Else branch = nB(nd)
+    Else
+        branch = nB(nd)
+    End If
+    If branch > 0 Then MatchCond = MatchIsolated(branch, pos, outEnd)
 End Function
 
 ' (?R) and (?n): the whole pattern or group n, guarded against left recursion and depth
-Private Function MatchRecurse(ByVal node As Collection, ByVal pos As Long, ByRef outEnd As Long) As Boolean
-    If Not NodeExists(node, "target") Then Exit Function
-    Dim targ As Long: targ = CLng(node("target"))
+Private Function MatchRecurse(ByVal nd As Long, ByVal pos As Long, ByRef outEnd As Long) As Boolean
+    Dim targ As Long: targ = nA(nd)
     ' re-entering the same target at the same position can never consume input (left recursion)
     Dim recKey As String: recKey = "|" & targ & "@" & pos & "|"
     If InStr(pRecActive, recKey) > 0 Then Exit Function
@@ -1379,61 +1658,37 @@ Private Function MatchRecurse(ByVal node As Collection, ByVal pos As Long, ByRef
     If pRecDepth > RECURSE_LIMIT Then err.Raise vbObjectError + 3, "RegexEngine", "Match aborted: recursion too deep"
     Dim prevActive As String: prevActive = pRecActive
     pRecActive = pRecActive & recKey
-    Dim target As Collection
-    If targ = 0 Then
-        Set target = pAST("body")
-    Else
-        Set target = RecurseTarget(targ)
-    End If
-    If Not target Is Nothing Then MatchRecurse = MatchIsolated(target, pos, outEnd)
+    If nB(nd) > 0 Then MatchRecurse = MatchIsolated(nB(nd), pos, outEnd)
     pRecActive = prevActive
     pRecDepth = pRecDepth - 1
 End Function
 
-' Child node of the group a (?n) recursion refers to, Nothing when there is none
-Private Function RecurseTarget(ByVal targ As Long) As Collection
-    If Not NodeExists(pAST, "groupNodes") Then Exit Function
-    Dim gnodes As Collection: Set gnodes = pAST("groupNodes")
-    Dim rIdx As Long: rIdx = FindGroupIndexByOrdinal(pAST, targ)
-    Dim targetNode As Variant
-    On Error Resume Next
-    targetNode = gnodes(rIdx)
-    If err.Number <> 0 Then err.Clear: Exit Function
-    On Error GoTo 0
-    If typeName(targetNode(UBound(targetNode))) = "Collection" Then Set RecurseTarget = targetNode(UBound(targetNode))
-End Function
-
-' Zero-width assertions and backreferences: True when node matches at pos; nxt is where matching resumes
-Private Function MatchSimple(ByVal node As Collection, ByVal t As String, ByVal pos As Long, ByRef nxt As Long) As Boolean
+' Zero-width assertions and backreferences: True when node nd matches at pos; nxt is where matching resumes
+Private Function MatchSimple(ByVal nd As Long, ByVal t As Long, ByVal pos As Long, ByRef nxt As Long) As Boolean
     nxt = pos
     Select Case t
-        Case "bol"
+        Case T_BOL
             If pos = 1 Then
                 MatchSimple = True
-            ElseIf FlagState(node, "m", pMultiline) Then
+            ElseIf nEff(nd) And E_M Then
                 MatchSimple = IsLineBreakAt(pos - 1)
             End If
-        Case "eol"
+        Case T_EOL
             If pos = pSubjLen + 1 Then
                 MatchSimple = True
-            ElseIf FlagState(node, "m", pMultiline) Then
+            ElseIf nEff(nd) And E_M Then
                 MatchSimple = IsLineBreakAt(pos)
             End If
-        Case "wordb"
-            MatchSimple = ((IsWordCharAt(pos - 1) = IsWordCharAt(pos)) = CBool(node("neg")))
-        Case "backref"
-            MatchSimple = MatchBackref(node, pos, nxt)
+        Case T_WORDB
+            MatchSimple = ((IsWordCharAt(pos - 1) = IsWordCharAt(pos)) = (nA(nd) <> 0))
+        Case T_BACKREF
+            MatchSimple = MatchBackref(nd, pos, nxt)
     End Select
 End Function
 
 ' A group that did not participate matches the empty string (ECMAScript/VBScript)
-Private Function MatchBackref(ByVal node As Collection, ByVal pos As Long, ByRef nxt As Long) As Boolean
-    Dim brIdx As Long
-    If NodeExists(node, "name") Then
-        brIdx = FindGroupIndexByName(pAST, CStr(node("name")))
-    Else
-        brIdx = CLng(node("idx"))
-    End If
+Private Function MatchBackref(ByVal nd As Long, ByVal pos As Long, ByRef nxt As Long) As Boolean
+    Dim brIdx As Long: brIdx = nA(nd)
     Dim brLen As Long
     If brIdx >= 1 And brIdx <= pGroupCount Then
         If capsStart(brIdx) >= 1 And capsEnd(brIdx) >= capsStart(brIdx) Then brLen = capsEnd(brIdx) - capsStart(brIdx) + 1
@@ -1443,7 +1698,7 @@ Private Function MatchBackref(ByVal node As Collection, ByVal pos As Long, ByRef
     If nxt - 1 > pSubjLen Then Exit Function
     Dim brText As String: brText = mid$(CurSubject, pos, brLen)
     Dim brCap As String: brCap = mid$(CurSubject, capsStart(brIdx), brLen)
-    If FlagState(node, "i", pIgnoreCase) Then brText = LCase$(brText): brCap = LCase$(brCap)
+    If nEff(nd) And E_I Then brText = LCase$(brText): brCap = LCase$(brCap)
     MatchBackref = (brText = brCap)
 End Function
 
@@ -1453,83 +1708,33 @@ Private Function IsLineBreakAt(ByVal pos As Long) As Boolean
     IsLineBreakAt = (code = 10 Or code = 13)
 End Function
 
-' True when a node can match in at most one way at a given position (memoized on the node).
-Private Function IsDeterministic(ByVal node As Collection) As Boolean
-    If NodeExists(node, "det") Then IsDeterministic = node("det"): Exit Function
-    Dim det As Boolean: det = True
-    Dim subNode As Variant
-    Select Case CStr(node(1))
-        Case "seq"
-            For Each subNode In node("child")
-                If Not IsDeterministic(subNode) Then det = False: Exit For
-            Next subNode
-        Case "group"
-            det = IsDeterministic(NodeGet(node, "child"))
-        Case "quant"
-            If NodeGet(node, "possessive") Or NodeGet(node, "min") = NodeGet(node, "max") Then
-                det = IsDeterministic(NodeGet(node, "child"))
-            Else
-                det = False
-            End If
-        Case "alt"
-            Dim alts As Collection: Set alts = NodeGet(node, "child")
-            If alts.Count = 1 Then det = IsDeterministic(alts(1)) Else det = False
-    End Select
-    NodeAdd node, "det", det
-    IsDeterministic = det
-End Function
-
-Private Sub CollectGroupIdx(ByVal node As Variant, ByRef idxList As String)
-    If typeName(node) <> "Collection" Then Exit Sub
-    If NodeExists(node, "type") Then
-        If NodeGet(node, "type") = "group" Then
-            If CLng(node("idx")) > 0 Then idxList = idxList & node("idx") & ","
-        End If
-    End If
-    Dim elm As Variant
-    For Each elm In node
-        If typeName(elm) = "Collection" Then CollectGroupIdx elm, idxList
-    Next elm
-End Sub
-
 ' Captures inside a quantified atom start unset on every iteration (ECMAScript).
-Private Sub ResetGroupCaps(ByVal qnode As Collection)
-    If Not NodeExists(qnode, "capIdx") Then
-        Dim lst As String
-        CollectGroupIdx NodeGet(qnode, "child"), lst
-        Dim parts() As String: parts = VBA.Split(lst, ",")
-        Dim idxs() As Long: ReDim idxs(0 To UBound(parts) + 1)
-        Dim k As Long
-        For k = 0 To UBound(parts)
-            If Len(parts(k)) > 0 Then idxs(k) = CLng(parts(k))
-        Next k
-        NodeAdd qnode, "capIdx", idxs
-    End If
-    Dim g As Variant
-    For Each g In qnode("capIdx")
-        If g > 0 Then
-            If capsStart(g) <> 0 Then SetCap CLng(g), 0
-            If capsEnd(g) <> -1 Then SetCap -CLng(g), -1
-        End If
-    Next g
+Private Sub ResetGroupCaps(ByVal qd As Long)
+    Dim k As Long, g As Long
+    For k = nList(qd) To nList(qd) + nCnt(qd) - 1
+        g = pKids(k)
+        If capsStart(g) <> 0 Then SetCap g, 0
+        If capsEnd(g) <> -1 Then SetCap -g, -1
+    Next k
 End Sub
 
-' Quantifier with count iterations done, then the continuation. A child with internal choices is
+' Quantifier qd with count iterations done, then the continuation. A child with internal choices is
 ' matched one iteration at a time, with the next iteration as a frame, so the continuation can
 ' backtrack into each iteration.
-Private Function MatchQuant(ByVal qnode As Collection, ByVal count As Long, ByVal pos As Long, ByRef outEnd As Long) As Boolean
-    Dim childNode As Collection: Set childNode = qnode("child")
-    Dim mn As Long: mn = qnode("min")
-    Dim mx As Long: mx = qnode("max")
-    Dim lazy As Boolean: lazy = qnode("lazy")
-    Dim possFlag As Boolean: possFlag = qnode("possessive")
+Private Function MatchQuant(ByVal qd As Long, ByVal count As Long, ByVal pos As Long, ByRef outEnd As Long) As Boolean
+    Dim child As Long: child = nKid(qd)
+    Dim mn As Long: mn = nA(qd)
+    Dim mx As Long: mx = nB(qd)
+    Dim opt As Long: opt = nOpt(qd)
+    Dim lazy As Boolean: lazy = (opt And Q_LAZY) <> 0
+    Dim possFlag As Boolean: possFlag = (opt And Q_POSS) <> 0
     Dim remMin As Long: remMin = mn - count
     If remMin < 0 Then remMin = 0
     Dim remMax As Long
     If mx = -1 Then remMax = -1 Else remMax = mx - count
 
-    If possFlag Or pQuantDepth >= QUANT_REC_LIMIT Or IsDeterministic(childNode) Then
-        MatchQuant = MatchQuantIter(childNode, remMin, remMax, lazy, possFlag, pos, outEnd)
+    If possFlag Or pQuantDepth >= QUANT_REC_LIMIT Or (opt And Q_DET) <> 0 Then
+        MatchQuant = MatchQuantIter(child, remMin, remMax, lazy, possFlag, pos, outEnd)
         Exit Function
     End If
 
@@ -1538,11 +1743,11 @@ Private Function MatchQuant(ByVal qnode As Collection, ByVal count As Long, ByVa
     End If
     If remMax <> 0 Then
         Dim mark As Long: mark = trTop
-        ResetGroupCaps qnode
-        PushFrame FR_QCONT, qnode, count + 1
-        If remMin = 0 Then PushFrame FR_QGUARD, Nothing, pos
+        ResetGroupCaps qd
+        PushFrame FR_QCONT, qd, count + 1
+        If remMin = 0 Then PushFrame FR_QGUARD, 0, pos
         pQuantDepth = pQuantDepth + 1
-        Dim ok As Boolean: ok = MatchHere(childNode, pos, outEnd)
+        Dim ok As Boolean: ok = MatchHere(child, pos, outEnd)
         pQuantDepth = pQuantDepth - 1
         If remMin = 0 Then kTop = kTop - 2 Else kTop = kTop - 1
         If ok Then MatchQuant = True: Exit Function
@@ -1553,10 +1758,9 @@ End Function
 
 ' Quantifier over a child with no internal choices: each occurrence is matched on its own, then the
 ' continuation is tried for each count (greedy: most first; lazy: fewest first; possessive: most only)
-Private Function MatchQuantIter(ByVal childNode As Collection, ByVal mn As Long, ByVal mx As Long, ByVal lazy As Boolean, ByVal possFlag As Boolean, ByVal pos As Long, ByRef outEnd As Long) As Boolean
-    Dim leafType As String: leafType = childNode(1)
-    If leafType = "lit" Or leafType = "dot" Or leafType = "class" Then
-        MatchQuantIter = MatchLeafRun(childNode, leafType, mn, mx, lazy, possFlag, pos, outEnd)
+Private Function MatchQuantIter(ByVal child As Long, ByVal mn As Long, ByVal mx As Long, ByVal lazy As Boolean, ByVal possFlag As Boolean, ByVal pos As Long, ByRef outEnd As Long) As Boolean
+    If nType(child) <= T_CLASS Then
+        MatchQuantIter = MatchLeafRun(child, mn, mx, lazy, possFlag, pos, outEnd)
         Exit Function
     End If
 
@@ -1573,7 +1777,7 @@ Private Function MatchQuantIter(ByVal childNode As Collection, ByVal mn As Long,
         End If
         If n = mx Then Exit Do
         preMark = trTop
-        If Not MatchIsolated(childNode, scanPos, e) Then Exit Do
+        If Not MatchIsolated(child, scanPos, e) Then Exit Do
         ' an empty iteration repeats identically; it only counts towards the minimum
         zeroLen = (e < scanPos)
         If zeroLen And n >= mn Then
@@ -1616,22 +1820,22 @@ Private Function MatchQuantIter(ByVal childNode As Collection, ByVal mn As Long,
 End Function
 
 ' Quantified single-char node: captures cannot change, so occurrence k ends at pos + k - 1
-Private Function MatchLeafRun(ByVal childNode As Collection, ByVal leafType As String, ByVal mn As Long, ByVal mx As Long, ByVal lazy As Boolean, ByVal possFlag As Boolean, ByVal pos As Long, ByRef outEnd As Long) As Boolean
-    Dim n As Long: n = LeafCount(childNode, leafType, pos, mn)
+Private Function MatchLeafRun(ByVal child As Long, ByVal mn As Long, ByVal mx As Long, ByVal lazy As Boolean, ByVal possFlag As Boolean, ByVal pos As Long, ByRef outEnd As Long) As Boolean
+    Dim n As Long: n = LeafCount(child, pos, mn)
     If n < mn Then Exit Function
     If lazy And Not possFlag Then
         ' extend one char at a time, trying the continuation first
         Do
             If MatchRest(pos + n, outEnd) Then MatchLeafRun = True: Exit Function
             If n = mx Then Exit Do
-            If LeafCount(childNode, leafType, pos + n, 1) = 0 Then Exit Do
+            If LeafCount(child, pos + n, 1) = 0 Then Exit Do
             n = n + 1
         Loop
     Else
         If mx = -1 Then
-            n = n + LeafCount(childNode, leafType, pos + n, -1)
+            n = n + LeafCount(child, pos + n, -1)
         ElseIf n < mx Then
-            n = n + LeafCount(childNode, leafType, pos + n, mx - n)
+            n = n + LeafCount(child, pos + n, mx - n)
         End If
         Dim k As Long, kEnd As Long
         If possFlag Then kEnd = n Else kEnd = mn
@@ -1643,32 +1847,31 @@ End Function
 
 ' Chars from pos on that match a lit, dot or class node, at most limit of them (-1: no limit).
 ' Each char tested counts as a step, the one that fails too.
-Private Function LeafCount(ByVal node As Collection, ByVal t As String, ByVal pos As Long, ByVal limit As Long) As Long
+Private Function LeafCount(ByVal nd As Long, ByVal pos As Long, ByVal limit As Long) As Long
     If limit = 0 Then Exit Function
     Dim last As Long: last = pSubjLen
     If limit > 0 Then
         If pos + limit - 1 < last Then last = pos + limit - 1
     End If
     Dim p As Long: p = pos
-    Dim code As Long
-    Select Case t
-        Case "lit"
-            Dim ch As String: ch = node("ch")
-            If FlagState(node, "i", pIgnoreCase) Then
-                ch = LCase$(ch)
+    Dim code As Long, want As Long
+    Select Case nType(nd)
+        Case T_LIT
+            If nEff(nd) And E_I Then
+                want = nB(nd)
                 Do While p <= last
-                    If LCase$(mid$(CurSubject, p, 1)) <> ch Then Exit Do
+                    If LowerCode(pSubjBytes(2 * p - 2) + 256& * pSubjBytes(2 * p - 1)) <> want Then Exit Do
                     p = p + 1
                 Loop
             Else
-                Dim chCode As Long: chCode = CodeOf(ch)
+                want = nA(nd)
                 Do While p <= last
-                    If pSubjBytes(2 * p - 2) + 256& * pSubjBytes(2 * p - 1) <> chCode Then Exit Do
+                    If pSubjBytes(2 * p - 2) + 256& * pSubjBytes(2 * p - 1) <> want Then Exit Do
                     p = p + 1
                 Loop
             End If
-        Case "dot"
-            If FlagState(node, "s", pDotAll) Then
+        Case T_DOT
+            If nEff(nd) And E_S Then
                 p = last + 1
             Else
                 Do While p <= last
@@ -1677,10 +1880,10 @@ Private Function LeafCount(ByVal node As Collection, ByVal t As String, ByVal po
                     p = p + 1
                 Loop
             End If
-        Case "class"
-            Dim iCase As Boolean: iCase = FlagState(node, "i", pIgnoreCase)
-            Dim mapIdx As Long: mapIdx = node("mapIdx")
-            Dim neg As Boolean: neg = node("neg")
+        Case T_CLASS
+            Dim iCase As Boolean: iCase = (nEff(nd) And E_I) <> 0
+            Dim mapIdx As Long: mapIdx = nA(nd)
+            Dim neg As Boolean: neg = (nB(nd) <> 0)
             Dim hit As Boolean
             Do While p <= last
                 code = pSubjBytes(2 * p - 2) + 256& * pSubjBytes(2 * p - 1)
@@ -1694,7 +1897,7 @@ Private Function LeafCount(ByVal node As Collection, ByVal t As String, ByVal po
                         End If
                     End If
                     If hit = neg Then Exit Do
-                ElseIf Not MatchCharClassNode(node, mid$(CurSubject, p, 1)) Then
+                ElseIf Not ClassHit(nd, code) Then
                     Exit Do
                 End If
                 p = p + 1
@@ -1707,76 +1910,61 @@ Private Function LeafCount(ByVal node As Collection, ByVal t As String, ByVal po
 End Function
 
 ' lit, dot and class nodes: does the char at pos match?
-Private Function LeafMatches(ByVal node As Collection, ByVal t As String, ByVal pos As Long) As Boolean
+Private Function LeafMatches(ByVal nd As Long, ByVal pos As Long) As Boolean
     If pos > pSubjLen Then Exit Function
-    Dim sc As String: sc = mid$(CurSubject, pos, 1)
-    Select Case t
-        Case "lit"
-            If FlagState(node, "i", pIgnoreCase) Then LeafMatches = (LCase$(sc) = LCase$(CStr(node("ch")))) Else LeafMatches = (sc = node("ch"))
-        Case "dot"
-            LeafMatches = (sc <> vbLf And sc <> vbCr) Or FlagState(node, "s", pDotAll)
-        Case "class"
-            LeafMatches = MatchCharClassNode(node, sc)
+    Dim code As Long: code = pSubjBytes(2 * pos - 2) + 256& * pSubjBytes(2 * pos - 1)
+    Select Case nType(nd)
+        Case T_LIT
+            If code = nA(nd) Then
+                LeafMatches = True
+            ElseIf nEff(nd) And E_I Then
+                LeafMatches = (LowerCode(code) = nB(nd))
+            End If
+        Case T_DOT
+            LeafMatches = (code <> 10 And code <> 13) Or (nEff(nd) And E_S) <> 0
+        Case T_CLASS
+            LeafMatches = ClassHit(nd, code)
     End Select
 End Function
 
 ' ---------------- Char class matching with precomputed map -----------------
-Private Function MatchCharClassNode(ByVal node As Collection, ByVal ch As String) As Boolean
-    Dim iCase As Boolean: iCase = FlagState(node, "i", pIgnoreCase)
-    Dim code As Long: code = CodeOf(ch)
-    If code >= 0 And code <= 255 Then
-        Dim mapIdx As Long: mapIdx = node("mapIdx")
-        Dim matched As Boolean: matched = False
-
-        ' direct ASCII fast-path
-        If code >= 0 And code <= 255 Then
-            matched = pClassMaps(code, mapIdx)
-            ' if ignore-case, check the swapped-case ASCII code too (A<->a)
-            If iCase And Not matched Then
-                If code >= 65 And code <= 90 Then
-                    matched = pClassMaps(code + 32, mapIdx)
-                ElseIf code >= 97 And code <= 122 Then
-                    matched = pClassMaps(code - 32, mapIdx)
-                End If
+Private Function ClassHit(ByVal nd As Long, ByVal code As Long) As Boolean
+    Dim iCase As Boolean: iCase = (nEff(nd) And E_I) <> 0
+    Dim hit As Boolean
+    If code <= 255 Then
+        Dim mapIdx As Long: mapIdx = nA(nd)
+        hit = pClassMaps(code, mapIdx)
+        ' if ignore-case, check the swapped-case ASCII code too (A<->a)
+        If iCase And Not hit Then
+            If code >= 65 And code <= 90 Then
+                hit = pClassMaps(code + 32, mapIdx)
+            ElseIf code >= 97 And code <= 122 Then
+                hit = pClassMaps(code - 32, mapIdx)
             End If
         End If
-
-        If node("neg") Then
-            MatchCharClassNode = Not matched
-        Else
-            MatchCharClassNode = matched
-        End If
-        Exit Function
-    End If
-
-    ' Non-ASCII fallback: brute-force check, but respect ignore-case
-    Dim items As Collection: Set items = node("chars")
-    Dim matched2 As Boolean: matched2 = False
-    Dim i As Long
-    For i = 1 To items.Count
-        Dim it As Variant: it = items(i)
-        If IsArray(it) Then
-            If it(0) = "range" Then
-                If Not iCase Then
-                    If CodeOf(ch) >= CodeOf(it(1)) And CodeOf(ch) <= CodeOf(it(2)) Then matched2 = True
-                Else
-                    ' case-insensitive range test: compare lowercased codepoints where possible
-                    Dim lowerCh As String: lowerCh = LCase$(ch)
-                    Dim lowerA As String: lowerA = LCase$(it(1))
-                    Dim lowerB As String: lowerB = LCase$(it(2))
-                    If CodeOf(lowerCh) >= CodeOf(lowerA) And CodeOf(lowerCh) <= CodeOf(lowerB) Then matched2 = True
-                End If
-            End If
-        Else
-            If Not iCase Then
-                If ch = it Then matched2 = True
+    Else
+        ' above 255: test the ranges; ignoring case compares lower-cased code points
+        Dim k As Long, lc As Long
+        If iCase Then lc = LowerCode(code)
+        For k = nList(nd) To nList(nd) + nCnt(nd) - 1
+            If iCase Then
+                hit = (lc >= LowerCode(pLo(k)) And lc <= LowerCode(pHi(k)))
             Else
-                If LCase$(ch) = LCase$(CStr(it)) Then matched2 = True
+                hit = (code >= pLo(k) And code <= pHi(k))
             End If
-        End If
-        If matched2 Then Exit For
-    Next i
-    If node("neg") Then MatchCharClassNode = Not matched2 Else MatchCharClassNode = matched2
+            If hit Then Exit For
+        Next k
+    End If
+    ClassHit = (hit <> (nB(nd) <> 0))
+End Function
+
+' Code point of LCase$ of a char
+Private Function LowerCode(ByVal code As Long) As Long
+    If code < 128 Then
+        If code >= 65 And code <= 90 Then LowerCode = code + 32 Else LowerCode = code
+    Else
+        LowerCode = CodeOf(LCase$(ChrW$(code)))
+    End If
 End Function
 
 ' Word char test for \b and \B, same ASCII set as \w
@@ -1863,9 +2051,7 @@ End Function
 
 ' Last start position that leaves room for the pattern's minimum length
 Private Function StartLimit(ByRef subj As String) As Long
-    Dim ast As Collection: Set ast = pAST
-    Dim minLen As Long: minLen = ast("minLen")
-    If minLen > 0 Then StartLimit = Len(subj) - minLen + 1 Else StartLimit = Len(subj) + 1
+    If pMinLen > 0 Then StartLimit = Len(subj) - pMinLen + 1 Else StartLimit = Len(subj) + 1
     If StartLimit < 1 Then StartLimit = 1
 End Function
 
@@ -1873,6 +2059,7 @@ Private Sub BeginScan(ByRef subj As String)
     CurSubject = subj
     pSubjBytes = subj
     MatchSteps = 0
+    ResolveFlags
 End Sub
 
 ' ExecAll: find all non-overlapping matches anywhere in subject
@@ -1905,10 +2092,8 @@ End Function
 Public Function ExecAt(ByVal subj As String, ByVal startPos As Long) As Collection
     EnsureCompiled
     If startPos < 1 Or startPos > Len(subj) + 1 Then Set ExecAt = Nothing: Exit Function
+    BeginScan subj
     If Not CanStartAt(subj, startPos) Then Set ExecAt = Nothing: Exit Function
-    CurSubject = subj
-    pSubjBytes = subj
-    MatchSteps = 0
     If TryAt(subj, startPos) Then
         Set ExecAt = BuildCaptureCollection()
         UpdateNamedCapturesFromAST
@@ -1937,8 +2122,7 @@ Private Function TryAt(ByRef subj As String, ByVal startPos As Long) As Boolean
     Next i
     capsStart(0) = startPos
     Dim outEnd As Long
-    Dim ast As Collection: Set ast = pAST
-    If MatchHere(ast("body"), startPos, outEnd) Then
+    If MatchHere(1, startPos, outEnd) Then
         capsEnd(0) = outEnd
         TryAt = True
     End If
@@ -1946,13 +2130,13 @@ End Function
 
 ' Can a match start at p? Checks the leading ^, the leading literal and the first-char map
 Private Function CanStartAt(ByRef subj As String, ByVal p As Long) As Boolean
-    If Not pAnchorNode Is Nothing And p > 1 Then
-        If Not FlagState(pAnchorNode, "m", pMultiline) Then Exit Function
+    If pAnchorId > 0 And p > 1 Then
+        If (nEff(pAnchorId) And E_M) = 0 Then Exit Function
         Dim prev As String: prev = mid$(subj, p - 1, 1)
         If prev <> vbLf And prev <> vbCr Then Exit Function
     End If
     If Len(pPrefix) > 0 Then
-        If Not FlagState(pPrefixNode, "i", pIgnoreCase) Then
+        If (nEff(pPrefixId) And E_I) = 0 Then
             CanStartAt = (mid$(subj, p, Len(pPrefix)) = pPrefix)
             Exit Function
         End If
@@ -1972,8 +2156,8 @@ End Function
 ' First position in p..lastPos where CanStartAt holds, 0 when none; reads pSubjBytes (see BeginScan)
 Private Function NextCandidate(ByRef subj As String, ByVal p As Long, ByVal lastPos As Long) As Long
     Dim lineStart As Boolean, usePrefix As Boolean, c0 As Long
-    If Not pAnchorNode Is Nothing Then
-        If FlagState(pAnchorNode, "m", pMultiline) Then
+    If pAnchorId > 0 Then
+        If nEff(pAnchorId) And E_M Then
             lineStart = True
         ElseIf p > 1 Then
             Exit Function
@@ -1981,7 +2165,7 @@ Private Function NextCandidate(ByRef subj As String, ByVal p As Long, ByVal last
             lastPos = 1
         End If
     End If
-    If Len(pPrefix) > 0 Then usePrefix = Not FlagState(pPrefixNode, "i", pIgnoreCase)
+    If Len(pPrefix) > 0 Then usePrefix = (nEff(pPrefixId) And E_I) = 0
     Dim L As Long: L = Len(subj)
     Do While p <= lastPos
         If usePrefix Then

@@ -87,6 +87,8 @@ python3 libreoffice/tools/build.py
 
 writes the library to `libreoffice/dist/ASF/` and the extension to `libreoffice/dist/ASF.oxt`.
 
+Code in `src/` must not resize an array in a one-line `If` (`If n > UBound(a) Then ReDim Preserve a(...)`): LibreOffice then drops later writes to that array without an error. Use a block `If`.
+
 - [`tools/build.py`](tools/build.py): the rewrite passes and the packaging.
 - [`compat/LOhelper.bas`](compat/LOhelper.bas): helpers the rewritten code calls, the factories and the output functions.
 - [`compat/VBAEhelper.bas`](compat/VBAEhelper.bas): creates `VBAExpressionsLib` evaluators.

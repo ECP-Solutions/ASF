@@ -1,0 +1,25 @@
+﻿{
+    "engines":  [
+                    "Sihlfall",
+                    "ASF",
+                    "Old stdRegex",
+                    "ASF 290ad3e",
+                    "ASF v3.2.0"
+                ],
+    "cpu":  "Intel(R) Core(TM) i7-4500U CPU @ 1.80GHz",
+    "measured_at_utc":  "2026-10-30T18:34:01.5796810+00:00",
+    "asf_commit":  "ed8f6d02dcbca8ff15a59864f224e5513ddd08c9",
+    "asf_sha256":  "F6C4F75CC3F2682F9161489E3A0C0E09FC47963E2B3559047817C791F6FF4168",
+    "samples":  5,
+    "legacy_stdregex_commit":  "abf14dd81e553cbcf438284975c80f3e9220196a",
+    "asf_v320_commit":  "e4bbd50ca94053b1b0e5134f91de0cc4c642ec97",
+    "benchmark_sha256":  "49D8D52812B6F1EADCE6D1BC08E46C39BF1424E4A0B8DADEE8A42AD6FD734315",
+    "office":  "Excel 16.0 build 20228",
+    "asf_290ad3e_commit":  "290ad3eabff97fc16f34568d83139994f89b83ac",
+    "description":  "Public API timings: stdRegex (sihlfall and VBScript) and ASF regex engines. Fresh object + initialization + first Test for compile; reused preinitialized objects for other operations. Correctness checked before each timed cell.",
+    "engine_step_limits":  2147483647,
+    "target_batch_ms":  30,
+    "timer":  "QueryPerformanceCounter",
+    "operating_system":  "Windows (64-bit) NT 10.00",
+    "sihlfall_stdregex_commit":  "04e7d048482b0cdf0a3eb3480fc8cd0d3578dc9c"
+}
