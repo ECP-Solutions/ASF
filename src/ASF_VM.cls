@@ -4246,22 +4246,29 @@ CallCollMethod:
                         End If
                         GoTo exitfun
                     Case "max"
+                        ' no arguments give Empty, as other built-ins called without their arguments do
                         Dim maxEl As Variant
-                        tmpResult = 0
-                        For Each maxEl In evaluated
-                            If maxEl > tmpResult Then
-                                tmpResult = maxEl
-                            End If
-                        Next maxEl
+                        tmpResult = Empty
+                        If evaluated.Count > 0 Then
+                            tmpResult = evaluated(1)
+                            For Each maxEl In evaluated
+                                If maxEl > tmpResult Then
+                                    tmpResult = maxEl
+                                End If
+                            Next maxEl
+                        End If
                         GoTo exitfun
                     Case "min"
                         Dim minEl As Variant
-                        tmpResult = 0
-                        For Each minEl In evaluated
-                            If minEl < tmpResult Then
-                                tmpResult = minEl
-                            End If
-                        Next minEl
+                        tmpResult = Empty
+                        If evaluated.Count > 0 Then
+                            tmpResult = evaluated(1)
+                            For Each minEl In evaluated
+                                If minEl < tmpResult Then
+                                    tmpResult = minEl
+                                End If
+                            Next minEl
+                        End If
                         GoTo exitfun
                     Case "pow"
                         tmpResult = evaluated(1) ^ evaluated(2)

@@ -2,4 +2,4 @@ scwd(wd);
 import calc from './calculator.vas';
 
 calculator = calc();
-return(calculator.add(10, 5)); // => 15
+return(calculator.add(10, 5) * 10 + calculator.subtract(10, 3)); // => 15 * 10 + 7 = 157

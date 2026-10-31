@@ -267,6 +267,7 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("module_system",             "module_system_working_dir_before_compile") Then module_system_working_dir_before_compile: EndTest
     If StartTest("module_system",             "module_system_named_exports_imports") Then module_system_named_exports_imports: EndTest
     If StartTest("module_system",             "module_system_default_export") Then module_system_default_export: EndTest
+    If StartTest("objects",                   "object_literal_semicolon_rejected") Then object_literal_semicolon_rejected: EndTest
     If StartTest("module_system",             "module_system_namespace_import") Then module_system_namespace_import: EndTest
     If StartTest("module_system",             "module_system_mixed_imports") Then module_system_mixed_imports: EndTest
     If StartTest("module_system",             "module_system_nested_relative_import") Then module_system_nested_relative_import: EndTest
@@ -276,6 +277,8 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("Modules",                   "module_system_prototype_namespace_import") Then module_system_prototype_namespace_import: EndTest
     If StartTest("Modules",                   "module_system_prototype_side_effect_import") Then module_system_prototype_side_effect_import: EndTest
     If StartTest("math",                      "math_basic") Then math_basic: EndTest
+    If StartTest("math",                      "math_max_min") Then math_max_min: EndTest
+    If StartTest("math",                      "math_max_min_no_arguments") Then math_max_min_no_arguments: EndTest
     If StartTest("calling_native_app_level",  "calling_native_function_app_level") Then calling_native_function_app_level: EndTest
     If StartTest("calling_native_app_level",  "calling_native_function_app_level_2") Then calling_native_function_app_level_2: EndTest
     If StartTest("calling_native_app_level",  "calling_array_method_from_collection") Then calling_array_method_from_collection: EndTest
@@ -4201,7 +4204,7 @@ Private Sub module_system_default_export()
         On Error GoTo TestFail
         actual = CStr(.Execute(wd & "\main_calculator.vas"))
     End With
-    expected = "15"
+    expected = "157"
     AssertEqual expected, actual
 TestExit:
     Exit Sub
@@ -4355,6 +4358,45 @@ TestExit:
 TestFail:
     AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
+End Sub
+Private Sub math_max_min()
+    On Error GoTo TestFail
+    
+    actual = CStr(GetResult("let r = [Math.max(-3, -1, -7), Math.max(2, 9, 4), Math.max(-5, 0, 3), Math.max(-4)]; return `${r}`;"))
+    expected = "[ -1, 9, 3, -4 ]"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("let r = [Math.min(-3, -1, -7), Math.min(2, 5, 4), Math.min(-5, 0, 3), Math.min(6)]; return `${r}`;"))
+    expected = "[ -7, 2, -5, 6 ]"
+    AssertEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub math_max_min_no_arguments()
+    On Error GoTo TestFail
+    
+    actual = CStr(GetResult("let r = [Math.max(), Math.min()]; return `${r}`;"))
+    ' Empty elements print as nothing: "[ " & "" & ", " & "" & " ]"
+    expected = "[ ,  ]"
+    AssertEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub object_literal_semicolon_rejected()
+    Dim eng As New ASF
+    On Error Resume Next
+    eng.Compile "let o = { a: 1; b: 2 }; return(o.b);"
+    actual = CLng(err.Number - vbObjectError)
+    On Error GoTo 0
+    expected = CLng(8004)
+    AssertEqual expected, actual
 End Sub
 Private Sub math_basic()
     On Error GoTo TestFail

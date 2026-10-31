@@ -533,7 +533,7 @@ for (let i in str) {
 
 ```javascript
 // Array values
-let arr = [10, 20, 30]
+let arr = [10, 20, 30];
 for (let val of arr) {
     print(val);  /* 10, 20, 30 */
 };

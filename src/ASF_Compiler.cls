@@ -1913,6 +1913,10 @@ ContinueParenInner:
                                Or (safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "}") Then
                                 Exit Do
                             End If
+                            ' a ';' here would swallow the properties after it into this value
+                            If safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = ";" Then
+                                err.Raise vbObjectError + 8004, "Compiler.ParsePrimary", "Expected ',' between object properties, found ';'"
+                            End If
                         End If
                         valTok.Add Array(safeTVRet(types, idx), safeTVRet(vals, idx))
                         If safeTVRet(types, idx) = "PAREN" Then
