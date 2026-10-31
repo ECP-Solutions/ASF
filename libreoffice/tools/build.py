@@ -283,7 +283,28 @@ def generic(s):
     s = re.sub(r" _\n\s*", " ", s)
     s = rewrite_for_each(s)
     s = hoist_dims(s)
+    s = default_returns(s)
     return s
+
+
+FUNC_SIGNATURE = re.compile(r"^(\s*)(?:Public |Private |Friend )?(?:Static )?(?:Function|Property Get) (\w+)\s*\(.*\)(?:\s+As (\w+(?:\.\w+)?))?\s*(?:'.*)?$", re.I)
+VALUE_DEFAULTS = {"boolean": "False", "string": "vbNullString", "variant": "Empty", "long": "0", "integer": "0",
+                  "double": "0", "single": "0", "byte": "0", "currency": "0", "date": "0"}
+
+
+def default_returns(s):
+    """A function that returns without assigning its result leaks its arguments in LibreOffice
+    (an object argument stays alive for good), so every function starts by assigning the value
+    VBA returns by default."""
+    out = []
+    for ln in s.split("\n"):
+        out.append(ln)
+        m = FUNC_SIGNATURE.match(ln)
+        if m:
+            name, typ = m.group(2), (m.group(3) or "Variant").lower()
+            value = VALUE_DEFAULTS.get(typ)
+            out.append(f"{m.group(1)}    {name} = {value}" if value else f"{m.group(1)}    Set {name} = Nothing")
+    return "\n".join(out)
 
 
 # ---------------------------------------------------------------- ASF passes
