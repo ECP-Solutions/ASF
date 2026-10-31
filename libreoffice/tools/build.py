@@ -18,7 +18,7 @@ from xml.sax.saxutils import escape
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LO_DIR = os.path.join(ROOT, "libreoffice")
 LIB_NAME = "ASF"
-VERSION = "3.2.1"
+VERSION = "3.2.0"
 EXTENSION_ID = "com.ecp-solutions.asf"
 
 # classes replaced by libreoffice/overrides/<name>.bas
@@ -283,7 +283,28 @@ def generic(s):
     s = re.sub(r" _\n\s*", " ", s)
     s = rewrite_for_each(s)
     s = hoist_dims(s)
+    s = default_returns(s)
     return s
+
+
+FUNC_SIGNATURE = re.compile(r"^(\s*)(?:Public |Private |Friend )?(?:Static )?(?:Function|Property Get) (\w+)\s*\(.*\)(?:\s+As (\w+(?:\.\w+)?))?\s*(?:'.*)?$", re.I)
+VALUE_DEFAULTS = {"boolean": "False", "string": "vbNullString", "variant": "Empty", "long": "0", "integer": "0",
+                  "double": "0", "single": "0", "byte": "0", "currency": "0", "date": "0"}
+
+
+def default_returns(s):
+    """A function that returns without assigning its result leaks its arguments in LibreOffice
+    (an object argument stays alive for good), so every function starts by assigning the value
+    VBA returns by default."""
+    out = []
+    for ln in s.split("\n"):
+        out.append(ln)
+        m = FUNC_SIGNATURE.match(ln)
+        if m:
+            name, typ = m.group(2), (m.group(3) or "Variant").lower()
+            value = VALUE_DEFAULTS.get(typ)
+            out.append(f"{m.group(1)}    {name} = {value}" if value else f"{m.group(1)}    Set {name} = Nothing")
+    return "\n".join(out)
 
 
 # ---------------------------------------------------------------- ASF passes
@@ -657,10 +678,8 @@ def extension_bytes(mods):
   <version value="{VERSION}"/>
   <display-name><name lang="en">ASF - Advanced Scripting Framework</name></display-name>
   <publisher><name xlink:href="https://github.com/ECP-Solutions/ASF" lang="en">ECP Solutions</name></publisher>
-  <icon><default xlink:href="icons/ICON.png"/></icon>
   <dependencies>
-    <l:LibreOffice-minimal-version xmlns:l="http://libreoffice.org/extensions/description/2011"
-        xmlns:d="http://openoffice.org/extensions/description/2006" d:name="LibreOffice 7.5" value="7.5"/>
+    <OpenOffice.org-minimal-version xmlns:d="http://openoffice.org/extensions/description/2006" d:name="OpenOffice.org 4.1" value="4.1"/>
   </dependencies>
   <extension-description><src lang="en" xlink:href="description-en.txt"/></extension-description>
 </description>
@@ -674,7 +693,6 @@ def extension_bytes(mods):
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("META-INF/manifest.xml", manifest)
         z.writestr("description.xml", description)
-        z.write(os.path.join(LO_DIR, "icons", "ICON.png"), "icons/ICON.png")
         z.writestr("description-en.txt", "ASF scripting engine (JavaScript-like language, regex engine, "
                    "module system) as a LibreOffice Basic library named ASF.\n")
         for fname, text in library_files(LIB_NAME, mods).items():
