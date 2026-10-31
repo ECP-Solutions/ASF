@@ -2,12 +2,13 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
-## [Unreleased]
+## [v3.2.1] - 2026-10-31
+https://github.com/ECP-Solutions/ASF/releases/tag/v3.2.1
 
 ## Summary
 The module system resolves paths the way scripts expect: `WorkingDir` set before `Compile` is kept, a module's own relative imports start from its folder, `../` goes up a directory, and a script keeps its working directory after an import. The LibreOffice edition's helper modules get shorter names.
 
-The regex matcher's core no longer copies anything while it backtracks: captures are undone through a trail and the rest of a match is a stack of frames, which makes matching 1.7 to 6 times faster (see Performance). Each pattern is then compiled to arrays of Longs, so matching reads array slots instead of keyed Collection items: about 1.2 times faster again, up to 1.9 times on backtracking-heavy patterns, for a compile step about 25% slower.
+The regex matcher's core no longer copies anything while it backtracks: captures are undone through a trail and the rest of a match is a stack of frames, which makes matching 1.7 to 6 times faster (see Performance). Each pattern is then compiled to arrays of Longs, so matching reads array slots instead of keyed Collection items: about 1.2 times faster again, up to 1.9 times on backtracking-heavy patterns, for a compile step about 25% slower. In Excel, stdVBA's regex benchmark puts this engine ahead of Sihlfall's pure-VBA stdRegex on reused `Test`, `MatchAll` and `Replace` (all workloads but the short backreference probe) and 5 to 7.5 times faster than v3.2.0, with correct output on every probe (see Benchmarks against stdRegex).
 
 ---
 
@@ -72,8 +73,9 @@ The regex matcher's core no longer copies anything while it backtracks: captures
     - `ASF_LOCompat` is renamed `LOhelper` and `ASF_VBAExpressions` is renamed `VBAEhelper`; their procedures drop the `ASF`/`LO` prefixes. Macros create engines with `ASF.LOhelper.NewASF()`, `NewRegex()` and `NewASFMap()` and read output with `ASF.LOhelper.GetOutput()`. The rewritten classes call the helpers qualified with the module name; helpers whose plain name is a Basic built-in or keyword are named `TypeNameOf`, `CallMember`, `LetValue`, `RedimField` and `ObjectError`.
     - Standard modules (tests, user code) index their module-level Collections through `LOhelper.Item`, as classes already did: LibreOffice returns a wrong object for `coll(i)` on a module-level Collection.
     - `libreoffice/extension-page.html`: the description for the extension's page on extensions.libreoffice.org, with examples run against the installed extension.
+    - `ASF.oxt` shows the ASF logo (`libreoffice/icons/ICON.png`) in the Extension Manager and declares LibreOffice 7.5 as its minimum version, so older versions refuse to install it.
 
-- **Benchmarks against stdRegex**: `Tools/stdRegex/` reproduces stdVBA's regex benchmark (issue 141 analysis: old stdRegex, Sihlfall's stdRegex, ASF `290ad3e`) and adds ASF v3.2.0 and the current engine, with an Excel runner (`Benchmark.ps1`), a LibreOffice runner (`BenchmarkLO.py`) and a self-contained HTML report built from the data. The first run, on LibreOffice 24.2 (`benchmarks/2026-10-30-libreoffice/`), puts the current engine at 2.6–3.1× v3.2.0 and 30–43× `290ad3e` on reused `Test`, `MatchAll` and `Replace` (geometric means), with `290ad3e` failing the word-boundary and backreference probes; stdVBA's Excel run is kept alongside.
+- **Benchmarks against stdRegex**: `Tools/stdRegex/` reproduces stdVBA's regex benchmark (issue 141 analysis: old stdRegex, Sihlfall's stdRegex, ASF `290ad3e`) and adds ASF v3.2.0 and the current engine, with an Excel runner (`Benchmark.ps1`), a LibreOffice runner (`BenchmarkLO.py`) and a self-contained HTML report built from the data. The first run, on LibreOffice 24.2 (`benchmarks/2026-10-30-libreoffice/`), puts the current engine at 2.6–3.1× v3.2.0 and 30–43× `290ad3e` on reused `Test`, `MatchAll` and `Replace` (geometric means), with `290ad3e` failing the word-boundary and backreference probes; stdVBA's Excel run is kept alongside. The Excel run of this release's engine with all five implementations (`benchmarks/2026-10-30-stdvba-excel/`, Excel 16.0, two runs; geometric means of reused-object operations) puts it at 7.5× (`Test`), 6.5× (`MatchAll`) and 5.0× (`Replace`) v3.2.0, and at 4.0×, 59× and 3.1× Sihlfall's stdRegex; VBScript's native engine stays ahead on `Test` and `Replace`, ASF leads `MatchAll` by 26× because it returns Collections instead of Dictionaries. Sihlfall stays ahead on the short backreference probe and on compiling: a fresh ASF object compiles in 0.4–1.5 ms, against about 0.1–0.2 ms for Sihlfall and VBScript on these patterns; ASF caches compiled patterns per engine.
 
 - **Test coverage**: `math_max_min` (all-negative, all-positive, mixed and single-argument calls), `math_max_min_no_arguments` and `object_literal_semicolon_rejected`; `module_system_default_export` now calls both methods of `test/calculator.vas`. `test/regex-corpus/` holds the 15,768 random regex cases used to check the engine: the corpora c1, c2 and c3 with JavaScript's output (ASF matches it on every case), a 768-case API corpus, the full output of every public method of the current engine, the generators with their seeds, and `RegexCorpus.bas`, which runs and compares them in Excel or LibreOffice (`tools/run_lo.py` runs them headless); see its README. `test/RegexBench.bas` times `test`, `ExecAll` and `Replace` on 14 workloads (`RunRegexBenchmarks`, Excel and LibreOffice); on LibreOffice, `python3 libreoffice/tools/run_tests.py bench` runs it, and `Timer` maps to a millisecond clock (`LOhelper.TimerValue`), so TestRunner's timings are exact there too. `module_system_working_dir_before_compile`, `module_system_nested_relative_import` (`test/main_nested.vas`, `test/nested_lib.vas`) and `module_system_parent_relative_import` (`test/main_parent.vas`, `test/modules/square.vas`, `test/modules/inner/offset.vas`) in `test/TestRunner.bas`. All 243 TestRunner tests that do not need Excel pass on LibreOffice 24.2.
 
@@ -84,6 +86,12 @@ The regex matcher's core no longer copies anything while it backtracks: captures
 - An object literal whose properties are separated by `;` no longer compiles (it used to drop every property after the first `;`): use `,`.
 - LibreOffice edition: macros that call `ASF.ASF_LOCompat.NewASF()`, `NewRegex()`, `NewASFMap()`, `GetOutput()`, `ClearOutput()` or `SetOutputFile()` must use `ASF.LOhelper` instead.
 - `'../x.vas'` now resolves to the parent folder; scripts that relied on it meaning `'./x.vas'` must use `./`.
+
+## Known Limitations
+
+- LibreOffice edition: no Excel object model, so the Excel COM prototype libraries do not apply. `@(...)` needs VBA Expressions 1.2.1 or later.
+- Compiling a regex pattern costs more than in v3.2.0 (about 25% on LibreOffice) because the parser still builds Collection nodes before they are compiled to arrays; each engine caches its compiled patterns, and `SharedCache` shares them between engines.
+- Lookbehind must be fixed-width. A quantified atom with internal choices (`(?:a|ab)+`) backtracks into each of its first 100 iterations (`QUANT_REC_LIMIT`); later iterations take the first alternative that matches.
 
 ## [v3.2.0] - 2026-10-28
 https://github.com/ECP-Solutions/ASF/releases/tag/v3.2.0

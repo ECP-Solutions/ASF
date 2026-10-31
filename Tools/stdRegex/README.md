@@ -49,3 +49,4 @@ python3 Tools/stdRegex/BuildReport.py Tools/stdRegex/benchmarks/latest-lo
 - `Analyze.py`: two runs to `summary.json`. `BuildReport.py`: `summary.json` to a self-contained `report.html`, with findings computed from the data.
 - `benchmarks/2026-10-27-stdvba-excel/`: stdVBA's recorded Excel run (old stdRegex, Sihlfall, ASF `290ad3e`), copied unchanged with its report.
 - `benchmarks/2026-10-30-libreoffice/`: the first run here, on LibreOffice 24.2 with ASF `290ad3e`, v3.2.0 and the regex-phase2 engine.
+- `benchmarks/2026-10-30-stdvba-excel/`: Excel 16.0 run with all five implementations; ASF is the v3.2.1 engine.

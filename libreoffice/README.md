@@ -94,6 +94,7 @@ Code in `src/` must not resize an array in a one-line `If` (`If n > UBound(a) Th
 - [`compat/VBAEhelper.bas`](compat/VBAEhelper.bas): creates `VBAExpressionsLib` evaluators.
 - [`overrides/ASF_Map.bas`](overrides/ASF_Map.bas): hand-written `ASF_Map`; keep it in step with `src/ASF_Map.cls`.
 - [`extension-page.html`](extension-page.html): the description for the extension's page on extensions.libreoffice.org.
+- [`icons/ICON.png`](icons/ICON.png): the icon the Extension Manager shows, made from the ASF logo.
 
 ## Tests
 
