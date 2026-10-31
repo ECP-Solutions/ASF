@@ -110,6 +110,21 @@ def expected(res, s, omap):
     return line
 
 
+def restore_newlines(suite, results):
+    """The extraction turned the escape \\n of RE2's log into the letter n. Where RE2's result
+    for the pattern \\n shows a newline in a subject, its n's are newlines again (no subject
+    mixes the two)."""
+    if "\\n" not in suite["regexs"]:
+        return 0
+    i = suite["regexs"].index("\\n")
+    fixed = 0
+    for j, s in enumerate(suite["strs"]):
+        if "n" in s and results[i][j][1]:
+            suite["strs"][j] = s.replace("n", "\n")
+            fixed += 1
+    return fixed
+
+
 def main(argv):
     opts = {a.split("=", 1)[0]: a.split("=", 1)[1] for a in argv if a.startswith("--") and "=" in a}
     work = os.path.abspath(opts.get("--work", os.path.join(BASE, "work")))
@@ -130,6 +145,7 @@ def main(argv):
         with open(os.path.join(src, "test-results", "re2", name), encoding="utf-8") as f:
             results = json.load(f)
         num = name[:3]
+        restored = restore_newlines(suite, results)
         maps = [offset_map(s) for s in suite["strs"]]
         with open(os.path.join(work, "cases", num + ".txt"), "w", encoding="utf-8", newline="\n") as f:
             for s in suite["strs"]:
@@ -143,7 +159,8 @@ def main(argv):
                     f.write(expected(leftmost, s, maps[j]) + "\t" + expected(whole, s, maps[j]) + "\n")
         pairs = len(suite["regexs"]) * len(suite["strs"])
         total += pairs
-        print(f"{name}: {len(suite['regexs'])} patterns x {len(suite['strs'])} subjects = {pairs} cases")
+        print(f"{name}: {len(suite['regexs'])} patterns x {len(suite['strs'])} subjects = {pairs} cases"
+              + (f", newline restored in {restored} subjects" if restored else ""))
     print(f"{total} cases in {work}")
 
 

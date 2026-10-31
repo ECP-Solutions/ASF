@@ -4,6 +4,8 @@
 
 The cases are not copied here (RE2's results take 481 MB): `tools/prepare.py` clones the repository at the pinned commit `0ab3381` and converts it into `work/`.
 
+The extraction turned the escape `\n` of RE2's log into the letter `n` in subjects (the LineEnds suite's alphabet is `a`, `b` and a newline). `prepare.py` restores the newline in every subject that RE2's own result for the pattern `\n` shows to contain one: 90 subjects of suite 022 and one each in 025 and 026.
+
 ## Translation
 
 RE2 runs with its default flags. Where RE2 spells something differently from ASF, the pattern is translated to the ASF pattern with the same meaning; `compare.py` shows both.
