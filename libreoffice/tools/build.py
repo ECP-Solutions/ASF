@@ -277,6 +277,8 @@ def generic(s):
     s = re.sub(r"\btypeName\(([^()]*(?:\([^()]*\)[^()]*)*)\) = \"Collection\"", r"LOhelper.IsColl(\1)", s, flags=re.I)
     s = re.sub(r"\btypeName\(([^()]*)\) <> \"Collection\"", r"Not LOhelper.IsColl(\1)", s, flags=re.I)
     s = re.sub(r"\bCLng\(", "VBACLng(", s)
+    # LibreOffice's Timer counts whole seconds
+    s = sub_code(r"\bTimer\b", "LOhelper.TimerValue()", s)
     s = re.sub(r"\bvbObjectError\b", "LOhelper.ObjectError()", s)
     s = re.sub(r" _\n\s*", " ", s)
     s = rewrite_for_each(s)
@@ -491,7 +493,7 @@ def variant_default_member(s):
 
 
 def module_collections(s):
-    """coll(i) on a class's module-level Collection fails in LibreOffice: use .Item
+    """coll(i) on a module-level Collection fails in LibreOffice: use .Item
     before a member access, LOhelper.Item elsewhere (.Item(i) of an array item misreads)."""
     for v in re.findall(r"(?m)^(?:Private|Public|Dim) (\w+) As (?:New )?Collection\b", s):
         s = re.sub(r"(?<![.\w])" + v + r"\(([^()]*)\)(?=\.\w)", v + r".Item(\1)", s)
@@ -602,6 +604,7 @@ def normal_module(src, repo=ROOT):
     """A VBA standard module (tests, user code) rewritten like the library's."""
     s = generic(src)
     s = re.sub(r"(?i)\btypeName\(", "LOhelper.TypeNameOf(", s)
+    s = module_collections(s)
     s = member_collections(s, public_collections(repo))
     return "Option VBASupport 1\n" + s
 

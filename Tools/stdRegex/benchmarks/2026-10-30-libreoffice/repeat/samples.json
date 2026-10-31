@@ -1,0 +1,21 @@
+{
+  "measured_at_utc": "2026-10-30T08:36:31.684891+00:00",
+  "office": "LibreOffice 24.2.7.2",
+  "operating_system": "Linux 6.18.44-fc-v185",
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "engines": [
+    "ASF",
+    "ASF v3.2.0",
+    "ASF 290ad3e"
+  ],
+  "asf_commit": "dea5b1e514fe5b8682bc8c389f72b2ff232d3136",
+  "asf_sha256": "EC657D95847AF4964B9216AF9CC1E329C9288AEA0BDA02022CE0B5812333667D",
+  "asf_v320_commit": "e4bbd50ca94053b1b0e5134f91de0cc4c642ec97",
+  "asf_290ad3e_commit": "290ad3eabff97fc16f34568d83139994f89b83ac",
+  "benchmark_sha256": "49D8D52812B6F1EADCE6D1BC08E46C39BF1424E4A0B8DADEE8A42AD6FD734315",
+  "samples": 5,
+  "target_batch_ms": 30,
+  "timer": "GetSystemTicks (1 ms resolution)",
+  "engine_step_limits": 2147483647,
+  "description": "Public API timings of the ASF regex engines on the LibreOffice edition: fresh object + Init + first Test for compile; reused preinitialized objects for other operations. Correctness checked before each timed cell."
+}

@@ -234,6 +234,11 @@ Public Function VBAReplace(ByVal s As String, ByVal f As String, ByVal r As Stri
     VBAReplace = Replace(s, f, r)
 End Function
 
+' VBA's Timer with millisecond resolution, for measuring elapsed time
+Public Function TimerValue() As Double
+    TimerValue = GetSystemTicks() / 1000
+End Function
+
 ' ReDim of an array field of a user-defined type
 Public Function RedimField(ByVal old As Variant, ByVal lo As Long, ByVal hi As Long, ByVal keep As Boolean) As Variant
     Dim t() As Variant

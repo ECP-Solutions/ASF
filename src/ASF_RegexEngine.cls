@@ -35,14 +35,9 @@ Attribute VB_Exposed = False
 '
 ' Notes & Limitations:
 '     + Lookbehind is fixed-width only.
-'     + Atomic groups protection is capture-slot based. When an atomic group matches it locks
-'       the capture slots that changed during the atomic group's internal match. Those locked
-'       slots will not be restored by RestoreCaps. This is correct semantics: atomic group
-'       prevents backtracking into the group.
-'     + Possessive quantifiers are supported. In the quantifier attempt loop your possessive
-'       flag prevents trying smaller k values.
-'     + Performance: atomic groups and lookarounds use snapshots. Possessive quantifiers will
-'       often be faster (no backtracking), but atomic groups may make some matches irreversible.
+'     + Atomic groups, lookarounds, conditionals and recursion match on their own: the rest of
+'       the pattern never backtracks into them.
+'     + Possessive quantifiers are supported: only the maximal count is tried.
 '     + A quantified atom with internal choices, e.g. (?:a|ab)+, backtracks into each iteration for
 '       the first QUANT_REC_LIMIT iterations; beyond that the remaining iterations take the first
 '       alternative that matches, which only matters when the alternatives overlap.
@@ -72,7 +67,6 @@ Private pDotAll As Boolean
 Private CurSubject As String
 Private capsStart() As Long
 Private capsEnd() As Long
-Private atomicLocks() As Boolean
 Private MatchSteps As Long
 Private pQuantDepth As Long
 Private pRecDepth As Long
@@ -94,6 +88,22 @@ Private pAnchorNode As Collection
 ' subject as UTF-16 bytes for the start-position scan
 Private pSubjBytes() As Byte
 Private pCapsSize As Long
+Private pSubjLen As Long
+' continuation frames of the matcher (see MatchHere) and the capture undo trail (see SetCap)
+Private Const FR_SEQ As Long = 1
+Private Const FR_CAPEND As Long = 2
+Private Const FR_QCONT As Long = 3
+Private Const FR_QGUARD As Long = 4
+Private kKind() As Long
+Private kNode() As Object
+Private kNum() As Long
+Private kTop As Long
+Private kBase As Long
+Private pStackCap As Long
+Private trSlot() As Long
+Private trOld() As Long
+Private trTop As Long
+Private pTrailCap As Long
 ' compiled patterns keyed by pattern text; engines can share one through SharedCache
 Private pCache As Collection
 Private Const CACHE_LIMIT As Long = 64
@@ -1130,538 +1140,317 @@ Private Function ParseEscapeChar(ByVal ch As String) As String
     End Select
 End Function
 
-' ------------------ Matching engine (returns explicit end positions) --------
+' ------------------ Matching engine -----------------------------------------
+' Backtracking in continuation-passing style: MatchHere matches a node followed by the
+' continuation, the frames on the k* stack above kBase (rest of a sequence, end of a capture,
+' next iteration of a quantifier, empty-iteration guard), so no sequence is ever copied.
+' Capture writes go through SetCap, which logs the old value on the tr* trail; a failed
+' attempt undoes the trail back to its mark. Every matcher leaves the trail as it found it
+' when it returns False.
 
-Private Function MatchNode(ByVal node As Collection, ByRef subj As String, ByVal pos As Long, Optional ByRef outEnd As Variant) As Boolean
-    If DEBUG_TRACE Then Debug.Print "TRACE MatchNode ENTER type=" & CStr(NodeGet(node, "type")) & " pos=" & pos & " caps0=[" & capsStart(0) & "," & capsEnd(0) & "]"
-    MatchSteps = MatchSteps + 1
-    If MatchSteps > pMaxMatchSteps Then err.Raise vbObjectError + 2, "RegexEngine", "Match aborted: too many steps"
-
-    Dim t As String: t = CStr(node(1))
-    Dim res As Boolean: res = False
-    Dim localEnd As Variant: localEnd = Empty
-    
+' Match node at pos, then the continuation; outEnd is the last position of the whole match
+Private Function MatchHere(ByVal node As Collection, ByVal pos As Long, ByRef outEnd As Long) As Boolean
+    Dim t As String: t = node(1)
+    Dim nxt As Long
     Select Case t
         Case "seq"
-            res = MatchSequence(node("child"), subj, pos, localEnd)
-
-        Case "lit", "dot", "class"
-            If LeafMatches(node, t, subj, pos) Then localEnd = pos: res = True
-            
+            MatchHere = MatchSeq(node("child"), 1, pos, outEnd)
         Case "group"
-            ' Handle both capturing and non-capturing groups.
-            Dim gidx As Long
-            gidx = CLng(node("idx"))
-
-            ' --- FULL snapshot before touching ANY capture slots ---
-            Dim snapGroup() As Long: snapGroup = CopyCaps()
-            If gidx >= 1 Then capsStart(gidx) = pos
-
-            Dim childEnd As Variant
-            If MatchNode(NodeGet(node, "child"), subj, pos, childEnd) Then
-                If gidx >= 1 Then capsEnd(gidx) = CLng(childEnd)
-                localEnd = childEnd
-                res = True
-            Else
-                RestoreCaps snapGroup
-                res = False
-            End If
-
+            MatchHere = MatchGroup(node, pos, outEnd)
         Case "alt"
-            Dim altChild As Variant
-            For Each altChild In NodeGet(node, "child")
-                Dim snapAlt() As Long: snapAlt = CopyCaps()
-                Dim altEnd As Variant
-                If MatchNode(altChild, subj, pos, altEnd) Then
-                    localEnd = altEnd
-                    res = True
-                    Exit For
-                Else
-                    RestoreCaps snapAlt
-                End If
-            Next altChild
-
+            MatchHere = MatchAlt(node, pos, outEnd)
         Case "quant"
-            Dim qEnd As Variant
-            Dim noTail As New Collection
-            If MatchQuant(node, 0, noTail, subj, pos, qEnd) Then localEnd = qEnd: res = True
-
-        ' ---- Positive lookahead (?=...) ----
-        Case "lookahead_pos"
-            If Not NodeExists(node, "child") Then
-                MatchNode = False: Exit Function
-            End If
-
-            Dim laChild As Collection: Set laChild = NodeGet(node, "child")
-            Dim snapLA() As Long: snapLA = CopyCaps()
-            Dim laEnd As Long
-            Dim laMatched As Boolean
-
-            ' try the inner pattern at current pos (non-consuming)
-            laMatched = MatchNode(laChild, subj, pos, laEnd)
-
-            ' non-consuming; a successful lookahead keeps its captures (ECMAScript)
-            If laMatched Then
-                capsStart(0) = snapLA(0)
-                capsEnd(0) = snapLA(pGroupCount + 1)
-            Else
-                RestoreCaps snapLA
-            End If
-
-            If laMatched Then
-                outEnd = pos - 1          ' zero-width: leave curPos unchanged
-                MatchNode = True
-            Else
-                MatchNode = False
-            End If
-            Exit Function
-
-        ' ---- Negative lookahead (?!...) ----
-        Case "lookahead_neg"
-            If Not NodeExists(node, "child") Then
-                MatchNode = False: Exit Function
-            End If
-
-            Dim lnChild As Collection: Set lnChild = NodeGet(node, "child")
-            Dim snapLN() As Long: snapLN = CopyCaps()
-            Dim lnEnd As Long
-            Dim lnMatched As Boolean
-
-            lnMatched = MatchNode(lnChild, subj, pos, lnEnd)
-
-            ' restore (assertions do not consume)
-            RestoreCaps snapLN
-
-            If lnMatched Then
-                MatchNode = False
-            Else
-                outEnd = pos - 1
-                MatchNode = True
-            End If
-            Exit Function
-
-        ' ---- Positive lookbehind (?<=...)  -- fixed-width only ----
-        Case "lookbehind_pos"
-            If Not NodeExists(node, "child") Or Not NodeExists(node, "width") Then
-                MatchNode = False: Exit Function
-            End If
-
-            Dim lbChild As Collection: Set lbChild = NodeGet(node, "child")
-            Dim lbWidth As Long: lbWidth = CLng(NodeGet(node, "width"))
-            Dim snapLB() As Long
-            Dim lbStart As Long, lbEnd As Long
-            Dim lbMatched As Boolean
-
-            ' not enough characters before pos -> fail
-            If pos - 1 < lbWidth Then
-                MatchNode = False: Exit Function
-            End If
-
-            lbStart = pos - lbWidth
-            snapLB = CopyCaps()
-            lbMatched = MatchNode(lbChild, subj, lbStart, lbEnd)
-            If lbMatched Then
-                capsStart(0) = snapLB(0)
-                capsEnd(0) = snapLB(pGroupCount + 1)
-            Else
-                RestoreCaps snapLB
-            End If
-
-            If lbMatched Then
-                outEnd = pos - 1
-                MatchNode = True
-            Else
-                MatchNode = False
-            End If
-            Exit Function
-
-        ' ---- Negative lookbehind (?<!...)  -- fixed-width only ----
-        Case "lookbehind_neg"
-            If Not NodeExists(node, "child") Or Not NodeExists(node, "width") Then
-                MatchNode = False: Exit Function
-            End If
-
-            Dim lbnChild As Collection: Set lbnChild = NodeGet(node, "child")
-            Dim lbnWidth As Long: lbnWidth = CLng(NodeGet(node, "width"))
-            Dim snapLBN() As Long
-            Dim lbnStart As Long, lbnEnd As Long
-            Dim lbnMatched As Boolean
-
-            If pos - 1 < lbnWidth Then
-                ' no room for inner to match -> negative succeeds
-                outEnd = pos - 1
-                MatchNode = True: Exit Function
-            End If
-
-            lbnStart = pos - lbnWidth
-            snapLBN = CopyCaps()
-            lbnMatched = MatchNode(lbnChild, subj, lbnStart, lbnEnd)
-            RestoreCaps snapLBN
-
-            If lbnMatched Then
-                MatchNode = False
-            Else
-                outEnd = pos - 1
-                MatchNode = True
-            End If
-            Exit Function
-
-        Case "atomic"
-            ' Attempt to match child; if it succeeds protect changed capture slots from later restore
-            Dim beforeSnap() As Long: beforeSnap = CopyCaps()
-            Dim atomEnd As Variant
-            If MatchNode(NodeGet(node, "child"), subj, pos, atomEnd) Then
-                res = True
-                localEnd = atomEnd
-                ' mark which capture slots changed and lock them
-                Dim tot As Long: tot = pGroupCount
-                Dim idx As Long
-                For idx = 0 To tot
-                    Dim beforeS As Long: beforeS = beforeSnap(idx)
-                    Dim beforeE As Long: beforeE = beforeSnap(idx + tot + 1)
-                    If capsStart(idx) <> beforeS Or capsEnd(idx) <> beforeE Then
-                        atomicLocks(idx) = True
-                    End If
-                Next idx
-            Else
-                ' restore beforeSnap (child already handled restore in branches), keep atomicLocks unchanged
-                RestoreCaps beforeSnap
-                res = False
-            End If
-        Case "cond"
-            ' Conditional node: fields "cond" (string like "1" or "name"), "yes" (node), optional "no" (node)
-            If Not NodeExists(node, "cond") Then
-                MatchNode = False: Exit Function
-            End If
-        
-            Dim condText As String: condText = CStr(NodeGet(node, "cond"))
-            Dim condSatisfied As Boolean: condSatisfied = False
-        
-            ' numeric?
-            If IsNumeric(condText) Then
-                Dim cIdx As Long: cIdx = CLng(condText)
-                If cIdx >= 0 And cIdx <= UBound(capsEnd) Then
-                    If capsEnd(cIdx) <> -1 Then condSatisfied = True
-                End If
-            Else
-                ' named: find index by name
-                Dim resolvedIdx As Long: resolvedIdx = FindGroupIndexByName(pAST, condText)
-                If resolvedIdx <> -1 Then
-                    If resolvedIdx >= 0 And resolvedIdx <= UBound(capsEnd) Then
-                        If capsEnd(resolvedIdx) <> -1 Then condSatisfied = True
-                    End If
-                Else
-                    condSatisfied = False
-                End If
-            End If
-        
-            ' Branch selection
-            If condSatisfied Then
-                If NodeExists(node, "yes") Then
-                    Dim yesNode As Variant: vAssignVar yesNode, NodeGet(node, "yes")
-                    Dim yesEnd As Variant
-                    Dim snapY() As Long: snapY = CopyCaps()
-                    If MatchNode(yesNode, subj, pos, yesEnd) Then
-                        localEnd = yesEnd: res = True
-                    Else
-                        RestoreCaps snapY: res = False
-                    End If
-                Else
-                    res = False
-                End If
-            Else
-                If NodeExists(node, "no") Then
-                    Dim noNode As Variant: vAssignVar noNode, NodeGet(node, "no")
-                    Dim noEnd As Variant
-                    Dim snapN() As Long: snapN = CopyCaps()
-                    If MatchNode(noNode, subj, pos, noEnd) Then
-                        localEnd = noEnd: res = True
-                    Else
-                        RestoreCaps snapN: res = False
-                    End If
-                Else
-                    ' No 'no' branch -> treat as failure (consistent with your earlier choice)
-                    res = False
-                End If
-            End If
-        
-        Case "recurse"
-            If Not NodeExists(node, "target") Then
-                MatchNode = False: Exit Function
-            End If
-        
-            Dim targ As Long: targ = CLng(NodeGet(node, "target"))
-            Dim recOk As Boolean: recOk = False
-            Dim recEnd As Variant
-
-            ' re-entering the same target at the same position can never consume input (left recursion)
-            Dim recKey As String: recKey = "|" & targ & "@" & pos & "|"
-            If InStr(pRecActive, recKey) > 0 Then
-                MatchNode = False: Exit Function
-            End If
-            pRecDepth = pRecDepth + 1
-            If pRecDepth > RECURSE_LIMIT Then err.Raise vbObjectError + 3, "RegexEngine", "Match aborted: recursion too deep"
-            Dim prevActive As String: prevActive = pRecActive
-            pRecActive = pRecActive & recKey
-        
-            If targ = 0 Then
-                ' (?R) -> recurse into whole root AST
-                Dim snapR() As Long: snapR = CopyCaps()
-                If MatchNode(NodeGet(pAST, "body"), subj, pos, recEnd) Then
-                    recOk = True: localEnd = recEnd
-                Else
-                    RestoreCaps snapR: recOk = False
-                End If
-            Else
-                ' recurse into group node child (if available)
-                If NodeExists(pAST, "groupNodes") Then
-                    Dim gnodes As Collection: Set gnodes = NodeGet(pAST, "groupNodes")
-                    Dim rIdx As Long: rIdx = FindGroupIndexByOrdinal(pAST, targ)
-                    On Error Resume Next
-                    Dim targetNode As Variant
-                    targetNode = gnodes(rIdx) ' index collection access
-                    If err.Number <> 0 Then
-                        err.Clear
-                        targetNode = Empty
-                    End If
-                    On Error GoTo 0
-        
-                    If Not IsEmpty(targetNode) Then
-                        If typeName(targetNode(UBound(targetNode))) = "Collection" Then
-                            Dim childNode As Collection: Set childNode = targetNode(UBound(targetNode))
-                            Dim snapG() As Long: snapG = CopyCaps()
-                            If MatchNode(childNode, subj, pos, recEnd) Then
-                                recOk = True: localEnd = recEnd
-                            Else
-                                RestoreCaps snapG: recOk = False
-                            End If
-                        End If
-                    End If
-                End If
-            End If
-            pRecActive = prevActive
-            pRecDepth = pRecDepth - 1
-        
-            If recOk Then
-                res = True
-            Else
-                res = False
-            End If
-
-        Case "backref"
-            Dim brIdx As Long
-            If NodeExists(node, "name") Then
-                brIdx = FindGroupIndexByName(pAST, CStr(NodeGet(node, "name")))
-            Else
-                brIdx = CLng(NodeGet(node, "idx"))
-            End If
-            ' A group that did not participate matches the empty string (ECMAScript/VBScript)
-            Dim brLen As Long: brLen = 0
-            If brIdx >= 1 And brIdx <= pGroupCount Then
-                If capsStart(brIdx) >= 1 And capsEnd(brIdx) >= capsStart(brIdx) Then brLen = capsEnd(brIdx) - capsStart(brIdx) + 1
-            End If
-            If brLen = 0 Then
-                localEnd = pos - 1: res = True
-            ElseIf pos + brLen - 1 <= Len(subj) Then
-                Dim brText As String: brText = mid$(subj, pos, brLen)
-                Dim brCap As String: brCap = mid$(subj, capsStart(brIdx), brLen)
-                If FlagState(node, "i", pIgnoreCase) Then brText = LCase$(brText): brCap = LCase$(brCap)
-                If brText = brCap Then localEnd = pos + brLen - 1: res = True
-            End If
-
-        Case "wordb"
-            If (IsWordCharAt(subj, pos - 1) = IsWordCharAt(subj, pos)) = CBool(NodeGet(node, "neg")) Then
-                outEnd = pos - 1
-                MatchNode = True
-            Else
-                MatchNode = False
-            End If
-            Exit Function
-
-        Case "bol"
-            If pos = 1 Then
-                res = True
-            ElseIf FlagState(node, "m", pMultiline) Then
-                res = (SafeMid(subj, pos - 1, 1) = vbLf Or SafeMid(subj, pos - 1, 1) = vbCr)
-            End If
-            If res Then outEnd = pos - 1
-            MatchNode = res
-            Exit Function
-
-        Case "eol"
-            If pos = Len(subj) + 1 Then
-                res = True
-            ElseIf FlagState(node, "m", pMultiline) Then
-                res = (SafeMid(subj, pos, 1) = vbLf Or SafeMid(subj, pos, 1) = vbCr)
-            End If
-            If res Then outEnd = pos - 1
-            MatchNode = res
-            Exit Function
-
+            MatchHere = MatchQuant(node, 0, pos, outEnd)
         Case Else
-            res = False
+            MatchSteps = MatchSteps + 1
+            If MatchSteps > pMaxMatchSteps Then err.Raise vbObjectError + 2, "RegexEngine", "Match aborted: too many steps"
+            Select Case t
+                Case "lit", "dot", "class"
+                    If LeafMatches(node, t, pos) Then MatchHere = MatchRest(pos + 1, outEnd)
+                Case "lookahead_pos", "lookahead_neg", "lookbehind_pos", "lookbehind_neg"
+                    MatchHere = MatchLook(node, t, pos, outEnd)
+                Case "atomic", "cond", "recurse"
+                    MatchHere = MatchIsolatedThenRest(node, t, pos, outEnd)
+                Case Else
+                    If MatchSimple(node, t, pos, nxt) Then MatchHere = MatchRest(nxt, outEnd)
+            End Select
     End Select
-
-    ' synchronize localEnd -> capsEnd(0) and outEnd
-    If res Then
-        If Not IsEmpty(localEnd) Then
-            capsEnd(0) = CLng(localEnd)
-            If Not IsMissing(outEnd) Then outEnd = CLng(localEnd)
-        Else
-            If Not IsMissing(outEnd) Then outEnd = capsEnd(0)
-        End If
-    End If
-
-    If DEBUG_TRACE Then Debug.Print "TRACE MatchNode EXIT type=" & t & " pos=" & pos & " res=" & CStr(res) & " localEnd=" & CStr(localEnd) & " caps0=[" & capsStart(0) & "," & capsEnd(0) & "]"
-    MatchNode = res
 End Function
 
+' children(i..) then the continuation: leaves and assertions are matched here in a loop; any
+' other node is matched with the rest of the sequence pushed as a frame
+Private Function MatchSeq(ByVal children As Collection, ByVal i As Long, ByVal pos As Long, ByRef outEnd As Long) As Boolean
+    Dim n As Long: n = children.Count
+    Dim nd As Collection, t As String, nxt As Long
+    Do While i <= n
+        Set nd = children(i)
+        t = nd(1)
+        Select Case t
+            Case "lit", "dot", "class"
+                MatchSteps = MatchSteps + 1
+                If MatchSteps > pMaxMatchSteps Then err.Raise vbObjectError + 2, "RegexEngine", "Match aborted: too many steps"
+                If Not LeafMatches(nd, t, pos) Then Exit Function
+                pos = pos + 1
+            Case "bol", "eol", "wordb", "backref"
+                MatchSteps = MatchSteps + 1
+                If MatchSteps > pMaxMatchSteps Then err.Raise vbObjectError + 2, "RegexEngine", "Match aborted: too many steps"
+                If Not MatchSimple(nd, t, pos, nxt) Then Exit Function
+                pos = nxt
+            Case Else
+                If i < n Then
+                    PushFrame FR_SEQ, children, i + 1
+                    MatchSeq = MatchHere(nd, pos, outEnd)
+                    kTop = kTop - 1
+                Else
+                    MatchSeq = MatchHere(nd, pos, outEnd)
+                End If
+                Exit Function
+        End Select
+        i = i + 1
+    Loop
+    MatchSeq = MatchRest(pos, outEnd)
+End Function
 
-' Flatten nested sequences.
-Private Sub AppendNodeToMatchSequence(ByRef target As Collection, ByVal sourceNode As Collection)
-    If CStr(sourceNode(1)) = "seq" Then
-        Dim sourceChild As Variant
-        For Each sourceChild In NodeGet(sourceNode, "child")
-            target.Add sourceChild
-        Next sourceChild
+' The continuation from pos: pop the top frame, run it, put it back
+Private Function MatchRest(ByVal pos As Long, ByRef outEnd As Long) As Boolean
+    If kTop = kBase Then
+        outEnd = pos - 1
+        MatchRest = True
+        Exit Function
+    End If
+    Dim kind As Long: kind = kKind(kTop)
+    Dim nd As Collection: Set nd = kNode(kTop)
+    Dim num As Long: num = kNum(kTop)
+    Dim mark As Long
+    kTop = kTop - 1
+    Select Case kind
+        Case FR_SEQ
+            MatchRest = MatchSeq(nd, num, pos, outEnd)
+        Case FR_CAPEND
+            mark = trTop
+            SetCap -num, pos - 1
+            MatchRest = MatchRest(pos, outEnd)
+            If Not MatchRest Then Undo mark
+        Case FR_QCONT
+            MatchRest = MatchQuant(nd, num, pos, outEnd)
+        Case FR_QGUARD
+            ' an iteration beyond the minimum must consume input (ECMAScript RepeatMatcher)
+            If pos <> num Then MatchRest = MatchRest(pos, outEnd)
+    End Select
+    kTop = kTop + 1
+    kKind(kTop) = kind
+    Set kNode(kTop) = nd
+    kNum(kTop) = num
+End Function
+
+' A node on its own, with no continuation: lookarounds, atomic groups, conditionals, recursion
+Private Function MatchIsolated(ByVal node As Collection, ByVal pos As Long, ByRef outEnd As Long) As Boolean
+    Dim saveBase As Long: saveBase = kBase
+    kBase = kTop
+    MatchIsolated = MatchHere(node, pos, outEnd)
+    kBase = saveBase
+End Function
+
+Private Sub PushFrame(ByVal kind As Long, ByVal nd As Collection, ByVal num As Long)
+    kTop = kTop + 1
+    If kTop > pStackCap Then
+        pStackCap = 2 * pStackCap + 32
+        ReDim Preserve kKind(1 To pStackCap)
+        ReDim Preserve kNode(1 To pStackCap)
+        ReDim Preserve kNum(1 To pStackCap)
+    End If
+    kKind(kTop) = kind
+    Set kNode(kTop) = nd
+    kNum(kTop) = num
+End Sub
+
+' Set a capture slot, logging the old value: g >= 1 is the start of group g, g <= -1 the end of group -g
+Private Sub SetCap(ByVal g As Long, ByVal v As Long)
+    trTop = trTop + 1
+    If trTop > pTrailCap Then
+        pTrailCap = 2 * pTrailCap + 64
+        ReDim Preserve trSlot(1 To pTrailCap)
+        ReDim Preserve trOld(1 To pTrailCap)
+    End If
+    trSlot(trTop) = g
+    If g > 0 Then
+        trOld(trTop) = capsStart(g): capsStart(g) = v
     Else
-        target.Add sourceNode
+        trOld(trTop) = capsEnd(-g): capsEnd(-g) = v
     End If
 End Sub
 
-Private Function MatchSequence(ByVal children As Collection, ByRef subj As String, ByVal pos As Long, Optional ByRef outEnd As Variant) As Boolean
-    If DEBUG_TRACE Then Debug.Print "TRACE MatchSequence start pos=" & pos & " children=" & children.Count
-    Dim rootSnap() As Long: rootSnap = CopyCaps()
-    Dim grpSnap() As Long
-    Dim curPos As Long: curPos = pos
-    Dim i As Long
+' Undo capture writes back to a trail mark
+Private Sub Undo(ByVal mark As Long)
+    Dim g As Long
+    Do While trTop > mark
+        g = trSlot(trTop)
+        If g > 0 Then capsStart(g) = trOld(trTop) Else capsEnd(-g) = trOld(trTop)
+        trTop = trTop - 1
+    Loop
+End Sub
 
-    For i = 1 To children.Count
-        Dim node As Collection: Set node = children(i)
-        Dim nodeEnd As Variant
-        Dim nodeType As String: nodeType = node(1)
-
-        If DEBUG_TRACE Then Debug.Print "TRACE  seq child#" & i & " type=" & nodeType & " curPos=" & curPos
-
-        If nodeType = "quant" Then
-            ' Quantifier followed by the rest of the sequence, with backtracking.
-            If MatchQuant(node, 0, SliceChildren(children, i + 1), subj, curPos, outEnd) Then
-                MatchSequence = True
-            Else
-                RestoreCaps rootSnap
-                MatchSequence = False
-            End If
-            Exit Function
-
-        ElseIf nodeType = "quant_cont" Then
-            ' Next iteration of a quantifier whose child has internal choices.
-            If MatchQuant(node("quant"), CLng(node("count")), SliceChildren(children, i + 1), subj, curPos, outEnd) Then
-                MatchSequence = True
-            Else
-                RestoreCaps rootSnap
-                MatchSequence = False
-            End If
-            Exit Function
-
-        ElseIf nodeType = "quant_guard" Then
-            ' An iteration beyond the minimum must consume input (ECMAScript RepeatMatcher).
-            If curPos = CLng(node("start")) Then
-                RestoreCaps rootSnap
-                MatchSequence = False: Exit Function
-            End If
-
-        ElseIf nodeType = "alt" Then
-            ' Try each alternative followed by the rest of the sequence.
-            Dim altSnap() As Long: altSnap = CopyCaps()
-            Dim altItem As Variant
-            For Each altItem In NodeGet(node, "child")
-                Dim altSeq As Collection: Set altSeq = New Collection
-                AppendNodeToMatchSequence altSeq, altItem
-                Dim altTail As Long
-                For altTail = i + 1 To children.Count
-                    altSeq.Add children(altTail)
-                Next altTail
-                Dim altEnd As Variant
-                If MatchSequence(altSeq, subj, curPos, altEnd) Then
-                    outEnd = altEnd
-                    capsEnd(0) = CLng(outEnd)
-                    MatchSequence = True: Exit Function
-                End If
-                RestoreCaps altSnap
-            Next altItem
-            RestoreCaps rootSnap
-            MatchSequence = False: Exit Function
-
-        ElseIf nodeType = "group" Then
-            Dim gidx As Long
-            Dim captureEndNode As Collection
-            ' idx=0 is non-capturing; the capture_end marker is built once per group
-            If NodeExists(node, "capEnd") Then
-                Set captureEndNode = node("capEnd")
-            Else
-                gidx = CLng(node("idx"))
-                Set captureEndNode = newNode("capture_end")
-                captureEndNode.Add gidx, "idx"
-                node.Add captureEndNode, "capEnd"
-            End If
-            gidx = captureEndNode("idx")
-
-            ' Match group and tail as one backtracking sequence.
-            grpSnap = CopyCaps()
-            If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " group idx=" & gidx & " set start=" & curPos
-            If gidx >= 1 Then capsStart(gidx) = curPos
-
-            Dim groupCombinedSeq As New Collection
-            Dim groupCombinedEnd As Variant
-            Dim groupTailIdx As Long
-
-            AppendNodeToMatchSequence groupCombinedSeq, node("child")
-            groupCombinedSeq.Add captureEndNode
-            For groupTailIdx = i + 1 To children.Count
-                groupCombinedSeq.Add children(groupTailIdx)
-            Next groupTailIdx
-
-            If MatchSequence(groupCombinedSeq, subj, curPos, groupCombinedEnd) Then
-                outEnd = groupCombinedEnd
-                capsEnd(0) = CLng(outEnd)
-                If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " group idx=" & gidx & " OK outEnd=" & outEnd
-                MatchSequence = True: Exit Function
-            End If
-
-            If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " group idx=" & gidx & " FAILED, restoring grpSnap"
-            RestoreCaps grpSnap
-            MatchSequence = False: Exit Function
-
-        ElseIf nodeType = "capture_end" Then
-            ' Record the capture boundary.
-            Dim captureEndIdx As Long: captureEndIdx = node("idx")
-            If captureEndIdx >= 1 Then capsEnd(captureEndIdx) = curPos - 1
-            If DEBUG_TRACE Then Debug.Print "TRACE   capture_end idx=" & captureEndIdx & " end=" & (curPos - 1)
-        Else
-            If Not MatchNode(node, subj, curPos, nodeEnd) Then
-                If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " node FAILED, restoring seqSnap"
-                RestoreCaps rootSnap
-                MatchSequence = False: Exit Function
-            Else
-                If DEBUG_TRACE Then Debug.Print "TRACE   seq child#" & i & " node OK nodeEnd=" & nodeEnd
-                curPos = CLng(nodeEnd) + 1
-            End If
-        End If
-    Next i
-
-    outEnd = curPos - 1
-    capsEnd(0) = CLng(outEnd)
-    If DEBUG_TRACE Then Debug.Print "TRACE MatchSequence success outEnd=" & outEnd & " caps0=[" & capsStart(0) & "," & capsEnd(0) & "]"
-    MatchSequence = True
+Private Function MatchGroup(ByVal node As Collection, ByVal pos As Long, ByRef outEnd As Long) As Boolean
+    Dim gidx As Long: gidx = node("idx")
+    If gidx < 1 Then
+        MatchGroup = MatchHere(node("child"), pos, outEnd)
+        Exit Function
+    End If
+    Dim mark As Long: mark = trTop
+    SetCap gidx, pos
+    PushFrame FR_CAPEND, Nothing, gidx
+    MatchGroup = MatchHere(node("child"), pos, outEnd)
+    kTop = kTop - 1
+    If Not MatchGroup Then Undo mark
 End Function
 
-Private Function SliceChildren(ByVal children As Collection, ByVal fromIdx As Long) As Collection
-    Dim res As New Collection
-    Dim j As Long
-    For j = fromIdx To children.Count
-        res.Add children(j)
-    Next j
-    Set SliceChildren = res
+Private Function MatchAlt(ByVal node As Collection, ByVal pos As Long, ByRef outEnd As Long) As Boolean
+    Dim alt As Variant
+    For Each alt In node("child")
+        If MatchHere(alt, pos, outEnd) Then MatchAlt = True: Exit Function
+    Next alt
+End Function
+
+' Lookarounds: the inner pattern is matched on its own; a positive one keeps its captures (ECMAScript)
+Private Function MatchLook(ByVal node As Collection, ByVal t As String, ByVal pos As Long, ByRef outEnd As Long) As Boolean
+    Dim at As Long: at = pos
+    Dim negative As Boolean: negative = (t = "lookahead_neg" Or t = "lookbehind_neg")
+    If t = "lookbehind_pos" Or t = "lookbehind_neg" Then
+        If Not NodeExists(node, "width") Then Exit Function
+        at = pos - CLng(node("width"))
+        If at < 1 Then
+            ' no room before pos: the inner pattern cannot match
+            If negative Then MatchLook = MatchRest(pos, outEnd)
+            Exit Function
+        End If
+    End If
+    Dim mark As Long: mark = trTop
+    Dim e As Long
+    Dim ok As Boolean: ok = MatchIsolated(node("child"), at, e)
+    If negative Then
+        Undo mark
+        If ok Then Exit Function
+    ElseIf Not ok Then
+        Exit Function
+    End If
+    MatchLook = MatchRest(pos, outEnd)
+    If Not MatchLook Then Undo mark
+End Function
+
+' atomic, cond and recurse: the node matches on its own, with no backtracking into it, then the continuation
+Private Function MatchIsolatedThenRest(ByVal node As Collection, ByVal t As String, ByVal pos As Long, ByRef outEnd As Long) As Boolean
+    Dim mark As Long: mark = trTop
+    Dim e As Long, ok As Boolean
+    Select Case t
+        Case "atomic": ok = MatchIsolated(node("child"), pos, e)
+        Case "cond": ok = MatchCond(node, pos, e)
+        Case "recurse": ok = MatchRecurse(node, pos, e)
+    End Select
+    If Not ok Then
+        Undo mark
+        Exit Function
+    End If
+    MatchIsolatedThenRest = MatchRest(e + 1, outEnd)
+    If Not MatchIsolatedThenRest Then Undo mark
+End Function
+
+' (?(cond)yes|no): cond is a group number or name; a missing branch fails
+Private Function MatchCond(ByVal node As Collection, ByVal pos As Long, ByRef outEnd As Long) As Boolean
+    If Not NodeExists(node, "cond") Then Exit Function
+    Dim condText As String: condText = CStr(node("cond"))
+    Dim cIdx As Long
+    If IsNumeric(condText) Then cIdx = CLng(condText) Else cIdx = FindGroupIndexByName(pAST, condText)
+    Dim satisfied As Boolean
+    If cIdx >= 0 And cIdx <= UBound(capsEnd) Then satisfied = (capsEnd(cIdx) <> -1)
+    Dim branch As String
+    If satisfied Then branch = "yes" Else branch = "no"
+    If Not NodeExists(node, branch) Then Exit Function
+    MatchCond = MatchIsolated(node(branch), pos, outEnd)
+End Function
+
+' (?R) and (?n): the whole pattern or group n, guarded against left recursion and depth
+Private Function MatchRecurse(ByVal node As Collection, ByVal pos As Long, ByRef outEnd As Long) As Boolean
+    If Not NodeExists(node, "target") Then Exit Function
+    Dim targ As Long: targ = CLng(node("target"))
+    ' re-entering the same target at the same position can never consume input (left recursion)
+    Dim recKey As String: recKey = "|" & targ & "@" & pos & "|"
+    If InStr(pRecActive, recKey) > 0 Then Exit Function
+    pRecDepth = pRecDepth + 1
+    If pRecDepth > RECURSE_LIMIT Then err.Raise vbObjectError + 3, "RegexEngine", "Match aborted: recursion too deep"
+    Dim prevActive As String: prevActive = pRecActive
+    pRecActive = pRecActive & recKey
+    Dim target As Collection
+    If targ = 0 Then
+        Set target = pAST("body")
+    Else
+        Set target = RecurseTarget(targ)
+    End If
+    If Not target Is Nothing Then MatchRecurse = MatchIsolated(target, pos, outEnd)
+    pRecActive = prevActive
+    pRecDepth = pRecDepth - 1
+End Function
+
+' Child node of the group a (?n) recursion refers to, Nothing when there is none
+Private Function RecurseTarget(ByVal targ As Long) As Collection
+    If Not NodeExists(pAST, "groupNodes") Then Exit Function
+    Dim gnodes As Collection: Set gnodes = pAST("groupNodes")
+    Dim rIdx As Long: rIdx = FindGroupIndexByOrdinal(pAST, targ)
+    Dim targetNode As Variant
+    On Error Resume Next
+    targetNode = gnodes(rIdx)
+    If err.Number <> 0 Then err.Clear: Exit Function
+    On Error GoTo 0
+    If typeName(targetNode(UBound(targetNode))) = "Collection" Then Set RecurseTarget = targetNode(UBound(targetNode))
+End Function
+
+' Zero-width assertions and backreferences: True when node matches at pos; nxt is where matching resumes
+Private Function MatchSimple(ByVal node As Collection, ByVal t As String, ByVal pos As Long, ByRef nxt As Long) As Boolean
+    nxt = pos
+    Select Case t
+        Case "bol"
+            If pos = 1 Then
+                MatchSimple = True
+            ElseIf FlagState(node, "m", pMultiline) Then
+                MatchSimple = IsLineBreakAt(pos - 1)
+            End If
+        Case "eol"
+            If pos = pSubjLen + 1 Then
+                MatchSimple = True
+            ElseIf FlagState(node, "m", pMultiline) Then
+                MatchSimple = IsLineBreakAt(pos)
+            End If
+        Case "wordb"
+            MatchSimple = ((IsWordCharAt(pos - 1) = IsWordCharAt(pos)) = CBool(node("neg")))
+        Case "backref"
+            MatchSimple = MatchBackref(node, pos, nxt)
+    End Select
+End Function
+
+' A group that did not participate matches the empty string (ECMAScript/VBScript)
+Private Function MatchBackref(ByVal node As Collection, ByVal pos As Long, ByRef nxt As Long) As Boolean
+    Dim brIdx As Long
+    If NodeExists(node, "name") Then
+        brIdx = FindGroupIndexByName(pAST, CStr(node("name")))
+    Else
+        brIdx = CLng(node("idx"))
+    End If
+    Dim brLen As Long
+    If brIdx >= 1 And brIdx <= pGroupCount Then
+        If capsStart(brIdx) >= 1 And capsEnd(brIdx) >= capsStart(brIdx) Then brLen = capsEnd(brIdx) - capsStart(brIdx) + 1
+    End If
+    nxt = pos + brLen
+    If brLen = 0 Then MatchBackref = True: Exit Function
+    If nxt - 1 > pSubjLen Then Exit Function
+    Dim brText As String: brText = mid$(CurSubject, pos, brLen)
+    Dim brCap As String: brCap = mid$(CurSubject, capsStart(brIdx), brLen)
+    If FlagState(node, "i", pIgnoreCase) Then brText = LCase$(brText): brCap = LCase$(brCap)
+    MatchBackref = (brText = brCap)
+End Function
+
+Private Function IsLineBreakAt(ByVal pos As Long) As Boolean
+    If pos < 1 Or pos > pSubjLen Then Exit Function
+    Dim code As Long: code = pSubjBytes(2 * pos - 2) + 256& * pSubjBytes(2 * pos - 1)
+    IsLineBreakAt = (code = 10 Or code = 13)
 End Function
 
 ' True when a node can match in at most one way at a given position (memoized on the node).
@@ -1708,21 +1497,27 @@ Private Sub ResetGroupCaps(ByVal qnode As Collection)
     If Not NodeExists(qnode, "capIdx") Then
         Dim lst As String
         CollectGroupIdx NodeGet(qnode, "child"), lst
-        NodeAdd qnode, "capIdx", lst
+        Dim parts() As String: parts = VBA.Split(lst, ",")
+        Dim idxs() As Long: ReDim idxs(0 To UBound(parts) + 1)
+        Dim k As Long
+        For k = 0 To UBound(parts)
+            If Len(parts(k)) > 0 Then idxs(k) = CLng(parts(k))
+        Next k
+        NodeAdd qnode, "capIdx", idxs
     End If
-    Dim parts() As String: parts = VBA.Split(CStr(NodeGet(qnode, "capIdx")), ",")
-    Dim k As Long
-    For k = 0 To UBound(parts)
-        If Len(parts(k)) > 0 Then
-            capsStart(CLng(parts(k))) = 0
-            capsEnd(CLng(parts(k))) = -1
+    Dim g As Variant
+    For Each g In qnode("capIdx")
+        If g > 0 Then
+            If capsStart(g) <> 0 Then SetCap CLng(g), 0
+            If capsEnd(g) <> -1 Then SetCap -CLng(g), -1
         End If
-    Next k
+    Next g
 End Sub
 
-' Match quantifier qnode, count iterations already done, followed by tail.
-' Children with internal choices are matched one iteration at a time so the tail can backtrack into them.
-Private Function MatchQuant(ByVal qnode As Collection, ByVal count As Long, ByVal tail As Collection, ByRef subj As String, ByVal pos As Long, ByRef outEnd As Variant) As Boolean
+' Quantifier with count iterations done, then the continuation. A child with internal choices is
+' matched one iteration at a time, with the next iteration as a frame, so the continuation can
+' backtrack into each iteration.
+Private Function MatchQuant(ByVal qnode As Collection, ByVal count As Long, ByVal pos As Long, ByRef outEnd As Long) As Boolean
     Dim childNode As Collection: Set childNode = qnode("child")
     Dim mn As Long: mn = qnode("min")
     Dim mx As Long: mx = qnode("max")
@@ -1734,163 +1529,187 @@ Private Function MatchQuant(ByVal qnode As Collection, ByVal count As Long, ByVa
     If mx = -1 Then remMax = -1 Else remMax = mx - count
 
     If possFlag Or pQuantDepth >= QUANT_REC_LIMIT Or IsDeterministic(childNode) Then
-        MatchQuant = MatchQuantIter(childNode, remMin, remMax, lazy, possFlag, tail, subj, pos, outEnd)
+        MatchQuant = MatchQuantIter(childNode, remMin, remMax, lazy, possFlag, pos, outEnd)
         Exit Function
     End If
 
-    Dim snap() As Long: snap = CopyCaps()
     If lazy And remMin = 0 Then
-        If MatchSequence(tail, subj, pos, outEnd) Then MatchQuant = True: Exit Function
-        RestoreCaps snap
+        If MatchRest(pos, outEnd) Then MatchQuant = True: Exit Function
     End If
     If remMax <> 0 Then
-        Dim iter As Collection: Set iter = New Collection
-        AppendNodeToMatchSequence iter, childNode
-        If remMin = 0 Then
-            Dim guardNode As Collection: Set guardNode = newNode("quant_guard")
-            guardNode.Add pos, "start"
-            iter.Add guardNode
-        End If
-        Dim contNode As Collection: Set contNode = newNode("quant_cont")
-        contNode.Add qnode, "quant"
-        contNode.Add count + 1, "count"
-        iter.Add contNode
-        Dim t As Variant
-        For Each t In tail
-            iter.Add t
-        Next t
+        Dim mark As Long: mark = trTop
         ResetGroupCaps qnode
+        PushFrame FR_QCONT, qnode, count + 1
+        If remMin = 0 Then PushFrame FR_QGUARD, Nothing, pos
         pQuantDepth = pQuantDepth + 1
-        Dim ok As Boolean: ok = MatchSequence(iter, subj, pos, outEnd)
+        Dim ok As Boolean: ok = MatchHere(childNode, pos, outEnd)
         pQuantDepth = pQuantDepth - 1
+        If remMin = 0 Then kTop = kTop - 2 Else kTop = kTop - 1
         If ok Then MatchQuant = True: Exit Function
-        RestoreCaps snap
+        Undo mark
     End If
-    If Not lazy And remMin = 0 Then
-        If MatchSequence(tail, subj, pos, outEnd) Then MatchQuant = True: Exit Function
-        RestoreCaps snap
-    End If
-    MatchQuant = False
+    If Not lazy And remMin = 0 Then MatchQuant = MatchRest(pos, outEnd)
 End Function
 
-' Quantifier over a child with no internal choices: collect the occurrences, then try the tail for each count.
-Private Function MatchQuantIter(ByVal childNode As Collection, ByVal mn As Long, ByVal mx As Long, ByVal lazy As Boolean, ByVal possFlag As Boolean, ByVal tail As Collection, ByRef subj As String, ByVal curPos As Long, ByRef outEnd As Variant) As Boolean
+' Quantifier over a child with no internal choices: each occurrence is matched on its own, then the
+' continuation is tried for each count (greedy: most first; lazy: fewest first; possessive: most only)
+Private Function MatchQuantIter(ByVal childNode As Collection, ByVal mn As Long, ByVal mx As Long, ByVal lazy As Boolean, ByVal possFlag As Boolean, ByVal pos As Long, ByRef outEnd As Long) As Boolean
     Dim leafType As String: leafType = childNode(1)
     If leafType = "lit" Or leafType = "dot" Or leafType = "class" Then
-        MatchQuantIter = MatchLeafRun(childNode, leafType, mn, mx, lazy, possFlag, tail, subj, curPos, outEnd)
+        MatchQuantIter = MatchLeafRun(childNode, leafType, mn, mx, lazy, possFlag, pos, outEnd)
         Exit Function
     End If
 
-    Dim seqSnap() As Long: seqSnap = CopyCaps()
-    Dim occEnds() As Long
-    Dim occSnaps() As Variant
-    Dim occCount As Long, occCap As Long
-    Dim scanPos As Long: scanPos = curPos
-    Dim preSnap() As Long
-    Dim ndEnd As Variant
+    Dim mark0 As Long: mark0 = trTop
+    Dim lazyRun As Boolean: lazyRun = lazy And Not possFlag
+    Dim occEnds() As Long, occMarks() As Long
+    Dim n As Long, occCap As Long
+    Dim scanPos As Long: scanPos = pos
+    Dim e As Long, preMark As Long
     Dim zeroLen As Boolean
-    Do While mx = -1 Or occCount < mx
-        preSnap = CopyCaps()
-        If Not MatchNode(childNode, subj, scanPos, ndEnd) Then
-            RestoreCaps preSnap
-            Exit Do
+    Do
+        If lazyRun And n >= mn Then
+            If MatchRest(scanPos, outEnd) Then MatchQuantIter = True: Exit Function
         End If
+        If n = mx Then Exit Do
+        preMark = trTop
+        If Not MatchIsolated(childNode, scanPos, e) Then Exit Do
         ' an empty iteration repeats identically; it only counts towards the minimum
-        zeroLen = (CLng(ndEnd) < scanPos)
-        If zeroLen And occCount >= mn Then
-            RestoreCaps preSnap
+        zeroLen = (e < scanPos)
+        If zeroLen And n >= mn Then
+            Undo preMark
             Exit Do
         End If
-        Do
-            occCount = occCount + 1
-            If occCount > occCap Then
+        If zeroLen Then n = mn Else n = n + 1
+        scanPos = e + 1
+        If Not lazyRun Then
+            If n > occCap Then
                 occCap = occCap * 2 + 4
-                ReDim Preserve occEnds(1 To occCap)
-                ReDim Preserve occSnaps(1 To occCap)
+                ReDim Preserve occEnds(0 To occCap)
+                ReDim Preserve occMarks(0 To occCap)
             End If
-            occEnds(occCount) = CLng(ndEnd)
-            occSnaps(occCount) = CopyCaps()
-        Loop While zeroLen And occCount < mn
-        If zeroLen Then Exit Do
-        scanPos = CLng(ndEnd) + 1
+            occEnds(n) = e
+            occMarks(n) = trTop
+        End If
+        If zeroLen Then
+            If lazyRun Then
+                If MatchRest(scanPos, outEnd) Then MatchQuantIter = True: Exit Function
+            End If
+            Exit Do
+        End If
     Loop
-    If occCount < mn Then
-        RestoreCaps seqSnap
-        MatchQuantIter = False: Exit Function
+    If Not lazyRun And n >= mn Then
+        Dim k As Long, kEnd As Long, posTry As Long
+        If possFlag Then kEnd = n Else kEnd = mn
+        For k = n To kEnd Step -1
+            If k = 0 Then
+                Undo mark0
+                posTry = pos
+            Else
+                Undo occMarks(k)
+                posTry = occEnds(k) + 1
+            End If
+            If MatchRest(posTry, outEnd) Then MatchQuantIter = True: Exit Function
+        Next k
     End If
-
-    ' possessive: only the maximal count; lazy: small to big; greedy: big to small
-    Dim kStart As Long, kEnd As Long, kStep As Long
-    If possFlag Then
-        kStart = occCount: kEnd = occCount: kStep = 1
-    ElseIf lazy Then
-        kStart = mn: kEnd = occCount: kStep = 1
-    Else
-        kStart = occCount: kEnd = mn: kStep = -1
-    End If
-    Dim k As Long, posTry As Long
-    Dim kSnap() As Long
-    For k = kStart To kEnd Step kStep
-        RestoreCaps seqSnap
-        If k >= 1 Then
-            kSnap = occSnaps(k)
-            RestoreCaps kSnap
-            posTry = occEnds(k) + 1
-        Else
-            posTry = curPos
-        End If
-        If MatchSequence(tail, subj, posTry, outEnd) Then
-            MatchQuantIter = True: Exit Function
-        End If
-    Next k
-    RestoreCaps seqSnap
-    MatchQuantIter = False
+    Undo mark0
 End Function
 
-' Quantified single-char node: captures cannot change, so occurrence k ends at curPos + k - 1
-Private Function MatchLeafRun(ByVal childNode As Collection, ByVal leafType As String, ByVal mn As Long, ByVal mx As Long, ByVal lazy As Boolean, ByVal possFlag As Boolean, ByVal tail As Collection, ByRef subj As String, ByVal curPos As Long, ByRef outEnd As Variant) As Boolean
-    Dim seqSnap() As Long: seqSnap = CopyCaps()
-    Dim n As Long
-    Do While n < mn
-        If Not LeafStep(childNode, leafType, subj, curPos + n) Then RestoreCaps seqSnap: Exit Function
-        n = n + 1
-    Loop
+' Quantified single-char node: captures cannot change, so occurrence k ends at pos + k - 1
+Private Function MatchLeafRun(ByVal childNode As Collection, ByVal leafType As String, ByVal mn As Long, ByVal mx As Long, ByVal lazy As Boolean, ByVal possFlag As Boolean, ByVal pos As Long, ByRef outEnd As Long) As Boolean
+    Dim n As Long: n = LeafCount(childNode, leafType, pos, mn)
+    If n < mn Then Exit Function
     If lazy And Not possFlag Then
-        ' extend one char at a time, trying the tail first
+        ' extend one char at a time, trying the continuation first
         Do
-            If MatchSequence(tail, subj, curPos + n, outEnd) Then MatchLeafRun = True: Exit Function
-            RestoreCaps seqSnap
+            If MatchRest(pos + n, outEnd) Then MatchLeafRun = True: Exit Function
             If n = mx Then Exit Do
-            If Not LeafStep(childNode, leafType, subj, curPos + n) Then Exit Do
+            If LeafCount(childNode, leafType, pos + n, 1) = 0 Then Exit Do
             n = n + 1
         Loop
     Else
-        Do While mx = -1 Or n < mx
-            If Not LeafStep(childNode, leafType, subj, curPos + n) Then Exit Do
-            n = n + 1
-        Loop
-        ' possessive: only the maximal count; greedy: big to small
+        If mx = -1 Then
+            n = n + LeafCount(childNode, leafType, pos + n, -1)
+        ElseIf n < mx Then
+            n = n + LeafCount(childNode, leafType, pos + n, mx - n)
+        End If
         Dim k As Long, kEnd As Long
         If possFlag Then kEnd = n Else kEnd = mn
         For k = n To kEnd Step -1
-            If MatchSequence(tail, subj, curPos + k, outEnd) Then MatchLeafRun = True: Exit Function
-            RestoreCaps seqSnap
+            If MatchRest(pos + k, outEnd) Then MatchLeafRun = True: Exit Function
         Next k
     End If
-    RestoreCaps seqSnap
 End Function
 
-' One char of a leaf run, counted like a MatchNode call
-Private Function LeafStep(ByVal node As Collection, ByVal t As String, ByRef subj As String, ByVal pos As Long) As Boolean
-    MatchSteps = MatchSteps + 1
+' Chars from pos on that match a lit, dot or class node, at most limit of them (-1: no limit).
+' Each char tested counts as a step, the one that fails too.
+Private Function LeafCount(ByVal node As Collection, ByVal t As String, ByVal pos As Long, ByVal limit As Long) As Long
+    If limit = 0 Then Exit Function
+    Dim last As Long: last = pSubjLen
+    If limit > 0 Then
+        If pos + limit - 1 < last Then last = pos + limit - 1
+    End If
+    Dim p As Long: p = pos
+    Dim code As Long
+    Select Case t
+        Case "lit"
+            Dim ch As String: ch = node("ch")
+            If FlagState(node, "i", pIgnoreCase) Then
+                ch = LCase$(ch)
+                Do While p <= last
+                    If LCase$(mid$(CurSubject, p, 1)) <> ch Then Exit Do
+                    p = p + 1
+                Loop
+            Else
+                Dim chCode As Long: chCode = CodeOf(ch)
+                Do While p <= last
+                    If pSubjBytes(2 * p - 2) + 256& * pSubjBytes(2 * p - 1) <> chCode Then Exit Do
+                    p = p + 1
+                Loop
+            End If
+        Case "dot"
+            If FlagState(node, "s", pDotAll) Then
+                p = last + 1
+            Else
+                Do While p <= last
+                    code = pSubjBytes(2 * p - 2) + 256& * pSubjBytes(2 * p - 1)
+                    If code = 10 Or code = 13 Then Exit Do
+                    p = p + 1
+                Loop
+            End If
+        Case "class"
+            Dim iCase As Boolean: iCase = FlagState(node, "i", pIgnoreCase)
+            Dim mapIdx As Long: mapIdx = node("mapIdx")
+            Dim neg As Boolean: neg = node("neg")
+            Dim hit As Boolean
+            Do While p <= last
+                code = pSubjBytes(2 * p - 2) + 256& * pSubjBytes(2 * p - 1)
+                If code <= 255 Then
+                    hit = pClassMaps(code, mapIdx)
+                    If iCase And Not hit Then
+                        If code >= 65 And code <= 90 Then
+                            hit = pClassMaps(code + 32, mapIdx)
+                        ElseIf code >= 97 And code <= 122 Then
+                            hit = pClassMaps(code - 32, mapIdx)
+                        End If
+                    End If
+                    If hit = neg Then Exit Do
+                ElseIf Not MatchCharClassNode(node, mid$(CurSubject, p, 1)) Then
+                    Exit Do
+                End If
+                p = p + 1
+            Loop
+    End Select
+    LeafCount = p - pos
+    MatchSteps = MatchSteps + LeafCount
+    If limit < 0 Or LeafCount < limit Then MatchSteps = MatchSteps + 1
     If MatchSteps > pMaxMatchSteps Then err.Raise vbObjectError + 2, "RegexEngine", "Match aborted: too many steps"
-    LeafStep = LeafMatches(node, t, subj, pos)
 End Function
 
 ' lit, dot and class nodes: does the char at pos match?
-Private Function LeafMatches(ByVal node As Collection, ByVal t As String, ByRef subj As String, ByVal pos As Long) As Boolean
-    If pos > Len(subj) Then Exit Function
-    Dim sc As String: sc = mid$(subj, pos, 1)
+Private Function LeafMatches(ByVal node As Collection, ByVal t As String, ByVal pos As Long) As Boolean
+    If pos > pSubjLen Then Exit Function
+    Dim sc As String: sc = mid$(CurSubject, pos, 1)
     Select Case t
         Case "lit"
             If FlagState(node, "i", pIgnoreCase) Then LeafMatches = (LCase$(sc) = LCase$(CStr(node("ch")))) Else LeafMatches = (sc = node("ch"))
@@ -1900,145 +1719,6 @@ Private Function LeafMatches(ByVal node As Collection, ByVal t As String, ByRef 
             LeafMatches = MatchCharClassNode(node, sc)
     End Select
 End Function
-
-' MatchQuantifier: tries to match between min..max occurrences.
-' For greedy: try larger k first; for lazy: try smaller first.
-' If possessive = True -> accept the maximal match and DO NOT try smaller k's.
-Private Function MatchQuantifier(ByVal child As Collection, ByVal minc As Long, ByVal maxc As Long, ByVal lazy As Boolean, ByRef subj As String, ByVal posStart As Long, ByVal possessive As Boolean, ByRef outEnd As Long) As Boolean
-    Dim saveSnapshot() As Long: saveSnapshot = CopyCaps()
-    Dim occPos() As Long
-    ReDim occPos(0 To 0)
-    Dim occCount As Long: occCount = 0
-    Dim curPos As Long: curPos = posStart
-    Dim nodeEnd As Long
-
-    ' Greedily consume up to maxc occurrences (or until child fails).
-    Do While occCount < maxc
-        Dim tempSnap() As Long: tempSnap = CopyCaps()
-        If MatchNode(child, subj, curPos, nodeEnd) Then
-            occCount = occCount + 1
-            ReDim Preserve occPos(0 To occCount)
-            occPos(occCount) = nodeEnd
-            curPos = nodeEnd + 1
-        Else
-            ' restore partial child state (the last attempted child failed)
-            RestoreCaps tempSnap
-            Exit Do
-        End If
-    Loop
-
-    ' If possessive: accept the maximal consumption (if >= min), do not attempt smaller k
-    If possessive Then
-        If occCount < minc Then
-            MatchQuantifier = False
-            Exit Function
-        Else
-            ' leave caps as they are (they reflect the maximal consumption)
-            outEnd = occPos(occCount)
-            MatchQuantifier = True
-            Exit Function
-        End If
-    End If
-
-    ' Non-possessive behavior proceeds as before:
-    Dim k As Long
-    If lazy Then
-        ' Lazy: try k = min..occCount
-        For k = minc To occCount
-            RestoreCaps saveSnapshot
-            Dim posTry As Long: posTry = posStart
-            Dim t As Long
-            Dim okAll As Boolean: okAll = True
-            For t = 1 To k
-                Dim tmp() As Long: tmp = CopyCaps()
-                If MatchNode(child, subj, posTry, nodeEnd) Then
-                    posTry = nodeEnd + 1
-                Else
-                    RestoreCaps tmp
-                    okAll = False
-                    Exit For
-                End If
-            Next t
-            If okAll Then outEnd = posTry - 1: MatchQuantifier = True: Exit Function
-        Next k
-        MatchQuantifier = False
-    Else
-        ' Greedy: try k = occCount down to minc
-        For k = occCount To minc Step -1
-            RestoreCaps saveSnapshot
-            Dim posTry2 As Long: posTry2 = posStart
-            Dim u As Long
-            Dim okAll2 As Boolean: okAll2 = True
-            For u = 1 To k
-                Dim tmp2() As Long: tmp2 = CopyCaps()
-                If MatchNode(child, subj, posTry2, nodeEnd) Then
-                    posTry2 = nodeEnd + 1
-                Else
-                    RestoreCaps tmp2
-                    okAll2 = False
-                    Exit For
-                End If
-            Next u
-            If okAll2 Then outEnd = posTry2 - 1: MatchQuantifier = True: Exit Function
-        Next k
-        MatchQuantifier = False
-    End If
-End Function
-
-
-' ---------------- Captures snapshot utilities -----------------------------
-' Return a fresh, self-contained snapshot of the capture arrays.
-' Snapshot layout (0-based):
-'  indices 0 .. tot        => capsStart(0..tot)
-'  indices tot+1 .. 2*(tot+1)-1 => capsEnd(0..tot)
-Private Function CopyCaps() As Long()
-    Dim tot As Long: tot = pGroupCount
-    Dim snap() As Long
-    ReDim snap(0 To 2 * tot + 1)    ' 2*(tot+1) elements
-    Dim i As Long
-    For i = 0 To tot
-        snap(i) = capsStart(i)
-        snap(i + tot + 1) = capsEnd(i)
-    Next i
-    CopyCaps = snap
-End Function
-
-' Restore capture arrays from a snapshot produced by CopyCaps.
-' This routine is defensive: if the current pGroupCount differs from the
-' snapshot's pGroupCount, it restores as many slots as possible and
-' initializes any new slots to sensible defaults.
-Private Sub RestoreCaps(ByRef snapshot() As Long)
-    On Error GoTo bad_snapshot
-    If (Not (IsArray(snapshot))) Then Exit Sub
-
-    Dim ub As Long: ub = UBound(snapshot)
-    If ub < 0 Then Exit Sub
-
-    ' compute snapshot tot: (UB - 1) \ 2
-    Dim snapTot As Long
-    snapTot = (ub - 1) \ 2
-    Dim snapOff As Long: snapOff = snapTot + 1
-
-    Dim curTot As Long: curTot = pGroupCount
-
-    Dim i As Long
-    For i = 0 To curTot
-        If i <= snapTot Then
-            capsStart(i) = snapshot(i)
-            capsEnd(i) = snapshot(i + snapOff)
-        Else
-            ' slot not present in snapshot -> reset to default
-            capsStart(i) = 0
-            capsEnd(i) = -1
-        End If
-    Next i
-    Exit Sub
-
-bad_snapshot:
-    ' Defensive fallback: if snapshot was bogus, do nothing but avoid crashing.
-    On Error Resume Next
-    err.Clear
-End Sub
 
 ' ---------------- Char class matching with precomputed map -----------------
 Private Function MatchCharClassNode(ByVal node As Collection, ByVal ch As String) As Boolean
@@ -2100,9 +1780,9 @@ Private Function MatchCharClassNode(ByVal node As Collection, ByVal ch As String
 End Function
 
 ' Word char test for \b and \B, same ASCII set as \w
-Private Function IsWordCharAt(ByRef subj As String, ByVal pos As Long) As Boolean
-    If pos < 1 Or pos > Len(subj) Then Exit Function
-    Dim code As Long: code = AscW(mid$(subj, pos, 1))
+Private Function IsWordCharAt(ByVal pos As Long) As Boolean
+    If pos < 1 Or pos > pSubjLen Then Exit Function
+    Dim code As Long: code = pSubjBytes(2 * pos - 2) + 256& * pSubjBytes(2 * pos - 1)
     IsWordCharAt = (code >= 48 And code <= 57) Or (code >= 65 And code <= 90) Or (code >= 97 And code <= 122) Or code = 95
 End Function
 ' ---------------- Replacement helpers -----------------------------------
@@ -2227,6 +1907,7 @@ Public Function ExecAt(ByVal subj As String, ByVal startPos As Long) As Collecti
     If startPos < 1 Or startPos > Len(subj) + 1 Then Set ExecAt = Nothing: Exit Function
     If Not CanStartAt(subj, startPos) Then Set ExecAt = Nothing: Exit Function
     CurSubject = subj
+    pSubjBytes = subj
     MatchSteps = 0
     If TryAt(subj, startPos) Then
         Set ExecAt = BuildCaptureCollection()
@@ -2236,29 +1917,29 @@ Public Function ExecAt(ByVal subj As String, ByVal startPos As Long) As Collecti
     End If
 End Function
 
-' One match attempt at startPos; on success the match is in capsStart/capsEnd
+' One match attempt at startPos (subj is CurSubject); on success the match is in capsStart/capsEnd
 Private Function TryAt(ByRef subj As String, ByVal startPos As Long) As Boolean
     MatchSteps = MatchSteps + 1
     pQuantDepth = 0
     pRecDepth = 0
     pRecActive = vbNullString
+    kTop = 0: kBase = 0: trTop = 0
+    pSubjLen = Len(subj)
     Dim totalGroups As Long: totalGroups = pGroupCount
     If pCapsSize <> totalGroups + 1 Then
         ReDim capsStart(0 To totalGroups) As Long
         ReDim capsEnd(0 To totalGroups) As Long
-        ReDim atomicLocks(0 To totalGroups) As Boolean
         pCapsSize = totalGroups + 1
     End If
     Dim i As Long
     For i = 0 To totalGroups
         capsStart(i) = 0: capsEnd(i) = -1
-        atomicLocks(i) = False
     Next i
     capsStart(0) = startPos
-    Dim outEnd As Variant
+    Dim outEnd As Long
     Dim ast As Collection: Set ast = pAST
-    If MatchNode(ast("body"), subj, startPos, outEnd) Then
-        If Not IsEmpty(outEnd) Then capsEnd(0) = CLng(outEnd)
+    If MatchHere(ast("body"), startPos, outEnd) Then
+        capsEnd(0) = outEnd
         TryAt = True
     End If
 End Function

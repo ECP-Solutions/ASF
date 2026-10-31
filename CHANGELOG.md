@@ -7,6 +7,8 @@ All notable changes for ASF. This file combines the release notes from the proje
 ## Summary
 The module system resolves paths the way scripts expect: `WorkingDir` set before `Compile` is kept, a module's own relative imports start from its folder, `../` goes up a directory, and a script keeps its working directory after an import. The LibreOffice edition's helper modules get shorter names.
 
+The regex matcher's core no longer copies anything while it backtracks: captures are undone through a trail and the rest of a match is a stack of frames, which makes matching 1.7 to 6 times faster (see Performance).
+
 ---
 
 ## Highlights
@@ -17,11 +19,39 @@ The module system resolves paths the way scripts expect: `WorkingDir` set before
     - **Working directory after an import** — `LoadModule` saved the importer's path after compiling the module, which had already reset it: after any import the main script lost its working directory and an importing module lost its own path, dropping its exports. The path is saved before compiling.
     - **`../` in relative imports** — `'../shared/x.vas'` resolved like `'./shared/x.vas'`. Each leading `./` and `../` segment is now consumed, `../` dropping one directory (staying put at a root); relative paths written with `\` are normalised to `/`.
 
+- **Performance** (`ASF_RegexEngine.cls`): the matcher core.
+    - **Undo trail instead of snapshots** — every group, alternative, quantifier and sequence used to copy all capture slots (`CopyCaps`) and copy them back on failure (`RestoreCaps`). Capture writes now go through `SetCap`, which logs the old value; a failed attempt undoes the log back to its mark.
+    - **Continuation frames instead of copied sequences** — a group, an alternative or a quantifier was matched by building a new Collection with its child, a marker and the rest of the sequence (`SliceChildren`, `AppendNodeToMatchSequence`). The rest of a match is now a stack of frames: the rest of a sequence by index, the end of a capture, the next iteration of a quantifier and its empty-iteration guard.
+    - **Small procedures** — `MatchNode`, a procedure with about 60 locals that VBA sets up on every recursive call, and `MatchSequence` become `MatchHere`, `MatchSeq`, `MatchRest` and one procedure per node kind (`MatchGroup`, `MatchAlt`, `MatchQuant`, `MatchLook`, `MatchBackref`...). Quantified single chars are counted in one loop that reads the subject's code units directly (`LeafCount`).
+    - Results are identical to the previous engine on the 15,767 cases of the JavaScript-comparison corpora (every public method, flags flipped after `Init`, re-`Init` from the cache) and on both test suites. LibreOffice Basic times from `test/RegexBench.bas`, milliseconds per call, previous engine → new (relative figures; absolute VBA times differ):
+
+    | Workload | Matches | `test` | `ExecAll` | `Replace` |
+    |---|---|---|---|---|
+    | Literal scan | 1 | 4.840 → 1.088 ms (4.4×) | 5.094 → 1.352 ms (3.8×) | 4.598 → 1.467 ms (3.1×) |
+    | Short validation | 1 | 2.270 → 0.795 ms (2.9×) | 2.277 → 1.035 ms (2.2×) | 2.414 → 1.008 ms (2.4×) |
+    | Capture extraction | 100 | 3.406 → 1.247 ms (2.7×) | 321.500 → 120.062 ms (2.7×) | 379.250 → 137.000 ms (2.8×) |
+    | Alternation and ignore case | 100 | 6.812 → 1.726 ms (3.9×) | 641.000 → 125.750 ms (5.1×) | 673.000 → 167.250 ms (4.0×) |
+    | Multiline anchors | 100 | 4.328 → 1.631 ms (2.7×) | 421.250 → 146.250 ms (2.9×) | 431.750 → 166.500 ms (2.6×) |
+    | No-match scan | 0 | 0.518 → 0.493 ms (1.1×) | 0.511 → 0.494 ms (1.0×) | 0.578 → 0.592 ms (1.0×) |
+    | Word boundaries | 40 | 3.285 → 0.631 ms (5.2×) | 142.750 → 29.781 ms (4.8×) | 133.250 → 28.188 ms (4.7×) |
+    | Backreference | 160 | 4.004 → 1.531 ms (2.6×) | 664.000 → 254.750 ms (2.6×) | 702.000 → 255.500 ms (2.7×) |
+    | E-mail addresses | 50 | 24.187 → 10.141 ms (2.4×) | 1187.000 → 508.250 ms (2.3×) | 1054.000 → 514.250 ms (2.0×) |
+    | Alternation in a quantifier | 30 | 35.375 → 6.719 ms (5.3×) | 1076.000 → 220.750 ms (4.9×) | 1264.000 → 206.750 ms (6.1×) |
+    | Lazy body with backreference | 60 | 6.836 → 2.676 ms (2.6×) | 481.250 → 151.750 ms (3.2×) | 509.000 → 167.750 ms (3.0×) |
+    | Lookaheads | 30 | 9.859 → 3.570 ms (2.8×) | 671.000 → 229.000 ms (2.9×) | 614.000 → 234.750 ms (2.6×) |
+    | Quantified group | 30 | 12.078 → 4.699 ms (2.6×) | 330.250 → 140.250 ms (2.4×) | 334.000 → 144.250 ms (2.3×) |
+    | Backtracking into a group | 10 | 23.438 → 13.703 ms (1.7×) | 231.000 → 116.000 ms (2.0×) | 224.250 → 123.625 ms (1.8×) |
+
+    The no-match scan never reaches the matcher, so it is unchanged.
+
 - **LibreOffice edition**
     - `ASF_LOCompat` is renamed `LOhelper` and `ASF_VBAExpressions` is renamed `VBAEhelper`; their procedures drop the `ASF`/`LO` prefixes. Macros create engines with `ASF.LOhelper.NewASF()`, `NewRegex()` and `NewASFMap()` and read output with `ASF.LOhelper.GetOutput()`. The rewritten classes call the helpers qualified with the module name; helpers whose plain name is a Basic built-in or keyword are named `TypeNameOf`, `CallMember`, `LetValue`, `RedimField` and `ObjectError`.
+    - Standard modules (tests, user code) index their module-level Collections through `LOhelper.Item`, as classes already did: LibreOffice returns a wrong object for `coll(i)` on a module-level Collection.
     - `libreoffice/extension-page.html`: the description for the extension's page on extensions.libreoffice.org, with examples run against the installed extension.
 
-- **Test coverage**: `module_system_working_dir_before_compile`, `module_system_nested_relative_import` (`test/main_nested.vas`, `test/nested_lib.vas`) and `module_system_parent_relative_import` (`test/main_parent.vas`, `test/modules/square.vas`, `test/modules/inner/offset.vas`) in `test/TestRunner.bas`. All 240 TestRunner tests that do not need Excel pass on LibreOffice 24.2.
+- **Benchmarks against stdRegex**: `Tools/stdRegex/` reproduces stdVBA's regex benchmark (issue 141 analysis: old stdRegex, Sihlfall's stdRegex, ASF `290ad3e`) and adds ASF v3.2.0 and the current engine, with an Excel runner (`Benchmark.ps1`), a LibreOffice runner (`BenchmarkLO.py`) and a self-contained HTML report built from the data. The first run, on LibreOffice 24.2 (`benchmarks/2026-10-30-libreoffice/`), puts the current engine at 2.6–3.1× v3.2.0 and 30–43× `290ad3e` on reused `Test`, `MatchAll` and `Replace` (geometric means), with `290ad3e` failing the word-boundary and backreference probes; stdVBA's Excel run is kept alongside.
+
+- **Test coverage**: `test/regex-corpus/` holds the 15,768 random regex cases used to check the engine: the corpora c1, c2 and c3 with JavaScript's output (ASF matches it on every case), a 768-case API corpus, the full output of every public method of the current engine, the generators with their seeds, and `RegexCorpus.bas`, which runs and compares them in Excel or LibreOffice (`tools/run_lo.py` runs them headless); see its README. `test/RegexBench.bas` times `test`, `ExecAll` and `Replace` on 14 workloads (`RunRegexBenchmarks`, Excel and LibreOffice); on LibreOffice, `python3 libreoffice/tools/run_tests.py bench` runs it, and `Timer` maps to a millisecond clock (`LOhelper.TimerValue`), so TestRunner's timings are exact there too. `module_system_working_dir_before_compile`, `module_system_nested_relative_import` (`test/main_nested.vas`, `test/nested_lib.vas`) and `module_system_parent_relative_import` (`test/main_parent.vas`, `test/modules/square.vas`, `test/modules/inner/offset.vas`) in `test/TestRunner.bas`. All 240 TestRunner tests that do not need Excel pass on LibreOffice 24.2.
 
 ---
 
