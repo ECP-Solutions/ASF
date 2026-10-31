@@ -38,6 +38,25 @@ Every case is checked twice: the leftmost match (the first `ExecAt` position tha
 
 The first three are known differences of semantics; the last four would be defects. Checks where RE2 matched part of a UTF-8 sequence (`\C` again) have no UTF-16 equivalent and are skipped.
 
+## First run
+
+LibreOffice 24.2, engine of v3.2.1 (`main` at `94fc1f4`), 31 October 2026: **11,381,362 of 11,433,768 checks (99.54%) give RE2's result, and no difference is a defect**: nothing is rejected, nothing raises, no group or span differs without an explanation.
+
+| Suites | Content | Checks | Same as RE2 | `ecmascript` | `utf16` | Skipped |
+|---|---|---|---|---|---|---|
+| 000–003 | literals, lower case | 1,295,360 | all | | | |
+| 004–011 | literals, mixed and folded case | 3,594,240 | all | | | |
+| 012–015 | literals, UTF-8 subjects | 508,896 | all | | | |
+| 016–017 | repetition | 1,650,432 | 1,635,824 | 14,608 | | |
+| 018–019 | repetition with captures | 2,129,352 | 2,097,966 | 31,386 | | |
+| 020 | empty strings | 73,584 | 73,398 | 186 | | |
+| 021 | punctuation | 95,160 | all | | | |
+| 022 | line ends | 1,375,528 | 1,373,608 | 1,920 | | |
+| 023–024 | character classes | 465,696 | all | | | |
+| 025–026 | interesting UTF-8 | 245,520 | 241,214 | | 3,969 | 337 |
+
+The `ecmascript` differences are loops whose body can match empty, such as `(?:(?:)|a)*`, `(?:a*?)*` or `(?:^|.)*` on `a`: Perl and RE2 stop the loop at the first empty iteration and match `""`, ECMAScript rejects the empty iteration and goes on to match `a`; and captures inside such loops (`((a)*){2}`), which follow the same rule. ASF gives JavaScript's result in every one of them. The `utf16` differences are subjects with chars above U+FFFF, where `.` takes half a char in ASF and JavaScript (without `u`). Running the whole set took about 4 hours of LibreOffice Basic, split over four processes.
+
 ## Running
 
 Prepare the cases once (needs git and Python 3; about 20 s):
@@ -53,7 +72,7 @@ python3 test/re2-cases/tools/run_lo.py              # all 27 suites
 python3 test/re2-cases/tools/run_lo.py 016 018      # some suites
 ```
 
-It builds the engine from `src/`, runs `Re2Cases.bas` in a headless LibreOffice, writes `out/NNN.txt` and prints, per suite, the number of checks in each category and the first differences of each kind (`--show=N`). The whole set takes about 3 hours on one core of LibreOffice Basic; suites run one after another, so start one command per group of suites to use several cores. The exit status is 0 when every difference is in the `utf16`, `bytes` or `ecmascript` category.
+It builds the engine from `src/`, runs `Re2Cases.bas` in a headless LibreOffice (two engines are re-initialised for every pattern: in LibreOffice an engine that has compiled a pattern is never freed, so a new engine per pattern would exhaust memory), writes `out/NNN.txt` and prints, per suite, the number of checks in each category and the first differences of each kind (`--show=N`). The whole set takes about 3 hours on one core of LibreOffice Basic; suites run one after another, so start one command per group of suites to use several cores. The exit status is 0 when every difference is in the `utf16`, `bytes` or `ecmascript` category.
 
 In Excel, import the ASF class modules and `test/re2-cases/Re2Cases.bas`, run `RunRe2Suite "C:\ASF\test\re2-cases"` (or `RunRe2Cases` for one suite) and compare the output:
 
