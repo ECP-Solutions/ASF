@@ -1,6 +1,7 @@
 # Advanced Scripting Framework (ASF)
 
 ![ASF](/docs/assets/img/ASF%20logo.png)
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2FECP-Solutions%2FASF.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2FECP-Solutions%2FASF?ref=badge_shield)
 
 [![Tests (Rubberduck)](https://img.shields.io/badge/tests-Rubberduck-brightgreen)](https://rubberduckvba.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -290,6 +291,9 @@ engine.Run pid, ThisWorkbook.Sheets(1)
 ## License
 
 **MIT License** - Copyright © 2026 W. García
+
+
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2FECP-Solutions%2FASF.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2FECP-Solutions%2FASF?ref=badge_large)
 
 ## Star History
 
