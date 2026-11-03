@@ -208,6 +208,11 @@ End Sub
 
 ' x = obj.GetValue(k) without Set: VBA raises when the value is an object, LibreOffice
 ' silently stores it; ASF relies on the VBA behaviour under On Error Resume Next
+' Assignment that keeps objects: a value computed outside Array(), see build.py's array_member_args
+Public Sub AssignValue(ByRef dst As Variant, ByVal v As Variant)
+    If IsObject(v) Then Set dst = v Else dst = v
+End Sub
+
 Public Function LetValue(ByVal v As Variant) As Variant
     If IsObject(v) Then Err.Raise 91
     LetValue = v
