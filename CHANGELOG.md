@@ -2,7 +2,8 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
-## [Unreleased]
+## [v3.3.1] - 2026-11-02
+https://github.com/ECP-Solutions/ASF/releases/tag/v3.3.1
 
 ## Highlights
 
