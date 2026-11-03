@@ -72,7 +72,7 @@ python3 test/re2-cases/tools/run_lo.py              # all 27 suites
 python3 test/re2-cases/tools/run_lo.py 016 018      # some suites
 ```
 
-It builds the engine from `src/`, runs `Re2Cases.bas` in a headless LibreOffice, writes `out/NNN.txt` and prints, per suite, the number of checks in each category and the first differences of each kind (`--show=N`). The whole set takes about 3 hours on one core of LibreOffice Basic; suites run one after another, so start one command per group of suites to use several cores. The exit status is 0 when every difference is in the `utf16`, `bytes` or `ecmascript` category.
+It builds the engine from `src/`, runs `Re2Cases.bas` in a headless LibreOffice (two engines are re-initialised for every pattern: in LibreOffice an engine that has compiled a pattern is never freed, so a new engine per pattern would exhaust memory), writes `out/NNN.txt` and prints, per suite, the number of checks in each category and the first differences of each kind (`--show=N`). The whole set takes about 3 hours on one core of LibreOffice Basic; suites run one after another, so start one command per group of suites to use several cores. The exit status is 0 when every difference is in the `utf16`, `bytes` or `ecmascript` category.
 
 In Excel, import the ASF class modules and `test/re2-cases/Re2Cases.bas`, run `RunRe2Suite "C:\ASF\test\re2-cases"` (or `RunRe2Cases` for one suite) and compare the output:
 

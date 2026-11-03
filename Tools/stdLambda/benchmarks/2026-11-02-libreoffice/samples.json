@@ -1,0 +1,18 @@
+{
+  "measured_at_utc": "2026-11-02T08:44:03.864142+00:00",
+  "office": "LibreOffice 24.2.7.2",
+  "operating_system": "Linux 6.18.44-fc-v185",
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "engines": [
+    "stdLambda",
+    "ASF"
+  ],
+  "asf_commit": "2d17b8d105f5a94b7c63b5863d7a82a949a3ab6b",
+  "stdvba_commit": "230aea3aef43cd4bb78a728e7a18f70e11b9a77b",
+  "benchmark_sha256": "F0FDE3A6E508D1A88F3C2052D70EF02371FC3AE2439AB102F7E95BC22C647E56",
+  "samples": 5,
+  "target_batch_ms": 30,
+  "timer": "GetSystemTicks (1 ms resolution)",
+  "stdlambda_patches": "LibreOffice port (lo_stdlambda.py): LambdaDict for Scripting.Dictionary, ASF_RegexEngine for VBScript.RegExp in the tokeniser, CallByName for rtcCallByName, Variant arrays for arrays of Types; parser and evaluation loop unchanged",
+  "description": "Compile: fresh object + compile (stdLambda protInit, ASF New + Compile). Run: one call of the compiled object with the workload's arguments. Results checked before each timed cell."
+}

@@ -423,66 +423,6 @@ def map_default_member(s):
 _ELEM = [0]
 
 
-def module_variables(code):
-    """{lower-case name: lower-case type} of the variables declared outside procedures."""
-    found, inside = {}, False
-    for ln in code.split("\n"):
-        if PROC_START.match(ln):
-            inside = True
-        elif PROC_END.match(ln):
-            inside = False
-        elif not inside:
-            m = re.match(r"^\s*(?:Private|Public|Dim)\s+(?!Const\b|Type\b|Enum\b|Declare\b|Sub\b|Function\b|Property\b)(.+)$", ln, re.I)
-            if m:
-                found.update(declared_names(m.group(1).split("'")[0]))
-    return found
-
-
-def array_member_args(s):
-    """A class variable, or a call to one of the class's own functions, passed to Array() keeps
-    the object alive for good in LibreOffice (a regex engine that had compiled a pattern was
-    never freed): pass a local copy instead."""
-    members = module_variables(s)
-    own = {m.lower() for m in re.findall(r"(?m)^(?:Public |Private |Friend )?(?:Function|Property Get) (\w+)", s)}
-    calls_own = lambda a: any(w.lower() in own for w in re.findall(r"(?<![\w.])(\w+)\(", a))
-    out, n = [], 0
-    for ln in s.split("\n"):
-        # a call copied before a single-line If or a Case would run unconditionally
-        conditional = re.match(r"\s*(?:If|ElseIf|Else|Case|Do|Loop|While|For)\b", ln, re.I)
-        copies, j = [], find_code(ln, "Array(")
-        while j != -1:
-            if j > 0 and (ln[j - 1].isalnum() or ln[j - 1] in "_."):
-                j = find_code(ln, "Array(", j + 1)
-                continue
-            depth, k = 0, j + 5
-            for k in range(j + 5, len(ln)):
-                depth += {"(": 1, ")": -1}.get(ln[k], 0)
-                if depth == 0:
-                    break
-            args = split_top(ln[j + 6:k])
-            for i, a in enumerate(args):
-                name = a.strip()
-                if re.fullmatch(r"\w+", name) and name.lower() in members:
-                    n += 1
-                    local = f"loArrayArg{n}"
-                    if members[name.lower()] == "variant":
-                        copies.append(f"Dim {local} As Variant: If IsObject({name}) Then Set {local} = {name} Else {local} = {name}")
-                    else:
-                        copies.append(f"Dim {local} As Variant: {local} = {name}")
-                    args[i] = " " + local if i else local
-                elif calls_own(name) and not conditional:
-                    n += 1
-                    local = f"loArrayArg{n}"
-                    copies.append(f"Dim {local} As Variant: LOhelper.AssignValue {local}, {name}")
-                    args[i] = " " + local if i else local
-            ln = ln[:j + 6] + ",".join(args) + ln[k:]
-            j = find_code(ln, "Array(", j + 6)
-        indent = re.match(r"\s*", ln).group(0)
-        out.extend(indent + c for c in copies)
-        out.append(ln)
-    return "\n".join(out)
-
-
 def element_assign(s):
     """vAssignment arr(i), x writes into a copy of the element: assign directly."""
     out = []
@@ -614,7 +554,6 @@ def asf_passes(name, s):
     # a String read with Get in Binary mode starts after a 2-byte length LibreOffice expects
     s = re.sub(r"(?m)^(\s*)(\w+) = FreeFile\n\s*Open (\w+) For Binary As #\2\n\s*(\w+) = LOF\(\2\)\n\s*(\w+) = Space\$\(\4\)\n\s*Get #\2, , \5\n\s*Close #\2$",
                r"\1\5 = LOhelper.ReadTextFile(\3)", s)
-    s = array_member_args(s)
     s = re.sub(r"\bCallByName\b", "LOhelper.CallMember", s)
     # LibreOffice will not call a method named Clone
     s = re.sub(r"\.Clone\b(\(\))?", ".LOCloneMap", s)
