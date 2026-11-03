@@ -37,10 +37,7 @@ End Sub
 Public Sub RunRe2Cases(ByVal caseFile As String, ByVal outFile As String)
     Dim fi As Integer, fo As Integer, ln As String, fld As String
     Dim subjects As Collection: Set subjects = New Collection
-    ' two engines for the whole file: in LibreOffice an engine that compiled is never freed
     Dim rLeft As Object, rWhole As Object
-    Set rLeft = New ASF_RegexEngine
-    Set rWhole = New ASF_RegexEngine
     Dim leftErr As String, wholeErr As String
     Dim p As String, k As Long
     fi = FreeFile
@@ -55,6 +52,8 @@ Public Sub RunRe2Cases(ByVal caseFile As String, ByVal outFile As String)
             subjects.Add Dec(Mid$(fld, 3))
         ElseIf Left$(fld, 2) = "R " Then
             p = Dec(Mid$(fld, 3))
+            Set rLeft = New ASF_RegexEngine
+            Set rWhole = New ASF_RegexEngine
             leftErr = InitEngine(rLeft, p)
             wholeErr = InitEngine(rWhole, "^(?:" & p & ")$")
             For k = 1 To subjects.Count

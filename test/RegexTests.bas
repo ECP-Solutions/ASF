@@ -237,6 +237,7 @@ Public Sub RunAllRegexTests()
     ReportTest "16_start_filters_follow_flags", GetTestResult("16_start_filters_follow_flags")
     ReportTest "16_named_after_execall", GetTestResult("16_named_after_execall")
     ReportTest "16_replacement_tokens", GetTestResult("16_replacement_tokens")
+    ReportTest "16_local_match", GetTestResult("16_local_match")
 
     Debug.Print "=== Test run complete ==="
     Debug.Print "Total: " & g_totalTests & "  Passed: " & g_passedTests & "  Failed: " & g_failedTests
@@ -463,6 +464,7 @@ Public Function GetTestResult(testName As String) As Boolean
         Case "16_start_filters_follow_flags": GetTestResult = T_16_28_start_filters_follow_flags()
         Case "16_named_after_execall": GetTestResult = T_16_29_named_after_execall()
         Case "16_replacement_tokens": GetTestResult = T_16_30_replacement_tokens()
+        Case "16_local_match": GetTestResult = T_16_31_local_match()
     End Select
 End Function
 ' Helper used by the runner
@@ -2032,6 +2034,29 @@ Public Function T_16_30_replacement_tokens() As Boolean
     If Not AssertEqual(r.Replace("abc", "$<n>"), "a$<n>c", "$<n> without named groups") Then Exit Function
     If Not AssertEqual(r.Replace("abc", "<$&>$"), "a<b>$c", "$& and a trailing $") Then Exit Function
     T_16_30_replacement_tokens = True
+End Function
+
+' globalMatch = False: Replace and Split stop after the first match; ExecAll is unaffected
+Public Function T_16_31_local_match() As Boolean
+    Dim r As New ASF_RegexEngine
+    If Not InitRegexAndHandle(r, "\d+") Then Exit Function
+    If Not AssertEqual(r.globalMatch, True, "global by default") Then Exit Function
+    If Not AssertEqual(r.Replace("a1b22c333", "#"), "a#b#c#", "global Replace") Then Exit Function
+    If Not AssertCollEquals(r.Split("a1b22c333"), a("a", "b", "c", "")) Then Exit Function
+    r.globalMatch = False
+    If Not AssertEqual(r.Replace("a1b22c333", "<$&>"), "a<1>b22c333", "local Replace") Then Exit Function
+    If Not AssertEqual(r.Replace("abc", "#"), "abc", "local Replace without a match") Then Exit Function
+    If Not AssertCollEquals(r.Split("a1b22c333"), a("a", "b22c333")) Then Exit Function
+    If Not AssertCollEquals(r.Split("abc"), a("abc")) Then Exit Function
+    If Not AssertEqual(r.ExecAll("a1b22c333").Count, 3, "ExecAll stays global") Then Exit Function
+    r.pattern = "x*"
+    If Not AssertEqual(r.globalMatch, False, "pattern keeps the mode") Then Exit Function
+    If Not AssertEqual(r.Replace("abc", "-"), "-abc", "local empty match") Then Exit Function
+    r.Init ",", False, , , , False
+    If Not AssertCollEquals(r.Split("1,2,3"), a("1", "2,3")) Then Exit Function
+    r.Init ","
+    If Not AssertCollEquals(r.Split("1,2,3"), a("1", "2", "3")) Then Exit Function
+    T_16_31_local_match = True
 End Function
 
 Public Function testNewG() As Boolean

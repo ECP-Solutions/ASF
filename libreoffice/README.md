@@ -98,7 +98,7 @@ Code in `src/` must not resize an array in a one-line `If` (`If n > UBound(a) Th
 ## Tests
 
 ```sh
-python3 libreoffice/tools/run_tests.py [regex|runner|all|bench] [--keep-log] [--vba-expressions=VBAExpressions.oxt]
+python3 libreoffice/tools/run_tests.py [regex|runner|all|bench|asfbench] [--keep-log] [--vba-expressions=VBAExpressions.oxt]
 ```
 
-builds the library, starts a headless LibreOffice with a throw-away profile and runs `test/RegexTests.bas` and `test/TestRunner.bas`; `bench` runs the regex engine benchmarks of `test/RegexBench.bas` and prints the milliseconds per call. It needs LibreOffice and its Python bindings (`python3-uno`). The VBA expression tests run when the VBA Expressions extension, or its unpacked `VBAExpressionsLib` folder, is given. Tests that need Excel or the UDFs of `src/UDFunctions.cls` are skipped.
+builds the library, starts a headless LibreOffice with a throw-away profile and runs `test/RegexTests.bas` and `test/TestRunner.bas`; `bench` runs the regex engine benchmarks of `test/RegexBench.bas` and `asfbench` the compiler and VM benchmarks of `test/AsfBench.bas`, and both print the milliseconds per call. It needs LibreOffice and its Python bindings (`python3-uno`). The VBA expression tests run when the VBA Expressions extension, or its unpacked `VBAExpressionsLib` folder, is given. Tests that need Excel or the UDFs of `src/UDFunctions.cls` are skipped.

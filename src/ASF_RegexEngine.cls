@@ -62,6 +62,8 @@ Private pAST As Collection
 Private pGroupCount As Long
 Private pMultiline As Boolean
 Private pDotAll As Boolean
+' Replace and Split stop after the first match (VBScript's Global = False); False by default
+Private pLocalMatch As Boolean
 
 ' Current subject & captures
 Private CurSubject As String
@@ -212,7 +214,7 @@ Private Function NodeExists(ByVal node As Collection, ByVal key As String) As Bo
 End Function
 
 ' ---------------- Public API -------------------------------------------
-Public Sub Init(ByVal pattern As String, Optional ByVal ignoreCase As Boolean = False, Optional ByVal MaxSteps As Long = DEFAULT_MAX_STEPS, Optional ByVal multiline As Boolean = False, Optional ByVal dotAll As Boolean = False)
+Public Sub Init(ByVal pattern As String, Optional ByVal ignoreCase As Boolean = False, Optional ByVal MaxSteps As Long = DEFAULT_MAX_STEPS, Optional ByVal multiline As Boolean = False, Optional ByVal dotAll As Boolean = False, Optional ByVal globalMatch As Boolean = True)
     ' Compile (or reuse) first, so a rejected pattern leaves the previous pattern and flags in place
     If pCache Is Nothing Then Set pCache = New Collection
     Dim key As String: key = CacheKey(pattern)
@@ -232,6 +234,7 @@ Public Sub Init(ByVal pattern As String, Optional ByVal ignoreCase As Boolean = 
     pIgnoreCase = ignoreCase
     pMultiline = multiline
     pDotAll = dotAll
+    pLocalMatch = Not globalMatch
     If MaxSteps <= 0 Then pMaxMatchSteps = DEFAULT_MAX_STEPS Else pMaxMatchSteps = MaxSteps
 End Sub
 
@@ -296,7 +299,7 @@ Private Sub EnsureCompiled()
     If pAST Is Nothing Then err.Raise vbObjectError + 4, "RegexEngine", "No pattern: call Init before matching"
 End Sub
 Public Property Get pattern() As String: pattern = pPattern: End Property
-Public Property Let pattern(ByVal v As String): Init v, pIgnoreCase, pMaxMatchSteps, pMultiline, pDotAll: End Property
+Public Property Let pattern(ByVal v As String): Init v, pIgnoreCase, pMaxMatchSteps, pMultiline, pDotAll, Not pLocalMatch: End Property
 Public Property Get ignoreCase() As Boolean: ignoreCase = pIgnoreCase: End Property
 Public Property Let ignoreCase(ByVal v As Boolean): pIgnoreCase = v: End Property
 Public Property Get MaxMatchSteps() As Long: MaxMatchSteps = pMaxMatchSteps: End Property
@@ -305,6 +308,8 @@ Public Property Get multiline() As Boolean: multiline = pMultiline: End Property
 Public Property Let multiline(ByVal v As Boolean): pMultiline = v: End Property
 Public Property Get dotAll() As Boolean: dotAll = pDotAll: End Property
 Public Property Let dotAll(ByVal v As Boolean): pDotAll = v: End Property
+Public Property Get globalMatch() As Boolean: globalMatch = Not pLocalMatch: End Property
+Public Property Let globalMatch(ByVal v As Boolean): pLocalMatch = Not v: End Property
 
 Public Function test(ByVal subj As String) As Boolean
     EnsureCompiled
@@ -2221,6 +2226,10 @@ Public Function Replace(ByVal subj As String, ByVal Replacement As String) As St
         Else
             pos = mend + 1
         End If
+        If pLocalMatch Then
+            If pos <= L Then BufAppend buf, bufLen, mid$(subj, pos)
+            Exit Do
+        End If
     Loop
     Replace = left$(buf, bufLen)
 End Function
@@ -2366,6 +2375,10 @@ Public Function Split(ByVal subj As String) As Collection
             ' if we've consumed the whole subject, append empty tail
             If pos > L Then
                 res.Add vbNullString
+                Exit Do
+            End If
+            If pLocalMatch Then
+                res.Add SafeMid(subj, pos)
                 Exit Do
             End If
         End If

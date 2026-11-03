@@ -73,7 +73,7 @@ These are callable as top-level functions or via the helper bridge; some are als
 - `IsArray(x)` — returns `true` if `x` is an array.
 - `IsNumeric(x)` — returns `true` if `x` is numeric. 
 - `forEach(arr, fn)` — executes the provided function once for each array element. This method returns the original array, doesn't behave like the javascript alternative.
-- `Regex(pattern?, ignoreCase?, multiline?, dotAll?)` — regex Object constructor. If all arguments are omitted, the regex Object will not initialized. If one argument is given, this is considered the `pattern`; if two arguments are given, `pattern` and `ignoreCase` flag will be set; if three arguments are given, `pattern`, `ignoreCase` and `multiline` flags will be set; when all arguments are givem, also the `dotAll` is set. 
+- `Regex(pattern?, ignoreCase?, multiline?, dotAll?, global?)` — regex Object constructor. If all arguments are omitted, the regex Object will not initialized. If one argument is given, this is considered the `pattern`; if two arguments are given, `pattern` and `ignoreCase` flag will be set; if three arguments are given, `pattern`, `ignoreCase` and `multiline` flags will be set; with four arguments, also the `dotAll` flag is set; a fifth argument sets the `global` flag (default `true`; `false` makes `replace` and `split` stop after the first match). 
 - `cwd()` — returns the current working directory as a string. Used for module path resolution.  
   - Example: `currentPath = cwd();`
 - `scwd(path)` — sets the current working directory. Affects relative module path resolution (`./`, `../`).  
@@ -328,7 +328,7 @@ Regex objects are **stateful**, configurable, and reusable, and integrate seamle
 ### Replacement & Splitting
 - `replace(subject, replacement)`
 	- `regex.replace(subject, replacement)`
-	- Replaces **all matches** in `subject`.
+	- Replaces **all matches** in `subject`, or only the first one when the `global` flag is off (see `setGlobal`).
 	- `replacement` is a string.
 	- Supports `$` expansions:
 		- `$0` full match
@@ -340,7 +340,7 @@ Regex objects are **stateful**, configurable, and reusable, and integrate seamle
 		```
 - `split(subject)`
 	- `regex.split(subject)`
-	- Splits the string using the regex as delimiter.
+	- Splits the string using the regex as delimiter; with the `global` flag off, only at the first match (two pieces at most).
 	- Returns an array of substrings.
 	- Safely handles zero-length matches.
 	- Example:
@@ -391,6 +391,15 @@ Regex objects are **mutable** and configurable at runtime.
 	- Example:
 		```js
 		r.setDotAll(true)
+		```
+- `getGlobal()` / `setGlobal(value)`
+	- `true` by default: `replace` and `split` process every successive, non-overlapping match. `false` stops them after the first match. `exec`, `execAll` and `test` do not depend on it.
+	- Example:
+		```js
+		let r = regex(`\d+`);
+		r.setGlobal(false);
+		r.replace('a1b2', '#')   // -> 'a#b2'
+		r.split('a1b2')          // -> ['a', 'b2']
 		```
 **Execution Control**
 - `getMaxMatchSteps()` / `setMaxMatchSteps(value)`

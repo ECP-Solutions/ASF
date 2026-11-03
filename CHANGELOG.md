@@ -2,6 +2,48 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [Unreleased]
+
+## Highlights
+
+- **Added**
+    - **Local match** — `ASF_RegexEngine.globalMatch` (default `True`) and a sixth `Init` argument, `globalMatch`: when `False`, `Replace` replaces only the first match and `Split` splits only at the first match (two pieces at most), as VBScript's `RegExp` does with `Global = False`. `Exec`, `ExecAll`, `ExecAt` and `Test` do not depend on it, and setting `pattern` keeps the mode. ASF scripts set it with a fifth argument of `regex(...)` or `init(...)`, or with `setGlobal(false)`, and read it with `getGlobal()`.
+
+- **Performance** (`ASF_VM.cls`, `ASF_Compiler.cls`, `ASF_Map.cls`, `ASF_ScopeStack.cls`): scripts compile about 3.2 times and run about 2.3 times faster. The regex engine is unchanged.
+    - **Small procedures** — VBA sets up and clears every local of a procedure on each call, and the VM's busiest procedures had dozens to hundreds: `EvalMethodCall` 377, `EvalExprNode` 74. `EvalExprNode` and `ExecuteStmtNode` are now dispatchers with one or two locals over one procedure per node kind (`EvalVariable`, `EvalBinary`, `EvalCall`, `ExecAssignNode`...), with the most frequent kinds tested first; `EvalMethodCall` dispatches by the base's type to `ArrayMethod`, `StringMethod`, `MapMethod`, `RegexMethod` and `CollectionMethod`, which hand every method that declares locals to its own procedure (`ArrPush`, `StrSplit`...). `EvalNamedBuiltin` is entered only for builtin names, and `ExecIfNode` runs its blocks through `ExecBlock`.
+    - **Function calls** — a call to a named function goes straight from the function table to its body (`CallNamedFunction`), without building a closure map first; the callee's scope shares the caller's frames by reference (`ShareFrames`) instead of copying them through an array, and `return` writes its value to the innermost frame instead of searching the whole stack.
+    - **Fewer objects and lookups** — assigning to a plain variable, to a property of a map held in one, or to an element of an array held in a variable or a property (`a[i] = v`, `m[i][j] = v`, `this.v[i] = v`) no longer builds resolution maps; member reads look the property up once on a typed map; binary operators are evaluated in one procedure, the most frequent first; type checks use `TypeOf` instead of comparing `TypeName` strings; the `for` loop wraps its step statement once instead of on every iteration. `ASF_Map` keeps its keys in a `String` array, starts with 8 slots instead of 64, grows without trapping an error, looks keys up inline in `GetValue` and `TryGetValue` and has `ReplaceValue`; scope frames are read through typed variables (calls on Collection items are late-bound) with one lookup per frame.
+    - **Compiler** — expressions are parsed by precedence climbing (`ParseBinaryNode`) instead of one procedure per precedence level, with the same precedence and associativity; the deep clones of every subtree the parser had just built, about ten copies of every expression, are gone, and primary expressions are parsed by small procedures per token kind.
+    - Same output on both test suites. LibreOffice Basic times from `test/AsfBench.bas`, best of two alternated runs, milliseconds per call, v3.2.1 → new (relative figures; absolute VBA times differ):
+
+    | Workload | Compile | Run |
+    |---|---|---|
+    | Arithmetic loop | 50.4 → 15.7 ms (3.2×) | 8210 → 3187 ms (2.6×) |
+    | Recursive calls | 44.4 → 13.2 ms (3.4×) | 5515 → 2660 ms (2.1×) |
+    | String building | 47.1 → 15.4 ms (3.1×) | 1704 → 786 ms (2.2×) |
+    | Array methods | 98.1 → 32.2 ms (3.0×) | 2642 → 1468 ms (1.8×) |
+    | Object properties | 77.1 → 19.5 ms (4.0×) | 6342 → 2245 ms (2.8×) |
+    | Closures | 71.0 → 26.4 ms (2.7×) | 2660 → 1287 ms (2.1×) |
+    | While and branches | 58.1 → 26.9 ms (2.2×) | 4336 → 1813 ms (2.4×) |
+    | Template literals | 60.7 → 21.2 ms (2.9×) | 2731 → 961 ms (2.8×) |
+    | Array indexing | 184.8 → 38.4 ms (4.8×) | 2276 → 992 ms (2.3×) |
+    | Nested arrays | 223.0 → 45.9 ms (4.9×) | wrong result on v3.2.1 → 1413 ms |
+    | Classes | 78.1 → 29.7 ms (2.6×) | 2904 → 1190 ms (2.4×) |
+
+    Geometric means over the ten workloads that give the right result on v3.2.1: compile 3.24×, run 2.33×.
+
+- **Fixed**
+    - **Nested array assignment** — `m[i][j] = v` wrote to the wrong element when the two indexes differed, as the path to the element was walked in reverse order (`m[2][1] = 9` could give `[[9, 4], [9, 4]]`), in Excel and LibreOffice.
+    - **Indexes through properties** — `o.items[2] = 7` and `this.v[i] = x` raised an error, as the property was looked up as a variable; an empty array held in a property now grows to one element on its first assignment, as one held in a variable does.
+    - **Own methods before builtins** — a class method or object function named like a builtin map method (`set`, `get`, `has`, `keys`...) is called instead of the builtin, as in JavaScript.
+
+- **LibreOffice edition**: `ASF.oxt` is version 3.3.0 and again carries the ASF logo and the LibreOffice 7.5 minimum version, which the v3.2.1 merge had left out of `build.py`; the unused `compat/ASF_LOCompat.bas` and `compat/ASF_VBAExpressions.bas`, replaced by `LOhelper` and `VBAEhelper`, are removed.
+    - **Regex engines are freed** — in LibreOffice, a class variable or a call to one of the class's own functions passed to `Array()` keeps the object alive for good, so every `ASF_RegexEngine` that had compiled a pattern stayed in memory (about 130 KB each, 250 KB with `\d` or `\w`: 2,000 engines grew LibreOffice by 260 to 500 MB). `build.py` now copies such arguments to locals first (`array_member_args`, LibreOffice only; VBA is unchanged), and 2,000 engines compiling, matching, replacing and splitting no longer grow it. `test/re2-cases/Re2Cases.bas` goes back to one engine per pattern.
+
+- **Test coverage**: `16_local_match` in `test/RegexTests.bas`; `regex_local_match`, `array_nested_assign_different_indexes`, `array_assign_through_property` and `class_methods_named_like_builtins` in `test/TestRunner.bas`. `test/AsfBench.bas` times compiling and running eleven ASF workloads (loops, recursion, strings, array methods, objects, closures, branches, templates, array indexing, nested arrays, classes) and checks each result (`RunAsfBenchmarks`, Excel and LibreOffice); on LibreOffice, `python3 libreoffice/tools/run_tests.py asfbench` runs it.
+
+---
+
 ## [v3.2.1] - 2026-10-31
 https://github.com/ECP-Solutions/ASF/releases/tag/v3.2.1
 

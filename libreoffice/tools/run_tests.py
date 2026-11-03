@@ -1,6 +1,6 @@
 """Run the ASF test suites on the LibreOffice edition, headless.
 
-    python3 libreoffice/tools/run_tests.py [regex|runner|all|bench] [--keep-log] [--vba-expressions=VBAExpressions.oxt]
+    python3 libreoffice/tools/run_tests.py [regex|runner|all|bench|asfbench] [--keep-log] [--vba-expressions=VBAExpressions.oxt]
 
 Builds the ASF library from src/ (see build.py), adds test/RegexTests.bas and an adapted
 test/TestRunner.bas (or test/RegexBench.bas for bench, which prints timings), starts soffice with a throw-away profile and runs the suites through
@@ -53,6 +53,8 @@ def main_module(log_path, suites):
         calls.append("    RunAllTests")
     if "bench" in suites:
         calls.append("    RunRegexBenchmarks")
+    if "asfbench" in suites:
+        calls.append("    RunAsfBenchmarks")
     return f'''Option VBASupport 1
 Public Function LOTestDir() As String
     LOTestDir = "{TEST_DIR}"
@@ -98,6 +100,8 @@ def run(suites, keep_log=False, vba_expressions=None):
         mods.append(("RegexTests", build.normal_module(build.load(os.path.join(TEST_DIR, "RegexTests.bas"))), "normal"))
     if "bench" in suites:
         mods.append(("RegexBench", build.normal_module(build.load(os.path.join(TEST_DIR, "RegexBench.bas"))), "normal"))
+    if "asfbench" in suites:
+        mods.append(("AsfBench", build.normal_module(build.load(os.path.join(TEST_DIR, "AsfBench.bas"))), "normal"))
     skip = list(EXCLUDED) + ([] if vba_expressions else list(NEEDS_VBA_EXPRESSIONS))
     if "runner" in suites:
         mods.append(("TestRunner", runner_module(skip), "normal"))
@@ -161,11 +165,11 @@ def summarize(log):
 
 def main(argv):
     which = argv[1] if len(argv) > 1 and not argv[1].startswith("--") else "all"
-    suites = {"regex": ["regex"], "runner": ["runner"], "all": ["regex", "runner"], "bench": ["bench"]}[which]
+    suites = {"regex": ["regex"], "runner": ["runner"], "all": ["regex", "runner"], "bench": ["bench"], "asfbench": ["asfbench"]}[which]
     vbe = next((a.split("=", 1)[1] for a in argv if a.startswith("--vba-expressions=")), os.environ.get("ASF_VBA_EXPRESSIONS"))
     log, elapsed, log_path, skipped = run(suites, keep_log="--keep-log" in argv, vba_expressions=vbe)
     ok, failures, totals = summarize(log)
-    if "bench" in suites:
+    if "bench" in suites or "asfbench" in suites:
         print("\n".join(l for l in log.split("\n") if " | " in l))
     for l in totals:
         print(l)

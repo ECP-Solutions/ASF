@@ -277,6 +277,10 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("Modules",                   "module_system_prototype_namespace_import") Then module_system_prototype_namespace_import: EndTest
     If StartTest("Modules",                   "module_system_prototype_side_effect_import") Then module_system_prototype_side_effect_import: EndTest
     If StartTest("math",                      "math_basic") Then math_basic: EndTest
+    If StartTest("array",                     "array_nested_assign_different_indexes") Then array_nested_assign_different_indexes: EndTest
+    If StartTest("array",                     "array_assign_through_property") Then array_assign_through_property: EndTest
+    If StartTest("classes",                   "class_methods_named_like_builtins") Then class_methods_named_like_builtins: EndTest
+    If StartTest("regex",                     "regex_local_match") Then regex_local_match: EndTest
     If StartTest("math",                      "math_max_min") Then math_max_min: EndTest
     If StartTest("math",                      "math_max_min_no_arguments") Then math_max_min_no_arguments: EndTest
     If StartTest("calling_native_app_level",  "calling_native_function_app_level") Then calling_native_function_app_level: EndTest
@@ -4397,6 +4401,72 @@ Private Sub object_literal_semicolon_rejected()
     On Error GoTo 0
     expected = CLng(8004)
     AssertEqual expected, actual
+End Sub
+Private Sub regex_local_match()
+    On Error GoTo TestFail
+    
+    actual = CStr(GetResult("let r = regex(`,`, false, false, false, false); return(r.replace('a,b,c', ';') + '|' + `${r.split('a,b,c')}` + '|' + r.getglobal());"))
+    expected = "a;b,c|[ 'a', 'b,c' ]|False"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("let r = regex(`,`); r.setglobal(false); let one = r.replace('a,b,c', ';'); r.setglobal(true); return(one + '|' + r.replace('a,b,c', ';'));"))
+    expected = "a;b,c|a;b;c"
+    AssertEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub array_nested_assign_different_indexes()
+    On Error GoTo TestFail
+    
+    actual = CStr(GetResult("let m = [[1, 2], [3, 4]]; m[2][1] = 9; m[1][2] = 8; return(`${m}`);"))
+    expected = "[ [ 1, 8 ], [ 9, 4 ] ]"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("let t = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]]; t[2][1][2] = 0; t[1][2][1] = 9; return(`${t}`);"))
+    expected = "[ [ [ 1, 2 ], [ 9, 4 ] ], [ [ 5, 0 ], [ 7, 8 ] ] ]"
+    AssertEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub array_assign_through_property()
+    On Error GoTo TestFail
+    
+    actual = CStr(GetResult("let o = { items: [1, 2], m: [[1, 2], [3, 4]], b: { c: [1, 2, 3] } }; o.items[2] = 7; o.m[2][1] = 9; o.b.c[3] = 0; " & _
+                            "return(`${o.items}|${o.m}|${o.b.c}`);"))
+    expected = "[ 1, 7 ]|[ [ 1, 2 ], [ 9, 4 ] ]|[ 1, 2, 0 ]"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("class S { constructor() { this.v = [0, 0]; } put(i, x) { this.v[i] = x; } }; let s = new S(); s.put(2, 5); return(`${s.v}`);"))
+    expected = "[ 0, 5 ]"
+    AssertEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub class_methods_named_like_builtins()
+    On Error GoTo TestFail
+    
+    actual = CStr(GetResult("class S { constructor() { this.n = 0; } set(x) { this.n = x; } get(d) { return this.n + d; } has(x) { return x == this.n; } }; " & _
+                            "let s = new S(); s.set(5); return(`${s.get(1)}|${s.has(5)}|${s.n}`);"))
+    expected = "6|True|5"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("let o = { a: 1 }; o.set('b', 2); return(`${o.get('b')}|${o.has('a')}`);"))
+    expected = "2|True"
+    AssertEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
 End Sub
 Private Sub math_basic()
     On Error GoTo TestFail
