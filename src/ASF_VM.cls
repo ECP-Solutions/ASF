@@ -5445,7 +5445,7 @@ End Function
 
  ' Create and call closures (closureMap is a Map with keys:
  '  "type" = "Closure", "params" = Collection, "body" = Collection (stmts), "env" = ScopeStack)
-Private Function CallClosure(closureMap As ASF_Map, evaluatedArgs As Collection, Optional thisVal As Variant) As Variant
+Private Function CallClosure(ByVal closureMap As ASF_Map, ByVal evaluatedArgs As Collection, Optional thisVal As Variant) As Variant
     ' Get function name for tracing (if available)
     Dim traceName As String
     If closureMap.Exists("name") Then
@@ -5462,8 +5462,9 @@ Private Function CallClosure(closureMap As ASF_Map, evaluatedArgs As Collection,
 End Function
 
 ' A named function called by its name: what CallClosure does with the closure EvalFunctionRef
-' builds (the caller's scope by reference), without building it
-Private Function CallNamedFunction(ByVal fname As String, ByVal funcIdx As Long, evaluatedArgs As Collection, progScope As ASF_ScopeStack) As Variant
+' builds (the caller's scope by reference), without building it. Objects ByVal: VBA accepts a
+' Variant that holds them, as pinfo(1), only for a ByVal parameter
+Private Function CallNamedFunction(ByVal fname As String, ByVal funcIdx As Long, ByVal evaluatedArgs As Collection, ByVal progScope As ASF_ScopeStack) As Variant
     Dim pinfo As Variant
     On Error Resume Next
     pinfo = GLOBALS_.gPrograms(funcIdx)
@@ -5501,8 +5502,8 @@ End Function
 
 ' Runs a closure's body: env is its captured scope (shared-write), pa its parameter names,
 ' restParamName its rest parameter ("" when none)
-Private Function InvokeClosure(env As ASF_ScopeStack, ByVal pa As Variant, ByVal restParamName As String, ByVal traceName As String, _
-                               stmts As Collection, evaluatedArgs As Collection, ByVal hasThis As Boolean, ByVal thisVal As Variant) As Variant
+Private Function InvokeClosure(ByVal env As ASF_ScopeStack, ByVal pa As Variant, ByVal restParamName As String, ByVal traceName As String, _
+                               ByVal stmts As Collection, ByVal evaluatedArgs As Collection, ByVal hasThis As Boolean, ByVal thisVal As Variant) As Variant
     On Error GoTo ErrHandler
 
     ' Trace: Push call

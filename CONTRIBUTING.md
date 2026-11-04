@@ -465,6 +465,20 @@ End Sub
 ' Right-click test method > Run Test
 ```
 
+### Static Checks
+
+The LibreOffice edition runs the test suites headless (`python3 libreoffice/tools/run_tests.py`), but LibreOffice Basic compiles code that the VBA editor refuses. Before submitting changes to `src/`, run:
+
+```bash
+python3 Tools/vba_check.py                                   # src/*.cls
+python3 Tools/vba_check.py src/*.cls test/*.bas              # also the test modules
+```
+
+It reports two VBA compile errors that the LibreOffice run does not catch, and exits with status 1 when it finds one:
+
+- **ByRef argument type mismatch**: a `ByRef` parameter (the default) declared with a type other than `Variant`, such as `stmts As Collection`, takes only a variable or array element of that type. A `Variant`, or an element of a `Variant` that holds an array (`pinfo(1)`), does not compile. Pass a typed variable, or declare the parameter `ByVal`.
+- **Duplicate declaration in current scope**: a name declared twice in a procedure, or declared again after being a parameter.
+
 ### Test Coverage
 
 When adding new features:
