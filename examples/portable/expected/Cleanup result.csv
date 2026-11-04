@@ -1,0 +1,8 @@
+Code,Unit,Description,Changes
+ES0003,m2,Concrete slab 25 cm,"code, unit, description"
+EX0001,m2,Site clearing,
+EX0002,m3,Excavation for foundations,"code, unit, description"
+AL0001,m2,Brick wall 11.5 cm,"code, description"
+AC0002,ud,Ceramic floor tiles,"unit, description"
+ES0002,kg,Steel reinforcement B500S,"unit, description"
+XYZ-12345,m,"Handrail, painted steel","unit, description"

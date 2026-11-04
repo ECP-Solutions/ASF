@@ -1,0 +1,10 @@
+Chapter,Code,Description,Unit,Quantity,UnitPrice
+01 Site works,EX0001,Site clearing,m2,1250,1.85
+01 Site works,EX0002,Excavation for foundations,m3,340,12.4
+02 Structure,ES0001,Reinforced concrete footings,m3,85,148.6
+02 Structure,ES0002,Steel reinforcement B500S,kg,6800,1.32
+02 Structure,ES0003,Concrete slab 25 cm,m2,420,62.75
+03 Masonry,AL0001,Brick wall 11.5 cm,m2,610,28.9
+03 Masonry,AL0002,Plasterboard partition,m2,380,24.15
+04 Finishes,AC0001,Gypsum plaster,m2,1520,9.8
+04 Finishes,AC0002,Ceramic floor tiles,m2,395,31.4

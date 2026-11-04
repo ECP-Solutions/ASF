@@ -1,0 +1,12 @@
+Date,Code,Unit,Quantity,Crew
+2026-03-02,EX0001,m2,420,Earthworks A
+2026-03-02,EX0002,m3,85.5,Earthworks A
+2026-03-03,ex0002,m3,92,Earthworks A
+2026-03-04,ES0001,m3,21,Concrete B
+2026-03-05,ES0002,kg,-150,Steel C
+2026-03-06,ES0003,m2,,Concrete B
+2026-03-08,ES0001,m3,18,Concrete B
+31/02/2026,AL0001,m2,64,Masonry D
+2026-03-09,AL0003,m2,40,Masonry D
+2026-03-09,AL0002,m3,35,
+2026-03-10,AC0001,m²,120,Finishes E

@@ -1,0 +1,52 @@
+// Normalisation of item lists copied from suppliers and older projects, with ASF's regex engine:
+// LibreOffice Basic has no regular expressions and Excel's (VBScript) is being retired.
+// Input  ($1): Code | Unit | Description   (as received)
+// Output:      Code | Unit | Description | Changes
+import { records } from './lib/table.vas';
+
+let spaces = regex(`\s+`);
+// two letters, an optional separator and up to four digits: es-3, ES_0003, Es 03...
+let codeParts = regex(`^([A-Za-z]{2})[-_ .]?0*([0-9]{1,4})$`);
+// superscript two and three, written as escapes to keep the script plain ASCII
+let squared = regex(`\u00B2`);
+let cubed = regex(`\u00B3`);
+let units = { 'ml': 'm', 'mts': 'm', 'un': 'ud', 'u': 'ud', 'pcs': 'ud', 'kgs': 'kg', 'hr': 'h', 'hrs': 'h' };
+
+let normCode = fun(code) {
+    let m = codeParts.exec(spaces.replace(`${code}`, ' ').trim());
+    if (!IsArray(m)) {
+        return `${code}`;
+    };
+    return m[2].toUpperCase() + m[3].padStart(4, '0');
+};
+
+let normUnit = fun(unit) {
+    let u = `${unit}`;
+    u = cubed.replace(squared.replace(u.trim().toLowerCase(), '2'), '3');
+    u = regex(`[.]`).replace(u, '');
+    if (units.has(u)) {
+        return units.get(u);
+    };
+    return u;
+};
+
+let normText = fun(text) {
+    let t = spaces.replace(`${text}`, ' ').trim();
+    if (t.length == 0) {
+        return t;
+    };
+    return t.substring(0, 1).toUpperCase() + t.substring(1);
+};
+
+let out = [['Code', 'Unit', 'Description', 'Changes']];
+records($1).forEach(fun(r) {
+    let code = normCode(r.Code);
+    let unit = normUnit(r.Unit);
+    let text = normText(r.Description);
+    let changes = [];
+    if (code != `${r.Code}`) { changes.push('code'); };
+    if (unit != `${r.Unit}`) { changes.push('unit'); };
+    if (text != `${r.Description}`) { changes.push('description'); };
+    out.push([code, unit, text, changes.join(', ')]);
+});
+return out;

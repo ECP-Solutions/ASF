@@ -2,6 +2,13 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [Unreleased]
+
+## Highlights
+
+- **Added**
+    - **Portable examples** — `examples/portable/` holds five ASF scripts for construction site management that run unchanged in Excel and LibreOffice Calc: a budget summary by chapter, checks of daily work reports against the budget, a monthly progress certificate, a polynomial price revision and the normalisation of item lists with regular expressions. A small host per suite (`hosts/ExcelHost.bas`, `hosts/CalcHost.bas`) reads a sheet table, runs the script and writes the result rows; `portable-examples.ods` (with its host) and `portable-examples.xlsx` hold the sample tables. `tools/run_lo.py` builds the workbooks, runs the examples in LibreOffice and compares them with results computed independently by `tools/expected.py`.
+
 ## [v3.3.1] - 2026-11-02
 https://github.com/ECP-Solutions/ASF/releases/tag/v3.3.1
 

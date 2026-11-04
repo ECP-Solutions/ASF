@@ -1,0 +1,10 @@
+Code,Description,BudgetQty,UnitPrice,PreviousQty,MonthQty
+EX0001,Site clearing,1250,1.85,830,420
+EX0002,Excavation for foundations,340,12.4,152.5,195
+ES0001,Reinforced concrete footings,85,148.6,40,39
+ES0002,Steel reinforcement B500S,6800,1.32,2900,1850
+ES0003,Concrete slab 25 cm,420,62.75,0,0
+AL0001,Brick wall 11.5 cm,610,28.9,0,64
+AL0002,Plasterboard partition,380,24.15,0,0
+AC0001,Gypsum plaster,1520,9.8,0,0
+AC0002,Ceramic floor tiles,395,31.4,0,0

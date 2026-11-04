@@ -1,0 +1,11 @@
+Code,Description,ToDateQty,Progress %,MonthAmount,ToDateAmount,Status
+EX0001,Site clearing,1250,100,777,2312.5,COMPLETED
+EX0002,Excavation for foundations,347.5,102.21,2418,4309,OVER BUDGET
+ES0001,Reinforced concrete footings,79,92.94,5795.4,11739.4,
+ES0002,Steel reinforcement B500S,4750,69.85,2442,6270,
+ES0003,Concrete slab 25 cm,0,0,0,0,NO PROGRESS
+AL0001,Brick wall 11.5 cm,64,10.49,1849.6,1849.6,
+AL0002,Plasterboard partition,0,0,0,0,NO PROGRESS
+AC0001,Gypsum plaster,0,0,0,0,NO PROGRESS
+AC0002,Ceramic floor tiles,0,0,0,0,NO PROGRESS
+TOTAL,,,24.38,13282,26480.5,

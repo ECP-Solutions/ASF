@@ -1,0 +1,24 @@
+// Helpers shared by the examples. A table is what the host reads from a sheet: an array of rows,
+// the first row holding the column names; blank cells arrive as ''.
+
+// One object per data row, keyed by column name; _row is the row number on the sheet
+fun records(table) {
+    let header = table[1];
+    let out = [];
+    for (let i = 2, i <= table.length, i += 1) {
+        let row = table[i];
+        let rec = {};
+        for (let c = 1, c <= header.length, c += 1) {
+            rec.set(header[c], row[c]);
+        };
+        rec.set('_row', i);
+        out.push(rec);
+    };
+    return out;
+};
+
+fun isBlank(v) {
+    return typeof v == 'string' && v.trim() == '';
+};
+
+export { records, isBlank };

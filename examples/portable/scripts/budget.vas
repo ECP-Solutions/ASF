@@ -1,0 +1,42 @@
+// Budget summary: items, amount and share of every chapter of a bill of quantities.
+// Input  ($1): Chapter | Code | Description | Unit | Quantity | UnitPrice
+// Output:      Chapter | Items | Amount | Share %   (chapters in order of appearance, then the total)
+import { records } from './lib/table.vas';
+
+// half away from zero (Math.round rounds half to even, as VBA does)
+fun roundTo(x, decimals) {
+    let f = 10 ^ decimals;
+    if (x < 0) {
+        return -Math.floor(-x * f + 0.5) / f;
+    };
+    return Math.floor(x * f + 0.5) / f;
+};
+
+fun round2(x) {
+    return roundTo(x, 2);
+};
+
+let items = records($1);
+let chapters = [];
+let amounts = {};
+let counts = {};
+let total = 0;
+
+items.forEach(fun(it) {
+    let amount = it.Quantity * it.UnitPrice;
+    if (!amounts.has(it.Chapter)) {
+        chapters.push(it.Chapter);
+        amounts.set(it.Chapter, 0);
+        counts.set(it.Chapter, 0);
+    };
+    amounts.set(it.Chapter, amounts.get(it.Chapter) + amount);
+    counts.set(it.Chapter, counts.get(it.Chapter) + 1);
+    total = total + amount;
+});
+
+let out = [['Chapter', 'Items', 'Amount', 'Share %']];
+chapters.forEach(fun(ch) {
+    out.push([ch, counts.get(ch), round2(amounts.get(ch)), round2(100 * amounts.get(ch) / total)]);
+});
+out.push(['TOTAL', items.length, round2(total), 100]);
+return out;

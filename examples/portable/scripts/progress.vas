@@ -1,0 +1,43 @@
+// Monthly progress certificate: quantity, progress and amounts to date of every budget item.
+// Input  ($1): Code | Description | BudgetQty | UnitPrice | PreviousQty | MonthQty
+// Output:      Code | Description | ToDateQty | Progress % | MonthAmount | ToDateAmount | Status
+//              (one line per item, then the totals)
+import { records } from './lib/table.vas';
+
+// half away from zero (Math.round rounds half to even, as VBA does)
+fun roundTo(x, decimals) {
+    let f = 10 ^ decimals;
+    if (x < 0) {
+        return -Math.floor(-x * f + 0.5) / f;
+    };
+    return Math.floor(x * f + 0.5) / f;
+};
+
+fun round2(x) {
+    return roundTo(x, 2);
+};
+
+let out = [['Code', 'Description', 'ToDateQty', 'Progress %', 'MonthAmount', 'ToDateAmount', 'Status']];
+let budgetTotal = 0;
+let monthTotal = 0;
+let toDateTotal = 0;
+
+records($1).forEach(fun(r) {
+    let qty = r.PreviousQty + r.MonthQty;
+    let status = '';
+    if (qty > r.BudgetQty) {
+        status = 'OVER BUDGET';
+    } elseif (qty == r.BudgetQty) {
+        status = 'COMPLETED';
+    } elseif (r.MonthQty == 0) {
+        status = 'NO PROGRESS';
+    };
+    budgetTotal = budgetTotal + r.BudgetQty * r.UnitPrice;
+    monthTotal = monthTotal + r.MonthQty * r.UnitPrice;
+    toDateTotal = toDateTotal + qty * r.UnitPrice;
+    out.push([r.Code, r.Description, qty, round2(100 * qty / r.BudgetQty),
+              round2(r.MonthQty * r.UnitPrice), round2(qty * r.UnitPrice), status]);
+});
+
+out.push(['TOTAL', '', '', round2(100 * toDateTotal / budgetTotal), round2(monthTotal), round2(toDateTotal), '']);
+return out;
