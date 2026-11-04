@@ -379,6 +379,13 @@ a || b;   // true  (OR)
 'Count' & ': ' & 10;      // 'Count: 10' (alternative)
 ```
 
+`+` with a string writes arrays and objects as a template does, and `null` as nothing. `&` does the same. Arithmetic and comparisons do not take arrays or objects, nor text that is not a number: they raise an error that names the operands, such as *Operator + cannot be applied to an array and 1* or *Operator - cannot be applied to 'abc' and 1*.
+
+```javascript
+'Rows: ' + [1, 2];        // 'Rows: [ 1, 2 ]'
+'Total: ' + null;         // 'Total: '
+```
+
 ### Bitwise Operators
 
 ```javascript
@@ -504,7 +511,7 @@ switch (day) {
 };
 ```
 
-**Note:** ASF switch statements don't fall through - no `break` needed.
+**Note:** ASF switch statements don't fall through - no `break` needed. Every `case` and `default` takes a block: the JavaScript form `case 1: ...` is a compile error.
 
 ### For Loop
 
@@ -2340,8 +2347,9 @@ typeof true;        // 'boolean'
 typeof null;        // 'null'
 typeof undefined;   // 'undefined'
 typeof [1, 2, 3];   // 'array'
-typeof {};          // 'object'
+typeof {};          // 'object: <ASF_Map>'
 typeof fun() {};    // 'function'
+typeof {a: 1}.b;    // 'undefined' (a property the object does not have)
 
 // VBA object types (when AppAccess = True)
 typeof $1;                          // 'object: <Workbook>'
@@ -2481,6 +2489,20 @@ Inside the `.vas` file:
 scwd(wd);  // Use injected working directory
 import { helper } from './utils.vas';
 ```
+### Math
+
+Constants, read as properties:
+
+```javascript
+Math.PI;       // 3.14159265358979
+Math.E;        // 2.71828182845905
+Math.LN2;      // 0.693147180559945  (also LN10, LOG2E, LOG10E)
+Math.SQRT2;    // 1.4142135623731    (also SQRT1_2)
+Math.round(Math.PI * 100) / 100;  // 3.14
+```
+
+Methods: `abs`, `acos`, `acosh`, `asin`, `asinh`, `atan`, `atan2(y, x)`, `atanh`, `cbrt`, `ceil`, `cos`, `cosh`, `exp`, `expm1`, `floor`, `hypot`, `log`, `log10`, `log1p`, `log2`, `max`, `min`, `pow`, `random` (a number from 0 up to 1), `round`, `sign`, `sin`, `sinh`, `sqrt`, `tan` and `tanh`. `Math.round` rounds half to even, as VBA does: `Math.round(2.5)` is 2.
+
 ## String Methods
 
 ### Accessing Characters

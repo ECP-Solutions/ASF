@@ -18,7 +18,7 @@ from xml.sax.saxutils import escape
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LO_DIR = os.path.join(ROOT, "libreoffice")
 LIB_NAME = "ASF"
-VERSION = "3.3.1"
+VERSION = "3.3.2"
 EXTENSION_ID = "com.ecp-solutions.asf"
 
 # classes replaced by libreoffice/overrides/<name>.bas
@@ -615,6 +615,12 @@ def asf_passes(name, s):
     s = re.sub(r"(?m)^(\s*)(\w+) = FreeFile\n\s*Open (\w+) For Binary As #\2\n\s*(\w+) = LOF\(\2\)\n\s*(\w+) = Space\$\(\4\)\n\s*Get #\2, , \5\n\s*Close #\2$",
                r"\1\5 = LOhelper.ReadTextFile(\3)", s)
     s = array_member_args(s)
+    if name == "ASF_VM":
+        # Office's 2D arrays are for Excel's Range.Value2; UNO takes nested sequences, which
+        # LOhelper.CallMember makes from ASF's arrays (UnoArray)
+        s = s.replace("CastVBAparam = ASFto2Darray(aValue)", "CastVBAparam = aValue")
+        # .Item(k) of the With args block hands CastVBAparam the first row of an array argument
+        s = re.sub(r"CastVBAparam\(\.Item\((\d+)\)\)", r"CastVBAparam(LOhelper.Item(args, \1))", s)
     s = re.sub(r"\bCallByName\b", "LOhelper.CallMember", s)
     # LibreOffice will not call a method named Clone
     s = re.sub(r"\.Clone\b(\(\))?", ".LOCloneMap", s)

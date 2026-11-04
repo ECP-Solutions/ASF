@@ -17,6 +17,10 @@ Private Const VTP_MAX_ITEMS_INLINE As Long = 8 ' prefer inline for small contain
 Private VERBOSE_ As Boolean
 Private GLOBALS_ As ASF_Globals
 Private OUTPUT__ As Variant
+' the value of the last throw, or the message of the last error; THROWING_ while a throw unwinds
+Private LAST_ERROR_ As Variant
+Private THROWING_ As Boolean
+Private Const THROW_ERROR_ As Long = -2147214503 ' vbObjectError + 7001
 Private INJECTED_VARIABLES_ As Collection
 Private ENABLE_CALL_TRACE_ As Boolean
 Private CAST_INJECTED_VARIABLES_ As Boolean
@@ -27,9 +31,13 @@ Private emptyColl As New Collection
 Private COM_PROTOTYPES_ As Collection ' COM Prototype storage for monkey patching
 Private COLLECTIONS_METHOD_OVERRIDE_ As Boolean
 Private MathObj As Collection
+Private RANDOMIZED_ As Boolean
 
 ' Executes AST nodes produced by Compiler (AST).
 ' Uses Map node types and ScopeStack. Logs to gRuntimeLog.
+Public Property Get LastError() As Variant
+    vAssignment LastError, LAST_ERROR_
+End Property
 Public Property Set Globals(aGlobals As ASF_Globals)
     Set GLOBALS_ = aGlobals
 End Property
@@ -426,6 +434,8 @@ End Function
 
 Public Sub RunProgramByIndex(idx As Long, Optional params As Variant = Empty)
     If idx < 1 Or idx > GLOBALS_.gPrograms.Count Then Exit Sub
+    LAST_ERROR_ = Empty
+    THROWING_ = False
     Dim p As Variant: p = GLOBALS_.gPrograms(idx)
     Dim progName As String: progName = p(0)
     Dim stmts As Collection: Set stmts = p(1)
@@ -515,6 +525,8 @@ Private Function ExecuteStmtNode(node As ASF_Map, progScope As ASF_ScopeStack) A
             ExecPrintNode node, progScope
         Case "TryCatch"
             ExecuteStmtNode = ExecTryCatchNode(node, progScope)
+        Case "Throw"
+            ExecThrowNode node, progScope
         Case "Switch"
             ExecuteStmtNode = ExecSwitchNode(node, progScope)
         Case "ClassDecl"
@@ -535,6 +547,7 @@ Private Function ExecuteStmtNode(node As ASF_Map, progScope As ASF_ScopeStack) A
 
 ErrHandler:
     If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "VM statement error: " & err.Description
+    If Not THROWING_ Then LAST_ERROR_ = err.Description
     err.Clear
     ExecuteStmtNode = "ERR"
 End Function
@@ -628,7 +641,11 @@ Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As
                 End If
             Next method_
         Else
-            vAssignment EvalMemberNode, baseMap.GetValue(prop)
+            ' a property the object does not have is undefined, not the Nothing of GetValue
+            Dim propVal As Variant
+            If baseMap.TryGetValue(prop, propVal) Then
+                vAssignment EvalMemberNode, propVal
+            End If
         End If
         Exit Function
     End If
@@ -658,6 +675,17 @@ Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As
         Exit Function
     End If
     
+    ' Math.PI and the other constants are read as properties
+    If IsObject(baseVal) Then
+        If baseVal Is MathObj Then
+            Dim constVal As Variant
+            If MathConstant(prop, constVal) Then
+                EvalMemberNode = constVal
+                Exit Function
+            End If
+        End If
+    End If
+
     ' Delegate to Application.
     vAssignment EvalMemberNode, CallObjectMethod(baseVal, prop)
     Exit Function
@@ -1204,7 +1232,10 @@ Private Function ExecTryCatchNode(node As ASF_Map, progScope As ASF_ScopeStack) 
     Exit Function
 
 TryErr:
+    If err.Number <> 0 And Not THROWING_ Then LAST_ERROR_ = err.Description
     err.Clear
+    THROWING_ = False
+    If node.Exists("catchVar") Then progScope.SetLocalValue CStr(node.GetValue("catchVar")), LAST_ERROR_
     Dim catchStmts As Collection: Set catchStmts = node.GetValue("catch")
     If Not catchStmts Is Nothing Then
         Dim j As Long
@@ -1215,6 +1246,19 @@ TryErr:
     End If
     ExecTryCatchNode = vbNullString
 End Function
+
+' throw expr: the value reaches the catch of the nearest try, through function calls
+Private Sub ExecThrowNode(node As ASF_Map, progScope As ASF_ScopeStack)
+    Dim tex As ASF_Map: Set tex = node.GetValue("expr")
+    LAST_ERROR_ = Empty
+    If Not tex Is Nothing Then vAssignment LAST_ERROR_, EvalExprNode(tex, progScope)
+    THROWING_ = True
+    If IsObject(LAST_ERROR_) Then
+        err.Raise THROW_ERROR_, "ASF", "throw"
+    Else
+        err.Raise THROW_ERROR_, "ASF", CStr(LAST_ERROR_)
+    End If
+End Sub
 
 ' ---------------------
 ' ExecSwitchNode
@@ -1717,6 +1761,9 @@ Private Function EvalCall(node As ASF_Map, progScope As ASF_ScopeStack) As Varia
                 End If
                 vAssignment calleeVal, EvalFunctionRef(calleeName, progScope)
             End If
+        ElseIf ct = "Member" And Not IsObject(origBaseVal) And (IsArray(origBaseVal) Or VarType(origBaseVal) = vbString) Then
+            ' arrays and strings have only the builtin methods: evaluating the member would call it again
+            err.Raise vbObjectError + 5012, "VM.EvalCall", "'" & propN & "' is not a method of " & IIf(IsArray(origBaseVal), "an array", "a string")
         Else
             vAssignment calleeVal, EvalExprNode(calleeExpr, progScope)
         End If
@@ -1797,6 +1844,7 @@ exitfun:
 End Function
 
 Private Function EvalBinary(node As ASF_Map, progScope As ASF_ScopeStack) As Variant
+    On Error GoTo BadOperands
     Dim lop As Variant: vAssignment lop, EvalExprNode(node.GetValue("left"), progScope)
     Dim rop As Variant
     Dim op2 As String: op2 = node.GetValue("op")
@@ -1817,6 +1865,7 @@ Private Function EvalBinary(node As ASF_Map, progScope As ASF_ScopeStack) As Var
             Exit Function
     End Select
     vAssignment rop, EvalExprNode(node.GetValue("right"), progScope)
+    Dim applying As Boolean: applying = True
     ' results are never objects: plain assignments, most frequent operators first
     Select Case op2
         Case "+": EvalBinary = SafeAdd(lop, rop)
@@ -1843,12 +1892,42 @@ Private Function EvalBinary(node As ASF_Map, progScope As ASF_ScopeStack) As Var
             If rop = 0 Then err.Raise vbObjectError + 2001, "VM.EvalExprNode", "Division by zero" Else EvalBinary = lop / rop
         Case "%": EvalBinary = lop Mod rop
         Case "^": EvalBinary = lop ^ rop
-        Case "&": EvalBinary = CStr(lop) & CStr(rop)
+        Case "&": EvalBinary = AddText(lop) & AddText(rop)
         Case "|": EvalBinary = lop Or rop
         Case "<<": EvalBinary = lshift(lop, rop)
         Case ">>": EvalBinary = rshift(lop, rop)
         Case Else: EvalBinary = Empty
     End Select
+    Exit Function
+BadOperands:
+    ' only errors of the operator itself: VBA's type mismatch, or an operand it cannot take
+    If applying And err.Number <> vbObjectError + 5013 Then
+        If err.Number = 13 Or IsArray(lop) Or IsArray(rop) Or IsObject(lop) Or IsObject(rop) Then RaiseOperandError op2, lop, rop
+    End If
+    err.Raise err.Number, err.Source, err.Description
+End Function
+
+Private Sub RaiseOperandError(ByVal op As String, ByRef a As Variant, ByRef b As Variant)
+    err.Raise vbObjectError + 5013, "VM.EvalBinary", "Operator " & op & " cannot be applied to " & OperandText(a) & " and " & OperandText(b)
+End Sub
+
+' An operand as an error message names it
+Private Function OperandText(ByRef v As Variant) As String
+    If IsArray(v) Then
+        OperandText = "an array"
+    ElseIf IsMapValue(v) Then
+        OperandText = "an object"
+    ElseIf IsObject(v) Then
+        If v Is Nothing Then OperandText = "null" Else OperandText = "a " & typeName(v) & " object"
+    ElseIf IsNull(v) Then
+        OperandText = "null"
+    ElseIf IsEmpty(v) Then
+        OperandText = "undefined"
+    ElseIf VarType(v) = vbString Then
+        If Len(v) > 20 Then OperandText = "'" & Left$(v, 17) & "...'" Else OperandText = "'" & v & "'"
+    Else
+        OperandText = CStr(v)
+    End If
 End Function
 
 
@@ -2801,7 +2880,10 @@ Private Function ArrTostring(calleeExpr As ASF_Map, evaluated As Collection, pro
     ' toString / join: join(customSep)
     If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
     sep = ", "
-    If evaluated.Count >= 1 Then sep = CStr(evaluated(1))
+    ' join() passes one empty argument: the default separator, as join(undefined) in JavaScript
+    If evaluated.Count >= 1 Then
+        If Not IsEmpty(evaluated(1)) Then sep = CStr(evaluated(1))
+    End If
     lb_val = LBound(baseValLocal)
     ub_val = UBound(baseValLocal)
     len_val = IIf(ub_val >= lb_val, ub_val - lb_val + 1, 0)
@@ -4669,12 +4751,15 @@ Private Function CollectionMethod(calleeExpr As ASF_Map, evaluated As Collection
         Dim baseLocal As Variant
         vAssignment baseLocal, tmpBaseLocal
         If baseLocal.GetValue("name") = "Math" Then
+            If MathConstant(propN, tmpResult) Then GoTo exitfun
             Select Case propN
-                Case "E"
-                    tmpResult = Exp(1)
-                    GoTo exitfun
-                Case "PI"
-                    tmpResult = 4 * Atn(1)
+                Case "random"
+                    ' a different sequence on every run, as in JavaScript
+                    If Not RANDOMIZED_ Then
+                        Randomize
+                        RANDOMIZED_ = True
+                    End If
+                    tmpResult = Rnd()
                     GoTo exitfun
                 Case "abs"
                     tmpResult = Abs(evaluated(1))
@@ -4985,6 +5070,22 @@ Private Function HasOwnFunction(ByRef mapVal As Variant, ByVal prop As String) A
 End Function
 
 ' True when v holds an ASF_Map; TypeOf builds no string, unlike TypeName, but needs an object
+' The constants of Math, as in JavaScript; the name in any case, as Math's methods
+Private Function MathConstant(ByVal name As String, ByRef value As Variant) As Boolean
+    MathConstant = True
+    Select Case UCase$(name)
+        Case "PI": value = 4 * Atn(1)
+        Case "E": value = Exp(1)
+        Case "LN2": value = Log(2)
+        Case "LN10": value = Log(10)
+        Case "LOG2E": value = 1 / Log(2)
+        Case "LOG10E": value = 1 / Log(10)
+        Case "SQRT2": value = Sqr(2)
+        Case "SQRT1_2": value = Sqr(0.5)
+        Case Else: MathConstant = False
+    End Select
+End Function
+
 Private Function IsMapValue(ByRef v As Variant) As Boolean
     If IsObject(v) Then IsMapValue = TypeOf v Is ASF_Map
 End Function
@@ -4992,26 +5093,39 @@ End Function
 Private Function SafeAdd(a As Variant, b As Variant) As Variant
     ' VarType for plain values, TypeName (which builds a string) only for objects
     If Not IsObject(a) And Not IsObject(b) Then
-        If VarType(a) <> vbString And VarType(b) <> vbString Then SafeAdd = a + b: Exit Function
+        If VarType(a) <> vbString And VarType(b) <> vbString Then
+            If VarType(a) < vbArray And VarType(b) < vbArray Then SafeAdd = a + b: Exit Function
+            RaiseOperandError "+", a, b
+        End If
     ElseIf typeName(a) <> "String" And typeName(b) <> "String" Then
+        If IsMapValue(a) Or IsMapValue(b) Then RaiseOperandError "+", a, b
         SafeAdd = a + b: Exit Function
     End If
-    SafeAdd = IIf(IsNull(a), a, CStr(a)) & IIf(IsNull(b), b, CStr(b))
+    SafeAdd = AddText(a) & AddText(b)
+End Function
+
+' A side of + with a string: arrays and objects as a template prints them, null as nothing
+Private Function AddText(ByRef v As Variant) As String
+    If IsArray(v) Or IsMapValue(v) Then
+        AddText = ValueToStringForPrint(v)
+    ElseIf Not IsNull(v) Then
+        AddText = CStr(v)
+    End If
 End Function
 
 Private Function lshift(a As Variant, b As Variant) As Variant 'a<<b
     If IsNumeric(a) And IsNumeric(b) Then
         lshift = Floor(Floor(a) * (2 ^ Abs(Floor(b))))
-    Else
-        Exit Function
+    ElseIf IsArray(a) Or IsArray(b) Or IsObject(a) Or IsObject(b) Then
+        RaiseOperandError "<<", a, b
     End If
 End Function
 
 Private Function rshift(a As Variant, b As Variant) As Variant 'a>>b
     If IsNumeric(a) And IsNumeric(b) Then
         rshift = Floor(Floor(a) / (2 ^ Abs(Floor(b))))
-    Else
-        Exit Function
+    ElseIf IsArray(a) Or IsArray(b) Or IsObject(a) Or IsObject(b) Then
+        RaiseOperandError ">>", a, b
     End If
 End Function
 
@@ -5501,6 +5615,8 @@ ErrHandler:
     err.Clear
     PopCallTrace traceName, Empty
     InvokeClosure = Empty
+    ' other errors end the function with no value; a throw goes on to the caller's try
+    If THROWING_ Then err.Raise THROW_ERROR_, "ASF", "throw"
 End Function
  ' ----------------- LValue resolution and helpers -----------------
 

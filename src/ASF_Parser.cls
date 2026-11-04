@@ -136,7 +136,11 @@ Tokenize_MainLoop:
                     ' or the scape character itself (\)
                     If c = "\" Then
                         nxt = mid$(sourceCode, i + 1, 1)
-                        If nxt = "`" Or nxt = "/" Or nxt = "\" Then
+                        If nxt = "`" Then
+                            ' kept escaped: the compiler splits the template and would end it here
+                            curLit = curLit & c & nxt
+                            i = i + 2
+                        ElseIf nxt = "/" Or nxt = "\" Then
                             curLit = curLit & nxt
                             i = i + 2
                         Else

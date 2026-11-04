@@ -50,6 +50,9 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("for",                       "for_break_continue") Then for_break_continue: EndTest
     If StartTest("while",                     "while_break_continue") Then while_break_continue: EndTest
     If StartTest("switch",                    "switch_case") Then switch_case: EndTest
+    If StartTest("switch",                    "switch_default") Then switch_default: EndTest
+    If StartTest("switch",                    "switch_colon_case_is_an_error") Then switch_colon_case_is_an_error: EndTest
+    If StartTest("math",                      "math_constants_and_random") Then math_constants_and_random: EndTest
     If StartTest("try",                       "try_catch") Then try_catch: EndTest
     If StartTest("function",                  "function_basic") Then function_basic: EndTest
     If StartTest("function",                  "function_scope_isolation") Then function_scope_isolation: EndTest
@@ -284,6 +287,16 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("templates",                 "template_literal_method_chain") Then template_literal_method_chain: EndTest
     If StartTest("comparison",                "equality_with_arrays_and_objects") Then equality_with_arrays_and_objects: EndTest
     If StartTest("arrays",                    "return_array_literal") Then return_array_literal: EndTest
+    If StartTest("try_catch",                 "throw_reaches_catch") Then throw_reaches_catch: EndTest
+    If StartTest("try_catch",                 "uncaught_throw_in_last_error") Then uncaught_throw_in_last_error: EndTest
+    If StartTest("closures",                  "for_loop_in_function_literal") Then for_loop_in_function_literal: EndTest
+    If StartTest("arrays",                    "unknown_member_of_array_or_string") Then unknown_member_of_array_or_string: EndTest
+    If StartTest("operators",                 "operators_on_arrays_and_objects") Then operators_on_arrays_and_objects: EndTest
+    If StartTest("operators",                 "typeof_operand") Then typeof_operand: EndTest
+    If StartTest("objects",                   "missing_property_is_undefined") Then missing_property_is_undefined: EndTest
+    If StartTest("templates",                 "template_braces_quotes_backticks") Then template_braces_quotes_backticks: EndTest
+    If StartTest("arrays",                    "join_default_separator") Then join_default_separator: EndTest
+    If StartTest("syntax",                    "brackets_in_strings_and_comments") Then brackets_in_strings_and_comments: EndTest
     If StartTest("regex",                     "regex_local_match") Then regex_local_match: EndTest
     If StartTest("math",                      "math_max_min") Then math_max_min: EndTest
     If StartTest("math",                      "math_max_min_no_arguments") Then math_max_min_no_arguments: EndTest
@@ -684,6 +697,43 @@ TestFail:
     Resume TestExit
 End Sub
 
+Private Sub switch_default()
+    ' default runs when no case matches, in a script, a loop and a function
+    On Error GoTo TestFail
+    actual = CStr(GetResult("let r = ''; for (let i = 1, i <= 3, i += 1) { switch (i) { case 2 { r = r + 'b'; } default { r = r + 'x'; } }; }; " & _
+                            "fun f(c) { switch (c) { case 'red' { return 'warm'; } default { return 'other'; } }; }; return r + f('red') + f('green');"))
+    expected = "xbxwarmother"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub switch_colon_case_is_an_error()
+    ' case 2: as in JavaScript does not compile, with a message that shows the ASF form
+    Dim eng As New ASF
+    On Error Resume Next
+    eng.Compile "switch (2) { case 2: return 'two'; default: return 'no'; };"
+    actual = err.Description
+    On Error GoTo 0
+    AssertEqual True, InStr(actual, "case 2 { ... }") > 0
+End Sub
+Private Sub math_constants_and_random()
+    ' Math.PI and the other constants are properties; Math.random() is in [0, 1)
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return [Math.round(Math.PI * 10000), Math.round(Math.E * 10000), Math.round(Math.SQRT2 * 10000), typeof Math.LN2].join(' ');"))
+    expected = "31416 27183 14142 number"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("let ok = true; for (let i = 1, i <= 20, i += 1) { let x = Math.random(); if (x < 0 || x >= 1) { ok = false; }; }; return ok;"))
+    expected = "True"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
 Private Sub try_catch()
     On Error GoTo TestFail
     
@@ -4527,6 +4577,189 @@ Private Sub return_array_literal()
     AssertEqual expected, actual
     actual = CStr(GetResult("return [3][1] + [4, 5][2];"))
     expected = "8"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub throw_reaches_catch()
+    ' catch (e) receives the thrown value, also from inside a function, and errors of the try block
+    On Error GoTo TestFail
+    actual = CStr(GetResult("try { throw 'boom'; } catch (e) { return `caught ${e}`; };"))
+    expected = "caught boom"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("fun check(x) { if (x > 1) { throw `too big: ${x}`; }; return x; }; " & _
+                            "try { return check(5); } catch (err) { return err; };"))
+    expected = "too big: 5"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("try { throw 'inner'; } catch (e) { try { throw `${e}+outer`; } catch (e2) { return e2; }; };"))
+    expected = "inner+outer"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("let n = 0; try { n = 1; } catch (e) { n = 2; }; return n;"))
+    expected = "1"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub uncaught_throw_in_last_error()
+    ' a throw no catch takes ends the script; the host reads the value in LastError
+    Dim eng As New ASF
+    On Error GoTo TestFail
+    With eng
+        actual = CStr(.Run(.Compile("throw 'the budget sheet is missing'; return 1;")))
+        AssertEqual "", actual
+        AssertEqual "the budget sheet is missing", CStr(.LastError)
+        actual = CStr(.Run(.Compile("return 2;")))
+        AssertEqual "2", actual
+        AssertEqual "", CStr(.LastError)
+    End With
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub for_loop_in_function_literal()
+    ' the counter of a for in a function literal starts at its initial value
+    On Error GoTo TestFail
+    actual = CStr(GetResult("let f = fun(n) { let s = ''; for (let i = 1, i <= n, i += 1) { for (let j = 1, j <= 2, j += 1) { s = s + i + j + ','; }; }; return s; }; return f(2);"))
+    expected = "11,12,21,22,"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub unknown_member_of_array_or_string()
+    ' a member arrays and strings do not have is undefined, and calling it is an error, not a loop
+    Dim eng As New ASF
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return typeof ([1].nope);"))
+    expected = "undefined"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("let a = [1]; return `${a.nope.x}|${'abc'.nope}`;"))
+    expected = "|"
+    AssertEqual expected, actual
+    With eng
+        AssertEqual "", CStr(.Run(.Compile("return [1].nope();")))
+        AssertEqual "'nope' is not a method of an array", CStr(.LastError)
+        AssertEqual "", CStr(.Run(.Compile("return 'abc'.Nope();")))
+        AssertEqual "'nope' is not a method of a string", CStr(.LastError)
+    End With
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub operators_on_arrays_and_objects()
+    ' + and & with a string print arrays and objects as templates do; an operator that cannot
+    ' take its operands raises an error that names them
+    Dim eng As New ASF
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return 'rows: ' + [1, [2, 'x']] + ' ' + {a: 1};"))
+    expected = "rows: [ 1, [ 2, 'x' ] ] { a: 1 }"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("let s = 'n'; s += null; s += [3]; return s & [4] & null;"))
+    expected = "n[ 3 ][ 4 ]"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("try { return [1] + 1; } catch (e) { return e; };"))
+    expected = "Operator + cannot be applied to an array and 1"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("return ('5' - 1) + (7 % 3) + (2 ^ 3);"))
+    expected = "13"
+    AssertEqual expected, actual
+    With eng
+        AssertEqual "", CStr(.Run(.Compile("return {a: 1} + 1;")))
+        AssertEqual "Operator + cannot be applied to an object and 1", CStr(.LastError)
+        AssertEqual "", CStr(.Run(.Compile("let a = [2]; return a * 2;")))
+        AssertEqual "Operator * cannot be applied to an array and 2", CStr(.LastError)
+        AssertEqual "", CStr(.Run(.Compile("return 'abc' - 1;")))
+        AssertEqual "Operator - cannot be applied to 'abc' and 1", CStr(.LastError)
+        AssertEqual "", CStr(.Run(.Compile("return 2 / [1];")))
+        AssertEqual "Operator / cannot be applied to 2 and an array", CStr(.LastError)
+        AssertEqual "", CStr(.Run(.Compile("return {a: 1} >= 2;")))
+        AssertEqual "Operator >= cannot be applied to an object and 2", CStr(.LastError)
+        AssertEqual "", CStr(.Run(.Compile("let u; return [1] << u;")))
+        AssertEqual "Operator << cannot be applied to an array and undefined", CStr(.LastError)
+        AssertEqual "", CStr(.Run(.Compile("return 1 / 0;")))
+        AssertEqual "Division by zero", CStr(.LastError)
+        AssertEqual "", CStr(.Run(.Compile("let f = fun() { throw 'boom'; }; return [1] - f();")))
+        AssertEqual "boom", CStr(.LastError)
+    End With
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub typeof_operand()
+    ' typeof takes any unary operand, with or without parentheses: (x).y is typeof of x.y, as in JavaScript
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return [typeof [1], typeof 'a' + '!', typeof -3, typeof typeof 1, typeof {a: 1}.a].join('|');"))
+    expected = "array|string!|number|string|number"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("let o = {a: [1]}; return [typeof o.a[1], typeof (o).a, typeof ('abc').length, typeof(o.a), typeof (1) + '!', typeof o.a == 'array'].join('|');"))
+    expected = "number|array|number|array|number!|True"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub missing_property_is_undefined()
+    ' a property an object does not have is undefined, also for the host that receives it
+    Dim eng As New ASF
+    On Error GoTo TestFail
+    actual = CStr(GetResult("let o = {a: {b: 2}}; return `${typeof o.nope} ${o.nope == null} ${o.a.b + (o.c ?? 5)}`;"))
+    expected = "undefined True 7"
+    AssertEqual expected, actual
+    With eng
+        actual = .Run(.Compile("let o = {a: 1}; return o.nope;"))
+        AssertEqual True, IsEmpty(actual)
+    End With
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub template_braces_quotes_backticks()
+    ' braces of an object literal and of strings stay in the placeholder; \` is a backtick
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return `${{a: {b: 1}}}|${'}'}|${""{""}|a\`b`;"))
+    expected = "{ a: { b: 1 } }|}|{|a`b"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub join_default_separator()
+    ' join() and toString() use the default separator; join('') none
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return [[1, 2].join(), [1, 2].toString(), [1, 2].join(''), [1, 2].join('-')].join(' / ');"))
+    expected = "1, 2 / 1, 2 / 12 / 1-2"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub brackets_in_strings_and_comments()
+    ' brackets in strings and comments are not counted by the balance check
+    On Error GoTo TestFail
+    actual = CStr(GetResult("// a comment (" & vbLf & "/* [ */ # {" & vbLf & "return 'a)' + ""b]"" + `c}`;"))
+    expected = "a)b]c}"
     AssertEqual expected, actual
 TestExit:
     Exit Sub

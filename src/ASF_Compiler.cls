@@ -75,19 +75,55 @@ Private Function IsSpreadToken(toks As Collection, idx As Long) As Boolean
 End Function
 
 ' ---------------------
+' Brackets of the code: those in strings and comments are text, as in return 'a)';
 Private Function CheckParents(src As String) As Boolean
-    Dim i As Long
+    Dim i As Long, n As Long
     Dim openPar As Long
-    
-    For i = 1 To Len(src)
-        Select Case mid(src, i, 1)
-            Case "[", "{", "("
-                openPar = openPar + 1
-            Case "]", "}", ")"
-                openPar = openPar - 1
-        End Select
-    Next i
+    Dim ch As String, quote As String
+    n = Len(src)
+    i = 1
+    Do While i <= n
+        ch = mid$(src, i, 1)
+        If Len(quote) > 0 Then
+            If ch = "\" Then
+                i = i + 1
+            ElseIf ch = quote Then
+                quote = vbNullString
+            End If
+        Else
+            Select Case ch
+                Case "'", """", "`"
+                    quote = ch
+                Case "#"
+                    i = LineEnd(src, i)
+                Case "/"
+                    If mid$(src, i + 1, 1) = "/" Then
+                        i = LineEnd(src, i)
+                    ElseIf mid$(src, i + 1, 1) = "*" Then
+                        i = InStr(i + 2, src, "*/")
+                        If i = 0 Then Exit Do
+                        i = i + 1
+                    End If
+                Case "[", "{", "("
+                    openPar = openPar + 1
+                Case "]", "}", ")"
+                    openPar = openPar - 1
+            End Select
+        End If
+        i = i + 1
+    Loop
     CheckParents = Not CBool(openPar And 1)
+End Function
+
+' Position of the last character of the line that holds position i
+Private Function LineEnd(src As String, ByVal i As Long) As Long
+    Do While i < Len(src)
+        Select Case mid$(src, i + 1, 1)
+            Case vbCr, vbLf: Exit Do
+        End Select
+        i = i + 1
+    Loop
+    LineEnd = i
 End Function
 Public Function CompileProgram(src As String, Optional progName As String = "@anon") As Long
     If Not CheckParents(src) Then GoTo NotBalancedParents
@@ -589,6 +625,14 @@ Private Function ParseStatementTokensToAST(stmtTokens As Collection) As ASF_Map
                 Exit Function
             Case "try"
                 Set ParseStatementTokensToAST = ParseTryCatchAST(stmtTokens)
+                Exit Function
+            Case "throw"
+                Dim tw As ASF_Map: Set tw = MakeNode("Throw")
+                Dim twTok As Collection: Set twTok = New Collection
+                Dim twi As Long
+                For twi = 2 To stmtTokens.Count: twTok.Add stmtTokens(twi): Next twi
+                If twTok.Count > 0 Then tw.SetValue "expr", ParseExprTokensToNode(twTok) Else tw.SetValue "expr", Nothing
+                Set ParseStatementTokensToAST = tw
                 Exit Function
             Case "switch"
                 Set ParseStatementTokensToAST = ParseSwitchAST(stmtTokens)
@@ -1452,7 +1496,8 @@ Private Function ParsePrimaryIdent(types() As String, vals() As Variant, n As Lo
                 If hasRestParam_anon Then
                     fnode.SetValue "restParam", restParamName_anon
                 End If
-                fnode.SetValue "body", bodyStmts
+                ' a function literal's body is normalized as a function's: for (i = 1, ...) assigns
+                fnode.SetValue "body", NormalizeAssignsInStmts(bodyStmts)
                 Set ParsePrimaryIdent = fnode
                 Exit Function
             Else
@@ -1474,19 +1519,10 @@ Private Function ParsePrimaryIdent(types() As String, vals() As Variant, n As Lo
             ' consume 'typeof'
             idx = idx + 1
 
-            ' Parse operand: allow parentheses or a plain primary/expression
+            ' the next unary subtree: typeof x.y, typeof [1], typeof -x, and typeof (x).y as in
+            ' JavaScript, where the parentheses group only x
             Dim operandNode As ASF_Map
-            If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "(" Then
-                ' typeof( ... )
-                idx = idx + 1
-                Set operandNode = ParseTernaryNode(types, vals, n, idx)
-                If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = ")" Then
-                    idx = idx + 1
-                End If
-            Else
-                ' typeof x  -> parse the next primary/unary subtree
-                Set operandNode = ParsePrimaryIdent(types, vals, n, idx)
-            End If
+            Set operandNode = ParseUnaryNode(types, vals, n, idx)
 
             Dim uNode_tf As ASF_Map: Set uNode_tf = MakeNode("Unary")
             uNode_tf.SetValue "op", "typeof"
@@ -2349,6 +2385,10 @@ Private Function ParseTryCatchAST(stmtTokens As Collection) As ASF_Map
     Do While k <= stmtTokens.Count
         If stmtTokens(k)(0) = "IDENT" And LCase$(stmtTokens(k)(1)) = "catch" Then
             Dim kk As Long: kk = k + 1
+            ' catch (e): the variable that receives the error
+            If safeTVRetInner(stmtTokens, kk, 1) = "(" And safeTVRetInner(stmtTokens, kk + 1, 0) = "IDENT" Then
+                node.SetValue "catchVar", CStr(stmtTokens(kk + 1)(1))
+            End If
             Do While kk <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, kk, 0) = "PAREN" And safeTVRetInner(stmtTokens, kk, 1) = "{")
                 kk = kk + 1
             Loop
@@ -2434,6 +2474,7 @@ Private Function ParseSwitchAST(stmtTokens As Collection) As ASF_Map
                 valTok.Add stmtTokens(i)
                 i = i + 1
             Loop
+            If i > stmtTokens.Count Or IsColonCase(valTok) Then SwitchSyntaxError "case"
             Dim caseValNode As ASF_Map: Set caseValNode = ParseExprTokensToNode(valTok)
             If i <= stmtTokens.Count And stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = "{" Then
                 i = i + 1
@@ -2464,8 +2505,10 @@ Private Function ParseSwitchAST(stmtTokens As Collection) As ASF_Map
                 cases.Add pair
                 i = i + 1
             End If
-        ElseIf stmtTokens(i)(0) = "IDENT" And LCase$(stmtTokens(i)(1)) = "default" Then
+        ElseIf (stmtTokens(i)(0) = "IDENT" Or stmtTokens(i)(0) = "KEYWORD") And LCase$(stmtTokens(i)(1)) = "default" Then
+            ' the tokenizer marks default as a keyword, for export default
             i = i + 1
+            If safeTVRetInner(stmtTokens, i, 1) = ":" Then SwitchSyntaxError "default"
             Do While i <= stmtTokens.Count And Not (stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = "{")
                 i = i + 1
             Loop
@@ -2499,6 +2542,28 @@ Private Function ParseSwitchAST(stmtTokens As Collection) As ASF_Map
     node.SetValue "default", defaultBlock
     Set ParseSwitchAST = node
 End Function
+
+' case 2: ... as in JavaScript: a colon outside brackets that no ? opens
+Private Function IsColonCase(valTok As Collection) As Boolean
+    Dim k As Long, depth As Long, questions As Long
+    For k = 1 To valTok.Count
+        Select Case CStr(valTok(k)(1))
+            Case "(", "[", "{": If valTok(k)(0) = "PAREN" Then depth = depth + 1
+            Case ")", "]", "}": If valTok(k)(0) = "PAREN" Then depth = depth - 1
+            Case "?": If depth = 0 Then questions = questions + 1
+            Case ":"
+                If depth = 0 Then
+                    If questions = 0 Then IsColonCase = True: Exit Function
+                    questions = questions - 1
+                End If
+        End Select
+    Next k
+End Function
+
+Private Sub SwitchSyntaxError(ByVal part As String)
+    err.Raise vbObjectError + 9025, "Compiler.ParseSwitchAST", _
+              "switch: every " & part & " takes a block, as in case 2 { ... } and default { ... }; there is no " & part & ":, and cases do not fall through"
+End Sub
 
 
 ' Compiler AST normalization pass
@@ -2903,6 +2968,7 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
             ntc.Add "type", "TryCatch"
             ntc.SetValue "try", nt
             ntc.SetValue "catch", nc
+            If node.Exists("catchVar") Then ntc.SetValue "catchVar", node.GetValue("catchVar")
             Set NormalizeNodeRecursive = ntc
             Exit Function
 
@@ -3079,6 +3145,7 @@ Private Function ParseTemplatePartsFromString(ByVal tokenStr As String) As Colle
     Dim depth As Long
     Dim c2 As String
     Dim escapedChar As String
+    Dim braces As Long, quote As String
     
     Do While i <= Ls
         ch = mid$(tokenStr, i, 1)
@@ -3116,9 +3183,28 @@ Private Function ParseTemplatePartsFromString(ByVal tokenStr As String) As Colle
             '  - unescaped "}" closes the *current* placeholder chunk and the collected text is added as an EXPR
             curExpr = vbNullString
             depth = 1
+            braces = 0: quote = vbNullString
 
             Do While i <= Ls And depth > 0
                 c2 = mid$(tokenStr, i, 1)
+
+                ' a string inside the placeholder is taken whole: ${'}'}
+                If Len(quote) > 0 Then
+                    If c2 = "\" And i < Ls Then
+                        curExpr = curExpr & mid$(tokenStr, i, 2)
+                        i = i + 2
+                    Else
+                        If c2 = quote Then quote = vbNullString
+                        curExpr = curExpr & c2
+                        i = i + 1
+                    End If
+                    GoTo ContinuePlaceholderLoop
+                ElseIf c2 = "'" Or c2 = """" Then
+                    quote = c2
+                    curExpr = curExpr & c2
+                    i = i + 1
+                    GoTo ContinuePlaceholderLoop
+                End If
 
                 ' escaped char inside placeholder -> take next char literally
                 If c2 = "\" Then
@@ -3151,6 +3237,16 @@ Private Function ParseTemplatePartsFromString(ByVal tokenStr As String) As Colle
                     ' consume nested "${" and increase depth
                     depth = depth + 1
                     i = i + 2
+                    GoTo ContinuePlaceholderLoop
+                End If
+
+                ' the braces of the expression itself: ${{a: 1}}
+                If c2 = "{" Then
+                    braces = braces + 1
+                ElseIf c2 = "}" And braces > 0 Then
+                    braces = braces - 1
+                    curExpr = curExpr & c2
+                    i = i + 1
                     GoTo ContinuePlaceholderLoop
                 End If
 
