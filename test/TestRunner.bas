@@ -280,6 +280,13 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("array",                     "array_nested_assign_different_indexes") Then array_nested_assign_different_indexes: EndTest
     If StartTest("array",                     "array_assign_through_property") Then array_assign_through_property: EndTest
     If StartTest("classes",                   "class_methods_named_like_builtins") Then class_methods_named_like_builtins: EndTest
+    If StartTest("module_system",             "module_system_math_in_exported_function") Then module_system_math_in_exported_function: EndTest
+    If StartTest("templates",                 "template_literal_method_chain") Then template_literal_method_chain: EndTest
+    If StartTest("comparison",                "equality_with_arrays_and_objects") Then equality_with_arrays_and_objects: EndTest
+    If StartTest("arrays",                    "return_array_literal") Then return_array_literal: EndTest
+    If StartTest("try_catch",                 "throw_reaches_catch") Then throw_reaches_catch: EndTest
+    If StartTest("try_catch",                 "uncaught_throw_in_last_error") Then uncaught_throw_in_last_error: EndTest
+    If StartTest("closures",                  "for_loop_in_function_literal") Then for_loop_in_function_literal: EndTest
     If StartTest("regex",                     "regex_local_match") Then regex_local_match: EndTest
     If StartTest("math",                      "math_max_min") Then math_max_min: EndTest
     If StartTest("math",                      "math_max_min_no_arguments") Then math_max_min_no_arguments: EndTest
@@ -4462,6 +4469,120 @@ Private Sub class_methods_named_like_builtins()
     expected = "2|True"
     AssertEqual expected, actual
 
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub module_system_math_in_exported_function()
+    ' an exported function runs in its module's scope, which has Math too
+    Dim eng As New ASF
+    With eng
+        .WorkingDir = ThisWorkbook.path
+        On Error GoTo TestFail
+        actual = CStr(.Run(.Compile("import { floorOf } from './math_module.vas'; return floorOf(3.7);")))
+    End With
+    expected = "4"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub template_literal_method_chain()
+    ' members and calls chain on a template literal as on any string
+    On Error GoTo TestFail
+    actual = CStr(GetResult("let u = ' M3. '; return `${u}`.trim().toLowerCase();"))
+    expected = "m3."
+    AssertEqual expected, actual
+    actual = CStr(GetResult("return `${1 + 1}0`.length;"))
+    expected = "2"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub equality_with_arrays_and_objects()
+    ' == and != never raise: objects are equal when they are the same object, arrays when their items are
+    On Error GoTo TestFail
+    actual = CStr(GetResult("let m = [1, 2]; let o = { a: 1 }; let p = o; " & _
+                            "return [m == null, m != null, o == null, o == p, o == { a: 1 }, [1, [2]] == [1, [2]], [1] != [2], 'a' == 1, '1' == 1].join('|');"))
+    expected = Join(Array(CStr(False), CStr(True), CStr(False), CStr(True), CStr(False), CStr(True), CStr(True), CStr(False), CStr(True)), "|")
+    AssertEqual expected, actual
+    actual = CStr(GetResult("let f = fun(m) { if (m == null) { return 'none'; }; return m.length; }; return `${f(null)} ${f([5, 6])}`;"))
+    expected = "none 2"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub return_array_literal()
+    ' return [3] returns an array literal, not the element 3 of a variable named return
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return [3].length;"))
+    expected = "1"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("return [3][1] + [4, 5][2];"))
+    expected = "8"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub throw_reaches_catch()
+    ' catch (e) receives the thrown value, also from inside a function, and errors of the try block
+    On Error GoTo TestFail
+    actual = CStr(GetResult("try { throw 'boom'; } catch (e) { return `caught ${e}`; };"))
+    expected = "caught boom"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("fun check(x) { if (x > 1) { throw `too big: ${x}`; }; return x; }; " & _
+                            "try { return check(5); } catch (err) { return err; };"))
+    expected = "too big: 5"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("try { throw 'inner'; } catch (e) { try { throw `${e}+outer`; } catch (e2) { return e2; }; };"))
+    expected = "inner+outer"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("let n = 0; try { n = 1; } catch (e) { n = 2; }; return n;"))
+    expected = "1"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub uncaught_throw_in_last_error()
+    ' a throw no catch takes ends the script; the host reads the value in LastError
+    Dim eng As New ASF
+    On Error GoTo TestFail
+    With eng
+        actual = CStr(.Run(.Compile("throw 'the budget sheet is missing'; return 1;")))
+        AssertEqual "", actual
+        AssertEqual "the budget sheet is missing", CStr(.LastError)
+        actual = CStr(.Run(.Compile("return 2;")))
+        AssertEqual "2", actual
+        AssertEqual "", CStr(.LastError)
+    End With
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub for_loop_in_function_literal()
+    ' the counter of a for in a function literal starts at its initial value
+    On Error GoTo TestFail
+    actual = CStr(GetResult("let f = fun(n) { let s = ''; for (let i = 1, i <= n, i += 1) { for (let j = 1, j <= 2, j += 1) { s = s + i + j + ','; }; }; return s; }; return f(2);"))
+    expected = "11,12,21,22,"
+    AssertEqual expected, actual
 TestExit:
     Exit Sub
 TestFail:

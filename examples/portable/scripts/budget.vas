@@ -1,27 +1,16 @@
 // Budget summary: items, amount and share of every chapter of a bill of quantities.
-// Input  ($1): Chapter | Code | Description | Unit | Quantity | UnitPrice
-// Output:      Chapter | Items | Amount | Share %   (chapters in order of appearance, then the total)
-import { records } from './lib/table.vas';
+// Reads the sheet Budget (Chapter | Code | Description | Unit | Quantity | UnitPrice) when the
+// document is a spreadsheet that has it, and the sample project otherwise.
+import { open } from './lib/office.vas';
+import { records, round2, show } from './lib/table.vas';
+import { budget } from './data/project.vas';
 
-// half away from zero (Math.round rounds half to even, as VBA does)
-fun roundTo(x, decimals) {
-    let f = 10 ^ decimals;
-    if (x < 0) {
-        return -Math.floor(-x * f + 0.5) / f;
-    };
-    return Math.floor(x * f + 0.5) / f;
-};
-
-fun round2(x) {
-    return roundTo(x, 2);
-};
-
-let items = records($1);
+let doc = open($1);
+let items = records(doc.input('Budget', budget));
 let chapters = [];
 let amounts = {};
 let counts = {};
 let total = 0;
-
 items.forEach(fun(it) {
     let amount = it.Quantity * it.UnitPrice;
     if (!amounts.has(it.Chapter)) {
@@ -34,9 +23,14 @@ items.forEach(fun(it) {
     total = total + amount;
 });
 
-let out = [['Chapter', 'Items', 'Amount', 'Share %']];
+let rows = [['Chapter', 'Items', 'Amount', 'Share %']];
 chapters.forEach(fun(ch) {
-    out.push([ch, counts.get(ch), round2(amounts.get(ch)), round2(100 * amounts.get(ch) / total)]);
+    rows.push([ch, counts.get(ch), round2(amounts.get(ch)), round2(100 * amounts.get(ch) / total)]);
 });
-out.push(['TOTAL', items.length, round2(total), 100]);
-return out;
+rows.push(['TOTAL', items.length, round2(total), 100]);
+
+let out = doc.report('Budget summary', `${items.length} items in ${chapters.length} chapters`);
+out.section('Amount by chapter');
+out.table(rows);
+out.line(`Total budget: ${show(round2(total))}`);
+return out.done();

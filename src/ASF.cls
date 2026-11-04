@@ -97,6 +97,10 @@ Private Sub INIT_()
     VM_.OverrideCollMethods = False
     Set VM_.Globals = GLOBALS_
 End Sub
+' The value of the last throw that no catch took, or the message of the last error, of the last Run
+Public Property Get LastError() As Variant
+    vAssignment LastError, VM_.LastError
+End Property
 Public Property Get OUTPUT_() As Variant
     vAssignment OUTPUT_, OUTPUT__
 End Property

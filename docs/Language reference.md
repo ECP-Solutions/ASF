@@ -350,6 +350,17 @@ x <= y;   // true  (less than or equal)
 x >= y;   // false (greater than or equal)
 ```
 
+`==` and `!=` work on any two values and never raise: objects are equal when they are the same object, arrays when they have the same items, `null` equals `undefined`, and values that cannot be compared, such as an array and a number or `'a'` and `1`, are not equal.
+
+```javascript
+let o = { a: 1 }, p = o;
+o == p;            // true  (same object)
+o == { a: 1 };     // false (another object)
+[1, [2]] == [1, [2]];  // true (same items)
+[1, 2] == null;    // false
+'1' == 1;          // true
+```
+
 ### Logical Operators
 
 ```javascript

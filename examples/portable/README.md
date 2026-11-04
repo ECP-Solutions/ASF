@@ -1,61 +1,77 @@
-# Portable examples: the same scripts in Excel and LibreOffice Calc
+# Portable examples: one script, the whole office suite
 
-Five ASF scripts for construction site management run unchanged in Microsoft Excel and in LibreOffice Calc. Each reads a table from a sheet and writes its result to another sheet. The business logic lives in the `.vas` files; each office suite only has a small host module that reads the table, runs the script and writes the rows back.
+Six ASF scripts run unchanged in the six office applications: Excel, Word and PowerPoint, and LibreOffice Calc, Writer and Impress. The same `budget.vas` writes a sheet in Excel or Calc, a document with headings and a table in Word or Writer, and slides in PowerPoint or Impress. Until now no macro code ran in both suites: VBA does not run in LibreOffice, and LibreOffice Basic and its UNO API do not run in Microsoft Office. With ASF the logic is written once, in `.vas` files, and each suite only needs the engine and a host of a few lines.
 
-| Script | Reads | Writes |
+| Script | Does | Reads (in a spreadsheet) |
 |---|---|---|
-| `budget.vas` | `Budget`: a bill of quantities (Chapter, Code, Description, Unit, Quantity, UnitPrice) | items, amount and share of every chapter, and the total |
-| `workreports.vas` | `WorkReports`: daily work reports (Date, Code, Unit, Quantity, Crew), checked against `Budget` | one line per problem: bad codes, items not in the budget, wrong or unknown units, quantities that are not positive numbers, missing crews, dates that are not dates or fall on a Sunday |
-| `progress.vas` | `Progress`: budget and measured quantities (BudgetQty, UnitPrice, PreviousQty, MonthQty) | quantity, progress and amounts to date of every item, with the items over budget, completed or without progress, and the totals |
-| `price-revision.vas` | `PriceIndices`: certified amounts and labour, materials and energy indices per period | the revision coefficient Kt of a polynomial formula, the revised amount and the adjustment of every period |
-| `cleanup.vas` | `Cleanup`: item lists as received from suppliers | codes, units and descriptions normalised with regular expressions, and what changed |
+| `hello.vas` | the smallest example: a title, a section, a line and a table | nothing |
+| `budget.vas` | items, amount and share of every chapter of a bill of quantities, and the total | `Budget`: Chapter, Code, Description, Unit, Quantity, UnitPrice |
+| `progress.vas` | monthly progress certificate: quantity, progress and amounts to date of every item, the items over budget, completed or without progress | `Progress`: Code, Description, BudgetQty, UnitPrice, PreviousQty, MonthQty |
+| `price-revision.vas` | price revision with a polynomial formula: coefficient Kt, revised amount and adjustment of every period | `PriceIndices`: Period, Certified, Labour, Materials, Energy |
+| `workreports.vas` | checks of the daily work reports against the budget: bad codes, unknown items and units, quantities, crews, dates | `WorkReports` and `Budget` |
+| `cleanup.vas` | codes, units and descriptions of supplier item lists normalised with regular expressions | `Cleanup`: Code, Unit, Description |
 
-`scripts/lib/table.vas` is a module the scripts import: it turns the sheet table into one object per row, keyed by column name.
+In a spreadsheet that has the sheet, a script reads it: change the numbers and run it again. Elsewhere (Word, Writer, PowerPoint, Impress, or an empty workbook) it uses the sample project of `scripts/data/project.vas`.
 
 ## How it works
 
 ```
-sheet --(host reads)--> 2D array --$1, $2--> script.vas --> array of rows --(host writes)--> result sheet
+host macro --(the open document as $1)--> script.vas --> lib/office.vas --> Excel | Word | PowerPoint | Calc | Writer | Impress
 ```
 
-- The hosts pass the table around cell A1 as the script's `$1` (and a second table as `$2`), with the column names in the first row and blank cells as `''`. Dates arrive as serial numbers, which are the same in both suites.
-- A script returns an array of rows; the host writes it from A1 of `<sheet> result`, creating the sheet if needed. An error is written in A1 instead.
-- `hosts/ExcelHost.bas` (VBA, Excel object model) and `hosts/CalcHost.bas` (LibreOffice Basic, Calc API) are the only code that knows which suite it runs in. Both have the same macros: `RunBudget`, `RunWorkReports`, `RunProgress`, `RunPriceRevision`, `RunCleanup` and `RunAll`.
-- To change a rule, edit the script: the hosts stay as they are. For instance, the coefficients of the price revision formula are at the top of `price-revision.vas`.
+- The host passes the open document to the script, nothing else. `hosts/OfficeHost.bas` is one VBA module for Excel, Word and PowerPoint; `hosts/LibreOfficeHost.bas` is one Basic module for Calc, Writer and Impress. Both have the macros `RunHello`, `RunBudget`, `RunProgress`, `RunPriceRevision`, `RunWorkReports`, `RunCleanup` and `RunAll`.
+- `scripts/lib/office.vas` is the only code that knows the applications. `open($1)` finds out which one holds the document and returns the same small API for the six:
 
-## Running in LibreOffice Calc
+  | | Excel, Calc | Word, Writer | PowerPoint, Impress |
+  |---|---|---|---|
+  | `doc.input(name, fallback)` | the table around A1 of sheet `name` | `fallback` | `fallback` |
+  | `doc.report(title, subtitle)` | a new sheet `title` | a Heading 1 and a paragraph | a title slide |
+  | `out.section(text)` | a bold row | a Heading 2 | a new slide |
+  | `out.line(text)` | a row | a paragraph | a bullet |
+  | `out.table(rows)` | cells (numbers stay numbers) | a table | one bullet per row |
+  | `out.done()` | a line for the host to show | | |
 
-1. Install `ASF.oxt` (Tools > Extensions; see [libreoffice/README.md](../../libreoffice/README.md)).
-2. Open `portable-examples.ods` from this folder and allow its macros. The document already holds the five tables and the `CalcHost` module.
-3. Run `RunAll` (Tools > Macros > Run Macro > portable-examples.ods > Standard > CalcHost), or one of the other macros.
+  In Microsoft Office it calls the VBA object model (`Worksheets`, `Paragraphs`, `Slides`); in LibreOffice the UNO API (`getSheets`, text cursors, draw pages). ASF reaches both from the same script.
+- `scripts/lib/table.vas` turns a table into one object per row, keyed by column name, rounds amounts and formats numbers and dates the same way everywhere.
+- To change a rule, edit the script; to support another kind of output, edit `lib/office.vas`. The hosts stay as they are.
 
-## Running in Excel
+The scripts need ASF 3.3.2 or later (the classes of `src/`, or `ASF.oxt` 3.3.2).
 
-1. Open `portable-examples.xlsx` from this folder (the same five tables).
-2. In the VBA editor, import the class modules of `src/` (see the main [README](../../README.md#quick-start-5-minutes)) and `hosts/ExcelHost.bas`.
-3. Save the workbook as `portable-examples.xlsm` in this folder, since the host looks for `scripts` next to the workbook.
+## Running in LibreOffice (Calc, Writer, Impress)
+
+1. Install `ASF.oxt` 3.3.2 or later (Tools > Extensions; see [libreoffice/README.md](../../libreoffice/README.md)).
+2. Open `portable-examples.ods`, `portable-examples.odt` or `portable-examples.odp` from this folder and allow its macros. Each already holds the `LibreOfficeHost` module; the spreadsheet also holds the five tables.
+3. Run `RunAll` (Tools > Macros > Run Macro > the document > Standard > LibreOfficeHost), or one of the other macros.
+
+## Running in Microsoft Office (Excel, Word, PowerPoint)
+
+1. Open `portable-examples.xlsx` (the five tables) in Excel, or a new document in Word or a new presentation in PowerPoint.
+2. In the VBA editor, import the class modules of `src/` (see the main [README](../../README.md#step-1-installation)) and `hosts/OfficeHost.bas`.
+3. Save it in this folder as a macro-enabled file (`.xlsm`, `.docm` or `.pptm`): the host looks for `scripts` next to the document.
 4. Run `RunAll`, or one of the other macros.
 
 ## Writing portable scripts
 
-- Read the input through the host's tables (`$1`, `$2`) and return plain values: arrays, numbers and strings. Office objects (`Range`, Calc cells) are not portable; the hosts keep them out of the scripts.
-- Treat blank cells as `''`. Excel's `Empty` is converted by `ExcelHost`, because ASF reads `Empty` as `0`.
-- Round with your own function when the result must match to the cent: `Math.round` rounds half to even in both suites, as VBA does. The scripts here round half away from zero.
-- Keep scripts plain ASCII and write other characters as regex escapes (`²`), so that every host reads the files the same way.
+- Talk to the document through `lib/office.vas`, not through `Range`, `Paragraphs` or UNO objects: those belong to one suite.
+- Read input with `doc.input(name, fallback)`. A blank cell is `''` in Calc and an empty value in Excel; `isBlank` of `lib/table.vas` takes both as blank.
+- Round with `roundTo` or `round2` of `lib/table.vas` when the result must match to the cent: `Math.round` rounds half to even, as VBA does, while these round half away from zero. Format with `show` and `dateText`, which do not depend on the locale.
+- Put what several scripts share in a module and `import` it: the hosts set the scripts folder as the working directory, so `./lib/office.vas` resolves in both suites.
+- A `let` inside a nested function assigns a variable of the same name in the enclosing function, as ASF functions share the scope they are written in: give inner variables their own names.
+- Keep scripts plain ASCII and write other characters as escapes (`²`), so that every host reads the files the same way.
 
 ## Checking the examples
 
 ```sh
-python3 examples/portable/tools/expected.py   # expected results, computed independently in Python
-python3 examples/portable/tools/run_lo.py     # builds the workbooks, runs the examples in LibreOffice and compares
+python3 examples/portable/tools/make_data.py   # scripts/data/project.vas from data/*.csv
+python3 examples/portable/tools/run_lo.py      # runs every script in Calc, Writer and Impress and compares
 ```
 
-`run_lo.py` builds the ASF library from `src/`, creates the five sheets from `data/*.csv`, and saves `portable-examples.ods` (with `CalcHost`) and `portable-examples.xlsx`. It then runs `RunAll` on the `.ods` and compares every result sheet with `expected/`. It needs LibreOffice and `python3-uno`.
+`run_lo.py` builds the ASF library from `src/` and runs each script on a spreadsheet holding the tables, a text document and a presentation. It turns what the script wrote into text (sheets as tab-separated rows, paragraphs with their style, tables, slides) and compares it with `expected/<script>.<app>.txt`; `--update` rewrites those files. It also saves `portable-examples.ods`, `.odt`, `.odp` (with the host) and `.xlsx`. It needs LibreOffice and `python3-uno`. The Excel, Word and PowerPoint paths of `lib/office.vas` are not covered by it.
 
 ## Files
 
-- `scripts/`: the five scripts and `lib/table.vas`.
-- `hosts/`: `ExcelHost.bas` and `CalcHost.bas`.
-- `data/`: the input tables as CSV. `expected/`: the expected result tables.
-- `portable-examples.ods`, `portable-examples.xlsx`: the workbooks, built by `run_lo.py`.
-- `tools/`: `expected.py` and `run_lo.py`.
+- `scripts/`: the six scripts; `lib/office.vas` and `lib/table.vas`; `data/project.vas`, the sample project.
+- `hosts/`: `OfficeHost.bas` (Excel, Word, PowerPoint) and `LibreOfficeHost.bas` (Calc, Writer, Impress).
+- `data/`: the sample tables as CSV. `expected/`: what every script writes in Calc, Writer and Impress.
+- `portable-examples.ods`, `.odt`, `.odp`, `.xlsx`: the documents, built by `run_lo.py`.
+- `tools/`: `make_data.py` and `run_lo.py`.

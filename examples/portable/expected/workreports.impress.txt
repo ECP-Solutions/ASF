@@ -1,0 +1,14 @@
+result: Work report checks: slides written in Impress
+== slide 1: Work report checks
+  11 reports, 9 problems
+== slide 2: Problems
+  Row   |   Field   |   Value   |   Problem
+  4   |   Code   |   ex0002   |   expected two capital letters and four digits
+  6   |   Quantity   |   -150   |   must be greater than zero
+  7   |   Quantity   |      |   not a number
+  8   |   Date   |   2026-03-08   |   Sunday: needs an overtime authorisation
+  9   |   Date   |   31/02/2026   |   not a date
+  10   |   Code   |   AL0003   |   not in the budget
+  11   |   Unit   |   m3   |   the budget measures this item in m2
+  11   |   Crew   |      |   missing
+  12   |   Unit   |   m²   |   unknown unit, expected one of m, m2, m3, kg, h, ud

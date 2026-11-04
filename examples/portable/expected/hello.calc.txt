@@ -1,0 +1,9 @@
+result: Hello from ASF: sheet written in Calc
+Hello from ASF
+Written by hello.vas in Calc, a spreadsheet application.
+
+One script, the whole office suite
+lib/office.vas finds out where the script runs; the rest of the script does not need to know.
+Suite	Spreadsheet	Text	Presentation
+Microsoft Office	Excel	Word	PowerPoint
+LibreOffice	Calc	Writer	Impress

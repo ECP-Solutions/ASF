@@ -17,6 +17,10 @@ Private Const VTP_MAX_ITEMS_INLINE As Long = 8 ' prefer inline for small contain
 Private VERBOSE_ As Boolean
 Private GLOBALS_ As ASF_Globals
 Private OUTPUT__ As Variant
+' the value of the last throw, or the message of the last error; THROWING_ while a throw unwinds
+Private LAST_ERROR_ As Variant
+Private THROWING_ As Boolean
+Private Const THROW_ERROR_ As Long = -2147214503 ' vbObjectError + 7001
 Private INJECTED_VARIABLES_ As Collection
 Private ENABLE_CALL_TRACE_ As Boolean
 Private CAST_INJECTED_VARIABLES_ As Boolean
@@ -30,6 +34,9 @@ Private MathObj As Collection
 
 ' Executes AST nodes produced by Compiler (AST).
 ' Uses Map node types and ScopeStack. Logs to gRuntimeLog.
+Public Property Get LastError() As Variant
+    vAssignment LastError, LAST_ERROR_
+End Property
 Public Property Set Globals(aGlobals As ASF_Globals)
     Set GLOBALS_ = aGlobals
 End Property
@@ -426,6 +433,8 @@ End Function
 
 Public Sub RunProgramByIndex(idx As Long, Optional params As Variant = Empty)
     If idx < 1 Or idx > GLOBALS_.gPrograms.Count Then Exit Sub
+    LAST_ERROR_ = Empty
+    THROWING_ = False
     Dim p As Variant: p = GLOBALS_.gPrograms(idx)
     Dim progName As String: progName = p(0)
     Dim stmts As Collection: Set stmts = p(1)
@@ -515,6 +524,8 @@ Private Function ExecuteStmtNode(node As ASF_Map, progScope As ASF_ScopeStack) A
             ExecPrintNode node, progScope
         Case "TryCatch"
             ExecuteStmtNode = ExecTryCatchNode(node, progScope)
+        Case "Throw"
+            ExecThrowNode node, progScope
         Case "Switch"
             ExecuteStmtNode = ExecSwitchNode(node, progScope)
         Case "ClassDecl"
@@ -535,6 +546,7 @@ Private Function ExecuteStmtNode(node As ASF_Map, progScope As ASF_ScopeStack) A
 
 ErrHandler:
     If VERBOSE_ Then GLOBALS_.gRuntimeLog.Add "VM statement error: " & err.Description
+    If Not THROWING_ Then LAST_ERROR_ = err.Description
     err.Clear
     ExecuteStmtNode = "ERR"
 End Function
@@ -1204,7 +1216,10 @@ Private Function ExecTryCatchNode(node As ASF_Map, progScope As ASF_ScopeStack) 
     Exit Function
 
 TryErr:
+    If err.Number <> 0 And Not THROWING_ Then LAST_ERROR_ = err.Description
     err.Clear
+    THROWING_ = False
+    If node.Exists("catchVar") Then progScope.SetLocalValue CStr(node.GetValue("catchVar")), LAST_ERROR_
     Dim catchStmts As Collection: Set catchStmts = node.GetValue("catch")
     If Not catchStmts Is Nothing Then
         Dim j As Long
@@ -1215,6 +1230,19 @@ TryErr:
     End If
     ExecTryCatchNode = vbNullString
 End Function
+
+' throw expr: the value reaches the catch of the nearest try, through function calls
+Private Sub ExecThrowNode(node As ASF_Map, progScope As ASF_ScopeStack)
+    Dim tex As ASF_Map: Set tex = node.GetValue("expr")
+    LAST_ERROR_ = Empty
+    If Not tex Is Nothing Then vAssignment LAST_ERROR_, EvalExprNode(tex, progScope)
+    THROWING_ = True
+    If IsObject(LAST_ERROR_) Then
+        err.Raise THROW_ERROR_, "ASF", "throw"
+    Else
+        err.Raise THROW_ERROR_, "ASF", CStr(LAST_ERROR_)
+    End If
+End Sub
 
 ' ---------------------
 ' ExecSwitchNode
@@ -1797,7 +1825,7 @@ exitfun:
 End Function
 
 Private Function EvalBinary(node As ASF_Map, progScope As ASF_ScopeStack) As Variant
-    Dim lop As Variant: lop = EvalExprNode(node.GetValue("left"), progScope)
+    Dim lop As Variant: vAssignment lop, EvalExprNode(node.GetValue("left"), progScope)
     Dim rop As Variant
     Dim op2 As String: op2 = node.GetValue("op")
     ' short-circuit operators evaluate the right side only when needed
@@ -1826,8 +1854,19 @@ Private Function EvalBinary(node As ASF_Map, progScope As ASF_ScopeStack) As Var
         Case "<=": EvalBinary = (lop <= rop)
         Case ">": EvalBinary = (lop > rop)
         Case ">=": EvalBinary = (lop >= rop)
-        Case "==", "=": EvalBinary = (IIf(IsNull(lop), Empty, lop) = IIf(IsNull(rop), Empty, rop))
-        Case "!=": EvalBinary = (lop <> rop)
+        Case "==", "="
+            ' two numbers (Integer to Currency) compare directly; anything else through ValuesEqual
+            If VarType(lop) >= vbInteger And VarType(lop) <= vbCurrency And VarType(rop) >= vbInteger And VarType(rop) <= vbCurrency Then
+                EvalBinary = (lop = rop)
+            Else
+                EvalBinary = ValuesEqual(lop, rop)
+            End If
+        Case "!="
+            If VarType(lop) >= vbInteger And VarType(lop) <= vbCurrency And VarType(rop) >= vbInteger And VarType(rop) <= vbCurrency Then
+                EvalBinary = (lop <> rop)
+            Else
+                EvalBinary = Not ValuesEqual(lop, rop)
+            End If
         Case "/"
             If rop = 0 Then err.Raise vbObjectError + 2001, "VM.EvalExprNode", "Division by zero" Else EvalBinary = lop / rop
         Case "%": EvalBinary = lop Mod rop
@@ -1840,6 +1879,41 @@ Private Function EvalBinary(node As ASF_Map, progScope As ASF_ScopeStack) As Var
     End Select
 End Function
 
+
+' == and !=: objects are equal when they are the same object, arrays when their items are equal;
+' null is treated as undefined, and values VBA cannot compare (an array and a number, a string
+' and a number that is not its text) are not equal
+Private Function ValuesEqual(ByRef a As Variant, ByRef b As Variant) As Boolean
+    If VarType(a) = VarType(b) Then
+        Select Case VarType(a)
+            Case vbString, vbDate, vbBoolean
+                ValuesEqual = (a = b)
+                Exit Function
+        End Select
+    End If
+    On Error GoTo notEqual
+    If IsObject(a) Or IsObject(b) Then
+        If IsObject(a) And IsObject(b) Then ValuesEqual = (a Is b)
+        Exit Function
+    End If
+    If IsArray(a) Or IsArray(b) Then
+        If IsArray(a) And IsArray(b) Then ValuesEqual = ArraysEqual(a, b)
+        Exit Function
+    End If
+    ValuesEqual = (IIf(IsNull(a), Empty, a) = IIf(IsNull(b), Empty, b))
+    Exit Function
+notEqual:
+    ValuesEqual = False
+End Function
+
+Private Function ArraysEqual(ByRef a As Variant, ByRef b As Variant) As Boolean
+    If UBound(a) - LBound(a) <> UBound(b) - LBound(b) Then Exit Function
+    Dim i As Long
+    For i = 0 To UBound(a) - LBound(a)
+        If Not ValuesEqual(a(LBound(a) + i), b(LBound(b) + i)) Then Exit Function
+    Next i
+    ArraysEqual = True
+End Function
 
 ' The names EvalNamedBuiltin handles: checked first, since it has many locals to set up
 Private Function IsNamedBuiltin(ByVal fname As String) As Boolean
@@ -5455,6 +5529,8 @@ ErrHandler:
     err.Clear
     PopCallTrace traceName, Empty
     InvokeClosure = Empty
+    ' other errors end the function with no value; a throw goes on to the caller's try
+    If THROWING_ Then err.Raise THROW_ERROR_, "ASF", "throw"
 End Function
  ' ----------------- LValue resolution and helpers -----------------
 
@@ -7740,6 +7816,9 @@ Public Function LoadModule(modulePath As String) As ASF_Map
         Dim moduleScope As New ASF_ScopeStack
         moduleScope.LoadRaw rawScope
         moduleScope.SetValue "__option_base", 1
+        ' functions the module exports run in its scope: they need Math as the program does
+        If MathObj Is Nothing Then Set MathObj = New Collection
+        moduleScope.SetValue "Math", MathObj
         moduleScope.Push
         
         ' Execute module statements

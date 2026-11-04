@@ -1,5 +1,5 @@
-// Helpers shared by the examples. A table is what the host reads from a sheet: an array of rows,
-// the first row holding the column names; blank cells arrive as ''.
+// Helpers shared by the examples. A table is an array of rows, the first row holding the column
+// names: what a spreadsheet gives (blank cells as '' or undefined) or what data/project.vas holds.
 
 // One object per data row, keyed by column name; _row is the row number on the sheet
 fun records(table) {
@@ -18,7 +18,70 @@ fun records(table) {
 };
 
 fun isBlank(v) {
-    return typeof v == 'string' && v.trim() == '';
+    return typeof v == 'undefined' || (typeof v == 'string' && v.trim() == '');
 };
 
-export { records, isBlank };
+// Half away from zero, the same in every application (Math.round rounds half to even, as VBA does)
+fun roundTo(x, decimals) {
+    let f = 10 ^ decimals;
+    if (x < 0) {
+        return -Math.floor(-x * f + 0.5) / f;
+    };
+    return Math.floor(x * f + 0.5) / f;
+};
+
+fun round2(x) {
+    return roundTo(x, 2);
+};
+
+// A number as text for documents and slides: thousands separated by commas, and two decimals
+// (three when it has them) unless it is whole; any other value as it is
+fun show(v) {
+    if (typeof v != 'number') {
+        return `${v}`;
+    };
+    let x = v;
+    let sign = '';
+    if (x < 0) { x = -x; sign = '-'; };
+    let d = 3;
+    if (Math.floor(x) == x) {
+        d = 0;
+    } elseif (roundTo(x, 2) == x) {
+        d = 2;
+    };
+    let f = 10 ^ d;
+    let n = Math.floor(x * f + 0.5);
+    let whole = Math.floor(n / f);
+    let digits = `${whole}`;
+    let grouped = '';
+    while (digits.length > 3) {
+        grouped = ',' + digits.substring(digits.length - 3) + grouped;
+        digits = digits.substring(0, digits.length - 3);
+    };
+    let s = sign + digits + grouped;
+    if (d > 0) {
+        let frac = `${n - whole * f}`;
+        s = s + '.' + frac.padStart(d, '0');
+    };
+    return s;
+};
+
+// yyyy-mm-dd of a date serial number (days from 1899-12-30, as Excel and Calc count them)
+fun dateText(serial) {
+    let z = Math.floor(serial) - 25569 + 719468;
+    let era = Math.floor(z / 146097);
+    let doe = z - era * 146097;
+    let yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365);
+    let doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
+    let mp = Math.floor((5 * doy + 2) / 153);
+    let day = doy - Math.floor((153 * mp + 2) / 5) + 1;
+    let month = mp + 3;
+    if (mp >= 10) { month = mp - 9; };
+    let year = yoe + era * 400;
+    if (month <= 2) { year = year + 1; };
+    let mm = `${month}`;
+    let dd = `${day}`;
+    return `${year}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+};
+
+export { records, isBlank, roundTo, round2, show, dateText };

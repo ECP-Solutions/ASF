@@ -1,0 +1,71 @@
+// Sample data of a building project, generated from data/*.csv by tools/make_data.py.
+// The scripts use it when the document has no sheet with the table: dates are serial numbers.
+
+// sheet Budget
+let budget = [
+    ['Chapter', 'Code', 'Description', 'Unit', 'Quantity', 'UnitPrice'],
+    ['01 Site works', 'EX0001', 'Site clearing', 'm2', 1250, 1.85],
+    ['01 Site works', 'EX0002', 'Excavation for foundations', 'm3', 340, 12.4],
+    ['02 Structure', 'ES0001', 'Reinforced concrete footings', 'm3', 85, 148.6],
+    ['02 Structure', 'ES0002', 'Steel reinforcement B500S', 'kg', 6800, 1.32],
+    ['02 Structure', 'ES0003', 'Concrete slab 25 cm', 'm2', 420, 62.75],
+    ['03 Masonry', 'AL0001', 'Brick wall 11.5 cm', 'm2', 610, 28.9],
+    ['03 Masonry', 'AL0002', 'Plasterboard partition', 'm2', 380, 24.15],
+    ['04 Finishes', 'AC0001', 'Gypsum plaster', 'm2', 1520, 9.8],
+    ['04 Finishes', 'AC0002', 'Ceramic floor tiles', 'm2', 395, 31.4]
+];
+
+// sheet WorkReports
+let workReports = [
+    ['Date', 'Code', 'Unit', 'Quantity', 'Crew'],
+    [46083, 'EX0001', 'm2', 420, 'Earthworks A'],
+    [46083, 'EX0002', 'm3', 85.5, 'Earthworks A'],
+    [46084, 'ex0002', 'm3', 92, 'Earthworks A'],
+    [46085, 'ES0001', 'm3', 21, 'Concrete B'],
+    [46086, 'ES0002', 'kg', -150, 'Steel C'],
+    [46087, 'ES0003', 'm2', '', 'Concrete B'],
+    [46089, 'ES0001', 'm3', 18, 'Concrete B'],
+    ['31/02/2026', 'AL0001', 'm2', 64, 'Masonry D'],
+    [46090, 'AL0003', 'm2', 40, 'Masonry D'],
+    [46090, 'AL0002', 'm3', 35, ''],
+    [46091, 'AC0001', 'm' + ''.fromCharCode(178), 120, 'Finishes E']
+];
+
+// sheet Progress
+let progress = [
+    ['Code', 'Description', 'BudgetQty', 'UnitPrice', 'PreviousQty', 'MonthQty'],
+    ['EX0001', 'Site clearing', 1250, 1.85, 830, 420],
+    ['EX0002', 'Excavation for foundations', 340, 12.4, 152.5, 195],
+    ['ES0001', 'Reinforced concrete footings', 85, 148.6, 40, 39],
+    ['ES0002', 'Steel reinforcement B500S', 6800, 1.32, 2900, 1850],
+    ['ES0003', 'Concrete slab 25 cm', 420, 62.75, 0, 0],
+    ['AL0001', 'Brick wall 11.5 cm', 610, 28.9, 0, 64],
+    ['AL0002', 'Plasterboard partition', 380, 24.15, 0, 0],
+    ['AC0001', 'Gypsum plaster', 1520, 9.8, 0, 0],
+    ['AC0002', 'Ceramic floor tiles', 395, 31.4, 0, 0]
+];
+
+// sheet PriceIndices
+let priceIndices = [
+    ['Period', 'Certified', 'Labour', 'Materials', 'Energy'],
+    ['P00', 0, 100, 100, 100],
+    ['P01', 48250, 100.8, 102.4, 97.6],
+    ['P02', 61730.4, 101.5, 104.9, 95.2],
+    ['P03', 73915.75, 102.1, 106.3, 99.8],
+    ['P04', 58402.1, 102.9, 105.1, 104.5],
+    ['P05', 39870.6, 103.6, 103.8, 108.2]
+];
+
+// sheet Cleanup
+let supplierItems = [
+    ['Code', 'Unit', 'Description'],
+    ['es-3', 'm' + ''.fromCharCode(178), 'concrete  slab 25 cm'],
+    ['EX0001', 'm2', 'Site clearing'],
+    ['Ex_02', 'M3.', 'excavation for   foundations'],
+    ['al 1', 'm2', 'brick wall 11.5 cm'],
+    ['AC0002', 'Un', 'ceramic floor tiles'],
+    ['ES0002', 'kgs', 'steel reinforcement B500S'],
+    ['XYZ-12345', 'ml', '  handrail, painted steel']
+];
+
+export { budget, workReports, progress, priceIndices, supplierItems };

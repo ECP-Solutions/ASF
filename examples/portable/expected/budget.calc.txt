@@ -1,0 +1,13 @@
+result: Budget summary: sheet written in Calc
+Budget summary
+9 items in 4 chapters
+
+Amount by chapter
+Chapter	Items	Amount	Share %
+01 Site works	2	6528.5	6.01
+02 Structure	3	47962	44.17
+03 Masonry	2	26806	24.68
+04 Finishes	2	27299	25.14
+TOTAL	9	108595.5	100
+
+Total budget: 108,595.50

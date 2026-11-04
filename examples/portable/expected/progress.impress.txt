@@ -1,0 +1,17 @@
+result: Progress certificate: slides written in Impress
+== slide 1: Progress certificate
+  Certified this month: 13,282
+== slide 2: Items
+  Code   |   Description   |   ToDateQty   |   Progress %   |   MonthAmount   |   ToDateAmount   |   Status
+  EX0001   |   Site clearing   |   1,250   |   100   |   777   |   2,312.50   |   COMPLETED
+  EX0002   |   Excavation for foundations   |   347.50   |   102.21   |   2,418   |   4,309   |   OVER BUDGET
+  ES0001   |   Reinforced concrete footings   |   79   |   92.94   |   5,795.40   |   11,739.40   |   
+  ES0002   |   Steel reinforcement B500S   |   4,750   |   69.85   |   2,442   |   6,270   |   
+  ES0003   |   Concrete slab 25 cm   |   0   |   0   |   0   |   0   |   NO PROGRESS
+  AL0001   |   Brick wall 11.5 cm   |   64   |   10.49   |   1,849.60   |   1,849.60   |   
+  AL0002   |   Plasterboard partition   |   0   |   0   |   0   |   0   |   NO PROGRESS
+  AC0001   |   Gypsum plaster   |   0   |   0   |   0   |   0   |   NO PROGRESS
+  AC0002   |   Ceramic floor tiles   |   0   |   0   |   0   |   0   |   NO PROGRESS
+  TOTAL   |      |      |   24.38   |   13,282   |   26,480.50   |   
+== slide 3: Over budget
+  EX0002 Excavation for foundations: 347.50 measured against 340 in the budget

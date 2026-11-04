@@ -1,0 +1,11 @@
+result: Budget summary: slides written in Impress
+== slide 1: Budget summary
+  9 items in 4 chapters
+== slide 2: Amount by chapter
+  Chapter   |   Items   |   Amount   |   Share %
+  01 Site works   |   2   |   6,528.50   |   6.01
+  02 Structure   |   3   |   47,962   |   44.17
+  03 Masonry   |   2   |   26,806   |   24.68
+  04 Finishes   |   2   |   27,299   |   25.14
+  TOTAL   |   9   |   108,595.50   |   100
+  Total budget: 108,595.50

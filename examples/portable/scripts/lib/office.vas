@@ -1,0 +1,310 @@
+// One API for the whole office suite: Excel, Word and PowerPoint, and LibreOffice Calc, Writer
+// and Impress. open(doc) looks at the document the host passes and returns
+//
+//   app, kind              'Excel' ... 'Impress'; 'spreadsheet', 'text' or 'presentation'
+//   input(name, fallback)  in a spreadsheet, the table around A1 of sheet name; otherwise fallback
+//   report(title, sub)     starts a report: a new sheet, a document heading or a title slide
+//
+// and a report has
+//
+//   section(text)          a bold row, a level 2 heading or a new slide
+//   line(text)             a row, a paragraph or a bullet
+//   table(rows)            cells, a document table or one bullet per row; numbers stay numbers in sheets
+//   done()                 finishes the report and returns a line for the host to show
+//
+// Scripts that only use this API run unchanged in the six applications.
+import { show } from './table.vas';
+
+// Text of a table cell outside a spreadsheet
+let cellText = fun(v) {
+    return show(v);
+};
+
+// Rows padded to the same width, for ranges and tables; text turns every cell into text.
+// (map and forEach would visit the cells: on an array of arrays they go down to the leaves)
+let padded = fun(rows, text) {
+    let w = 0;
+    for (let i = 1, i <= rows.length, i += 1) {
+        if (rows[i].length > w) { w = rows[i].length; };
+    };
+    let out = [];
+    for (let i = 1, i <= rows.length, i += 1) {
+        let r = rows[i];
+        let line = [];
+        for (let j = 1, j <= w, j += 1) {
+            let v = '';
+            if (j <= r.length) { v = r[j]; };
+            if (text) { v = cellText(v); };
+            line.push(v);
+        };
+        out.push(line);
+    };
+    return out;
+};
+
+// One line of text per row, for slides
+let rowLines = fun(rows) {
+    let out = [];
+    let block = padded(rows, true);
+    for (let i = 1, i <= block.length, i += 1) {
+        out.push(block[i].join('   |   '));
+    };
+    return out;
+};
+
+// ---------------------------------------------------------------- Excel (VBA object model)
+let excel = fun(wb) {
+    let sheet = fun(name) {
+        try {
+            return wb.Worksheets(name);
+        } catch (e) {
+            return null;
+        };
+    };
+    let report = fun(title, subtitle) {
+        let ws = sheet(title);
+        if (ws == null) {
+            ws = wb.Worksheets.Add();
+            ws.Name = title;
+        } else {
+            ws.Cells.ClearContents();
+        };
+        let row = 1;
+        let put = fun(values, bold) {
+            ws.Cells(row, 1).Resize(1, values.length).Value2 = [values];
+            if (bold) { ws.Rows(row).Font.Bold = true; };
+            row += 1;
+        };
+        put([title], true);
+        put([subtitle], false);
+        row += 1;
+        return {
+            section: fun(text) { put([text], true); },
+            line: fun(text) { put([text], false); },
+            table: fun(rows) {
+                let block = padded(rows, false);
+                ws.Cells(row, 1).Resize(block.length, block[1].length).Value2 = block;
+                ws.Rows(row).Font.Bold = true;
+                row += block.length + 1;
+            },
+            done: fun() {
+                ws.Columns.AutoFit();
+                return `${title}: sheet written in Excel`;
+            }
+        };
+    };
+    return {
+        app: 'Excel', kind: 'spreadsheet', report: report,
+        input: fun(name, fallback) {
+            let ws = sheet(name);
+            if (ws == null) { return fallback; };
+            return ws.Range('A1').CurrentRegion.Value2;
+        }
+    };
+};
+
+// ---------------------------------------------------------------- Calc (UNO)
+let calc = fun(doc) {
+    let sheets = doc.getSheets();
+    let report = fun(title, subtitle) {
+        if (!sheets.hasByName(title)) {
+            sheets.insertNewByName(title, sheets.getCount());
+        };
+        let sh = sheets.getByName(title);
+        sh.clearContents(23);
+        let row = 0;
+        let put = fun(values, bold) {
+            let r = sh.getCellRangeByPosition(0, row, values.length - 1, row);
+            r.setDataArray([values]);
+            if (bold) { r.CharWeight = 150; };
+            row += 1;
+        };
+        put([title], true);
+        put([subtitle], false);
+        row += 1;
+        return {
+            section: fun(text) { put([text], true); },
+            line: fun(text) { put([text], false); },
+            table: fun(rows) {
+                let block = padded(rows, false);
+                sh.getCellRangeByPosition(0, row, block[1].length - 1, row + block.length - 1).setDataArray(block);
+                sh.getCellRangeByPosition(0, row, block[1].length - 1, row).CharWeight = 150;
+                row += block.length + 1;
+            },
+            done: fun() {
+                sh.getColumns().OptimalWidth = true;
+                return `${title}: sheet written in Calc`;
+            }
+        };
+    };
+    return {
+        app: 'Calc', kind: 'spreadsheet', report: report,
+        input: fun(name, fallback) {
+            if (!sheets.hasByName(name)) { return fallback; };
+            let sh = sheets.getByName(name);
+            let cursor = sh.createCursorByRange(sh.getCellRangeByName('A1'));
+            cursor.collapseToCurrentRegion();
+            return cursor.getDataArray();
+        }
+    };
+};
+
+// ---------------------------------------------------------------- Word (VBA object model)
+let word = fun(d) {
+    // wdStyleHeading1, wdStyleHeading2, wdStyleNormal
+    let add = fun(text, style) {
+        d.Content.InsertAfter(text);
+        d.Content.InsertParagraphAfter();
+        d.Paragraphs(d.Paragraphs.Count - 1).Style = style;
+    };
+    let report = fun(title, subtitle) {
+        add(title, -2);
+        add(subtitle, -1);
+        return {
+            section: fun(text) { add(text, -3); },
+            line: fun(text) { add(text, -1); },
+            table: fun(rows) {
+                let block = padded(rows, true);
+                let t = d.Tables.Add(d.Paragraphs(d.Paragraphs.Count).Range, block.length, block[1].length);
+                t.Borders.Enable = true;
+                for (let i = 1, i <= block.length, i += 1) {
+                    for (let j = 1, j <= block[i].length, j += 1) {
+                        t.Cell(i, j).Range.Text = block[i][j];
+                    };
+                };
+                t.Rows(1).Range.Font.Bold = true;
+            },
+            done: fun() { return `${title}: document written in Word`; }
+        };
+    };
+    return { app: 'Word', kind: 'text', report: report, input: fun(name, fallback) { return fallback; } };
+};
+
+// ---------------------------------------------------------------- Writer (UNO)
+let writer = fun(d) {
+    let text = d.getText();
+    let cursor = text.createTextCursor();
+    let add = fun(s, style) {
+        cursor.gotoEnd(false);
+        text.insertString(cursor, s, false);
+        cursor.ParaStyleName = style;
+        text.insertControlCharacter(cursor, 0, false);
+    };
+    let report = fun(title, subtitle) {
+        add(title, 'Heading 1');
+        add(subtitle, 'Standard');
+        return {
+            section: fun(s) { add(s, 'Heading 2'); },
+            line: fun(s) { add(s, 'Standard'); },
+            table: fun(rows) {
+                let block = padded(rows, true);
+                let t = d.createInstance('com.sun.star.text.TextTable');
+                t.initialize(block.length, block[1].length);
+                cursor.gotoEnd(false);
+                text.insertTextContent(cursor, t, false);
+                t.setDataArray(block);
+            },
+            done: fun() { return `${title}: document written in Writer`; }
+        };
+    };
+    return { app: 'Writer', kind: 'text', report: report, input: fun(name, fallback) { return fallback; } };
+};
+
+// ---------------------------------------------------------------- PowerPoint (VBA object model)
+let powerpoint = fun(p) {
+    // ppLayoutTitle, ppLayoutText
+    let addSlide = fun(layout, title) {
+        let s = p.Slides.Add(p.Slides.Count + 1, layout);
+        s.Shapes(1).TextFrame.TextRange.Text = title;
+        return s;
+    };
+    let report = fun(title, subtitle) {
+        addSlide(1, title).Shapes(2).TextFrame.TextRange.Text = subtitle;
+        let body = null;
+        let lines = [];
+        let bullet = fun(s) {
+            if (body == null) {
+                body = addSlide(2, title).Shapes(2).TextFrame.TextRange;
+                lines = [];
+            };
+            lines.push(s);
+            body.Text = lines.join('\r');
+        };
+        return {
+            section: fun(s) { body = addSlide(2, s).Shapes(2).TextFrame.TextRange; lines = []; },
+            line: bullet,
+            table: fun(rows) {
+                // not lines: a let in a nested function assigns the variable of the enclosing one
+                let text = rowLines(rows);
+                for (let i = 1, i <= text.length, i += 1) { bullet(text[i]); };
+            },
+            done: fun() { return `${title}: slides written in PowerPoint`; }
+        };
+    };
+    return { app: 'PowerPoint', kind: 'presentation', report: report, input: fun(name, fallback) { return fallback; } };
+};
+
+// ---------------------------------------------------------------- Impress (UNO)
+let impress = fun(d) {
+    let pages = d.getDrawPages();
+    let used = false;
+    // a new presentation has one slide with empty placeholders
+    let blank = fun(pg) {
+        for (let k = 0, k < pg.getCount(), k += 1) {
+            if (pg.getByIndex(k).getString() != '') { return false; };
+        };
+        return true;
+    };
+    // AutoLayout: 0 title slide, 1 title and content
+    let addSlide = fun(layout, title) {
+        let pg = null;
+        if (!used && pages.getCount() == 1 && blank(pages.getByIndex(0))) {
+            pg = pages.getByIndex(0);
+        } else {
+            pg = pages.insertNewByIndex(pages.getCount() - 1);
+            pg = pages.getByIndex(pages.getCount() - 1);
+        };
+        used = true;
+        pg.Layout = layout;
+        pg.getByIndex(0).setString(title);
+        return pg;
+    };
+    let report = fun(title, subtitle) {
+        addSlide(0, title).getByIndex(1).setString(subtitle);
+        let body = null;
+        let lines = [];
+        let bullet = fun(s) {
+            if (body == null) {
+                body = addSlide(1, title).getByIndex(1);
+                lines = [];
+            };
+            lines.push(s);
+            body.setString(lines.join('\n'));
+        };
+        return {
+            section: fun(s) { body = addSlide(1, s).getByIndex(1); lines = []; },
+            line: bullet,
+            table: fun(rows) {
+                // not lines: a let in a nested function assigns the variable of the enclosing one
+                let text = rowLines(rows);
+                for (let i = 1, i <= text.length, i += 1) { bullet(text[i]); };
+            },
+            done: fun() { return `${title}: slides written in Impress`; }
+        };
+    };
+    return { app: 'Impress', kind: 'presentation', report: report, input: fun(name, fallback) { return fallback; } };
+};
+
+// ---------------------------------------------------------------- the document the host passed
+fun open(doc) {
+    let t = typeof doc;
+    if (t == 'object: <Workbook>') { return excel(doc); };
+    if (t == 'object: <Document>') { return word(doc); };
+    if (t == 'object: <Presentation>') { return powerpoint(doc); };
+    if (doc.supportsService('com.sun.star.sheet.SpreadsheetDocument')) { return calc(doc); };
+    if (doc.supportsService('com.sun.star.text.TextDocument')) { return writer(doc); };
+    if (doc.supportsService('com.sun.star.presentation.PresentationDocument')) { return impress(doc); };
+    throw `not an office document: ${t}`;
+};
+
+export { open };

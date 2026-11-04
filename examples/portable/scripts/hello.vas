@@ -1,0 +1,14 @@
+// The smallest example: the same script writes a sheet in Excel or Calc, a document in Word or
+// Writer, and slides in PowerPoint or Impress.
+import { open } from './lib/office.vas';
+
+let doc = open($1);
+let out = doc.report('Hello from ASF', `Written by hello.vas in ${doc.app}, a ${doc.kind} application.`);
+out.section('One script, the whole office suite');
+out.line('lib/office.vas finds out where the script runs; the rest of the script does not need to know.');
+out.table([
+    ['Suite', 'Spreadsheet', 'Text', 'Presentation'],
+    ['Microsoft Office', 'Excel', 'Word', 'PowerPoint'],
+    ['LibreOffice', 'Calc', 'Writer', 'Impress']
+]);
+return out.done();

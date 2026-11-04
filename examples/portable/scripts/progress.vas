@@ -1,43 +1,48 @@
 // Monthly progress certificate: quantity, progress and amounts to date of every budget item.
-// Input  ($1): Code | Description | BudgetQty | UnitPrice | PreviousQty | MonthQty
-// Output:      Code | Description | ToDateQty | Progress % | MonthAmount | ToDateAmount | Status
-//              (one line per item, then the totals)
-import { records } from './lib/table.vas';
+// Reads the sheet Progress (Code | Description | BudgetQty | UnitPrice | PreviousQty | MonthQty)
+// when the document is a spreadsheet that has it, and the sample project otherwise.
+import { open } from './lib/office.vas';
+import { records, round2, show } from './lib/table.vas';
+import { progress } from './data/project.vas';
 
-// half away from zero (Math.round rounds half to even, as VBA does)
-fun roundTo(x, decimals) {
-    let f = 10 ^ decimals;
-    if (x < 0) {
-        return -Math.floor(-x * f + 0.5) / f;
+let doc = open($1);
+let statusOf = fun(r, qty) {
+    if (qty > r.BudgetQty) {
+        return 'OVER BUDGET';
+    } elseif (qty == r.BudgetQty) {
+        return 'COMPLETED';
+    } elseif (r.MonthQty == 0) {
+        return 'NO PROGRESS';
     };
-    return Math.floor(x * f + 0.5) / f;
+    return '';
 };
 
-fun round2(x) {
-    return roundTo(x, 2);
-};
-
-let out = [['Code', 'Description', 'ToDateQty', 'Progress %', 'MonthAmount', 'ToDateAmount', 'Status']];
+let rows = [['Code', 'Description', 'ToDateQty', 'Progress %', 'MonthAmount', 'ToDateAmount', 'Status']];
+let warnings = [];
 let budgetTotal = 0;
 let monthTotal = 0;
 let toDateTotal = 0;
-
-records($1).forEach(fun(r) {
+records(doc.input('Progress', progress)).forEach(fun(r) {
     let qty = r.PreviousQty + r.MonthQty;
-    let status = '';
-    if (qty > r.BudgetQty) {
-        status = 'OVER BUDGET';
-    } elseif (qty == r.BudgetQty) {
-        status = 'COMPLETED';
-    } elseif (r.MonthQty == 0) {
-        status = 'NO PROGRESS';
-    };
+    let status = statusOf(r, qty);
     budgetTotal = budgetTotal + r.BudgetQty * r.UnitPrice;
     monthTotal = monthTotal + r.MonthQty * r.UnitPrice;
     toDateTotal = toDateTotal + qty * r.UnitPrice;
-    out.push([r.Code, r.Description, qty, round2(100 * qty / r.BudgetQty),
-              round2(r.MonthQty * r.UnitPrice), round2(qty * r.UnitPrice), status]);
+    rows.push([r.Code, r.Description, qty, round2(100 * qty / r.BudgetQty),
+               round2(r.MonthQty * r.UnitPrice), round2(qty * r.UnitPrice), status]);
+    if (status == 'OVER BUDGET') {
+        warnings.push(`${r.Code} ${r.Description}: ${show(qty)} measured against ${show(r.BudgetQty)} in the budget`);
+    };
 });
+rows.push(['TOTAL', '', '', round2(100 * toDateTotal / budgetTotal), round2(monthTotal), round2(toDateTotal), '']);
 
-out.push(['TOTAL', '', '', round2(100 * toDateTotal / budgetTotal), round2(monthTotal), round2(toDateTotal), '']);
-return out;
+let out = doc.report('Progress certificate', `Certified this month: ${show(round2(monthTotal))}`);
+out.section('Items');
+out.table(rows);
+out.section('Over budget');
+if (warnings.length == 0) {
+    out.line('No item is over budget.');
+} else {
+    warnings.forEach(fun(w) { out.line(w); });
+};
+return out.done();

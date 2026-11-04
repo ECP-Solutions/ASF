@@ -1,46 +1,43 @@
 // Price revision with a polynomial formula, Kt = a + b * Lt/L0 + c * Mt/M0 + d * Et/E0,
 // where L, M and E are the labour, materials and energy indices and 0 marks the tender date.
 // The coefficients belong to the contract: change them here, the hosts stay as they are.
-// Input  ($1): Period | Certified | Labour | Materials | Energy   (first row: indices at the tender date)
-// Output:      Period | Certified | Kt | Revised | Adjustment   (one line per period, then the totals)
-import { records } from './lib/table.vas';
-
-// half away from zero (Math.round rounds half to even, as VBA does)
-fun roundTo(x, decimals) {
-    let f = 10 ^ decimals;
-    if (x < 0) {
-        return -Math.floor(-x * f + 0.5) / f;
-    };
-    return Math.floor(x * f + 0.5) / f;
-};
-
-fun round2(x) {
-    return roundTo(x, 2);
-};
+// Reads the sheet PriceIndices (Period | Certified | Labour | Materials | Energy; first row: the
+// indices at the tender date) when the document is a spreadsheet that has it, the sample otherwise.
+import { open } from './lib/office.vas';
+import { records, roundTo, round2, show } from './lib/table.vas';
+import { priceIndices } from './data/project.vas';
 
 let formula = { fixed: 0.15, labour: 0.40, materials: 0.30, energy: 0.15 };
 if (round2(formula.fixed + formula.labour + formula.materials + formula.energy) != 1) {
     throw 'the coefficients of the formula must add up to 1';
 };
 
-let rows = records($1);
-let base = rows[1];
-let out = [['Period', 'Certified', 'Kt', 'Revised', 'Adjustment']];
-let certified = 0;
-let revised = 0;
-
-for (let i = 2, i <= rows.length, i += 1) {
-    let r = rows[i];
-    // contracts state Kt with three decimals
-    let kt = roundTo(formula.fixed
-                     + formula.labour * r.Labour / base.Labour
-                     + formula.materials * r.Materials / base.Materials
-                     + formula.energy * r.Energy / base.Energy, 3);
-    let amount = round2(r.Certified * kt);
-    certified = certified + r.Certified;
-    revised = revised + amount;
-    out.push([r.Period, r.Certified, kt, amount, round2(amount - r.Certified)]);
+let doc = open($1);
+let periods = records(doc.input('PriceIndices', priceIndices));
+let base = periods[1];
+// contracts state Kt with three decimals
+let kt = fun(r) {
+    return roundTo(formula.fixed
+                   + formula.labour * r.Labour / base.Labour
+                   + formula.materials * r.Materials / base.Materials
+                   + formula.energy * r.Energy / base.Energy, 3);
 };
 
-out.push(['TOTAL', round2(certified), '', round2(revised), round2(revised - certified)]);
-return out;
+let rows = [['Period', 'Certified', 'Kt', 'Revised', 'Adjustment']];
+let certified = 0;
+let revised = 0;
+for (let i = 2, i <= periods.length, i += 1) {
+    let r = periods[i];
+    let k = kt(r);
+    let amount = round2(r.Certified * k);
+    certified = certified + r.Certified;
+    revised = revised + amount;
+    rows.push([r.Period, r.Certified, k, amount, round2(amount - r.Certified)]);
+};
+rows.push(['TOTAL', round2(certified), '', round2(revised), round2(revised - certified)]);
+
+let out = doc.report('Price revision', `Kt = ${show(formula.fixed)} + ${show(formula.labour)} Lt/L0 + ${show(formula.materials)} Mt/M0 + ${show(formula.energy)} Et/E0`);
+out.section('Revision by period');
+out.table(rows);
+out.line(`Adjustment to pay: ${show(round2(revised - certified))}`);
+return out.done();

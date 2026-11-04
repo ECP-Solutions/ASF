@@ -1,0 +1,6 @@
+// A module whose exported function uses Math (module_system_math_in_exported_function)
+fun floorOf(x) {
+    return Math.floor(x) + Math.abs(-1);
+};
+
+export { floorOf };

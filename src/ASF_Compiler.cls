@@ -590,6 +590,14 @@ Private Function ParseStatementTokensToAST(stmtTokens As Collection) As ASF_Map
             Case "try"
                 Set ParseStatementTokensToAST = ParseTryCatchAST(stmtTokens)
                 Exit Function
+            Case "throw"
+                Dim tw As ASF_Map: Set tw = MakeNode("Throw")
+                Dim twTok As Collection: Set twTok = New Collection
+                Dim twi As Long
+                For twi = 2 To stmtTokens.Count: twTok.Add stmtTokens(twi): Next twi
+                If twTok.Count > 0 Then tw.SetValue "expr", ParseExprTokensToNode(twTok) Else tw.SetValue "expr", Nothing
+                Set ParseStatementTokensToAST = tw
+                Exit Function
             Case "switch"
                 Set ParseStatementTokensToAST = ParseSwitchAST(stmtTokens)
                 Exit Function
@@ -1331,8 +1339,9 @@ Private Function ParsePrimaryString(types() As String, vals() As Variant, n As L
 
             Dim tnode As ASF_Map: Set tnode = MakeNode("Template")
             tnode.SetValue "parts", partsNodes
-            Set ParsePrimaryString = tnode
             idx = idx + 1
+            ' a template is a string: members and calls chain on it as on a string literal
+            Set ParsePrimaryString = DoPostfixChaining(tnode, types, vals, n, idx)
             Exit Function
         Else
             Dim sNode As ASF_Map: Set sNode = MakeNode("Literal")
@@ -1451,7 +1460,8 @@ Private Function ParsePrimaryIdent(types() As String, vals() As Variant, n As Lo
                 If hasRestParam_anon Then
                     fnode.SetValue "restParam", restParamName_anon
                 End If
-                fnode.SetValue "body", bodyStmts
+                ' a function literal's body is normalized as a function's: for (i = 1, ...) assigns
+                fnode.SetValue "body", NormalizeAssignsInStmts(bodyStmts)
                 Set ParsePrimaryIdent = fnode
                 Exit Function
             Else
@@ -2348,6 +2358,10 @@ Private Function ParseTryCatchAST(stmtTokens As Collection) As ASF_Map
     Do While k <= stmtTokens.Count
         If stmtTokens(k)(0) = "IDENT" And LCase$(stmtTokens(k)(1)) = "catch" Then
             Dim kk As Long: kk = k + 1
+            ' catch (e): the variable that receives the error
+            If safeTVRetInner(stmtTokens, kk, 1) = "(" And safeTVRetInner(stmtTokens, kk + 1, 0) = "IDENT" Then
+                node.SetValue "catchVar", CStr(stmtTokens(kk + 1)(1))
+            End If
             Do While kk <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, kk, 0) = "PAREN" And safeTVRetInner(stmtTokens, kk, 1) = "{")
                 kk = kk + 1
             Loop
@@ -2902,6 +2916,7 @@ Private Function NormalizeNodeRecursive(node As ASF_Map) As ASF_Map
             ntc.Add "type", "TryCatch"
             ntc.SetValue "try", nt
             ntc.SetValue "catch", nc
+            If node.Exists("catchVar") Then ntc.SetValue "catchVar", node.GetValue("catchVar")
             Set NormalizeNodeRecursive = ntc
             Exit Function
 

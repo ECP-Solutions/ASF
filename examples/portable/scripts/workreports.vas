@@ -1,32 +1,37 @@
 // Checks of the daily work reports before they reach the progress certificate.
-// Input  ($1): Date | Code | Unit | Quantity | Crew            (the reports)
-//        ($2): Chapter | Code | Description | Unit | Quantity | UnitPrice   (the budget)
-// Output:      Row | Field | Value | Problem   (one line per problem; only the header when all is well)
-import { records, isBlank } from './lib/table.vas';
+// Reads the sheets WorkReports (Date | Code | Unit | Quantity | Crew) and Budget when the document
+// is a spreadsheet that has them, and the sample project otherwise. Writes one line per problem.
+import { open } from './lib/office.vas';
+import { records, isBlank, dateText } from './lib/table.vas';
+import { budget, workReports } from './data/project.vas';
 
+let doc = open($1);
 let units = ['m', 'm2', 'm3', 'kg', 'h', 'ud'];
 let codeFormat = regex(`^[A-Z]{2}[0-9]{4}$`);
 
 // unit of every budget item, by code
 let budgetUnit = {};
-records($2).forEach(fun(b) {
+records(doc.input('Budget', budget)).forEach(fun(b) {
     budgetUnit.set(b.Code, b.Unit);
 });
 
-let out = [['Row', 'Field', 'Value', 'Problem']];
+let rows = [['Row', 'Field', 'Value', 'Problem']];
 let report = fun(r, field, problem) {
-    out.push([r._row, field, r.get(field), problem]);
+    let v = r.get(field);
+    if (field == 'Date' && typeof v == 'number') { v = dateText(v); };
+    rows.push([r._row, field, v, problem]);
 };
 
-records($1).forEach(fun(r) {
-    // dates arrive as serial numbers in both suites: day 1 of the week is Sunday
+let reports = records(doc.input('WorkReports', workReports));
+reports.forEach(fun(r) {
+    // dates are serial numbers in both suites: day 1 of the week is Sunday
     if (typeof r.Date != 'number') {
         report(r, 'Date', 'not a date');
     } elseif (r.Date % 7 == 1) {
         report(r, 'Date', 'Sunday: needs an overtime authorisation');
     };
 
-    if (!codeFormat.test(r.Code)) {
+    if (!codeFormat.test(`${r.Code}`)) {
         report(r, 'Code', 'expected two capital letters and four digits');
     } elseif (!budgetUnit.has(r.Code)) {
         report(r, 'Code', 'not in the budget');
@@ -50,4 +55,12 @@ records($1).forEach(fun(r) {
         report(r, 'Crew', 'missing');
     };
 });
-return out;
+
+let out = doc.report('Work report checks', `${reports.length} reports, ${rows.length - 1} problems`);
+out.section('Problems');
+if (rows.length == 1) {
+    out.line('Every report is correct.');
+} else {
+    out.table(rows);
+};
+return out.done();

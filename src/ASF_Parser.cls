@@ -324,7 +324,8 @@ Tokenize_CollapseLoop:
     Do While idx <= toks.Count
         If idx > toks.Count Then Exit Do ' FIX: Bounds
         tk = toks(idx)
-        If tk(0) = "IDENT" And idx + 3 <= toks.Count Then
+        ' not after a keyword: return [3] is an array literal, not the element 3 of "return"
+        If tk(0) = "IDENT" And idx + 3 <= toks.Count And Not IsKeywordBeforeValue(tk(1)) Then
             If toks(idx + 1)(0) = "PAREN" And toks(idx + 1)(1) = "[" And toks(idx + 2)(0) = "NUMBER" And toks(idx + 3)(0) = "PAREN" And toks(idx + 3)(1) = "]" Then
                 out.Add Array("IDENT", tk(1) & "[" & toks(idx + 2)(1) & "]")
                 idx = idx + 4
@@ -336,6 +337,14 @@ Tokenize_CollapseLoop:
     Loop
 
     Set Tokenize = out
+End Function
+
+' Keywords an expression (so an array literal) can follow
+Private Function IsKeywordBeforeValue(ByVal word As String) As Boolean
+    Select Case LCase$(word)
+        Case "return", "typeof", "throw", "case", "in", "of", "else", "delete", "void", "instanceof"
+            IsKeywordBeforeValue = True
+    End Select
 End Function
 
 
