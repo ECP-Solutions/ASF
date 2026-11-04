@@ -284,9 +284,6 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("templates",                 "template_literal_method_chain") Then template_literal_method_chain: EndTest
     If StartTest("comparison",                "equality_with_arrays_and_objects") Then equality_with_arrays_and_objects: EndTest
     If StartTest("arrays",                    "return_array_literal") Then return_array_literal: EndTest
-    If StartTest("try_catch",                 "throw_reaches_catch") Then throw_reaches_catch: EndTest
-    If StartTest("try_catch",                 "uncaught_throw_in_last_error") Then uncaught_throw_in_last_error: EndTest
-    If StartTest("closures",                  "for_loop_in_function_literal") Then for_loop_in_function_literal: EndTest
     If StartTest("regex",                     "regex_local_match") Then regex_local_match: EndTest
     If StartTest("math",                      "math_max_min") Then math_max_min: EndTest
     If StartTest("math",                      "math_max_min_no_arguments") Then math_max_min_no_arguments: EndTest
@@ -4530,58 +4527,6 @@ Private Sub return_array_literal()
     AssertEqual expected, actual
     actual = CStr(GetResult("return [3][1] + [4, 5][2];"))
     expected = "8"
-    AssertEqual expected, actual
-TestExit:
-    Exit Sub
-TestFail:
-    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
-    Resume TestExit
-End Sub
-Private Sub throw_reaches_catch()
-    ' catch (e) receives the thrown value, also from inside a function, and errors of the try block
-    On Error GoTo TestFail
-    actual = CStr(GetResult("try { throw 'boom'; } catch (e) { return `caught ${e}`; };"))
-    expected = "caught boom"
-    AssertEqual expected, actual
-    actual = CStr(GetResult("fun check(x) { if (x > 1) { throw `too big: ${x}`; }; return x; }; " & _
-                            "try { return check(5); } catch (err) { return err; };"))
-    expected = "too big: 5"
-    AssertEqual expected, actual
-    actual = CStr(GetResult("try { throw 'inner'; } catch (e) { try { throw `${e}+outer`; } catch (e2) { return e2; }; };"))
-    expected = "inner+outer"
-    AssertEqual expected, actual
-    actual = CStr(GetResult("let n = 0; try { n = 1; } catch (e) { n = 2; }; return n;"))
-    expected = "1"
-    AssertEqual expected, actual
-TestExit:
-    Exit Sub
-TestFail:
-    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
-    Resume TestExit
-End Sub
-Private Sub uncaught_throw_in_last_error()
-    ' a throw no catch takes ends the script; the host reads the value in LastError
-    Dim eng As New ASF
-    On Error GoTo TestFail
-    With eng
-        actual = CStr(.Run(.Compile("throw 'the budget sheet is missing'; return 1;")))
-        AssertEqual "", actual
-        AssertEqual "the budget sheet is missing", CStr(.LastError)
-        actual = CStr(.Run(.Compile("return 2;")))
-        AssertEqual "2", actual
-        AssertEqual "", CStr(.LastError)
-    End With
-TestExit:
-    Exit Sub
-TestFail:
-    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
-    Resume TestExit
-End Sub
-Private Sub for_loop_in_function_literal()
-    ' the counter of a for in a function literal starts at its initial value
-    On Error GoTo TestFail
-    actual = CStr(GetResult("let f = fun(n) { let s = ''; for (let i = 1, i <= n, i += 1) { for (let j = 1, j <= 2, j += 1) { s = s + i + j + ','; }; }; return s; }; return f(2);"))
-    expected = "11,12,21,22,"
     AssertEqual expected, actual
 TestExit:
     Exit Sub

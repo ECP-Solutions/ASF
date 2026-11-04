@@ -6,19 +6,13 @@ All notable changes for ASF. This file combines the release notes from the proje
 
 ## Highlights
 
-- **Added**
-    - **Portable examples** — `examples/portable/` holds six ASF scripts that run unchanged in Excel, Word, PowerPoint, LibreOffice Calc, Writer and Impress: a first example and five for construction site management (a budget summary by chapter, checks of daily work reports against the budget, a monthly progress certificate, a polynomial price revision and the normalisation of item lists with regular expressions). Each script passes the open document to `scripts/lib/office.vas`, which finds out the application and gives the six the same API: a report is a new sheet in a spreadsheet, headings, paragraphs and a table in a text document, and slides in a presentation; spreadsheets supply the input tables, the other applications a sample project (`scripts/data/project.vas`). One host module per suite (`hosts/OfficeHost.bas` for the three Microsoft applications, `hosts/LibreOfficeHost.bas` for the three LibreOffice ones) only runs the scripts. `tools/run_lo.py` runs every script in Calc, Writer and Impress, compares what it wrote with `expected/`, and builds `portable-examples.ods`, `.odt`, `.odp` and `.xlsx`. The scripts use the fixes below, so they need ASF 3.3.2; `ASF.oxt` is version 3.3.2.
-    - **`throw` and the catch variable** — `throw expr` raises `expr`, which `catch (e)` binds to `e`; `catch (e)` also binds the message of a runtime error. A `throw` that no `catch` handles ends the script, and `ASF.LastError` holds its value (or the last runtime error), so a host can tell why a script returned nothing.
-
 - **Fixed**
     - **`Math` in exported functions** — a function exported by a module and called from another script could not use `Math` (`Math.floor(x)` returned nothing): a module's scope now has `Math`, as the program's does.
     - **Methods on template literals** — `` `${x}`.trim() `` ignored the call and returned the template; members and calls now chain on a template as on any string.
     - **`==` and `!=` with arrays and objects** — comparing an array or an object with anything (`m == null`, `o == p`) raised a type mismatch, which ended the function or script without a value; `!=` with `null` raised too. They now never raise: objects are equal when they are the same object, arrays when they have the same items, and values VBA cannot compare (an array and a number, `'a'` and `1`) are not equal. Two numbers are still compared directly, so loops pay nothing for it.
-    - **`for` in a function literal** — in a function written as a value (`let f = fun() { for (let i = 1, ...) ... }`), the initializer of a `for` was read as the comparison `i == 1`: the counter started empty and the loop did not run as written. Function literals are now normalised as named functions are.
-    - **Arrays to UNO methods (LibreOffice)** — passing an ASF array to a UNO method or property (`range.setDataArray(rows)`, `table.setDataArray(rows)`) failed: arrays now reach UNO as nested sequences from 0, converted to the type the member declares (`[][]any` even when every cell is a string).
     - **`return [x]`** — a one-item array literal after `return` (and after `typeof`, `throw`, `case`, `in`, `of`, `else`, `delete`, `void` and `instanceof`) was read as an index on a variable named like the keyword, so `return [3];` and `return [3].length;` returned nothing.
 
-- **Test coverage**: `module_system_math_in_exported_function` (with `test/math_module.vas`), `template_literal_method_chain`, `equality_with_arrays_and_objects`, `return_array_literal`, `throw_reaches_catch`, `uncaught_throw_in_last_error` and `for_loop_in_function_literal` in `test/TestRunner.bas`.
+- **Test coverage**: `module_system_math_in_exported_function` (with `test/math_module.vas`), `template_literal_method_chain`, `equality_with_arrays_and_objects` and `return_array_literal` in `test/TestRunner.bas`.
 
 ## [v3.3.1] - 2026-11-02
 https://github.com/ECP-Solutions/ASF/releases/tag/v3.3.1

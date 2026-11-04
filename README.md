@@ -32,8 +32,6 @@ VS Code Integration|![ASF-code](/docs/assets/img/ASF.gif)
 
 ASF also runs on LibreOffice as the `ASF.oxt` extension, generated from the same sources. Installation, usage and differences: [libreoffice/README.md](libreoffice/README.md).
 
-The same `.vas` scripts run in the whole of both suites: the six of [examples/portable](examples/portable/README.md) write a sheet in Excel or Calc, a document in Word or Writer and slides in PowerPoint or Impress, through one small host per suite.
-
 ```vb
 GlobalScope.BasicLibraries.LoadLibrary "ASF"
 Dim engine As Object: Set engine = ASF.LOhelper.NewASF()
