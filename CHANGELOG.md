@@ -2,7 +2,7 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
-## [Unreleased]
+## [v3.4.0] - 2026-11-05
 
 ## Highlights
 
