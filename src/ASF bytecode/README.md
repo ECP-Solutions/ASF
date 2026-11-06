@@ -24,7 +24,9 @@ Debug.Print engine.OUTPUT_, engine.Backend   ' 5050  bytecode
 ```
 
 A program that uses something the bytecode compiler does not take yet runs whole on the tree VM;
-`engine.Backend` says which one ran it and `engine.FallbackReason` why. The LibreOffice extension
+`engine.Backend` says which one ran it and `engine.FallbackReason` why. With the argument
+`ASF_FASTVM_DEFAULT = 1` as well (`ASF_BYTECODE = 1 : ASF_FASTVM_DEFAULT = 1`), every engine starts
+with `FastVM` on, which runs a whole test suite on the bytecode backend. The LibreOffice extension
 (`ASF.oxt`) includes both backends.
 
 ## Architecture
@@ -96,23 +98,31 @@ constructors and the callbacks of built-in methods keep it to themselves (they r
 
 ### Classes
 
-Instances, bound methods and class values have the tree VM's layout (`type: 'Instance'`,
-`BoundMethod`, `Class`), so printing, `typeof` and `for-in` give the same results. The constructor
-of each class is compiled with the field defaults and the method bindings of `InstantiateClass`
-(the parent's fields and methods first); methods are compiled functions found from their
-declaration. `super(...)` calls the constructor of the parent of the class it is written in; the
+Instances keep the tree VM's layout (`type: 'Instance'`, `className`, the fields, a bound method per
+method), so `typeof`, `for-in` and the properties give the same results. Classes and methods are
+descriptors, not code: a class is `{type: 'Class', name, fields, classMethods, constructor,
+superClass}` with the names of its fields, a method `{type: 'Method', name, params, isStatic, fn}`
+and a bound method `{type: 'BoundMethod', name, fn, instance}`, where `fn` is the number of the
+compiled function. Printing an instance shows its methods that way, without their code. The
+constructor of each class is compiled with the field defaults and the method bindings of
+`InstantiateClass` (the parent's fields and methods first). `super(...)` calls the constructor of the parent of the class it is written in; the
 tree VM looks the parent up from the class of the instance, which recurses with three levels.
 
 ### Modules and the host
 
-What belongs to the host runs on the tree VM, called from the bytecode:
+- **Modules** compile to bytecode and run once per engine, as in the tree VM. Each program has its own
+  range of global slots, so a module's functions read the module's globals wherever they are called
+  from. The globals of modules, their classes and the cells made while loading them stay across
+  runs, until `ClearModuleCache`. `export` keeps a value in the module being loaded, `import` binds
+  it; an exported prototype goes live on every import.
+- **`prototype.COM...`** functions compile to bytecode; the tree VM's registry keeps the function,
+  and a method call or a property read on a host object of that type runs it.
+- **Methods of values** (arrays, strings, objects, collections, Math, regex, host objects) that the
+  bytecode VM does not run itself go to the method library of `ASF_VM`, which takes the receiver and
+  the arguments as values: no AST is built for them. `OverrideCollMethods` applies there.
+- **`@(...)`** is evaluated by VBA Expressions with the variables in scope that the expression names.
 
-- `import` loads and runs the module there (modules are shared with the tree VM's cache); the
-  values it binds go to the program's variables. Functions and classes of a module are called
-  through the tree VM.
-- `prototype.COM...` registers the method in the tree VM; method calls and property reads on host
-  objects go there, so prototypes and `OverrideCollMethods` apply as before.
-- `@(...)` is evaluated by VBA Expressions with the variables in scope that the expression names.
+No AST is used while a program runs: the constant table holds values and descriptors only.
 
 With `EnableCallTrace` a program runs on the tree VM, so that the trace shows its calls.
 
@@ -142,7 +152,7 @@ Found by the differential tests; the bytecode VM gives the first result:
 - `super(...)` is the parent of the class it is written in; the tree VM takes the parent of the
   instance's class, so with three levels it calls the same constructor until the stack runs out.
 - `o.inc().inc()` runs the first `inc()` once; the tree VM runs it twice.
-- `` `${null}` `` is an empty text; the tree VM stops with a type mismatch.
+- `` `${null}` `` is the text `null`, as in JavaScript; the tree VM stops with a type mismatch.
 
 Kept as in the tree VM: `super.m()` gives `undefined`, and on LibreOffice `b = a; b[1] = 9`
 changes `a` too, as LibreOffice Basic shares arrays between variables.

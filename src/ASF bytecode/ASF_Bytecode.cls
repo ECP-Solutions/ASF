@@ -295,22 +295,21 @@ Public Function Disassemble(ByVal idx As Long) As String
               " captures " & fnCapCount_(fn) & vbLf
     Next fn
     For i = 1 To nK_
-        If IsObject(k_(i)) Then
-            out = out & "k" & i & " = " & TypeName(k_(i)) & vbLf
-        Else
-            out = out & "k" & i & " = " & TypeName(k_(i)) & " " & CStr(k_(i)) & vbLf
-        End If
+        out = out & "k" & i & " = " & TypeName(k_(i)) & ConstantText(k_(i)) & vbLf
     Next i
     For i = 1 To nOp_
         out = out & i & vbTab & names(op_(i) - 1) & " " & a_(i) & " " & b_(i)
         Select Case op_(i)
             Case OP_PUSHK, OP_ADDK, OP_GETPROP, OP_SETPROPV, OP_CALLM, OP_CALLMW, OP_CALLMV, OP_CALLMWV, OP_CALLB, OP_CALLBV
-                k = k_(a_(i))
-                out = out & "  ; " & TypeName(k) & " " & CStr(k)
+                out = out & "  ; " & TypeName(k_(a_(i))) & ConstantText(k_(a_(i)))
         End Select
         out = out & vbLf
     Next i
     Disassemble = out
+End Function
+
+Private Function ConstantText(ByRef k As Variant) As String
+    If Not IsObject(k) And Not IsNull(k) Then ConstantText = " " & CStr(k)
 End Function
 
 ' ---------------------------------------------------------------- compiling a program

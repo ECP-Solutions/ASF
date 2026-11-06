@@ -156,6 +156,10 @@ Private Sub RunIndex(idx As Long, params As Variant)
     End If
 End Sub
 Private Sub INIT_()
+#If ASF_FASTVM_DEFAULT Then
+    ' every engine starts on the bytecode backend (with ASF_BYTECODE = 1)
+    FASTVM_ON_ = True
+#End If
     Set GLOBALS_ = New ASF_Globals
     GLOBALS_.ASF_InitGlobals
     Set Compiler_ = New ASF_Compiler

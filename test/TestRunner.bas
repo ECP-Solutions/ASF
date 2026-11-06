@@ -92,6 +92,7 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("flatten",                   "flatten_full") Then flatten_full: EndTest
     If StartTest("flatten",                   "flatten_depth_one") Then flatten_depth_one: EndTest
     If StartTest("clone",                     "clone_array") Then clone_array: EndTest
+    If StartTest("clone",                     "flatten_clone_evaluate_argument_once") Then flatten_clone_evaluate_argument_once: EndTest
     If StartTest("filter",                    "filter_reduce_chain") Then filter_reduce_chain: EndTest
     If StartTest("foreach",                   "foreach_method_updates_outer") Then foreach_method_updates_outer: EndTest
     If StartTest("variables",                 "variables_injection") Then variables_injection: EndTest
@@ -1437,6 +1438,18 @@ TestFail:
     Resume TestExit
 End Sub
 
+Private Sub flatten_clone_evaluate_argument_once()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("let n = 0; fun f() { n = n + 1; return [[1], [2]]; }; " & _
+                            "let r = flatten(f()); let c = clone(f()); return `${n}|${r}|${c}`;"))
+    expected = "2|[ 1, 2 ]|[ [ 1 ], [ 2 ] ]"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
 Private Sub clone_array()
     On Error GoTo TestFail
     Dim Globals As ASF_Globals
