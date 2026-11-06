@@ -16,6 +16,8 @@ All notable changes for ASF. This file combines the release notes from the proje
 - **Fixed**
     - **`flatten()` and `clone()` evaluated their argument twice** — a call with side effects in the argument (`flatten(next())`) ran twice; they use the evaluated argument now.
     - **`ASF_Bytecode.Disassemble` with `null`** — a program with the constant `null` raised *Invalid use of Null* instead of listing its code.
+
+- **Test coverage**: `flatten_clone_evaluate_argument_once` in `test/TestRunner.bas`.
 	
 ## [v3.4.0] - 2026-11-05
 https://github.com/ECP-Solutions/ASF/releases/tag/v3.4.0
