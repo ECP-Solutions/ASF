@@ -228,6 +228,14 @@ End Sub
 - **Memory Management:** Automatic garbage collection for ASF objects
 - **Error Handling:** Contained exceptions with full stack traces
 
+### Bytecode Backend (optional)
+
+`src/ASF bytecode/` adds a second backend: the same language and compiler front end, compiled to
+flat bytecode and run in a single dispatch loop, from 2 to 40 times faster than the tree VM (about
+10 times on typical scripts). Import its two classes, set the conditional compilation argument
+`ASF_BYTECODE = 1` and turn it on per engine with `engine.FastVM = True`; `engine.Backend` tells
+which VM ran a program. See [src/ASF bytecode/README.md](src/ASF%20bytecode/README.md).
+
 ## When to Use ASF
 
 ### ✅ Optimal Use Cases

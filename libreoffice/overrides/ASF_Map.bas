@@ -78,6 +78,24 @@ Public Function TryGetValue(key As String, ByRef value As Variant) As Boolean
         TryGetValue = True
     End If
 End Function
+Public Function GetHinted(key As String, ByRef hint As Long, ByRef value As Variant) As Boolean
+    Dim i As Long
+    If hint >= 0 And hint <= kIdx Then
+        If kSt(hint) = key Then
+            If IsObject(vSt(hint)) Then Set value = vSt(hint) Else value = vSt(hint)
+            GetHinted = True
+            Exit Function
+        End If
+    End If
+    For i = 0 To kIdx
+        If kSt(i) = key Then
+            If IsObject(vSt(i)) Then Set value = vSt(i) Else value = vSt(i)
+            hint = i
+            GetHinted = True
+            Exit Function
+        End If
+    Next i
+End Function
 Public Sub Remove(key As String)
     Dim index As Long: index = GetKeyIndex(key)
     If index > -1 Then

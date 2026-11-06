@@ -13,6 +13,30 @@ Private Compiler_ As ASF_Compiler
 Private VM_ As ASF_VM
 Private OUTPUT__ As Variant
 Private EVALUATOR_ As VBAexpressions
+' the bytecode backend (src/ASF bytecode) is compiled only with the argument ASF_BYTECODE = 1
+Private FASTVM_ON_ As Boolean
+Private BACKEND_ As String
+Private FALLBACK_ As String
+#If ASF_BYTECODE Then
+Private BC_ As ASF_Bytecode
+Private FVM_ As ASF_FastVM
+#End If
+
+' True runs programs on the bytecode backend when it takes them, and on the tree VM otherwise
+Public Property Get FastVM() As Boolean
+    FastVM = FASTVM_ON_
+End Property
+Public Property Let FastVM(aValue As Boolean)
+    FASTVM_ON_ = aValue
+End Property
+' The backend that ran the last program: "bytecode" or "tree"
+Public Property Get Backend() As String
+    Backend = BACKEND_
+End Property
+' Why the last program ran on the tree VM with FastVM on
+Public Property Get FallbackReason() As String
+    FallbackReason = FALLBACK_
+End Property
 
 Public Property Get verbose() As Boolean
     verbose = VM_.verbose
@@ -85,6 +109,52 @@ End Function
 Public Sub InjectVariable(varName As String, VarValue As Variant)
     VM_.InjectVariable varName, VarValue
 End Sub
+#If ASF_BYTECODE Then
+' Runs program idx on the bytecode backend; False when the compiler does not take it
+Private Function RunFast(idx As Long, params As Variant) As Boolean
+    If BC_ Is Nothing Then
+        Set BC_ = New ASF_Bytecode
+        BC_.SetGlobals GLOBALS_
+        Set FVM_ = New ASF_FastVM
+        FVM_.SetHost GLOBALS_, VM_, BC_
+    End If
+    If VM_.EnableCallTrace Then
+        FALLBACK_ = "call trace"
+        Exit Function
+    End If
+    If Not BC_.Prepare(idx) Then
+        FALLBACK_ = BC_.Reason
+        Exit Function
+    End If
+    FVM_.Run idx, params
+    vAssignment OUTPUT__, FVM_.OUTPUT_
+    BACKEND_ = "bytecode"
+    RunFast = True
+End Function
+#End If
+' Runs program idx on the backend that takes it
+Private Sub RunIndex(idx As Long, params As Variant)
+    FALLBACK_ = vbNullString
+    Dim done As Boolean
+#If ASF_BYTECODE Then
+    If FASTVM_ON_ Then done = RunFast(idx, params)
+#Else
+    If FASTVM_ON_ Then FALLBACK_ = "the bytecode backend is not compiled in (ASF_BYTECODE)"
+#End If
+    If Not done Then
+        BACKEND_ = "tree"
+        Set VM_.Globals = GLOBALS_
+        VM_.RunProgramByIndex idx, params
+        vAssignment OUTPUT__, VM_.OUTPUT_
+    End If
+    If VM_.verbose Then
+        Debug.Print "=== Runtime Log ==="
+        Dim elm As Variant
+        For Each elm In GLOBALS_.gRuntimeLog
+            Debug.Print elm
+        Next elm
+    End If
+End Sub
 Private Sub INIT_()
     Set GLOBALS_ = New ASF_Globals
     GLOBALS_.ASF_InitGlobals
@@ -99,6 +169,12 @@ Private Sub INIT_()
 End Sub
 ' The value of the last throw that no catch took, or the message of the last error, of the last Run
 Public Property Get LastError() As Variant
+#If ASF_BYTECODE Then
+    If BACKEND_ = "bytecode" Then
+        vAssignment LastError, FVM_.LastError
+        Exit Property
+    End If
+#End If
     vAssignment LastError, VM_.LastError
 End Property
 Public Property Get OUTPUT_() As Variant
@@ -106,24 +182,10 @@ Public Property Get OUTPUT_() As Variant
 End Property
 Public Function Execute(scriptPath As String, ParamArray params() As Variant) As Variant
     If Not GLOBALS_ Is Nothing Then
-        With VM_
-            Set .Globals = GLOBALS_
-            If Not IsMissing(params) Then
-                Dim params_ As Variant: params_ = params
-                .RunProgramByIndex Compile(ReadTextFile(scriptPath)), params_
-            Else
-                .RunProgramByIndex Compile(ReadTextFile(scriptPath))
-            End If
-            vAssignment OUTPUT__, .OUTPUT_
-            vAssignment Execute, .OUTPUT_
-                If .verbose Then
-                    Debug.Print "=== Runtime Log ==="
-                    Dim elm As Variant
-                    For Each elm In GLOBALS_.gRuntimeLog
-                        Debug.Print elm
-                    Next elm
-                End If
-        End With
+        Dim params_ As Variant
+        If Not IsMissing(params) Then params_ = params
+        RunIndex Compile(ReadTextFile(scriptPath)), params_
+        vAssignment Execute, OUTPUT__
     End If
 End Function
 Public Function Eval(Optional strValues As String) As String
@@ -133,24 +195,10 @@ Public Function Eval(Optional strValues As String) As String
 End Function
 Public Function Run(idx As Long, ParamArray params() As Variant) As Variant
     If Not GLOBALS_ Is Nothing Then
-        With VM_
-            Set .Globals = GLOBALS_
-            If Not IsMissing(params) Then
-                Dim params_ As Variant: params_ = params
-                .RunProgramByIndex idx, params_
-            Else
-                .RunProgramByIndex idx
-            End If
-            vAssignment OUTPUT__, .OUTPUT_
-            vAssignment Run, .OUTPUT_
-                If .verbose Then
-                    Debug.Print "=== Runtime Log ==="
-                    Dim elm As Variant
-                    For Each elm In GLOBALS_.gRuntimeLog
-                        Debug.Print elm
-                    Next elm
-                End If
-        End With
+        Dim params_ As Variant
+        If Not IsMissing(params) Then params_ = params
+        RunIndex idx, params_
+        vAssignment Run, OUTPUT__
     End If
 End Function
 Private Sub vAssignment(ByRef var As Variant, ByRef vValue As Variant)

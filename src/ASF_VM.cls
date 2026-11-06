@@ -22,6 +22,10 @@ Private LAST_ERROR_ As Variant
 Private THROWING_ As Boolean
 Private Const THROW_ERROR_ As Long = -2147214503 ' vbObjectError + 7001
 Private INJECTED_VARIABLES_ As Collection
+Private BRIDGE_SCOPE_ As ASF_ScopeStack
+Private FAST_HOST_ As Object            ' the bytecode VM while it runs: it runs its own closures
+Private BRIDGE_WROTE_ As Boolean        ' a method called through CallMemberOn wrote its receiver back
+Private BRIDGE_WRITTEN_ As Variant
 Private ENABLE_CALL_TRACE_ As Boolean
 Private CAST_INJECTED_VARIABLES_ As Boolean
 Private APPLICATION_ACCESS_ As Boolean
@@ -431,6 +435,172 @@ Private Function MakeNode(nodeType As String) As ASF_Map
     m.Add "type", nodeType
     Set MakeNode = m
 End Function
+
+' ---------------------------------------------------------------- services for the bytecode backend
+' ASF_FastVM (src/ASF bytecode) prints, names types and takes host values as this VM does
+Public Function FormatValue(v As Variant) As String
+    FormatValue = ValueToStringForPrint(v)
+End Function
+Public Function TypeOfValue(v As Variant) As String
+    TypeOfValue = builtin_typeof(v)
+End Function
+' What RunProgramByIndex makes of a host parameter before binding it to $1, $2...
+Public Function PrepareParam(v As Variant) As Variant
+    If CAST_INJECTED_VARIABLES_ And Not APPLICATION_ACCESS_ Then
+        vAssignment PrepareParam, CastInjectedVar(v)
+    ElseIf IsArray(v) And Not IsObject(v) Then
+        PrepareParam = ArrayToASF2(v)
+    Else
+        vAssignment PrepareParam, v
+    End If
+End Function
+' base.prop as this VM reads it: members of strings, arrays, collections and host objects
+Public Function MemberOf(ByRef target As Variant, ByVal prop As String) As Variant
+    Dim node As ASF_Map: Set node = MakeNode("Member")
+    Dim lit As ASF_Map: Set lit = MakeNode("Literal")
+    lit.SetValue "value", target
+    node.SetValue "base", lit
+    node.SetValue "prop", prop
+    vAssignment MemberOf, EvalMemberNode(node, BridgeScope())
+End Function
+' base.prop = value on a value that is not an ASF object: a host object's property
+Public Sub SetMemberOf(ByRef target As Variant, ByVal prop As String, ByRef value As Variant)
+    If IsMapValue(target) Then
+        Dim m As ASF_Map: Set m = target
+        m.SetValue prop, value
+    Else
+        SetObjectProperty target, prop, value
+    End If
+End Sub
+Private Function BridgeScope() As ASF_ScopeStack
+    If BRIDGE_SCOPE_ Is Nothing Then
+        Set BRIDGE_SCOPE_ = New ASF_ScopeStack
+        BRIDGE_SCOPE_.SetValue "__option_base", 1
+        If MathObj Is Nothing Then Set MathObj = New Collection
+        BRIDGE_SCOPE_.SetValue "Math", MathObj
+    End If
+    Set BridgeScope = BRIDGE_SCOPE_
+End Function
+' receiver.name(args...) as this VM calls it (methods of arrays, strings, objects, Math, regex and host
+' objects); wrote and written give the array a mutating method (push, sort...) writes back
+Public Function CallMemberOn(ByRef target As Variant, ByVal name As String, ByRef args As Variant, _
+                             ByRef wrote As Boolean, ByRef written As Variant) As Variant
+    Dim lit As ASF_Map: Set lit = MakeNode("Literal")
+    lit.SetValue "value", target
+    lit.SetValue "bridge", True
+    If IsObject(target) Then
+        If target Is MathObj Then lit.SetValue "name", "Math"
+    End If
+    Dim mem As ASF_Map: Set mem = MakeNode("Member")
+    mem.SetValue "base", lit
+    mem.SetValue "prop", name
+    Dim callNode As ASF_Map: Set callNode = MakeNode("Call")
+    callNode.SetValue "callee", mem
+    callNode.SetValue "args", LiteralArgs(args)
+    Dim prevWrote As Boolean, prevWritten As Variant
+    prevWrote = BRIDGE_WROTE_
+    vAssignment prevWritten, BRIDGE_WRITTEN_
+    BRIDGE_WROTE_ = False
+    vAssignment CallMemberOn, EvalCall(callNode, BridgeScope())
+    wrote = BRIDGE_WROTE_
+    If wrote Then vAssignment written, BRIDGE_WRITTEN_
+    BRIDGE_WROTE_ = prevWrote
+    vAssignment BRIDGE_WRITTEN_, prevWritten
+End Function
+' A built-in function (range, flatten, clone, isArray, isNumeric, forEach, regex, cwd, scwd)
+Public Function CallBuiltin(ByVal name As String, ByRef args As Variant) As Variant
+    Dim callee As ASF_Map: Set callee = MakeNode("Variable")
+    callee.SetValue "name", name
+    Dim callNode As ASF_Map: Set callNode = MakeNode("Call")
+    callNode.SetValue "callee", callee
+    callNode.SetValue "args", LiteralArgs(args)
+    vAssignment CallBuiltin, EvalCall(callNode, BridgeScope())
+End Function
+Private Function LiteralArgs(ByRef args As Variant) As Collection
+    Dim out As Collection: Set out = New Collection
+    Dim i As Long, lit As ASF_Map
+    If IsArray(args) Then
+        If UBound(args) >= LBound(args) Then
+            For i = LBound(args) To UBound(args)
+                Set lit = MakeNode("Literal")
+                lit.SetValue "value", args(i)
+                out.Add lit
+            Next i
+        End If
+    End If
+    Set LiteralArgs = out
+End Function
+' The Math object of this VM, shared with the bytecode VM so that members of Math resolve alike
+Public Property Get MathObject() As Collection
+    If MathObj Is Nothing Then Set MathObj = New Collection
+    Set MathObject = MathObj
+End Property
+' The bytecode VM sets itself here while it runs, and Nothing after: closures it made run there
+Public Sub SetFastHost(host As Object)
+    Set FAST_HOST_ = host
+End Sub
+' A statement the tree VM runs for the bytecode VM: prototype, export
+Public Sub RunBridgedStatement(ByVal node As ASF_Map)
+    ExecuteStmtNode node, BridgeScope()
+End Sub
+' import ... from '...' for the bytecode VM: the values it binds to names, in that order
+Public Function ImportValues(ByVal node As ASF_Map, ByVal names As Variant) As Variant
+    Dim scope As ASF_ScopeStack: Set scope = New ASF_ScopeStack
+    scope.SetValue "__option_base", 1
+    ExecModImport node, scope
+    If UBound(names) < LBound(names) Then
+        ImportValues = Array()
+        Exit Function
+    End If
+    Dim out() As Variant, i As Long
+    ReDim out(LBound(names) To UBound(names))
+    For i = LBound(names) To UBound(names)
+        vAssignment out(i), scope.GetValue(CStr(names(i)))
+    Next i
+    ImportValues = out
+End Function
+' @(expr) for the bytecode VM, which gives the variables it can see (later names win)
+Public Function VBAExpression(ByVal expr As String, ByVal names As Variant, ByVal values As Variant) As Variant
+    Dim scope As ASF_ScopeStack: Set scope = New ASF_ScopeStack
+    Dim elm As Variant, i As Long
+    If Not INJECTED_VARIABLES_ Is Nothing Then
+        For Each elm In INJECTED_VARIABLES_
+            scope.SetValue CStr(elm(LBound(elm))), elm(UBound(elm))
+        Next elm
+    End If
+    For i = LBound(names) To UBound(names)
+        scope.SetValue CStr(names(i)), values(i)
+    Next i
+    vAssignment VBAExpression, EvalVBExpressionWithScope(expr, scope)
+End Function
+' callee(args) for a function value the bytecode VM did not make: the closures, classes and
+' methods of modules; anything else gives undefined
+Public Function CallValue(ByVal callee As Variant, ByVal args As Variant, ByVal hasThis As Boolean, ByVal thisVal As Variant) As Variant
+    If Not IsMapValue(callee) Then Exit Function
+    Dim m As ASF_Map: Set m = callee
+    Dim kind As Variant
+    If Not m.TryGetValue("type", kind) Then Exit Function
+    Dim coll As Collection: Set coll = New Collection
+    Dim i As Long
+    For i = LBound(args) To UBound(args)
+        coll.Add args(i)
+    Next i
+    Select Case kind
+        Case "Closure"
+            If hasThis Then
+                vAssignment CallValue, CallClosure(m, coll, thisVal)
+            Else
+                vAssignment CallValue, CallClosure(m, coll)
+            End If
+        Case "Class": vAssignment CallValue, InstantiateClass(m, coll, BridgeScope())
+        Case "BoundMethod": vAssignment CallValue, ExecuteBoundMethod(m.GetValue("method"), m.GetValue("instance"), coll, BridgeScope())
+        Case "Method": vAssignment CallValue, ExecuteClassMethod(m, coll, BridgeScope())
+    End Select
+End Function
+' Variables given with InjectVariable, as Array(name, value) items
+Public Property Get InjectedVariables() As Collection
+    Set InjectedVariables = INJECTED_VARIABLES_
+End Property
 
 Public Sub RunProgramByIndex(idx As Long, Optional params As Variant = Empty)
     If idx < 1 Or idx > GLOBALS_.gPrograms.Count Then Exit Sub
@@ -5453,6 +5623,19 @@ Private Function CallClosure(ByVal closureMap As ASF_Map, ByVal evaluatedArgs As
     Else
         traceName = "<anonymous>"
     End If
+    If Not FAST_HOST_ Is Nothing Then
+        ' a closure of the bytecode VM: a function number and an environment instead of a body
+        If Not closureMap.Exists("body") Then
+            If closureMap.Exists("fn") Then
+                If IsMissing(thisVal) Then
+                    vAssignment CallClosure, FAST_HOST_.CallFromTree(closureMap, evaluatedArgs, False, Empty)
+                Else
+                    vAssignment CallClosure, FAST_HOST_.CallFromTree(closureMap, evaluatedArgs, True, thisVal)
+                End If
+                Exit Function
+            End If
+        End If
+    End If
     Dim restParamName As String
     If closureMap.Exists("restParam") Then restParamName = closureMap.GetValue("restParam")
     Dim env As ASF_ScopeStack
@@ -6743,6 +6926,15 @@ Private Sub WriteToContainer(ByRef calleeExpr As ASF_Map, ByRef progScope As ASF
     Dim rp As ASF_Map
     Dim cont As Variant
     Dim propKey As String
+    Dim bridged As ASF_Map: Set bridged = calleeExpr.GetValue("base")
+    If Not bridged Is Nothing Then
+        If bridged.Exists("bridge") Then
+            ' a call of CallMemberOn: the caller writes the receiver back
+            vAssignment BRIDGE_WRITTEN_, tValue
+            BRIDGE_WROTE_ = True
+            Exit Sub
+        End If
+    End If
     
     Set rp = ResolvePath(calleeExpr.GetValue("base"), progScope, True)
     If rp.Exists("kind") Then

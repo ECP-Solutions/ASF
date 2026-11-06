@@ -112,6 +112,27 @@ Public Function TryGetValue(key As String, ByRef value As Variant) As Boolean
     Next i
 End Function
 
+' TryGetValue that tries position hint first and leaves there the position it found the key at:
+' the inline cache of the bytecode VM, one comparison when the object has the same shape
+Public Function GetHinted(key As String, ByRef hint As Long, ByRef value As Variant) As Boolean
+    Dim i As Long
+    If hint >= 0 And hint <= pItems.index Then
+        If pKeys(hint) = key Then
+            If IsObject(pItems.Storage(hint)) Then Set value = pItems.Storage(hint) Else value = pItems.Storage(hint)
+            GetHinted = True
+            Exit Function
+        End If
+    End If
+    For i = 0 To pItems.index
+        If pKeys(i) = key Then
+            If IsObject(pItems.Storage(i)) Then Set value = pItems.Storage(i) Else value = pItems.Storage(i)
+            hint = i
+            GetHinted = True
+            Exit Function
+        End If
+    Next i
+End Function
+
 Public Sub Remove(key As String)
     Dim index As Long
     Dim i As Long

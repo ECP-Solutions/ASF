@@ -32,9 +32,48 @@ VBA_EXPRESSIONS_LIB = "VBAExpressionsLib"
 REGEX_ENGINE = "ASF_RegexEngine"
 
 
+# conditional compilation arguments of the LibreOffice edition: it includes the bytecode backend
+DEFINES = {"ASF_BYTECODE": True}
+BYTECODE_DIR = "ASF bytecode"
+
+
 def load(path):
     with open(path, encoding="latin-1", newline="") as f:
-        return f.read().replace("\r\n", "\n")
+        return resolve_conditionals(f.read().replace("\r\n", "\n"))
+
+
+def resolve_conditionals(s, defines=DEFINES):
+    """#If NAME Then / #ElseIf / #Else / #End If, which LibreOffice Basic does not have, resolved
+    with defines; an undefined name is False, as in VBA"""
+    if "#If" not in s:
+        return s
+    out, stack = [], []          # stack of [taking now, some branch taken]
+    for line in s.split("\n"):
+        t = line.strip()
+        m = re.match(r"#(If|ElseIf)\s+(Not\s+)?(\w+)\s+Then\s*$", t, re.I)
+        if m and m.group(1).lower() == "if":
+            value = bool(defines.get(m.group(3), False)) != bool(m.group(2))
+            stack.append([value, value])
+        elif m:
+            f = stack[-1]
+            value = bool(defines.get(m.group(3), False)) != bool(m.group(2))
+            f[0] = value and not f[1]
+            f[1] = f[1] or value
+        elif re.match(r"#Else\s*$", t, re.I):
+            f = stack[-1]
+            f[0] = not f[1]
+            f[1] = True
+        elif re.match(r"#End\s+If\s*$", t, re.I):
+            stack.pop()
+        elif all(f[0] for f in stack):
+            out.append(line)
+    return "\n".join(out)
+
+
+def src_classes(repo=ROOT):
+    """the classes of src/ and of the bytecode backend"""
+    return (sorted(glob.glob(os.path.join(repo, "src", "*.cls"))) +
+            sorted(glob.glob(os.path.join(repo, "src", BYTECODE_DIR, "*.cls"))))
 
 
 # ---------------------------------------------------------------- text helpers
@@ -281,10 +320,25 @@ def generic(s):
     s = sub_code(r"\bTimer\b", "LOhelper.TimerValue()", s)
     s = re.sub(r"\bvbObjectError\b", "LOhelper.ObjectError()", s)
     s = re.sub(r" _\n\s*", " ", s)
+    s = if_redim_blocks(s)
     s = rewrite_for_each(s)
     s = hoist_dims(s)
     s = default_returns(s)
     return s
+
+
+def if_redim_blocks(s):
+    """After a single-line If ... Then ReDim, LibreOffice loses the next write to an element of the
+    array, even when the condition is false: make it a block"""
+    out = []
+    for ln in s.split("\n"):
+        m = re.match(r"^(\s*)If (.+?) Then (ReDim .+)$", ln)
+        if m and find_code(ln, "'") == -1 and find_code(m.group(3), " Else ") == -1:
+            ind = m.group(1)
+            out += [f"{ind}If {m.group(2)} Then", f"{ind}    {m.group(3)}", f"{ind}End If"]
+        else:
+            out.append(ln)
+    return "\n".join(out)
 
 
 FUNC_SIGNATURE = re.compile(r"^(\s*)(?:Public |Private |Friend )?(?:Static )?(?:Function|Property Get) (\w+)\s*\(.*\)(?:\s+As (\w+(?:\.\w+)?))?\s*(?:'.*)?$", re.I)
@@ -633,7 +687,7 @@ def asf_passes(name, s):
 
 def public_collections(repo):
     names = set()
-    for path in glob.glob(os.path.join(repo, "src", "*.cls")):
+    for path in src_classes(repo):
         names |= set(re.findall(r"(?m)^Public (\w+) As (?:New )?Collection\b", load(path)))
     return names
 
@@ -669,7 +723,7 @@ def call_by_name(max_args=30):
 def property_set_names(repo=ROOT):
     """Names of the Property Set procedures of the library's classes."""
     names = set()
-    for path in glob.glob(os.path.join(repo, "src", "*.cls")):
+    for path in src_classes(repo):
         if os.path.splitext(os.path.basename(path))[0] not in VBA_EXPRESSIONS:
             names |= set(re.findall(r"(?m)^Public Property Set (\w+)\(", load(path)))
     return names
@@ -694,6 +748,22 @@ def property_set_calls(s, names):
     return re.sub(pat, r"\1\2.LOSet_\3 \4", s, flags=re.M)
 
 
+def release_before_let(s, names=("stk_", "glob_", "cell_", "rv", "dst")):
+    """After a function has indexed an array held in a Variant, LibreOffice no longer replaces that
+    Variant with another value: the assignment is lost, even of Empty. Releasing it first with
+    Set ... = Nothing works. The bytecode VM reuses its stack slots for values of every type."""
+    pat = re.compile(r"^(\s*)((?:" + "|".join(names) + r")(?:\([^=]*?\))?) = (?!New\b)(.+)$")
+    out = []
+    for ln in s.split("\n"):
+        m = pat.match(ln)
+        # an assignment that reads its own target (stk_(sp) = stk_(sp) + 1) holds no array
+        if m and not ln.lstrip().lower().startswith("set ") and find_code(m.group(3), ":") == -1 \
+                and m.group(2).replace(" ", "") not in m.group(3).replace(" ", ""):
+            out.append(f"{m.group(1)}Set {m.group(2)} = Nothing")
+        out.append(ln)
+    return "\n".join(out)
+
+
 def drop_self_returns(s):
     """A function that returns Me keeps the object alive for good in LibreOffice, even when the
     caller drops the result: ASF_InitGlobals, whose result no caller uses, returns Nothing here."""
@@ -705,7 +775,7 @@ def library_modules(repo=ROOT):
     pub = public_collections(repo)
     psets = property_set_names(repo)
     mods = []
-    for path in sorted(glob.glob(os.path.join(repo, "src", "*.cls"))):
+    for path in src_classes(repo):
         name = os.path.splitext(os.path.basename(path))[0]
         if name in VBA_EXPRESSIONS:
             continue
@@ -715,11 +785,13 @@ def library_modules(repo=ROOT):
             body = asf_passes(name, generic(load(path)))
             body = member_collections(body, pub)
         body = property_set_calls(property_set_subs(drop_self_returns(body)), psets)
+        if name == "ASF_FastVM":
+            body = release_before_let(body)
         mods.append((name, class_module(name, body), "class"))
     for name in ("LOhelper", "VBAEhelper"):
         code = load(os.path.join(LO_DIR, "compat", name + ".bas"))
         if name == "LOhelper":
-            code += call_by_name()
+            code += if_redim_blocks(call_by_name())
         mods.append((name, "Option VBASupport 1\n" + code, "normal"))
     return mods
 
