@@ -268,6 +268,7 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("array_destructuring",       "array_destructuring_with_no_remaining_elm") Then array_destructuring_with_no_remaining_elm: EndTest
     If StartTest("module_system",             "module_system_working_directory") Then module_system_working_directory: EndTest
     If StartTest("module_system",             "module_system_working_dir_before_compile") Then module_system_working_dir_before_compile: EndTest
+    If StartTest("module_system",             "path_separator") Then path_separator: EndTest
     If StartTest("module_system",             "module_system_named_exports_imports") Then module_system_named_exports_imports: EndTest
     If StartTest("module_system",             "module_system_default_export") Then module_system_default_export: EndTest
     If StartTest("objects",                   "object_literal_semicolon_rejected") Then object_literal_semicolon_rejected: EndTest
@@ -390,7 +391,7 @@ Private Sub OpenLog()
     pLogPath = vbNullString
     On Error GoTo NoLog
     If ThisWorkbook.path = vbNullString Then Exit Sub
-    pLogPath = ThisWorkbook.path & Application.PathSeparator & "TestRunner.log"
+    With New ASF: pLogPath = .JoinPath(ThisWorkbook.path, "TestRunner.log"): End With
     Dim f As Integer: f = FreeFile
     Open pLogPath For Output As #f
     Close #f
@@ -4213,6 +4214,23 @@ Private Sub module_system_working_directory()
         actual = CStr(.Run(.Compile("scwd(wd); return cwd()")))
     End With
     expected = wd
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub path_separator()
+    ' the separator a path uses, without Application.PathSeparator; the current folder's otherwise
+    Dim eng As New ASF
+    On Error GoTo TestFail
+    With eng
+        actual = .PathSeparator("C:\Users\me") & .PathSeparator("/Users/me") & .PathSeparator("Macintosh HD:Users") & _
+                 "|" & IIf(.PathSeparator("C:") = .PathSeparator(), 1, 0) & "|" & IIf(InStr(CurDir$, .PathSeparator()) > 0, 1, 0) & _
+                 "|" & .JoinPath("C:\a", "b.vas") & "|" & .JoinPath("/a/", "b.vas") & "|" & .JoinPath("", "b.vas")
+    End With
+    expected = "\/:|1|1|C:\a\b.vas|/a/b.vas|b.vas"
     AssertEqual expected, actual
 TestExit:
     Exit Sub

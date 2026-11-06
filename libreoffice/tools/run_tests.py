@@ -36,7 +36,7 @@ def runner_module(skip):
     s = build.load(os.path.join(TEST_DIR, "TestRunner.bas"))
     # the run log goes to the temporary folder, test data comes from test/
     s = s.replace('If ThisWorkbook.path = vbNullString Then Exit Sub', 'If LOLogDir() = vbNullString Then Exit Sub')
-    s = s.replace('pLogPath = ThisWorkbook.path & Application.PathSeparator & "TestRunner.log"', 'pLogPath = LOLogDir() & "/TestRunner.log"')
+    s = s.replace('With New ASF: pLogPath = .JoinPath(ThisWorkbook.path, "TestRunner.log"): End With', 'pLogPath = LOLogDir() & "/TestRunner.log"')
     s = s.replace("ThisWorkbook.path", "LOTestDir()")
     s = re.sub(r'(wd & ")\\', r"\1/", s)
     for name in skip:

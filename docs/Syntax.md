@@ -390,7 +390,7 @@ import { add } from './math.vas';  // Resolved relative to cwd()
 ```vba
 Dim eng As New ASF
 eng.InjectVariable "wd", ThisWorkbook.Path
-result = eng.Execute(ThisWorkbook.Path & "\main.vas")
+result = eng.Execute(eng.JoinPath(ThisWorkbook.Path, "main.vas"))
 ```
 
 ---

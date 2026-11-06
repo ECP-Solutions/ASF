@@ -214,6 +214,29 @@ End Sub
 Public Function ReadTextFile(filePath As String) As String
     ReadTextFile = VM_.ReadTextFile(filePath)
 End Function
+' The separator of folders: the one path uses, or else the one of the current folder; "\" on
+' Windows, "/" on macOS and Linux, ":" in the paths of Office 2011 for Mac. Application.PathSeparator
+' is not in every host (PowerPoint, Access, Outlook and LibreOffice lack it)
+Public Function PathSeparator(Optional ByVal path As String) As String
+    Dim sep As String: sep = SeparatorOf(path)
+    If LenB(sep) = 0 Then sep = SeparatorOf(CurDir$)
+    If LenB(sep) = 0 Then sep = "\"
+    PathSeparator = sep
+End Function
+' folder and name with the separator of folder between them (one, if folder ends with it)
+Public Function JoinPath(ByVal folder As String, ByVal name As String) As String
+    Dim sep As String: sep = PathSeparator(folder)
+    If Right$(folder, 1) = sep Or LenB(folder) = 0 Then JoinPath = folder & name Else JoinPath = folder & sep & name
+End Function
+Private Function SeparatorOf(ByVal path As String) As String
+    If InStr(path, "\") > 0 Then
+        SeparatorOf = "\"
+    ElseIf InStr(path, "/") > 0 Then
+        SeparatorOf = "/"
+    ElseIf InStr(path, ":") > 0 And Not (path Like "[A-Za-z]:*") Then
+        SeparatorOf = ":"
+    End If
+End Function
 Public Sub ClearModuleCache()
     If Not GLOBALS_ Is Nothing Then
         Set GLOBALS_.gModuleRegistry = New ASF_Map

@@ -37,15 +37,14 @@ End Sub
 Public Sub RunExample(ByVal wb As Workbook, ByVal script As String, ByVal sheetName As String, _
                       ByVal extraSheet As String, ByVal outName As String)
     On Error GoTo Failed
-    Dim sep As String: sep = Application.PathSeparator
-    Dim folder As String: folder = wb.Path & sep & "scripts"
     Dim eng As ASF: Set eng = New ASF
+    Dim folder As String: folder = eng.JoinPath(wb.Path, "scripts")
     eng.WorkingDir = folder
     Dim result As Variant
     If Len(extraSheet) = 0 Then
-        result = eng.Execute(folder & sep & script, ReadTable(wb, sheetName))
+        result = eng.Execute(eng.JoinPath(folder, script), ReadTable(wb, sheetName))
     Else
-        result = eng.Execute(folder & sep & script, ReadTable(wb, sheetName), ReadTable(wb, extraSheet))
+        result = eng.Execute(eng.JoinPath(folder, script), ReadTable(wb, sheetName), ReadTable(wb, extraSheet))
     End If
     WriteTable wb, outName, result
     Exit Sub

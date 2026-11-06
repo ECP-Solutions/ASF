@@ -2202,11 +2202,16 @@ Sub RunModule()
     
     ' Execute module file
     Dim result As Variant
-    result = eng.Execute(ThisWorkbook.Path & "\main.vas")
+    result = eng.Execute(eng.JoinPath(ThisWorkbook.Path, "main.vas"))
     
     Debug.Print result
 End Sub
 ```
+
+`eng.JoinPath(folder, name)` puts the folder separator between them, and `eng.PathSeparator(path)`
+returns it: the one `path` uses (`\` on Windows, `/` on macOS and Linux), or else the one of the
+current folder. They work in every host, while `Application.PathSeparator` exists only in Excel and
+Word.
 
 Or manually compile and run:
 
@@ -2219,7 +2224,7 @@ Sub RunModuleManual()
     eng.WorkingDir = ThisWorkbook.Path
     
     ' Read and execute
-    code = eng.ReadTextFile(ThisWorkbook.Path & "\main.vas")
+    code = eng.ReadTextFile(eng.JoinPath(ThisWorkbook.Path, "main.vas"))
     Dim idx As Long
     idx = eng.Compile(code)
     
@@ -2480,7 +2485,7 @@ import { add } from './math.vas';
 ```vba
 Dim eng As New ASF
 eng.InjectVariable "wd", ThisWorkbook.Path
-result = eng.Execute(ThisWorkbook.Path & "\main.vas")
+result = eng.Execute(eng.JoinPath(ThisWorkbook.Path, "main.vas"))
 ```
 
 Inside the `.vas` file:

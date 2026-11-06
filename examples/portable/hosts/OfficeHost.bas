@@ -26,12 +26,12 @@ End Sub
 
 ' Runs scripts\<script> on doc and returns the script's result, or its error
 Public Function RunScriptOn(ByVal doc As Object, ByVal script As String) As String
-    Dim folder As String: folder = doc.Path & Application.PathSeparator & "scripts"
     Dim eng As ASF: Set eng = New ASF
+    Dim folder As String: folder = eng.JoinPath(doc.Path, "scripts")
     eng.AppAccess = True
     eng.WorkingDir = folder
     Dim result As Variant
-    result = eng.Execute(folder & Application.PathSeparator & script, doc)
+    result = eng.Execute(eng.JoinPath(folder, script), doc)
     If IsEmpty(result) Then
         RunScriptOn = script & " stopped: " & CStr(eng.LastError)
     Else
