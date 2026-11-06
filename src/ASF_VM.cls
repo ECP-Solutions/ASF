@@ -69,7 +69,7 @@ Private Sub InitializeCOMPrototypes()
     End If
 End Sub
 ' Register a prototype method for a COM class type
-Public Sub RegisterCOMPrototype(classType As String, methodName As String, funcIndex As Long, params As Collection)
+Public Sub RegisterCOMPrototype(classType As String, methodName As String, funcIndex As Long, params As Collection, Optional ByVal closure As Variant)
     InitializeCOMPrototypes
     
     Dim classKey As String: classKey = UCase$(classType)
@@ -89,6 +89,10 @@ Public Sub RegisterCOMPrototype(classType As String, methodName As String, funcI
     Dim methodInfo As ASF_Map: Set methodInfo = New ASF_Map
     methodInfo.SetValue "funcIndex", funcIndex
     methodInfo.SetValue "params", params
+    ' the bytecode VM gives the function it compiled, and runs it
+    If Not IsMissing(closure) Then
+        If IsObject(closure) Then methodInfo.SetValue "closure", closure
+    End If
     
     ' Remove existing method if present
     On Error Resume Next
@@ -511,6 +515,10 @@ End Property
 Public Sub SetFastHost(host As Object)
     Set FAST_HOST_ = host
 End Sub
+' The path of a module as import resolves it, for the bytecode VM
+Public Function ResolveModule(ByVal modulePath As String) As String
+    ResolveModule = ResolveModulePath(modulePath)
+End Function
 ' A statement the tree VM runs for the bytecode VM: prototype, export
 Public Sub RunBridgedStatement(ByVal node As ASF_Map)
     ExecuteStmtNode node, BridgeScope()
@@ -8242,7 +8250,12 @@ Private Function CallObjectMethod(obj As Variant, methodName As Variant, Optiona
             End If
             ' Trace: Push call
             PushCallTrace CStr(methodName), prototypeArgs
-            vAssignment tmpResult, CallFuncByIndex_AST(funcIdx, prototypeArgs, obj)
+            Dim protoClosure As Variant
+            If prototypeInfo.TryGetValue("closure", protoClosure) And Not FAST_HOST_ Is Nothing Then
+                vAssignment tmpResult, CallClosure(protoClosure, prototypeArgs, obj)
+            Else
+                vAssignment tmpResult, CallFuncByIndex_AST(funcIdx, prototypeArgs, obj)
+            End If
         End If
     Else
         PushCallTrace CStr(methodName), args

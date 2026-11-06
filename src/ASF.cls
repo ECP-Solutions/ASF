@@ -244,6 +244,9 @@ Public Sub ClearModuleCache()
         Set GLOBALS_.gLoadingModules = New Collection
         GLOBALS_.CURRENT_MODULE_PATH = vbNullString
     End If
+#If ASF_BYTECODE Then
+    If Not FVM_ Is Nothing Then FVM_.ClearModules
+#End If
 End Sub
 Public Function VarToASF(VarValue) As Variant
     VarToASF = VM_.VarToASF(VarValue)
