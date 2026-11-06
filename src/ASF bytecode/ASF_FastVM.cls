@@ -1208,7 +1208,7 @@ Private Function ArrayPush(ByRef arr As Variant, ByVal first As Long, ByVal n As
 End Function
 
 ' f(args) for a closure of this VM, called by a built-in method; this is the array it works on
-Private Function Invoke(ByVal fn As Long, ByVal env As Long, ByRef thisV As Variant, ByVal n As Long, _
+Private Function Callback(ByVal fn As Long, ByVal env As Long, ByRef thisV As Variant, ByVal n As Long, _
                         ByRef a1 As Variant, ByRef a2 As Variant, ByRef a3 As Variant) As Variant
     Dim savedSp As Long, savedFt As Long, first As Long
     savedSp = topSp_: savedFt = topFt_
@@ -1222,7 +1222,7 @@ Private Function Invoke(ByVal fn As Long, ByVal env As Long, ByRef thisV As Vari
     SetItem r, Execute(0, first + n, 1, topFt_, 0, topFt_, fn, n, env, True, thisV)
     stk_(first) = Empty
     topSp_ = savedSp: topFt_ = savedFt
-    If IsObject(r) Then Set Invoke = r Else Invoke = r
+    If IsObject(r) Then Set Callback = r Else Callback = r
 End Function
 
 ' map: each item (inside nested arrays too) through the function
@@ -1239,7 +1239,7 @@ Private Function ArrayMap(ByRef arr As Variant, ByVal fn As Long, ByVal env As L
         If IsArray(arr(LBound(arr) + i)) Then
             out(1 + i) = ArrayMap(arr(LBound(arr) + i), fn, env)
         Else
-            SetItem out(1 + i), Invoke(fn, env, arr, 1, arr(LBound(arr) + i), Empty, Empty)
+            SetItem out(1 + i), Callback(fn, env, arr, 1, arr(LBound(arr) + i), Empty, Empty)
         End If
     Next i
     ArrayMap = out
@@ -1249,7 +1249,7 @@ Private Function ArrayFilter(ByRef arr As Variant, ByVal fn As Long, ByVal env A
     Dim kept As Collection: Set kept = New Collection
     Dim i As Long, out() As Variant
     For i = LBound(arr) To UBound(arr)
-        If Truthy(Invoke(fn, env, arr, 1, arr(i), Empty, Empty)) Then kept.Add arr(i)
+        If Truthy(Callback(fn, env, arr, 1, arr(i), Empty, Empty)) Then kept.Add arr(i)
     Next i
     If kept.Count = 0 Then
         ReDim out(1 To 1)
@@ -1272,7 +1272,7 @@ Private Function ArrayReduce(ByRef arr As Variant, ByVal fn As Long, ByVal env A
         start = LBound(arr) + 1
     End If
     For i = start To UBound(arr)
-        SetItem acc, Invoke(fn, env, arr, 2, acc, arr(i), Empty)
+        SetItem acc, Callback(fn, env, arr, 2, acc, arr(i), Empty)
     Next i
     If IsObject(acc) Then Set ArrayReduce = acc Else ArrayReduce = acc
 End Function
@@ -1280,7 +1280,7 @@ End Function
 Private Sub ArrayForEach(ByRef arr As Variant, ByVal fn As Long, ByVal env As Long)
     Dim i As Long, r As Variant
     For i = LBound(arr) To UBound(arr)
-        SetItem r, Invoke(fn, env, arr, 3, arr(i), CLng(1 + i - LBound(arr)), arr)
+        SetItem r, Callback(fn, env, arr, 3, arr(i), CLng(1 + i - LBound(arr)), arr)
     Next i
 End Sub
 

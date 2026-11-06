@@ -1,10 +1,10 @@
 """Static checks for compile errors of VBA that LibreOffice Basic lets through.
 
-    python3 Tools/vba_check.py                 # src/*.cls
+    python3 Tools/vba_check.py                 # src/*.cls and src/ASF bytecode/*.cls
     python3 Tools/vba_check.py src/ASF_VM.cls
 
 The LibreOffice edition (libreoffice/tools/run_tests.py) runs the test suites, but LibreOffice
-Basic compiles code that the VBA editor refuses. This script finds two of those errors:
+Basic compiles code that the VBA editor refuses. This script finds three of those errors:
 
 - ByRef argument type mismatch: a ByRef parameter (the default) declared with a type other than
   Variant takes only a variable or array element of that same type. A Variant, or an element of
@@ -12,6 +12,8 @@ Basic compiles code that the VBA editor refuses. This script finds two of those 
   obj.Prop) does.
 - Duplicate declaration in current scope: a name declared twice in a procedure, or declared again
   after being a parameter.
+- Member already exists in an object module from which this object module derives: a member of a
+  class module named as a method of IUnknown or IDispatch (Invoke, QueryInterface...).
 
 Calls through an object variable are checked when the method name belongs to one module only.
 The exit status is 1 when something is found.
@@ -24,6 +26,7 @@ END = re.compile(r"^\s*End\s+(Function|Sub|Property)\b", re.I)
 MODULE_DECL = re.compile(r"^\s*(?:Dim|Private|Public|Global)\s+(?!Sub\b|Function\b|Property\b|Const\b|Type\b|Enum\b|Declare\b|Event\b)(.*)$", re.I)
 LOCAL_DECL = re.compile(r"^\s*(?:Dim|Static)\s+(.*)$", re.I)
 COLLECTION_METHODS = {"add", "remove", "item", "count", "exists", "keys", "items"}
+DISPATCH_MEMBERS = {"queryinterface", "addref", "release", "gettypeinfocount", "gettypeinfo", "getidsofnames", "invoke"}
 
 
 def strip_comment(line):
@@ -186,6 +189,8 @@ def check(paths):
     problems = []
     for path, (procs, modvars) in modules.items():
         for proc in procs.values():
+            if path.lower().endswith(".cls") and proc["name"].lower() in DISPATCH_MEMBERS:
+                problems.append(f"{path}: {proc['name']}: a class member cannot be named as a member of IDispatch")
             scope = dict(modvars)
             declared = {}
             for prm in proc["params"]:
@@ -215,7 +220,7 @@ def check(paths):
 
 if __name__ == "__main__":
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    paths = sys.argv[1:] or sorted(glob.glob(os.path.join(root, "src", "*.cls")))
+    paths = sys.argv[1:] or sorted(glob.glob(os.path.join(root, "src", "*.cls")) + glob.glob(os.path.join(root, "src", "ASF bytecode", "*.cls")))
     found = check(paths)
     for p in found:
         print(p)
