@@ -24,8 +24,9 @@ Private Const THROW_ERROR_ As Long = -2147214503 ' vbObjectError + 7001
 Private INJECTED_VARIABLES_ As Collection
 Private BRIDGE_SCOPE_ As ASF_ScopeStack
 Private FAST_HOST_ As Object            ' the bytecode VM while it runs: it runs its own closures
-Private BRIDGE_WROTE_ As Boolean        ' a method called through CallMemberOn wrote its receiver back
-Private BRIDGE_WRITTEN_ As Variant
+Private METHOD_NAME_ As String          ' the name of the method being dispatched, as written
+Private METHOD_WROTE_ As Boolean        ' it changed its array, METHOD_WRITTEN_: the new array
+Private METHOD_WRITTEN_ As Variant
 Private ENABLE_CALL_TRACE_ As Boolean
 Private CAST_INJECTED_VARIABLES_ As Boolean
 Private APPLICATION_ACCESS_ As Boolean
@@ -456,12 +457,7 @@ Public Function PrepareParam(v As Variant) As Variant
 End Function
 ' base.prop as this VM reads it: members of strings, arrays, collections and host objects
 Public Function MemberOf(ByRef target As Variant, ByVal prop As String) As Variant
-    Dim node As ASF_Map: Set node = MakeNode("Member")
-    Dim lit As ASF_Map: Set lit = MakeNode("Literal")
-    lit.SetValue "value", target
-    node.SetValue "base", lit
-    node.SetValue "prop", prop
-    vAssignment MemberOf, EvalMemberNode(node, BridgeScope())
+    vAssignment MemberOf, MemberValue(target, prop)
 End Function
 ' base.prop = value on a value that is not an ASF object: a host object's property
 Public Sub SetMemberOf(ByRef target As Variant, ByVal prop As String, ByRef value As Variant)
@@ -485,50 +481,26 @@ End Function
 ' objects); wrote and written give the array a mutating method (push, sort...) writes back
 Public Function CallMemberOn(ByRef target As Variant, ByVal name As String, ByRef args As Variant, _
                              ByRef wrote As Boolean, ByRef written As Variant) As Variant
-    Dim lit As ASF_Map: Set lit = MakeNode("Literal")
-    lit.SetValue "value", target
-    lit.SetValue "bridge", True
-    If IsObject(target) Then
-        If target Is MathObj Then lit.SetValue "name", "Math"
-    End If
-    Dim mem As ASF_Map: Set mem = MakeNode("Member")
-    mem.SetValue "base", lit
-    mem.SetValue "prop", name
-    Dim callNode As ASF_Map: Set callNode = MakeNode("Call")
-    callNode.SetValue "callee", mem
-    callNode.SetValue "args", LiteralArgs(args)
-    Dim prevWrote As Boolean, prevWritten As Variant
-    prevWrote = BRIDGE_WROTE_
-    vAssignment prevWritten, BRIDGE_WRITTEN_
-    BRIDGE_WROTE_ = False
-    vAssignment CallMemberOn, EvalCall(callNode, BridgeScope())
-    wrote = BRIDGE_WROTE_
-    If wrote Then vAssignment written, BRIDGE_WRITTEN_
-    BRIDGE_WROTE_ = prevWrote
-    vAssignment BRIDGE_WRITTEN_, prevWritten
+    Dim isMath As Boolean
+    If IsObject(target) Then isMath = (target Is MathObj)
+    vAssignment CallMemberOn, MethodCallValue(target, name, ArrayToCollection(args), isMath, wrote, written)
 End Function
 ' A built-in function (range, flatten, clone, isArray, isNumeric, forEach, regex, cwd, scwd)
 Public Function CallBuiltin(ByVal name As String, ByRef args As Variant) As Variant
-    Dim callee As ASF_Map: Set callee = MakeNode("Variable")
-    callee.SetValue "name", name
-    Dim callNode As ASF_Map: Set callNode = MakeNode("Call")
-    callNode.SetValue "callee", callee
-    callNode.SetValue "args", LiteralArgs(args)
-    vAssignment CallBuiltin, EvalCall(callNode, BridgeScope())
-End Function
-Private Function LiteralArgs(ByRef args As Variant) As Collection
-    Dim out As Collection: Set out = New Collection
-    Dim i As Long, lit As ASF_Map
-    If IsArray(args) Then
-        If UBound(args) >= LBound(args) Then
-            For i = LBound(args) To UBound(args)
-                Set lit = MakeNode("Literal")
-                lit.SetValue "value", args(i)
-                out.Add lit
-            Next i
-        End If
+    Dim result As Variant
+    If EvalNamedBuiltin(name, ArrayToCollection(args), result) Then
+        vAssignment CallBuiltin, result
     End If
-    Set LiteralArgs = out
+End Function
+Private Function ArrayToCollection(ByRef args As Variant) As Collection
+    Dim out As Collection: Set out = New Collection
+    Dim i As Long
+    If IsArray(args) Then
+        For i = LBound(args) To UBound(args)
+            out.Add args(i)
+        Next i
+    End If
+    Set ArrayToCollection = out
 End Function
 ' The Math object of this VM, shared with the bytecode VM so that members of Math resolve alike
 Public Property Get MathObject() As Collection
@@ -790,23 +762,40 @@ Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As
         If Not node.TryGetValue("property", propV) Then _
             err.Raise vbObjectError + 5010, "VM.EvalMemberNode", "Missing prop/property in Member node"
     End If
-
-    On Error GoTo ErrHandler
-    Dim prop As String: prop = CStr(propV)
-
     Dim baseVal As Variant
+    On Error GoTo ErrHandler
     vAssignment baseVal, EvalExprNode(node.GetValue("base"), progScope)
-
+    If Not IsMapValue(baseVal) And Not IsObject(baseVal) And (VarType(baseVal) = vbString Or IsArray(baseVal)) Then
+        ' a method of an array or a string read without parentheses runs, and writes its array back
+        Dim tmpNode As ASF_Map: Set tmpNode = MakeNode("Call")
+        tmpNode.SetValue "callee", node
+        tmpNode.SetValue "args", New Collection
+        vAssignment EvalMemberNode, EvalExprNode(tmpNode, progScope)
+        Exit Function
+    End If
+    vAssignment EvalMemberNode, MemberValue(baseVal, CStr(propV))
+    Exit Function
+ErrHandler:
+    If err.Number = (vbObjectError + 5007) Then
+        err.Raise err.Number, err.Source, err.Description
+    Else
+        err.Clear
+        vAssignment EvalMemberNode, Empty
+    End If
+End Function
+' base.prop on a value: own properties and static methods of objects and classes, the built-in
+' members of arrays and strings, the constants of Math, and the properties of host objects
+Private Function MemberValue(ByRef baseVal As Variant, ByVal prop As String) As Variant
+    On Error GoTo ErrHandler
     If IsMapValue(baseVal) Then
-        ' a typed variable: calls on a Variant are late-bound
         Dim baseMap As ASF_Map: Set baseMap = baseVal
         Dim classMethods As Variant
-        'Eval static method on a class
+        ' a class keeps its methods aside
         If baseMap.TryGetValue("classMethods", classMethods) Then
             Dim method_ As Variant
             For Each method_ In classMethods
                 If method_.GetValue("name") = prop Then
-                    vAssignment EvalMemberNode, method_
+                    vAssignment MemberValue, method_
                     Exit For
                 End If
             Next method_
@@ -814,60 +803,91 @@ Private Function EvalMemberNode(node As ASF_Map, progScope As ASF_ScopeStack) As
             ' a property the object does not have is undefined, not the Nothing of GetValue
             Dim propVal As Variant
             If baseMap.TryGetValue(prop, propVal) Then
-                vAssignment EvalMemberNode, propVal
+                vAssignment MemberValue, propVal
             End If
         End If
         Exit Function
     End If
-
-    ' If base is an ASF_ScopeStack, try to read property if present
     If typeName(baseVal) = "ASF_ScopeStack" Then
         If baseVal.Has(CStr(prop)) Then
-            vAssignment EvalMemberNode, baseVal.GetValue(CStr(prop))
-        Else
-            vAssignment EvalMemberNode, Empty
+            vAssignment MemberValue, baseVal.GetValue(CStr(prop))
         End If
         Exit Function
     End If
-
-    ' If base is an array/string, the member can be a call with missing parents
     If typeName(baseVal) = "String" Or IsArray(baseVal) Then
-        If IsObject(baseVal) Then 'An object identified as an array
-            vAssignment EvalMemberNode, CallObjectMethod(baseVal, prop)
+        If IsObject(baseVal) Then
+            vAssignment MemberValue, CallObjectMethod(baseVal, prop)
         Else
-            Dim tmpNode As ASF_Map: Set tmpNode = MakeNode("Call")
-            Dim tmpArgs As New Collection
-            tmpNode.SetValue "callee", node
-            tmpNode.SetValue "args", tmpArgs
-            vAssignment EvalMemberNode, EvalExprNode(tmpNode, progScope)
-            Set tmpArgs = Nothing
+            ' the member can be a method called without parentheses
+            Dim wrote As Boolean, written As Variant
+            vAssignment MemberValue, MethodCallValue(baseVal, prop, New Collection, False, wrote, written)
         End If
         Exit Function
     End If
-    
     ' Math.PI and the other constants are read as properties
     If IsObject(baseVal) Then
         If baseVal Is MathObj Then
             Dim constVal As Variant
             If MathConstant(prop, constVal) Then
-                EvalMemberNode = constVal
+                MemberValue = constVal
                 Exit Function
             End If
         End If
     End If
-
-    ' Delegate to Application.
-    vAssignment EvalMemberNode, CallObjectMethod(baseVal, prop)
+    vAssignment MemberValue, CallObjectMethod(baseVal, prop)
     Exit Function
-
 ErrHandler:
-    ' Preserve existing explicit map-access errors; convert other unexpected errors to Empty.
     If err.Number = (vbObjectError + 5007) Then
         err.Raise err.Number, err.Source, err.Description
     Else
         err.Clear
-        vAssignment EvalMemberNode, Empty
+        vAssignment MemberValue, Empty
     End If
+End Function
+' target.name(args) on values, as EvalCall does it: a built-in method, a prototype of a host
+' object, or a function the object holds, called with this; wrote and written: the array a method
+' changed, for the caller to write back
+Private Function MethodCallValue(ByRef target As Variant, ByVal name As String, evaluated As Collection, ByVal isMath As Boolean, _
+                                 ByRef wrote As Boolean, ByRef written As Variant) As Variant
+    Dim propN As String, baseValLocal As Variant, origBaseVal As Variant, tmpResult As Variant
+    vAssignment baseValLocal, target
+    METHOD_NAME_ = name
+    propN = LCase$(name)
+    METHOD_WROTE_ = False
+    Dim handled As Boolean
+    handled = DispatchMethod(evaluated, propN, baseValLocal, origBaseVal, tmpResult, isMath)
+    wrote = METHOD_WROTE_
+    If wrote Then vAssignment written, METHOD_WRITTEN_
+    METHOD_WROTE_ = False
+    METHOD_WRITTEN_ = Empty
+    If handled Then
+        vAssignment MethodCallValue, tmpResult
+        Exit Function
+    End If
+    If HasCOMPrototype(origBaseVal, propN) Then
+        vAssignment MethodCallValue, CallObjectMethod(origBaseVal, propN, evaluated)
+        Exit Function
+    End If
+    If Not IsObject(origBaseVal) And (IsArray(origBaseVal) Or VarType(origBaseVal) = vbString) Then
+        err.Raise vbObjectError + 5012, "VM.EvalCall", "'" & propN & "' is not a method of " & IIf(IsArray(origBaseVal), "an array", "a string")
+    End If
+    Dim callee As Variant
+    vAssignment callee, MemberValue(target, name)
+    If IsMapValue(callee) Then
+        vAssignment MethodCallValue, CallValue(callee, CollectionToArray(evaluated), True, baseValLocal)
+    End If
+End Function
+Private Function CollectionToArray(coll As Collection) As Variant
+    If coll.Count = 0 Then
+        CollectionToArray = Array()
+        Exit Function
+    End If
+    Dim out() As Variant, i As Long
+    ReDim out(0 To coll.Count - 1)
+    For i = 1 To coll.Count
+        vAssignment out(i - 1), coll(i)
+    Next i
+    CollectionToArray = out
 End Function
 Private Function EvalIndexNode(node As ASF_Map, progScope As ASF_ScopeStack) As Variant
     If Not node.Exists("index") Then err.Raise vbObjectError + 5011, "VM.EvalIndexNode", "Missing index in Index node"
@@ -1898,7 +1918,7 @@ Private Function EvalCall(node As ASF_Map, progScope As ASF_ScopeStack) As Varia
     End If
     If fname <> vbNullString Then
         If IsNamedBuiltin(fname) Then
-            If EvalNamedBuiltin(fname, node, evaluated, progScope, tmpResult) Then GoTo exitfun
+            If EvalNamedBuiltin(fname, evaluated, tmpResult) Then GoTo exitfun
         End If
     End If
     If Not hasCalleeExpr Then
@@ -2144,14 +2164,14 @@ Private Function IsNamedBuiltin(ByVal fname As String) As Boolean
     End Select
 End Function
 
-Private Function EvalNamedBuiltin(ByVal fname As String, node As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef tmpResult As Variant) As Boolean
+Private Function EvalNamedBuiltin(ByVal fname As String, evaluated As Collection, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     Dim nameLcase As String: nameLcase = LCase$(fname)
     If nameLcase = "range" Then
         ' range([start,] end[, step]) -> returns an array (python-style range semantics)
         Dim rcount As Long: rcount = evaluated.Count
         Dim rs As Double, re As Double, rstep As Double
-        Dim optionBase_local As Long: optionBase_local = progScope.GetValue("__option_base")
+        Dim optionBase_local As Long: optionBase_local = 1
         If rcount = 1 Then
             rs = 0
             re = CDbl(evaluated(1))
@@ -2200,11 +2220,10 @@ Private Function EvalNamedBuiltin(ByVal fname As String, node As ASF_Map, evalua
             vAssignment tmpResult, Empty
             GoTo exitfun
         End If
-        vAssignment tmpMapObj, node.GetValue("args")(1)
         If evaluated.Count = 1 Then
-            vAssignment tmpResult, builtin_flatten(EvalExprNode(tmpMapObj, progScope), progScope)
+            vAssignment tmpResult, builtin_flatten(evaluated(1))
         Else
-            vAssignment tmpResult, builtin_flatten(EvalExprNode(tmpMapObj, progScope), progScope, evaluated(2))
+            vAssignment tmpResult, builtin_flatten(evaluated(1), evaluated(2))
         End If
         GoTo exitfun
     End If
@@ -2213,8 +2232,7 @@ Private Function EvalNamedBuiltin(ByVal fname As String, node As ASF_Map, evalua
             vAssignment tmpResult, Empty
             GoTo exitfun
         End If
-        vAssignment tmpMapObj, node.GetValue("args")(1)
-        vAssignment tmpResult, builtin_clone(EvalExprNode(tmpMapObj, progScope), progScope)
+        vAssignment tmpResult, builtin_clone(evaluated(1))
         GoTo exitfun
     End If
     If nameLcase = "isarray" Then
@@ -2292,7 +2310,7 @@ Private Function EvalNamedBuiltin(ByVal fname As String, node As ASF_Map, evalua
         Else
             Dim lb2 As Long: lb2 = LBound(feTmpVal)
             Dim ub2 As Long: ub2 = UBound(feTmpVal)
-            Dim optBase2 As Long: optBase2 = progScope.GetValue("__option_base")
+            Dim optBase2 As Long: optBase2 = 1
             Dim idx2 As Long: idx2 = 0
             Dim j As Long
             Dim callArgs2 As Collection
@@ -2349,52 +2367,61 @@ exitfun:
 End Function
 
 Private Function EvalMethodCall(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
-
-    propN = LCase$(CStr(calleeExpr.GetValue("prop")))
-
     vAssignment baseValLocal, EvalExprNode(calleeExpr.GetValue("base"), progScope)
+    Dim isMath As Boolean
+    Dim baseNode As ASF_Map: Set baseNode = calleeExpr.GetValue("base")
+    If baseNode.Exists("name") Then isMath = (baseNode.GetValue("name") = "Math")
+    METHOD_NAME_ = CStr(calleeExpr.GetValue("prop"))
+    propN = LCase$(METHOD_NAME_)
+    METHOD_WROTE_ = False
+    EvalMethodCall = DispatchMethod(evaluated, propN, baseValLocal, origBaseVal, tmpResult, isMath)
+    If METHOD_WROTE_ Then
+        METHOD_WROTE_ = False
+        Dim written As Variant
+        vAssignment written, METHOD_WRITTEN_
+        METHOD_WRITTEN_ = Empty
+        WriteToContainer calleeExpr, progScope, written
+    End If
+End Function
+' The built-in methods of a value (arrays, strings, objects, collections, Math, regex, host objects):
+' False when it has none of that name. A method that changes its array calls WriteBack with it
+Private Function DispatchMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant, ByVal isMath As Boolean) As Boolean
     vAssignment origBaseVal, baseValLocal
     If IsVBAcollection(baseValLocal) Then
-        Dim isSpecialColl As Boolean
-        Dim tmpBaseLocal As Variant
-        vAssignment tmpBaseLocal, calleeExpr.GetValue("base")
-        If tmpBaseLocal.Exists("name") Then
-            isSpecialColl = tmpBaseLocal.GetValue("name") = "Math"
-        End If
         If COLLECTIONS_METHOD_OVERRIDE_ Then
-            Dim knownMethod As Boolean
-            knownMethod = (BinarySearch(GLOBALS_.builtinArrayMethods, propN) <> -1)
-            If Not knownMethod Then
-                EvalMethodCall = CollectionMethod(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult, isSpecialColl, tmpBaseLocal)
+            If BinarySearch(GLOBALS_.builtinArrayMethods, propN) = -1 Then
+                DispatchMethod = CollectionMethod(evaluated, propN, baseValLocal, origBaseVal, tmpResult, isMath)
                 Exit Function
             End If
         End If
-        If Not isSpecialColl And Not APPLICATION_ACCESS_ Then
+        If Not isMath And Not APPLICATION_ACCESS_ Then
             baseValLocal = CollToASF(baseValLocal, False)
         End If
     End If
     Dim baseType As String: baseType = typeName(baseValLocal)
     If IsArray(baseValLocal) Then
-        EvalMethodCall = ArrayMethod(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+        DispatchMethod = ArrayMethod(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
     ElseIf baseType = "ASF_RegexEngine" Then
-        EvalMethodCall = RegexMethod(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+        DispatchMethod = RegexMethod(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
     ElseIf baseType = "String" Then
-        EvalMethodCall = StringMethod(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+        DispatchMethod = StringMethod(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
     ElseIf baseType = "ASF_Map" Then
-        EvalMethodCall = MapMethod(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+        DispatchMethod = MapMethod(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
     ElseIf baseType = "Collection" Then
-        EvalMethodCall = CollectionMethod(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult, isSpecialColl, tmpBaseLocal)
+        DispatchMethod = CollectionMethod(evaluated, propN, baseValLocal, origBaseVal, tmpResult, isMath)
     Else
         vAssignment tmpResult, CallObjectMethod(baseValLocal, propN, evaluated)
-        GoTo exitfun
+        DispatchMethod = True
     End If
-    Exit Function
-exitfun:
-    EvalMethodCall = True
 End Function
+' A method that changes its receiver gives the new array to the caller, which writes it back
+Private Sub WriteBack(ByRef value As Variant)
+    METHOD_WROTE_ = True
+    vAssignment METHOD_WRITTEN_, value
+End Sub
 
 ' Array methods of EvalMethodCall
-Private Function ArrayMethod(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrayMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim optBase_sp As Long, len_sp As Long
     Dim optBase_u2 As Long
     Dim len_base As Long
@@ -2415,31 +2442,31 @@ Private Function ArrayMethod(calleeExpr As ASF_Map, evaluated As Collection, pro
             End If
             GoTo exitfun
         Case "map"
-            ArrayMethod = ArrMap(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrMap(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "filter"
-            ArrayMethod = ArrFilter(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrFilter(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "reduce"
-            ArrayMethod = ArrReduce(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrReduce(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "slice"
-            ArrayMethod = ArrSlice(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrSlice(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "push"
-            ArrayMethod = ArrPush(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrPush(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "pop"
-            ArrayMethod = ArrPop(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrPop(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "foreach"
-            ArrayMethod = ArrForeach(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrForeach(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "unique"
-            ArrayMethod = ArrUnique(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrUnique(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "concat"
-            ArrayMethod = ArrConcat(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrConcat(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "tostring", "join"
-            ArrayMethod = ArrTostring(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrTostring(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "shift"
-            ArrayMethod = ArrShift(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrShift(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "unshift"
             ' unshift: add elements at start, returns new length
             If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
-            optBase_u2 = progScope.GetValue("__option_base")
+            optBase_u2 = 1
             lb_b = LBound(baseValLocal)
             ub_b = UBound(baseValLocal)
             len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
@@ -2469,12 +2496,12 @@ Private Function ArrayMethod(calleeExpr As ASF_Map, evaluated As Collection, pro
             End If
             vAssignment tmpResult, IIf(newSize <= 0, 0, (UBound(outArr) - LBound(outArr) + 1))
             baseValLocal = outArr
-            WriteToContainer calleeExpr, progScope, baseValLocal
+            WriteBack baseValLocal
             GoTo exitfun
         Case "delete"
             ' delete(index): remove element at index (user-space) and return true/false
             If Not IsArray(baseValLocal) Or evaluated.Count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
-            optBase_u2 = progScope.GetValue("__option_base")
+            optBase_u2 = 1
             lb_b = LBound(baseValLocal)
             ub_b = UBound(baseValLocal)
             len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
@@ -2513,14 +2540,14 @@ Private Function ArrayMethod(calleeExpr As ASF_Map, evaluated As Collection, pro
             baseValLocal = outArr
             vAssignment tmpResult, True
             ' write back to original container via ResolvePath
-            WriteToContainer calleeExpr, progScope, baseValLocal
+            WriteBack baseValLocal
             GoTo exitfun
         Case "splice"
-            ArrayMethod = ArrSplice(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrSplice(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "tospliced"
             ' toSpliced(start, deleteCount?, ...items) -> non-mutating version of splice
             If Not IsArray(baseValLocal) Or evaluated.Count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
-            optBase_sp = progScope.GetValue("__option_base")
+            optBase_sp = 1
             lb_b = LBound(baseValLocal)
             ub_b = UBound(baseValLocal)
             len_sp = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
@@ -2579,31 +2606,31 @@ Private Function ArrayMethod(calleeExpr As ASF_Map, evaluated As Collection, pro
             vAssignment tmpResult, outArr
             GoTo exitfun
         Case "at"
-            ArrayMethod = ArrAt(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrAt(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "copywithin"
-            ArrayMethod = ArrCopywithin(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrCopywithin(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "entries"
-            ArrayMethod = ArrEntries(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrEntries(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "every"
-            ArrayMethod = ArrEvery(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrEvery(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "find", "findindex", "findlast", "findlastindex"
-            ArrayMethod = ArrFind(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrFind(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "from"
-            ArrayMethod = ArrFrom(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrFrom(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "includes", "indexof", "lastindexof"
-            ArrayMethod = ArrIncludes(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrIncludes(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "of"
-            ArrayMethod = ArrOf(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrOf(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "reverse"
-            ArrayMethod = ArrReverse(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrReverse(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "toreversed"
-            ArrayMethod = ArrToreversed(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrToreversed(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "some"
-            ArrayMethod = ArrSome(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrSome(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "with"
-            ArrayMethod = ArrWith(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrWith(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "sort", "tosorted"
-            ArrayMethod = ArrSort(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            ArrayMethod = ArrSort(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case Else
             Exit Function
     End Select
@@ -2612,7 +2639,7 @@ exitfun:
     ArrayMethod = True
 End Function
 
-Private Function ArrMap(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrMap(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     Dim ii As Long
     Dim outArr() As Variant
@@ -2635,7 +2662,7 @@ Private Function ArrMap(calleeExpr As ASF_Map, evaluated As Collection, progScop
     Dim countEls As Long: countEls = baseUB - baseLB + 1
     If countEls < 0 Then countEls = 0
 
-    Dim optBaseLocal As Long: optBaseLocal = progScope.GetValue("__option_base")
+    Dim optBaseLocal As Long: optBaseLocal = 1
     If countEls = 0 Then
         ReDim outArr(optBaseLocal To optBaseLocal)
     Else
@@ -2648,7 +2675,7 @@ Private Function ArrMap(calleeExpr As ASF_Map, evaluated As Collection, progScop
         Dim resVal As Variant
         ' Recursively apply mapper to nested arrays (preserves nested structure)
         vAssignment resVal, map_apply_recursive(baseValLocal(srcIndex), _
-                                tmpMapObj, progScope, baseValLocal, optBaseLocal)
+                                tmpMapObj, baseValLocal, optBaseLocal)
         vAssignment outArr(optBaseLocal + ii), resVal
     Next ii
 
@@ -2660,7 +2687,7 @@ exitfun:
     ArrMap = True
 End Function
 
-Private Function ArrFilter(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrFilter(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     ' filter(fn) -> return new array with elements where fn(elem) truthy
     If evaluated.Count < 1 Then vAssignment tmpResult, Empty: GoTo exitfun
@@ -2682,7 +2709,7 @@ Private Function ArrFilter(calleeExpr As ASF_Map, evaluated As Collection, progS
     Next jj
     ' build array from tmpCol
     Dim outA() As Variant
-    Dim ob As Long: ob = progScope.GetValue("__option_base")
+    Dim ob As Long: ob = 1
     If tmpCol.Count = 0 Then
         ReDim outA(ob To ob)
     Else
@@ -2698,7 +2725,7 @@ exitfun:
     ArrFilter = True
 End Function
 
-Private Function ArrReduce(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrReduce(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     ' reduce(fn, initial?) -> apply reduction
     If evaluated.Count < 1 Then vAssignment tmpResult, Empty: GoTo exitfun
@@ -2733,7 +2760,7 @@ exitfun:
     ArrReduce = True
 End Function
 
-Private Function ArrSlice(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrSlice(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim optBase As Long
     Dim si As Long
     ' slice(start, end) -> non-mutating, respects __option_base
@@ -2745,7 +2772,7 @@ Private Function ArrSlice(calleeExpr As ASF_Map, evaluated As Collection, progSc
     lenA = UBound(baseValLocal) - LBound(baseValLocal) + 1
 
     ' runtime option base for arrays (0 or 1 typically)
-    optBase = progScope.GetValue("__option_base")
+    optBase = 1
 
     Dim sRaw As Long, eRaw As Long
 
@@ -2810,7 +2837,7 @@ exitfun:
     ArrSlice = True
 End Function
 
-Private Function ArrPush(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrPush(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim insertCount As Long
     ' push(...values) -> mutates array, returns new length
     Dim offs As Long
@@ -2838,7 +2865,7 @@ Private Function ArrPush(calleeExpr As ASF_Map, evaluated As Collection, progSco
         vAssignment newArr(oldLB + oldLen + zz - 1 - offs), evaluated(zz)
     Next zz
     ' write back to original container via ResolvePath
-    WriteToContainer calleeExpr, progScope, newArr
+    WriteBack newArr
     vAssignment tmpResult, newLen
     GoTo exitfun
     Exit Function
@@ -2846,7 +2873,7 @@ exitfun:
     ArrPush = True
 End Function
 
-Private Function ArrPop(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrPop(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' pop() -> remove last element, return it
     If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
     Dim lbp As Long: lbp = LBound(baseValLocal)
@@ -2861,7 +2888,7 @@ Private Function ArrPop(calleeExpr As ASF_Map, evaluated As Collection, progScop
         ReDim Preserve baseValLocal(lbp To ubp - 1)
     End If
     ' write back:
-    WriteToContainer calleeExpr, progScope, baseValLocal
+    WriteBack baseValLocal
     vAssignment tmpResult, popped
     GoTo exitfun
     Exit Function
@@ -2869,7 +2896,7 @@ exitfun:
     ArrPop = True
 End Function
 
-Private Function ArrForeach(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrForeach(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     Dim optBase As Long
     Dim ii As Long
@@ -2893,7 +2920,7 @@ Private Function ArrForeach(calleeExpr As ASF_Map, evaluated As Collection, prog
 
     Dim lb As Long: lb = LBound(baseValLocal)
     Dim ub As Long: ub = UBound(baseValLocal)
-    optBase = progScope.GetValue("__option_base")
+    optBase = 1
     Dim idxLocal As Long: idxLocal = 0
     Dim callArgs As Collection
     For ii = lb To ub
@@ -2920,11 +2947,11 @@ exitfun:
     ArrForeach = True
 End Function
 
-Private Function ArrUnique(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrUnique(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim k As Long
     Dim outArr() As Variant
     If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
-    Dim optBase_u As Long: optBase_u = progScope.GetValue("__option_base")
+    Dim optBase_u As Long: optBase_u = 1
     Dim lb_u As Long: lb_u = LBound(baseValLocal)
     Dim ub_u As Long: ub_u = UBound(baseValLocal)
     Dim len_u As Long: len_u = IIf(ub_u >= lb_u, ub_u - lb_u + 1, 0)
@@ -2971,7 +2998,7 @@ exitfun:
     ArrUnique = True
 End Function
 
-Private Function ArrConcat(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrConcat(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim alb As Long, aub As Long
     Dim len_base As Long, totalCount As Long
     Dim outArr() As Variant, writeIdx As Long
@@ -2979,7 +3006,7 @@ Private Function ArrConcat(calleeExpr As ASF_Map, evaluated As Collection, progS
     Dim lb_b As Long, ub_b As Long
      ' concat: concat arrays/values into the callee array
     If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
-    Dim optBase_c As Long: optBase_c = progScope.GetValue("__option_base")
+    Dim optBase_c As Long: optBase_c = 1
     lb_b = LBound(baseValLocal)
     ub_b = UBound(baseValLocal)
     If ub_b >= lb_b Then len_base = ub_b - lb_b + 1 Else len_base = 0
@@ -3034,14 +3061,14 @@ Private Function ArrConcat(calleeExpr As ASF_Map, evaluated As Collection, progS
     Next p
     vAssignment tmpResult, outArr
     ' write back to original container
-    WriteToContainer calleeExpr, progScope, tmpResult
+    WriteBack tmpResult
     GoTo exitfun
     Exit Function
 exitfun:
     ArrConcat = True
 End Function
 
-Private Function ArrTostring(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrTostring(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim sep As String
     Dim lb_val As Long, ub_val As Long, len_val As Long
     Dim parts() As String
@@ -3082,13 +3109,13 @@ exitfun:
     ArrTostring = True
 End Function
 
-Private Function ArrShift(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrShift(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim popped2 As Variant
     Dim newA_s() As Variant
     Dim idx_s As Long, k_s As Long
     ' shift: remove first element, mutate array, return popped value
     If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
-    Dim ob_s As Long: ob_s = progScope.GetValue("__option_base")
+    Dim ob_s As Long: ob_s = 1
     Dim lb_s As Long: lb_s = LBound(baseValLocal)
     Dim ub_s As Long: ub_s = UBound(baseValLocal)
     If lb_s > ub_s Then
@@ -3110,14 +3137,14 @@ Private Function ArrShift(calleeExpr As ASF_Map, evaluated As Collection, progSc
     End If
     vAssignment tmpResult, popped2
     ' write back to original container via ResolvePath
-    WriteToContainer calleeExpr, progScope, baseValLocal
+    WriteBack baseValLocal
     GoTo exitfun
     Exit Function
 exitfun:
     ArrShift = True
 End Function
 
-Private Function ArrSplice(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrSplice(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim outArr() As Variant
     Dim lb_b As Long, ub_b As Long
     Dim startRaw_sp As Long, startN_sp As Long, deleteCount_sp As Long
@@ -3129,7 +3156,7 @@ Private Function ArrSplice(calleeExpr As ASF_Map, evaluated As Collection, progS
     Dim removedOut() As Variant
     ' splice(start, deleteCount?, ...items): mutating splice - returns array of deleted elements
     If Not IsArray(baseValLocal) Or evaluated.Count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
-    Dim optBase_sp As Long: optBase_sp = progScope.GetValue("__option_base")
+    Dim optBase_sp As Long: optBase_sp = 1
     lb_b = LBound(baseValLocal)
     ub_b = UBound(baseValLocal)
     Dim len_sp As Long: len_sp = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
@@ -3211,19 +3238,19 @@ Private Function ArrSplice(calleeExpr As ASF_Map, evaluated As Collection, progS
     End If
     vAssignment tmpResult, removedOut
     ' write back to original container via ResolvePath
-    WriteToContainer calleeExpr, progScope, baseValLocal
+    WriteBack baseValLocal
     GoTo exitfun
     Exit Function
 exitfun:
     ArrSplice = True
 End Function
 
-Private Function ArrAt(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrAt(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim optBase_u2 As Long
     Dim len_base As Long
     Dim lb_b As Long, ub_b As Long
     If Not IsArray(baseValLocal) Or evaluated.Count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
-    optBase_u2 = progScope.GetValue("__option_base")
+    optBase_u2 = 1
     lb_b = LBound(baseValLocal)
     ub_b = UBound(baseValLocal)
     len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
@@ -3237,12 +3264,12 @@ exitfun:
     ArrAt = True
 End Function
 
-Private Function ArrCopywithin(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrCopywithin(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim outArr() As Variant
     Dim lb_b As Long, ub_b As Long
     Dim tempIn() As Variant
     If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
-    Dim optBase_cw As Long: optBase_cw = progScope.GetValue("__option_base")
+    Dim optBase_cw As Long: optBase_cw = 1
     lb_b = LBound(baseValLocal)
     ub_b = UBound(baseValLocal)
     Dim len_cw As Long: len_cw = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
@@ -3300,21 +3327,21 @@ Private Function ArrCopywithin(calleeExpr As ASF_Map, evaluated As Collection, p
     baseValLocal = outArr
     vAssignment tmpResult, baseValLocal
     ' write back to original container via ResolvePath
-    WriteToContainer calleeExpr, progScope, baseValLocal
+    WriteBack baseValLocal
     GoTo exitfun
     Exit Function
 exitfun:
     ArrCopywithin = True
 End Function
 
-Private Function ArrEntries(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrEntries(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim len_base As Long
     Dim outArr() As Variant
     Dim lb_b As Long, ub_b As Long
     Dim newTemp() As Variant
     Dim i_sp As Long
     If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
-    Dim ob_entries As Long: ob_entries = progScope.GetValue("__option_base")
+    Dim ob_entries As Long: ob_entries = 1
     lb_b = LBound(baseValLocal)
     ub_b = UBound(baseValLocal)
     len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
@@ -3342,7 +3369,7 @@ exitfun:
     ArrEntries = True
 End Function
 
-Private Function ArrEvery(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrEvery(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     Dim len_base As Long
     Dim lb_b As Long, ub_b As Long
@@ -3352,7 +3379,7 @@ Private Function ArrEvery(calleeExpr As ASF_Map, evaluated As Collection, progSc
     lb_b = LBound(baseValLocal)
     ub_b = UBound(baseValLocal)
     len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
-    Dim ob_ev As Long: ob_ev = progScope.GetValue("__option_base")
+    Dim ob_ev As Long: ob_ev = 1
     Dim idx_ev As Long
     Dim i_ev As Long
     Dim args_ev As Collection
@@ -3376,14 +3403,14 @@ exitfun:
     ArrEvery = True
 End Function
 
-Private Function ArrFind(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrFind(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     Dim len_base As Long
     Dim lb_b As Long, ub_b As Long
     If Not IsArray(baseValLocal) Or evaluated.Count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
     Dim cb_find As Variant: vAssignment cb_find, evaluated(1)
     If typeName(cb_find) <> "ASF_Map" Or cb_find.GetValue("type") <> "Closure" Then vAssignment tmpResult, Empty: GoTo exitfun
-    Dim ob_f As Long: ob_f = progScope.GetValue("__option_base")
+    Dim ob_f As Long: ob_f = 1
     lb_b = LBound(baseValLocal)
     ub_b = UBound(baseValLocal)
     len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
@@ -3429,7 +3456,7 @@ exitfun:
     ArrFind = True
 End Function
 
-Private Function ArrFrom(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrFrom(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim argColl As Collection
     Dim tmpMapObj As ASF_Map
     Dim thisVal As Variant
@@ -3440,7 +3467,7 @@ Private Function ArrFrom(calleeExpr As ASF_Map, evaluated As Collection, progSco
     Dim i_sp As Long
     If evaluated.Count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
     Dim val_from As Variant: vAssignment val_from, evaluated(1)
-    Dim opt_from As Long: opt_from = progScope.GetValue("__option_base")
+    Dim opt_from As Long: opt_from = 1
 
     ' Build a zero-based tempIn[] with the source elements and also
     ' build srcArrOption (option-base array)
@@ -3530,13 +3557,13 @@ exitfun:
     ArrFrom = True
 End Function
 
-Private Function ArrIncludes(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrIncludes(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim len_base As Long
     Dim lb_b As Long, ub_b As Long
     Dim foundIdx As Long
     If Not IsArray(baseValLocal) Or evaluated.Count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
     Dim needle As Variant: vAssignment needle, evaluated(1)
-    Dim optBase_in As Long: optBase_in = progScope.GetValue("__option_base")
+    Dim optBase_in As Long: optBase_in = 1
     lb_b = LBound(baseValLocal)
     ub_b = UBound(baseValLocal)
     len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
@@ -3568,11 +3595,11 @@ exitfun:
     ArrIncludes = True
 End Function
 
-Private Function ArrOf(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrOf(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim outArr() As Variant
     Dim newSize As Long
     Dim i_sp As Long
-    Dim optBase_of As Long: optBase_of = progScope.GetValue("__option_base")
+    Dim optBase_of As Long: optBase_of = 1
     newSize = evaluated.Count
     If newSize <= 0 Then
         ReDim outArr(optBase_of To optBase_of)
@@ -3589,14 +3616,14 @@ exitfun:
     ArrOf = True
 End Function
 
-Private Function ArrReverse(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrReverse(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim len_base As Long
     Dim outArr() As Variant
     Dim lb_b As Long, ub_b As Long
     Dim newTemp() As Variant
     Dim i_sp As Long
     If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
-    Dim optBase_rev As Long: optBase_rev = progScope.GetValue("__option_base")
+    Dim optBase_rev As Long: optBase_rev = 1
     lb_b = LBound(baseValLocal)
     ub_b = UBound(baseValLocal)
     len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
@@ -3616,21 +3643,21 @@ Private Function ArrReverse(calleeExpr As ASF_Map, evaluated As Collection, prog
     baseValLocal = outArr
     vAssignment tmpResult, baseValLocal
     ' write back to original container via ResolvePath
-    WriteToContainer calleeExpr, progScope, baseValLocal
+    WriteBack baseValLocal
     GoTo exitfun
     Exit Function
 exitfun:
     ArrReverse = True
 End Function
 
-Private Function ArrToreversed(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrToreversed(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim len_base As Long
     Dim outArr() As Variant
     Dim lb_b As Long, ub_b As Long
     Dim newTemp() As Variant
     Dim i_sp As Long
     If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
-    Dim optBase_tr As Long: optBase_tr = progScope.GetValue("__option_base")
+    Dim optBase_tr As Long: optBase_tr = 1
     lb_b = LBound(baseValLocal)
     ub_b = UBound(baseValLocal)
     len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
@@ -3654,7 +3681,7 @@ exitfun:
     ArrToreversed = True
 End Function
 
-Private Function ArrSome(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrSome(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     Dim len_base As Long
     Dim lb_b As Long, ub_b As Long
@@ -3664,7 +3691,7 @@ Private Function ArrSome(calleeExpr As ASF_Map, evaluated As Collection, progSco
     lb_b = LBound(baseValLocal)
     ub_b = UBound(baseValLocal)
     len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
-    Dim ob_som As Long: ob_som = progScope.GetValue("__option_base")
+    Dim ob_som As Long: ob_som = 1
     Dim i_som As Long
     Dim args_s As Collection
     Dim res_s As Variant
@@ -3686,10 +3713,10 @@ exitfun:
     ArrSome = True
 End Function
 
-Private Function ArrWith(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrWith(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim lb_b As Long, ub_b As Long
     If Not IsArray(baseValLocal) Or evaluated.Count < 2 Then vAssignment tmpResult, Empty: GoTo exitfun
-    Dim optBase_w As Long: optBase_w = progScope.GetValue("__option_base")
+    Dim optBase_w As Long: optBase_w = 1
     lb_b = LBound(baseValLocal)
     ub_b = UBound(baseValLocal)
     Dim len_w As Long: len_w = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
@@ -3705,7 +3732,7 @@ exitfun:
     ArrWith = True
 End Function
 
-Private Function ArrSort(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrSort(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim comp As Variant
     Dim thisVal As Variant
     Dim outArr() As Variant
@@ -3713,7 +3740,7 @@ Private Function ArrSort(calleeExpr As ASF_Map, evaluated As Collection, progSco
     Dim tempIn() As Variant
     Dim i_sp As Long
     If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
-    Dim optBase_srt As Long: optBase_srt = progScope.GetValue("__option_base")
+    Dim optBase_srt As Long: optBase_srt = 1
     lb_b = LBound(baseValLocal)
     ub_b = UBound(baseValLocal)
     Dim n_s As Long: n_s = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
@@ -3724,7 +3751,7 @@ Private Function ArrSort(calleeExpr As ASF_Map, evaluated As Collection, progSco
     If n_s <= 1 Then
         If propN = "sort" Then
             ' ensure mutation writes back even if single element (keeps behavior consistent)
-            WriteToContainer calleeExpr, progScope, baseValLocal
+            WriteBack baseValLocal
             vAssignment tmpResult, baseValLocal
         Else
             vAssignment tmpResult, baseValLocal
@@ -3758,7 +3785,7 @@ Private Function ArrSort(calleeExpr As ASF_Map, evaluated As Collection, progSco
     If propN = "sort" Then
         baseValLocal = outArr
         ' persist mutation to original container (LValue)
-        WriteToContainer calleeExpr, progScope, baseValLocal
+        WriteBack baseValLocal
         vAssignment tmpResult, baseValLocal
     Else
         vAssignment tmpResult, outArr
@@ -3772,7 +3799,7 @@ End Function
 
 
 ' Regex methods of EvalMethodCall
-Private Function RegexMethod(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function RegexMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' Expose regex module methods with the Regex object
     Select Case propN
         Case "escape"
@@ -3864,7 +3891,7 @@ exitfun:
 End Function
 
 ' String methods of EvalMethodCall
-Private Function StringMethod(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StringMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim nidx As Long
     Dim eidx As Long
     Dim strOB As Long
@@ -3898,32 +3925,32 @@ Private Function StringMethod(calleeExpr As ASF_Map, evaluated As Collection, pr
             tmpResult = AscW(mid(CStr(baseValLocal), nidx, 1))
             GoTo exitfun
         Case "concat"
-            StringMethod = StrConcat(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            StringMethod = StrConcat(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "endswith"
-            StringMethod = StrEndswith(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            StringMethod = StrEndswith(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "fromcharcode"
             tmpResult = ChrW$(CLng(evaluated(1)))
             GoTo exitfun
         Case "includes"
-            StringMethod = StrIncludes(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            StringMethod = StrIncludes(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "indexof"
-            StringMethod = StrIndexof(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            StringMethod = StrIndexof(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "lastindexof"
-            StringMethod = StrLastindexof(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            StringMethod = StrLastindexof(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "localecompare"
             ' A tiny VBA based implementation, does not behave like javascript
             tmpResult = StrComp(baseValLocal, evaluated(1), vbBinaryCompare)
             GoTo exitfun
         Case "match", "matchall"
-            StringMethod = StrMatch(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            StringMethod = StrMatch(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "padend"
-            StringMethod = StrPadend(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            StringMethod = StrPadend(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "padstart"
-            StringMethod = StrPadstart(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            StringMethod = StrPadstart(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "repeat"
-            StringMethod = StrRepeat(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            StringMethod = StrRepeat(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "replace", "replaceall"
-            StringMethod = StrReplace(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            StringMethod = StrReplace(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "slice"
             nidx = NormalizeIndex(CLng(evaluated(1)), Len(baseValLocal), strOB) + 1
             Select Case evaluated.Count
@@ -3935,11 +3962,11 @@ Private Function StringMethod(calleeExpr As ASF_Map, evaluated As Collection, pr
             End Select
             GoTo exitfun
         Case "split"
-            StringMethod = StrSplit(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            StringMethod = StrSplit(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "startswith"
-            StringMethod = StrStartswith(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            StringMethod = StrStartswith(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "substring"
-            StringMethod = StrSubstring(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            StringMethod = StrSubstring(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "tolowercase"
             tmpResult = LCase$(baseValLocal)
             GoTo exitfun
@@ -3964,7 +3991,7 @@ exitfun:
     StringMethod = True
 End Function
 
-Private Function StrConcat(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrConcat(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim concChr As String
     Dim ccElm As Variant
     If evaluated.Count > 1 Then
@@ -3984,7 +4011,7 @@ exitfun:
     StrConcat = True
 End Function
 
-Private Function StrEndswith(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrEndswith(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim endStr As String
     Dim ewComStr As String
     ewComStr = CStr(evaluated(1))
@@ -3996,7 +4023,7 @@ exitfun:
     StrEndswith = True
 End Function
 
-Private Function StrIncludes(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrIncludes(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim icStartPos As Long
     If evaluated.Count > 1 Then
         icStartPos = CLng(evaluated(2)) + 1
@@ -4010,7 +4037,7 @@ exitfun:
     StrIncludes = True
 End Function
 
-Private Function StrIndexof(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrIndexof(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim ioStartPos As Long
     If evaluated.Count > 1 Then
         ioStartPos = CLng(evaluated(2)) + 1
@@ -4024,7 +4051,7 @@ exitfun:
     StrIndexof = True
 End Function
 
-Private Function StrLastindexof(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrLastindexof(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim lioStartPos As Long
     Dim tmpLIOres As Long
     Dim LIOprev As Long
@@ -4045,7 +4072,7 @@ exitfun:
     StrLastindexof = True
 End Function
 
-Private Function StrMatch(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrMatch(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim foundIdx As Long
     Dim sourceStr As String: sourceStr = CStr(baseValLocal)
     Dim searchArg As Variant: searchArg = evaluated(1)
@@ -4200,7 +4227,7 @@ exitfun:
     StrMatch = True
 End Function
 
-Private Function StrPadend(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrPadend(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim pePadStr As String
     Dim tpeLen As Long
     Dim cpeLen As Long
@@ -4222,7 +4249,7 @@ exitfun:
     StrPadend = True
 End Function
 
-Private Function StrPadstart(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrPadstart(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim psPadStr As String
     Dim tpsLen As Long
     Dim cpsLen As Long
@@ -4244,7 +4271,7 @@ exitfun:
     StrPadstart = True
 End Function
 
-Private Function StrRepeat(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrRepeat(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim repCount As Long
     Dim repStr As String
     Dim rpI As Long
@@ -4259,7 +4286,7 @@ exitfun:
     StrRepeat = True
 End Function
 
-Private Function StrReplace(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrReplace(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim argColl As Collection
     Dim tmpMapObj As ASF_Map
     ' replace(searchValue, replaceValue)  -> first occurrence
@@ -4432,7 +4459,7 @@ exitfun:
     StrReplace = True
 End Function
 
-Private Function StrSplit(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrSplit(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim spSepStr As String
     If evaluated.Count = 2 Then
         Dim spLimit As Long
@@ -4472,7 +4499,7 @@ exitfun:
     StrSplit = True
 End Function
 
-Private Function StrStartswith(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrStartswith(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim startStr As String
     Dim swComStr As String
     swComStr = CStr(evaluated(1))
@@ -4484,7 +4511,7 @@ exitfun:
     StrStartswith = True
 End Function
 
-Private Function StrSubstring(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrSubstring(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim nidx As Long
     Dim eidx As Long
     nidx = CLng(evaluated(1)) + 1
@@ -4513,18 +4540,18 @@ End Function
 
 
 ' Map methods of EvalMethodCall
-Private Function MapMethod(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' an object's own function member wins over the builtin method of the same name, as in
     ' JavaScript: class methods such as set(), get() or has() are called, not shadowed
-    If HasOwnFunction(baseValLocal, CStr(calleeExpr.GetValue("prop"))) Then Exit Function
+    If HasOwnFunction(baseValLocal, METHOD_NAME_) Then Exit Function
     ' ASF_Map (object) methods
     Select Case propN
         Case "keys"
-            MapMethod = MapKeysMethod(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            MapMethod = MapKeysMethod(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "values"
-            MapMethod = MapValues(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            MapMethod = MapValues(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "entries"
-            MapMethod = MapEntries(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            MapMethod = MapEntries(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "size", "length"
             ' Return count of keys in object
             tmpResult = baseValLocal.Count
@@ -4540,7 +4567,7 @@ Private Function MapMethod(calleeExpr As ASF_Map, evaluated As Collection, progS
             GoTo exitfun
 
         Case "get"
-            MapMethod = MapGet(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            MapMethod = MapGet(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "set"
             ' Set key-value pair and return the object (for chaining)
             If evaluated.Count >= 2 Then
@@ -4550,7 +4577,7 @@ Private Function MapMethod(calleeExpr As ASF_Map, evaluated As Collection, progS
             GoTo exitfun
 
         Case "delete", "remove"
-            MapMethod = MapDelete(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            MapMethod = MapDelete(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "clear"
             ' Remove all keys
             baseValLocal.Clear
@@ -4568,17 +4595,17 @@ Private Function MapMethod(calleeExpr As ASF_Map, evaluated As Collection, progS
             GoTo exitfun
 
         Case "merge"
-            MapMethod = MapMerge(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            MapMethod = MapMerge(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "foreach"
-            MapMethod = MapForeach(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            MapMethod = MapForeach(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "map"
-            MapMethod = MapMap(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            MapMethod = MapMap(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "filter"
-            MapMethod = MapFilter(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            MapMethod = MapFilter(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "some"
-            MapMethod = MapSome(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            MapMethod = MapSome(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "every"
-            MapMethod = MapEvery(calleeExpr, evaluated, progScope, propN, baseValLocal, origBaseVal, tmpResult)
+            MapMethod = MapEvery(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case Else
             Exit Function
     End Select
@@ -4587,11 +4614,11 @@ exitfun:
     MapMethod = True
 End Function
 
-Private Function MapKeysMethod(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapKeysMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' Return array of object keys
     Dim keysCol As Collection: Set keysCol = baseValLocal.keys()
     Dim keysArr() As Variant
-    Dim optBase_keys As Long: optBase_keys = progScope.GetValue("__option_base")
+    Dim optBase_keys As Long: optBase_keys = 1
     If keysCol.Count = 0 Then
         ReDim keysArr(optBase_keys To optBase_keys)
     Else
@@ -4609,11 +4636,11 @@ exitfun:
     MapKeysMethod = True
 End Function
 
-Private Function MapValues(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapValues(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' Return array of object values
     Dim itemsCol As Collection: Set itemsCol = baseValLocal.items()
     Dim valsArr() As Variant
-    Dim optBase_vals As Long: optBase_vals = progScope.GetValue("__option_base")
+    Dim optBase_vals As Long: optBase_vals = 1
     If itemsCol.Count = 0 Then
         ReDim valsArr(optBase_vals To optBase_vals)
     Else
@@ -4631,12 +4658,12 @@ exitfun:
     MapValues = True
 End Function
 
-Private Function MapEntries(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapEntries(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' Return array of [key, value] pairs
     Dim entriesKeys As Collection: Set entriesKeys = baseValLocal.keys()
     Dim entriesItems As Collection: Set entriesItems = baseValLocal.items()
     Dim entriesArr() As Variant
-    Dim optBase_ent As Long: optBase_ent = progScope.GetValue("__option_base")
+    Dim optBase_ent As Long: optBase_ent = 1
     If entriesKeys.Count = 0 Then
         ReDim entriesArr(optBase_ent To optBase_ent)
     Else
@@ -4658,7 +4685,7 @@ exitfun:
     MapEntries = True
 End Function
 
-Private Function MapGet(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapGet(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' Get value for key with optional default
     If evaluated.Count = 0 Then
         tmpResult = Empty
@@ -4682,7 +4709,7 @@ exitfun:
     MapGet = True
 End Function
 
-Private Function MapDelete(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapDelete(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' Remove a key and return true/false
     If evaluated.Count = 0 Then
         tmpResult = False
@@ -4702,7 +4729,7 @@ exitfun:
     MapDelete = True
 End Function
 
-Private Function MapMerge(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapMerge(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' Merge another object into this one
     If evaluated.Count = 0 Then
         vAssignment tmpResult, baseValLocal
@@ -4724,7 +4751,7 @@ exitfun:
     MapMerge = True
 End Function
 
-Private Function MapForeach(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapForeach(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     ' Iterate over entries with callback(value, key, object)
     If evaluated.Count = 0 Then
@@ -4759,7 +4786,7 @@ exitfun:
     MapForeach = True
 End Function
 
-Private Function MapMap(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapMap(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     ' Map over entries, return new object with transformed values
     If evaluated.Count = 0 Then
@@ -4796,7 +4823,7 @@ exitfun:
     MapMap = True
 End Function
 
-Private Function MapFilter(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapFilter(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     ' Filter entries, return new object with entries that pass test
     If evaluated.Count = 0 Then
@@ -4835,7 +4862,7 @@ exitfun:
     MapFilter = True
 End Function
 
-Private Function MapSome(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapSome(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     ' Test if at least one entry passes test
     If evaluated.Count = 0 Then
@@ -4874,7 +4901,7 @@ exitfun:
     MapSome = True
 End Function
 
-Private Function MapEvery(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapEvery(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     ' Test if all entries pass test
     If evaluated.Count = 0 Then
@@ -4915,12 +4942,9 @@ End Function
 
 
 ' Collection methods of EvalMethodCall
-Private Function CollectionMethod(calleeExpr As ASF_Map, evaluated As Collection, progScope As ASF_ScopeStack, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant, ByVal isSpecialColl As Boolean, ByVal tmpBaseLocal As Variant) As Boolean
-    If isSpecialColl Then
-        ' Check for Math object
-        Dim baseLocal As Variant
-        vAssignment baseLocal, tmpBaseLocal
-        If baseLocal.GetValue("name") = "Math" Then
+Private Function CollectionMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant, ByVal isMath As Boolean) As Boolean
+    If isMath Then
+        If isMath Then
             If MathConstant(propN, tmpResult) Then GoTo exitfun
             Select Case propN
                 Case "random"
@@ -6496,9 +6520,9 @@ End Function
 
 ' Flatten builtin with optional depth
 ' Usage:
-'   builtin_flatten(value, progScope)         -> full flatten (old behavior)
-'   builtin_flatten(value, progScope, depth) -> flatten up to 'depth' levels
-Private Function builtin_flatten(v As Variant, progScope As ASF_ScopeStack, Optional depthParam As Variant) As Variant
+'   builtin_flatten(value)         -> full flatten (old behavior)
+'   builtin_flatten(value, depth) -> flatten up to 'depth' levels
+Private Function builtin_flatten(v As Variant, Optional depthParam As Variant) As Variant
     Dim flattenAll As Boolean
     Dim maxDepth As Long
 
@@ -6541,7 +6565,7 @@ Private Function builtin_flatten(v As Variant, progScope As ASF_ScopeStack, Opti
     End If
 
     ' Build output array using __option_base
-    Dim ob As Long: ob = progScope.GetValue("__option_base")
+    Dim ob As Long: ob = 1
     Dim outArr() As Variant
     If col.Count = 0 Then
         ReDim outArr(ob To ob)
@@ -6586,7 +6610,7 @@ Private Sub flatten_recursive_depth(v As Variant, ByRef col As Collection, ByVal
         col.Add v
     End If
 End Sub
-Private Function builtin_clone(v As Variant, progScope As ASF_ScopeStack) As Variant
+Private Function builtin_clone(v As Variant) As Variant
     If IsArray(v) Then
         Dim lb As Long: lb = LBound(v)
         Dim ub As Long: ub = UBound(v)
@@ -6594,7 +6618,7 @@ Private Function builtin_clone(v As Variant, progScope As ASF_ScopeStack) As Var
         ReDim outArr(lb To ub)
         Dim i As Long
         For i = lb To ub
-            outArr(i) = builtin_clone(v(i), progScope)
+            outArr(i) = builtin_clone(v(i))
         Next i
         vAssignment builtin_clone, outArr
         Exit Function
@@ -6616,7 +6640,7 @@ End Function
 ' parentThis : optional 'this' value passed to CallClosure (typically the containing array)
 ' optBase: the indexing base
 Private Function map_apply_recursive(value As Variant, mapper As ASF_Map, _
-                                    progScope As ASF_ScopeStack, Optional parentThis As Variant, _
+                                    Optional parentThis As Variant, _
                                     Optional optBase As Long = 1) As Variant
     On Error GoTo ErrHandler
 
@@ -6647,7 +6671,7 @@ Private Function map_apply_recursive(value As Variant, mapper As ASF_Map, _
             Dim srcIdx As Long: srcIdx = lb + i
             Dim childRes As Variant
             ' Recurse: pass the current array as parentThis so mapper can use it if needed
-            vAssignment childRes, map_apply_recursive(value(srcIdx), mapper, progScope, value, optBase)
+            vAssignment childRes, map_apply_recursive(value(srcIdx), mapper, value, optBase)
             vAssignment outArr(optBase + i), childRes
         Next i
 
@@ -6926,15 +6950,6 @@ Private Sub WriteToContainer(ByRef calleeExpr As ASF_Map, ByRef progScope As ASF
     Dim rp As ASF_Map
     Dim cont As Variant
     Dim propKey As String
-    Dim bridged As ASF_Map: Set bridged = calleeExpr.GetValue("base")
-    If Not bridged Is Nothing Then
-        If bridged.Exists("bridge") Then
-            ' a call of CallMemberOn: the caller writes the receiver back
-            vAssignment BRIDGE_WRITTEN_, tValue
-            BRIDGE_WROTE_ = True
-            Exit Sub
-        End If
-    End If
     
     Set rp = ResolvePath(calleeExpr.GetValue("base"), progScope, True)
     If rp.Exists("kind") Then
