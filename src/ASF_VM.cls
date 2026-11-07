@@ -2132,6 +2132,12 @@ End Function
 ' == and !=: objects are equal when they are the same object, arrays when their items are equal;
 ' null is treated as undefined, and values VBA cannot compare (an array and a number, a string
 ' and a number that is not its text) are not equal
+Private Function IsNumberType(ByRef v As Variant) As Boolean
+    Select Case VarType(v)
+        Case vbInteger, vbLong, vbSingle, vbDouble, vbCurrency, vbDecimal, vbByte: IsNumberType = True
+    End Select
+End Function
+
 Private Function ValuesEqual(ByRef a As Variant, ByRef b As Variant) As Boolean
     If VarType(a) = VarType(b) Then
         Select Case VarType(a)
@@ -2147,6 +2153,16 @@ Private Function ValuesEqual(ByRef a As Variant, ByRef b As Variant) As Boolean
     End If
     If IsArray(a) Or IsArray(b) Then
         If IsArray(a) And IsArray(b) Then ValuesEqual = ArraysEqual(a, b)
+        Exit Function
+    End If
+    ' a numeric text equals its number ('1' == 1), as LibreOffice Basic compares them; VBA would
+    ' put every number before every text
+    If VarType(a) = vbString And IsNumberType(b) Then
+        If IsNumeric(a) Then ValuesEqual = (CDbl(a) = CDbl(b))
+        Exit Function
+    End If
+    If VarType(b) = vbString And IsNumberType(a) Then
+        If IsNumeric(b) Then ValuesEqual = (CDbl(a) = CDbl(b))
         Exit Function
     End If
     ValuesEqual = (IIf(IsNull(a), Empty, a) = IIf(IsNull(b), Empty, b))

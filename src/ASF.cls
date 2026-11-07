@@ -20,6 +20,7 @@ Private FALLBACK_ As String
 #If ASF_BYTECODE Then
 Private BC_ As ASF_Bytecode
 Private FVM_ As ASF_FastVM
+Private BC_GLOBALS_ As ASF_Globals
 #End If
 
 ' True runs programs on the bytecode backend when it takes them, and on the tree VM otherwise
@@ -112,12 +113,18 @@ End Sub
 #If ASF_BYTECODE Then
 ' Runs program idx on the bytecode backend; False when the compiler does not take it
 Private Function RunFast(idx As Long, params As Variant) As Boolean
+    ' the compiled programs belong to the globals they were compiled with (SetGlobals changes them)
+    If Not BC_ Is Nothing Then
+        If Not BC_GLOBALS_ Is GLOBALS_ Then Set BC_ = Nothing
+    End If
     If BC_ Is Nothing Then
         Set BC_ = New ASF_Bytecode
         BC_.SetGlobals GLOBALS_
+        Set BC_GLOBALS_ = GLOBALS_
         Set FVM_ = New ASF_FastVM
         FVM_.SetHost GLOBALS_, VM_, BC_
     End If
+    Set VM_.Globals = GLOBALS_
     If VM_.EnableCallTrace Then
         FALLBACK_ = "call trace"
         Exit Function
