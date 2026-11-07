@@ -15,6 +15,7 @@ Option Explicit
 Private GLOBALS_ As ASF_Globals
 Private CURRENT_MODULE_PATH_ As String
 Private IS_MODULE_MODE_ As Boolean
+Private treeIdx_ As Long                ' BuildTreeEntry: the entry to fill, its functions being registered already
 
 ' Produces AST (Maps) for program and functions.
 Public Sub SetGlobals(ByRef aGlobals As ASF_Globals)
@@ -76,7 +77,7 @@ End Function
 
 ' ---------------------
 ' Brackets of the code: those in strings and comments are text, as in return 'a)';
-Private Function CheckParents(src As String) As Boolean
+Public Function CheckParents(src As String) As Boolean
     Dim i As Long, n As Long
     Dim openPar As Long
     Dim ch As String, quote As String
@@ -150,7 +151,7 @@ Public Function CompileProgram(src As String, Optional progName As String = "@an
     
     GLOBALS_.ASF_InitGlobals
 
-    If GLOBALS_.ProgramCache.Exists(src) Then
+    If treeIdx_ = 0 And GLOBALS_.ProgramCache.Exists(src) Then
         CompileProgram = GLOBALS_.ProgramCache.GetValue(src)
         Exit Function
     End If
@@ -295,7 +296,7 @@ Compiler_MainLoop:
             Else
                 funcIdx = CompileFunctionAST(fname, argList, bodyTokens)
             End If
-            GLOBALS_.gFuncTable.Add fname, funcIdx
+            If treeIdx_ = 0 Then GLOBALS_.gFuncTable.Add fname, funcIdx
 
             ' Store parameters
             If argList.Count > 0 Then
@@ -307,7 +308,7 @@ Compiler_MainLoop:
                 ReDim pa(0 To 0)
                 pa(0) = vbNullString
             End If
-            GLOBALS_.gFuncParams.Add fname, pa
+            If treeIdx_ = 0 Then GLOBALS_.gFuncParams.Add fname, pa
             ' Skip closing brace
             If i <= toks.Count Then i = i + 1
             GoTo Compiler_MainLoop
@@ -397,6 +398,11 @@ CollectNextTop:
     Dim normalizedStmts As Collection
     ' Normalize assignment-like expression-statements into proper Assign AST nodes
     Set normalizedStmts = NormalizeAssignsInStmts(stmtsAST)
+    If treeIdx_ > 0 Then
+        ReplaceEntry treeIdx_, Array(progName, normalizedStmts, progScope.Raw, optionBase)
+        CompileProgram = treeIdx_
+        Exit Function
+    End If
     pIndex = GLOBALS_.gPrograms.Count + 1
     GLOBALS_.gPrograms.Add Array(progName, normalizedStmts, progScope.Raw, optionBase)
     GLOBALS_.ProgramCache.Add src, pIndex
@@ -405,6 +411,27 @@ CollectNextTop:
 NotBalancedParents:
     err.Raise vbObjectError + 9024, "Compiler.CompileProgram", "Unbalanced opening or closing parentheses."
 End Function
+' Program idx, compiled to bytecode from its tokens (ASF_Bytecode.CompileSource), has no AST: this
+' gives it and its functions the entries the tree VM runs
+Public Sub BuildTreeEntry(ByVal idx As Long)
+    Dim p As Variant: p = GLOBALS_.gPrograms(idx)
+    treeIdx_ = idx
+    On Error GoTo Failed
+    CompileProgram CStr(p(4)), CStr(p(0))
+    treeIdx_ = 0
+    Exit Sub
+Failed:
+    treeIdx_ = 0
+    err.Raise err.Number, err.Source, err.Description
+End Sub
+Private Sub ReplaceEntry(ByVal idx As Long, entry As Variant)
+    GLOBALS_.gPrograms.Remove idx
+    If idx > GLOBALS_.gPrograms.Count Then
+        GLOBALS_.gPrograms.Add entry
+    Else
+        GLOBALS_.gPrograms.Add entry, , idx
+    End If
+End Sub
 ' Compile a function body (AST) and register it as separate program
 Private Function CompileFunctionAST(fname As String, argList As Collection, bodyTokens As Collection) As Long
     Dim funcScope As ASF_ScopeStack
@@ -419,6 +446,12 @@ Private Function CompileFunctionAST(fname As String, argList As Collection, body
     Set bodyStmtsAST = ParseTokensToAST(bodyTokens)
     ' Normalize assignments inside function body as well
     Set bodyStmtsAST = NormalizeAssignsInStmts(bodyStmtsAST)
+    If treeIdx_ > 0 Then
+        idx = GLOBALS_.gFuncTable.GetValue(fname)
+        ReplaceEntry idx, Array(fname, bodyStmtsAST, funcScope.Raw)
+        CompileFunctionAST = idx
+        Exit Function
+    End If
     idx = GLOBALS_.gPrograms.Count + 1
     GLOBALS_.gPrograms.Add Array(fname, bodyStmtsAST, funcScope.Raw)
     CompileFunctionAST = idx
@@ -442,6 +475,12 @@ Private Function CompileFunctionASTWithRest(fname As String, argList As Collecti
     Dim idx As Long
     Set bodyStmtsAST = ParseTokensToAST(bodyTokens)
     Set bodyStmtsAST = NormalizeAssignsInStmts(bodyStmtsAST)
+    If treeIdx_ > 0 Then
+        idx = GLOBALS_.gFuncTable.GetValue(fname)
+        ReplaceEntry idx, Array(fname, bodyStmtsAST, funcScope.Raw, restParam)
+        CompileFunctionASTWithRest = idx
+        Exit Function
+    End If
     idx = GLOBALS_.gPrograms.Count + 1
     
     ' Store with rest parameter info: Array(fname, bodyStmtsAST, funcScope.Raw, restParam)
@@ -3125,7 +3164,7 @@ End Function
 ' ---------- Template parts parser ----------
 ' Input: tokenStr is the raw token text starting with backtick, e.g. "`/${regobj.escape(name)}/g`"
 ' Output: Collection of Array("LITERAL", text) or Array("EXPR", text)
-Private Function ParseTemplatePartsFromString(ByVal tokenStr As String) As Collection
+Public Function ParseTemplatePartsFromString(ByVal tokenStr As String) As Collection
     Dim parts As New Collection
     If Len(tokenStr) = 0 Then
         Set ParseTemplatePartsFromString = parts
@@ -4102,7 +4141,7 @@ Private Function ParsePrototypeStatement(toks As Collection, ByRef i As Long) As
     Else
         funcIdx = CompileFunctionAST(internalFuncName, argList, bodyTokens)
     End If
-    GLOBALS_.gFuncTable.Add internalFuncName, funcIdx
+    If treeIdx_ = 0 Then GLOBALS_.gFuncTable.Add internalFuncName, funcIdx
     ' Store parameters for the function
     Dim pa() As String
     If argList.Count > 0 Then
@@ -4115,7 +4154,7 @@ Private Function ParsePrototypeStatement(toks As Collection, ByRef i As Long) As
         ReDim pa(0 To 0)
         pa(0) = vbNullString
     End If
-    GLOBALS_.gFuncParams.Add internalFuncName, pa
+    If treeIdx_ = 0 Then GLOBALS_.gFuncParams.Add internalFuncName, pa
     ' Store prototype information in the node
     prototypeNode.SetValue "classType", classType
     prototypeNode.SetValue "methodName", methodName

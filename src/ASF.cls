@@ -21,6 +21,7 @@ Private FALLBACK_ As String
 Private BC_ As ASF_Bytecode
 Private FVM_ As ASF_FastVM
 Private BC_GLOBALS_ As ASF_Globals
+Private TREE_STALE_ As Boolean          ' programs compiled from their tokens may lack the tree VM's AST
 #End If
 
 ' True runs programs on the bytecode backend when it takes them, and on the tree VM otherwise
@@ -91,6 +92,17 @@ Public Function Compile(src As String, Optional progName As String = "@anon") As
     If GLOBALS_ Is Nothing Then
         INIT_
     End If
+#If ASF_BYTECODE Then
+    ' on the bytecode backend, the source goes from its tokens to bytecode when the compiler takes it
+    If FASTVM_ON_ And Not VM_.EnableCallTrace Then
+        PrepareFast
+        Compile = BC_.CompileSource(src, progName)
+        If Compile > 0 Then
+            TREE_STALE_ = True
+            Exit Function
+        End If
+    End If
+#End If
     With Compiler_
         .SetGlobals GLOBALS_
         Compile = .CompileProgram(src, progName)
@@ -113,6 +125,23 @@ End Sub
 #If ASF_BYTECODE Then
 ' Runs program idx on the bytecode backend; False when the compiler does not take it
 Private Function RunFast(idx As Long, params As Variant) As Boolean
+    PrepareFast
+    If VM_.EnableCallTrace Then
+        FALLBACK_ = "call trace"
+        Exit Function
+    End If
+    If Not BC_.Prepare(idx) Then
+        FALLBACK_ = BC_.Reason
+        Exit Function
+    End If
+    TREE_STALE_ = True
+    FVM_.Run idx, params
+    vAssignment OUTPUT__, FVM_.OUTPUT_
+    BACKEND_ = "bytecode"
+    RunFast = True
+End Function
+' The bytecode compiler and VM of the current globals
+Private Sub PrepareFast()
     ' the compiled programs belong to the globals they were compiled with (SetGlobals changes them)
     If Not BC_ Is Nothing Then
         If Not BC_GLOBALS_ Is GLOBALS_ Then Set BC_ = Nothing
@@ -125,19 +154,22 @@ Private Function RunFast(idx As Long, params As Variant) As Boolean
         FVM_.SetHost GLOBALS_, VM_, BC_
     End If
     Set VM_.Globals = GLOBALS_
-    If VM_.EnableCallTrace Then
-        FALLBACK_ = "call trace"
-        Exit Function
-    End If
-    If Not BC_.Prepare(idx) Then
-        FALLBACK_ = BC_.Reason
-        Exit Function
-    End If
-    FVM_.Run idx, params
-    vAssignment OUTPUT__, FVM_.OUTPUT_
-    BACKEND_ = "bytecode"
-    RunFast = True
-End Function
+End Sub
+' The tree VM runs ASTs: the programs (and their functions) compiled from their tokens get theirs
+Private Sub EnsureTreeCode()
+    If Not TREE_STALE_ Then Exit Sub
+    Dim i As Long, p As Variant
+    Compiler_.SetGlobals GLOBALS_
+    For i = 1 To GLOBALS_.gPrograms.Count
+        p = GLOBALS_.gPrograms(i)
+        If UBound(p) = 4 Then
+            If IsObject(p(1)) Then
+                If p(1) Is Nothing Then Compiler_.BuildTreeEntry i
+            End If
+        End If
+    Next i
+    TREE_STALE_ = False
+End Sub
 #End If
 ' Runs program idx on the backend that takes it
 Private Sub RunIndex(idx As Long, params As Variant)
@@ -150,6 +182,9 @@ Private Sub RunIndex(idx As Long, params As Variant)
 #End If
     If Not done Then
         BACKEND_ = "tree"
+#If ASF_BYTECODE Then
+        EnsureTreeCode
+#End If
         Set VM_.Globals = GLOBALS_
         VM_.RunProgramByIndex idx, params
         vAssignment OUTPUT__, VM_.OUTPUT_

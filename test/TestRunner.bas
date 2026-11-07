@@ -307,6 +307,7 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("calling_native_app_level",  "calling_array_method_from_collection") Then calling_array_method_from_collection: EndTest
     If StartTest("advanced_prototyping",      "monkey_patch_worksheets_name") Then monkey_patch_worksheets_name: EndTest
     If StartTest("Nullish coalescing",        "nullish_coalescing") Then nullish_coalescing: EndTest
+    If StartTest("Backends",                  "program_from_tokens_on_tree") Then program_from_tokens_on_tree: EndTest
     On Error GoTo 0
 
     Dim summary As String
@@ -4903,6 +4904,31 @@ Private Sub nullish_coalescing()
     
     actual = CStr(GetResult("let foo = null ?? empty ?? 'default string'; return foo;"))
     expected = "default string"
+    AssertEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub program_from_tokens_on_tree()
+    On Error GoTo TestFail
+    Set scriptEngine = New ASF
+    Dim progIdx As Long, secondIdx As Long
+
+    With scriptEngine
+        ' compiled for the bytecode backend, run on the tree VM
+        .FastVM = True
+        progIdx = .Compile("fun sq(x) { return x * x; }; let a = [1, 2]; let f = fun(y) { return sq(y) + a[1]; }; return f(a[2]);")
+        secondIdx = .Compile("return `${sq(3)}`;")
+        .FastVM = False
+        .Run progIdx
+        actual = .OUTPUT_ & "|"
+        .Run secondIdx
+        actual = actual & .OUTPUT_
+    End With
+    expected = "5|9"
     AssertEqual expected, actual
 
 TestExit:

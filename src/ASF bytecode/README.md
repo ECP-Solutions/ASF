@@ -1,12 +1,12 @@
 # ASF bytecode backend
 
-A second backend for ASF: the same language, the same front end (`ASF_Parser`, `ASF_Compiler`), and a
-virtual machine that runs flat bytecode instead of walking the AST. The classes of `src/` stay as they
-are; this folder adds two:
+A second backend for ASF: the same language, the same tokenizer (`ASF_Parser`), and a virtual machine
+that runs flat bytecode instead of walking the AST. The classes of `src/` stay as they are; this
+folder adds two:
 
 | Class | Role |
 |---|---|
-| `ASF_Bytecode.cls` | Compiles the AST of a program (and the named functions it uses) to bytecode: scope analysis, code generation, constant folding, superinstructions. |
+| `ASF_Bytecode.cls` | Compiles a program (and the named functions it uses) to bytecode, from its tokens or from the AST of `ASF_Compiler`: scope analysis, code generation, constant folding, superinstructions. |
 | `ASF_FastVM.cls` | Runs the bytecode in a single dispatch loop, with array-based frames and an arena for closure environments. |
 
 ## Using it
@@ -30,6 +30,21 @@ with `FastVM` on, which runs a whole test suite on the bytecode backend. The Lib
 (`ASF.oxt`) includes both backends.
 
 ## Architecture
+
+### 0. From tokens to bytecode
+
+With `FastVM` on, `engine.Compile` hands the source to `ASF_Bytecode.CompileSource`, which compiles
+it from its tokens without building an AST: statements become plans of token ranges, and
+expressions are parsed and emitted in one pass. The same parser also runs without emitting, to find
+the names and function literals of a body in the order the AST compiler walks them, so the code is
+the one `ASF_Compiler` and `ASF_Bytecode.Prepare` make from the AST, instruction for instruction
+(`Tools/DirectCompiler/compare.py` checks it). A source it does not take (one with an error, a
+`case 1:` or an `export fun`) goes to `ASF_Compiler`, which reports the error or builds the AST.
+
+A program compiled from its tokens has no AST in `gPrograms`. If it has to run on the tree VM
+(`FastVM` turned off afterwards, or the call trace on), `ASF_Compiler.BuildTreeEntry` builds the AST
+of the program and its functions first. Named functions keep their tokens in `gPrograms`, so a later
+program that calls them compiles them from there.
 
 ### 1. Scope analysis at compile time
 
@@ -184,8 +199,10 @@ run on the bytecode VM and give the tree VM's results):
 | Regex | 425 | 225 | 1.9× |
 
 Work done by the tree VM for the bytecode VM (regex, sort with a comparator, host objects, module
-functions) gains least. The bytecode compiler runs once per program: on a 300-statement script the
-first run takes about 20% longer than on the tree VM, and every later run is 50 times faster.
+functions) gains least. Compiling from the tokens takes 2.1 to 2.4 times less than the AST path
+(`compare.py`, tokenizer included): on a 300-statement script, the first run (compile and run)
+takes 676 ms on the bytecode backend against 1338 ms on the tree VM (1653 ms when the bytecode came
+from the AST), and every later run is 59 times faster.
 `asfbench` (the workloads of `test/AsfBench.bas`) gives 2.7× (nested arrays) to 15.6× (recursion).
 
 ## Testing
@@ -193,6 +210,10 @@ first run takes about 20% longer than on the tree VM, and every later run is 50 
 - **Differential tests**: `python3 libreoffice/tools/run_tests.py runner --fastvm` runs the whole
   TestRunner suite with every engine on the bytecode backend, and reports which programs fell back
   to the tree VM and why.
+- **Direct compiler**: `python3 Tools/DirectCompiler/compare.py` compiles generated programs and the
+  scripts of `test/` both ways and requires the same disassembly; with `--sources FILE` it also takes
+  the sources the TestRunner compiles (`ASF_CAPTURE_SOURCES=FILE run_tests.py runner --fastvm`
+  writes them, and the run reports how many were compiled from their tokens).
 - **Benchmarks**: `python3 libreoffice/tools/run_tests.py fastbench` runs every workload of
   `test/FastVMBench.bas` on both backends, checks that the results agree and prints both times;
   `asfbench --fastvm` runs `test/AsfBench.bas` on the bytecode VM.

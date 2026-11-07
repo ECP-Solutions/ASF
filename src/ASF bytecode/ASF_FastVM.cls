@@ -1126,11 +1126,14 @@ Private Function LoadModule(ByVal path As String) As ASF_Map
         Err.Raise vbObjectError + 9011, "VM.LoadModule", "Failed to load module: " & path
     End If
     On Error GoTo 0
-    Dim compiler As ASF_Compiler: Set compiler = New ASF_Compiler
-    compiler.SetGlobals GLOBALS_
-    compiler.CurrentModulePath = path
-    compiler.IsModuleMode = True
-    Dim idx As Long: idx = compiler.CompileProgram(src, "@module:" & path)
+    Dim idx As Long: idx = BC_.CompileSource(src, "@module:" & path)
+    If idx = 0 Then
+        Dim compiler As ASF_Compiler: Set compiler = New ASF_Compiler
+        compiler.SetGlobals GLOBALS_
+        compiler.CurrentModulePath = path
+        compiler.IsModuleMode = True
+        idx = compiler.CompileProgram(src, "@module:" & path)
+    End If
     If Not BC_.Prepare(idx) Then
         Set LoadModule = VM_.LoadModule(path)
         modules_.SetValue path, LoadModule

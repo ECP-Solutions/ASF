@@ -51,7 +51,9 @@ def fastvm_module(code):
     code = code.replace("Private Sub INIT_()\n", "Private Sub INIT_()\n    FASTVM_ON_ = True\n", 1)
     code = code.replace("    If VM_.verbose Then\n        LogLine \"=== Runtime Log ===\"",
                         "    LOTraceBackend BACKEND_, FALLBACK_\n    If VM_.verbose Then\n        LogLine \"=== Runtime Log ===\"", 1)
-    assert "LOTraceBackend" in code and "FASTVM_ON_ = True" in code
+    code = code.replace("        Compile = BC_.CompileSource(src, progName)\n",
+                        "        Compile = BC_.CompileSource(src, progName)\n        LOTraceCompile Compile, BC_.Reason, src\n", 1)
+    assert "LOTraceBackend" in code and "FASTVM_ON_ = True" in code and "LOTraceCompile" in code
     return code
 
 
@@ -78,6 +80,17 @@ Public Sub LOTraceBackend(ByVal backend As String, ByVal reason As String)
     Dim f As Integer: f = FreeFile
     Open LOLogDir() & "/TestRunner.log" For Append As #f
     If backend = "bytecode" Then Print #f, "BACKEND bytecode" Else Print #f, "BACKEND tree " & reason
+    Close #f
+End Sub
+Public Sub LOTraceCompile(ByVal idx As Long, ByVal reason As String, ByVal src As String)
+    Dim f As Integer: f = FreeFile
+    Open LOLogDir() & "/TestRunner.log" For Append As #f
+    If idx > 0 Then Print #f, "COMPILE direct" Else Print #f, "COMPILE ast " & reason
+    Close #f
+    f = FreeFile
+    Open LOLogDir() & "/sources.txt" For Append As #f
+    Print #f, "=====SRC====="
+    Print #f, src
     Close #f
 End Sub
 Public Sub RunSuites()
@@ -176,6 +189,9 @@ def run(suites, keep_log=False, vba_expressions=None, fastvm=False):
     runner_log = os.path.join(work, "TestRunner.log")
     if fastvm and os.path.exists(runner_log):
         log += "\n" + open(runner_log, encoding="utf-8", errors="replace").read()
+    sources = os.path.join(work, "sources.txt")
+    if os.environ.get("ASF_CAPTURE_SOURCES") and os.path.exists(sources):
+        shutil.copy(sources, os.environ["ASF_CAPTURE_SOURCES"])
     if not keep_log:
         shutil.rmtree(work, ignore_errors=True)
     return log, elapsed, log_path, len(skip)
@@ -193,6 +209,19 @@ def backend_report(log):
             counts["tree"] += 1
             reason = line[len("BACKEND tree"):].strip() or "(none)"
             reasons.setdefault(reason, []).append(test)
+    compiled = {"direct": 0, "ast": 0}
+    why = {}
+    for line in log.split("\n"):
+        if line.startswith("COMPILE direct"):
+            compiled["direct"] += 1
+        elif line.startswith("COMPILE ast"):
+            compiled["ast"] += 1
+            why.setdefault(line[len("COMPILE ast"):].strip() or "(none)", 0)
+            why[line[len("COMPILE ast"):].strip() or "(none)"] += 1
+    if compiled["direct"] + compiled["ast"]:
+        print(f"compiled from tokens: {compiled['direct']}, through the AST: {compiled['ast']}")
+        for reason, n in sorted(why.items(), key=lambda kv: -kv[1]):
+            print(f"  {n:4d}  {reason}")
     total = counts["bytecode"] + counts["tree"]
     print(f"programs: {total}, bytecode {counts['bytecode']} ({100 * counts['bytecode'] / max(total, 1):.0f}%), tree {counts['tree']}")
     for reason, tests in sorted(reasons.items(), key=lambda kv: -len(kv[1])):
