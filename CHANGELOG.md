@@ -17,9 +17,10 @@ All notable changes for ASF. This file combines the release notes from the proje
     - **`flatten()` and `clone()` evaluated their argument twice** — a call with side effects in the argument (`flatten(next())`) ran twice; they use the evaluated argument now.
     - **`ASF_Bytecode.Disassemble` with `null`** — a program with the constant `null` raised *Invalid use of Null* instead of listing its code.
     - **Excel, bytecode backend: stale host functions and arrays** — an engine that changed its globals kept the bytecode compiler of the old ones, so `calling_native_function` and `host_sees_array_mutation` failed with `FastVM` on.
+    - **Tree VM: writing into an array from VBA Expressions** — `@(...)` gives arrays from 0, and `a[1][2] = 42` on one wrote the first item of the row (`[[42, 8, 9]]`); every level now turns its index into a position of its own array, as the bytecode VM does.
     - **`'1' == 1` was false** — VBA compares a number and a text as different values; a text that reads as a number now equals that number, on both VMs (`'a' == 1` and `'' == 0` stay false).
 
-- **Test coverage**: `flatten_clone_evaluate_argument_once` and `program_from_tokens_on_tree` in `test/TestRunner.bas`.
+- **Test coverage**: `flatten_clone_evaluate_argument_once`, `program_from_tokens_on_tree` and `write_into_array_from_VBAexpressions` in `test/TestRunner.bas`.
 	
 ## [v3.4.0] - 2026-11-05
 https://github.com/ECP-Solutions/ASF/releases/tag/v3.4.0

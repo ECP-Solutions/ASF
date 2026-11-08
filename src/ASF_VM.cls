@@ -6064,12 +6064,9 @@ Public Function UpdateNestedArrayByPath(ByRef root As Variant, ByVal idxPath As 
         If depth <= 0 Then UpdateNestedArrayByPath = False: Exit Function
         ReDim idxs(1 To depth)
         Dim ii As Long, posi As Long: posi = 1
+        ' each level turns its index into a position of its own array (NormalizeIndexOffset)
         For ii = lbp To ubp
-            If LBound(root) <> optBase Then
-                idxs(posi) = NormalizeIndex(CLng(idxPath(ii)), UBound(root) - LBound(root) + 1, optBase)
-            Else
-                idxs(posi) = CLng(idxPath(ii))
-            End If
+            idxs(posi) = CLng(idxPath(ii))
             posi = posi + 1
         Next ii
     Else

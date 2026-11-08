@@ -16,7 +16,8 @@ import build  # noqa: E402
 TEST_DIR = os.path.join(build.ROOT, "test")
 
 # TestRunner tests that need VBAExpressionsLib
-NEEDS_VBA_EXPRESSIONS = ("mutating_VBAexpressions_Arrays", "vbexpr_embedded", "reusing_results_from_VBAexpressions")
+NEEDS_VBA_EXPRESSIONS = ("mutating_VBAexpressions_Arrays", "vbexpr_embedded", "reusing_results_from_VBAexpressions",
+                         "write_into_array_from_VBAexpressions")
 
 # TestRunner tests that cannot run on LibreOffice
 EXCLUDED = {

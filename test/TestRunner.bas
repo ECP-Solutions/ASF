@@ -308,6 +308,7 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("advanced_prototyping",      "monkey_patch_worksheets_name") Then monkey_patch_worksheets_name: EndTest
     If StartTest("Nullish coalescing",        "nullish_coalescing") Then nullish_coalescing: EndTest
     If StartTest("Backends",                  "program_from_tokens_on_tree") Then program_from_tokens_on_tree: EndTest
+    If StartTest("host_VBA_Expressions",      "write_into_array_from_VBAexpressions") Then write_into_array_from_VBAexpressions: EndTest
     On Error GoTo 0
 
     Dim summary As String
@@ -4929,6 +4930,20 @@ Private Sub program_from_tokens_on_tree()
         actual = actual & .OUTPUT_
     End With
     expected = "5|9"
+    AssertEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub write_into_array_from_VBAexpressions()
+    On Error GoTo TestFail
+
+    ' VBA Expressions gives arrays from 0: a[1][2] is the second item of the first row
+    actual = CStr(GetResult("a=@({{7;8;9};{1;2;3}}); a[1][2]=42; a[2][3]=5; a[1][4]=0; return `${a}`;"))
+    expected = "[ [ 7, 42, 9, 0 ], [ 1, 2, 5 ] ]"
     AssertEqual expected, actual
 
 TestExit:
