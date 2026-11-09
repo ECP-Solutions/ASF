@@ -99,6 +99,7 @@ Private Const OP_VBAEXPR As Long = 84   ' a: the VBA expression, b: the names of
 Private Const OP_PROTO As Long = 85     ' a: the prototype (classType, methodName, funcIndex, params); pops its function
 Private Const OP_EXPORT As Long = 86    ' a: exported name; pops the value (a module being loaded keeps it)
 Private Const OP_EXPORTPROTO As Long = 87 ' a: the prototype, with exportName; pops its function
+Private Const OP_SUPER As Long = 88     ' a: 0 init, 1 constructor of the class under this and b arguments (-1: an array of them)
 Private Const METHOD_SHIFT As Long = 1024 ' b of CALLM...: arguments + METHOD_SHIFT * method number
 
 ' compile errors: vbObjectError + these numbers, as ASF 3 numbered them
@@ -128,6 +129,7 @@ Private capKind_() As Long, capIdx_() As Long, nCap_ As Long   ' kind 0: a local
 Private fnKind_() As Long               ' 1: a method (keeps a throw to itself), 2: a constructor (also gives its instance)
 Private tryStart_() As Long, tryEnd_() As Long, tryHandler_() As Long, tryDepth_() As Long, nTry_ As Long
 Private clsNew_() As Long, nCls_ As Long                ' class number -> its constructor function
+Private clsInit_() As Long, clsCtor_() As Long          ' class of a module -> its fields and methods, its constructor alone
 Private progFn_ As ASF_Map              ' program index -> its main function, -1 when not taken
 Private progReason_ As ASF_Map
 Private progGlobals_ As ASF_Map         ' program index -> names of its global slots
@@ -195,7 +197,7 @@ Private Sub Class_Initialize()
     ReDim fnCapStart_(1 To 16): ReDim fnCapCount_(1 To 16)
     ReDim fnRest_(1 To 16): ReDim fnThis_(1 To 16): ReDim fnThisEnv_(1 To 16)
     ReDim cellSlot_(1 To 16): ReDim capKind_(1 To 16): ReDim capIdx_(1 To 16)
-    ReDim fnKind_(1 To 16): ReDim tryStart_(1 To 4): ReDim tryEnd_(1 To 4): ReDim tryHandler_(1 To 4): ReDim tryDepth_(1 To 4): ReDim clsNew_(1 To 4)
+    ReDim fnKind_(1 To 16): ReDim tryStart_(1 To 4): ReDim tryEnd_(1 To 4): ReDim tryHandler_(1 To 4): ReDim tryDepth_(1 To 4): ReDim clsNew_(1 To 4): ReDim clsInit_(1 To 4): ReDim clsCtor_(1 To 4)
     Set kMap_ = New ASF_Map
     Set progFn_ = New ASF_Map
     Set progReason_ = New ASF_Map
@@ -283,6 +285,15 @@ End Function
 Public Function ClassConstructors() As Variant
     ClassConstructors = clsNew_
 End Function
+' Class number -> the function that sets the fields and binds the methods of an instance (a class
+' of a module, which a class of another script may extend), 0 for the others
+Public Function ClassInits() As Variant
+    ClassInits = clsInit_
+End Function
+' Class number -> its constructor alone (a class of a module), 0 for the others
+Public Function ClassCtors() As Variant
+    ClassCtors = clsCtor_
+End Function
 Public Function ClassCount() As Long
     ClassCount = nCls_
 End Function
@@ -316,7 +327,7 @@ Public Function Disassemble(ByVal idx As Long) As String
                   "NOT NEG TYPEOF JMP JMPF JMPT ANDJ ORJ TOBOOL NULLJ POP CALLF RET RET0 PRINT INCL INCG " & _
                   "JNLT JNLE JNGT JNGE JNEQ JNNE ADDK DUP LOADC STOREC LOADE STOREE MKCLOS MKFUNC CALL NEWARR NEWOBJ " & _
                   "GETIDX GETIDXW SETIDXR GETPROP SETPROPV CALLM CALLMW EXPAND CALLFV CALLV CALLMV CALLMWV CALLB CALLBV TPL " & _
-                  "NEWARRS JNSW ITERLIST FORNEXT UNPACK CLASS NEWINST BINDM CALLFT THROW IMPORT TREESTMT VBAEXPR PROTO EXPORT EXPORTPROTO", " ")
+                  "NEWARRS JNSW ITERLIST FORNEXT UNPACK CLASS NEWINST BINDM CALLFT THROW IMPORT TREESTMT VBAEXPR PROTO EXPORT EXPORTPROTO SUPER", " ")
     Dim out As String, i As Long, fn As Long, k As Variant
     If Not Prepare(idx) Then
         Disassemble = "not taken: " & reason_
@@ -3566,13 +3577,23 @@ Private Sub DEmitClassDecl(ByVal decl As ASF_Map)
     Dim name As String: name = decl.GetValue("name")
     If Not classes_.Exists(name) Then CompileError "A class is declared at the top level of a script"
     If Not classes_.GetValue(name) Is decl Then CompileError "A class is declared at the top level of a script"
+    ' a parent this script does not declare is a class value at run time: one a module made
     If decl.Exists("superClass") Then
-        If Not classes_.Exists(CStr(decl.GetValue("superClass"))) Then CompileError "Class '" & name & "' extends '" & decl.GetValue("superClass") & "', which this script does not declare"
+        If Not classes_.Exists(CStr(decl.GetValue("superClass"))) Then decl.SetValue "externalParent", True
     End If
     nCls_ = nCls_ + 1
-    If nCls_ > UBound(clsNew_) Then ReDim Preserve clsNew_(1 To 2 * nCls_)
+    If nCls_ > UBound(clsNew_) Then
+        ReDim Preserve clsNew_(1 To 2 * nCls_): ReDim Preserve clsInit_(1 To 2 * nCls_): ReDim Preserve clsCtor_(1 To 2 * nCls_)
+    End If
     clsNew_(nCls_) = NewFunction("@new " & name)
     pendingCls_.Add Array("new", decl, decl, clsNew_(nCls_))
+    clsInit_(nCls_) = 0: clsCtor_(nCls_) = 0
+    If isModule_ Then
+        ' a class of another script may extend it: its parts run on its instances
+        clsInit_(nCls_) = NewFunction("@init " & name)
+        pendingCls_.Add Array("init", decl, decl, clsInit_(nCls_))
+        If decl.Exists("constructor") Then clsCtor_(nCls_) = DConstructorFunction(decl)
+    End If
     Dim cls As ASF_Map: Set cls = New ASF_Map
     cls.Add "type", "Class"
     cls.SetValue "name", name
@@ -3629,7 +3650,19 @@ Private Sub DEmitSuperCall(args As Collection)
     n = args.Count
     If cx_.Exists("class") Then Set cls = cx_.GetValue("class")
     If Not cls Is Nothing Then
-        If cls.Exists("superClass") Then Set parent = classes_.GetValue(CStr(cls.GetValue("superClass")))
+        If cls.Exists("externalParent") Then
+            ' the parent is a class of a module: its constructor is found at run time
+            EmitLoadName CStr(cls.GetValue("superClass"))
+            EmitLoadName "this"
+            For Each a In args
+                DExpr a(0), a(1)
+            Next a
+            Emit OP_SUPER, 1, n, -n - 1
+            Emit OP_POP, 0, 0, -1
+            Emit OP_PUSHE, 0, 0, 1
+            Exit Sub
+        End If
+        Set parent = DParentOf(cls)
     End If
     If Not parent Is Nothing Then
         If Not parent.Exists("constructor") Then Set parent = Nothing
@@ -3829,8 +3862,11 @@ Private Sub DCompileClassFunction(ByVal work As Variant)
     Dim fn As Long: fn = work(3)
     Dim ctx As ASF_Map: Set ctx = NewContext("named", Nothing)
     ctx.SetValue "class", cls
-    Dim parent As ASF_Map, ctor As ASF_Map
-    If cls.Exists("superClass") Then Set parent = classes_.GetValue(CStr(cls.GetValue("superClass")))
+    Dim parent As ASF_Map, ctor As ASF_Map, external As Boolean, setup As Boolean
+    Set parent = DParentOf(cls)
+    external = cls.Exists("externalParent")
+    ' "new" and "init" set the fields and bind the methods; "init" runs no constructor
+    setup = (work(0) = "new" Or work(0) = "init")
     If work(0) = "new" Then
         If cls.Exists("constructor") Then
             Set ctor = cls.GetValue("constructor")
@@ -3842,6 +3878,8 @@ Private Sub DCompileClassFunction(ByVal work As Variant)
         End If
         ctx.SetValue "ctor", True
         fnKind_(fn) = 2
+    ElseIf work(0) = "init" Then
+        fnKind_(fn) = 1
     Else
         Set ctor = work(2)
         fnKind_(fn) = 1
@@ -3857,13 +3895,20 @@ Private Sub DCompileClassFunction(ByVal work As Variant)
         Next item
     End If
     Dim nParams As Long: nParams = ctx.GetValue("nL")
+    ' new of a class whose parent is a module's, without its own constructor: the arguments go to
+    ' the parent's constructor
+    Dim restSlot As Long: restSlot = -1
+    If work(0) = "new" And external And ctor Is Nothing Then
+        restSlot = AddLocal(ctx, "%args")
+        fnRest_(fn) = restSlot
+    End If
     fnThis_(fn) = AddLocal(ctx, "this")
     Dim assigned As ASF_Map: Set assigned = New ASF_Map
     DCollectAssigned plans, assigned
     For i = 1 To assigned.Count
         If Not gSlot_.Exists(assigned.key(i)) Then AddLocal ctx, assigned.key(i)
     Next i
-    If work(0) = "new" Then
+    If setup Then
         If Not parent Is Nothing Then DScanFields parent, ctx
         DScanFields cls, ctx
     End If
@@ -3874,15 +3919,30 @@ Private Sub DCompileClassFunction(ByVal work As Variant)
     If work(0) = "new" Then
         Emit OP_NEWINST, Constant(CStr(cls.GetValue("name"))), 0, 1
         Emit OP_STOREL, fnThis_(fn), 0, -1
-        If Not parent Is Nothing Then
+    End If
+    If setup Then
+        If external Then
+            ' the fields and methods of the module's class first
+            EmitLoadName CStr(cls.GetValue("superClass"))
+            Emit OP_LOADL, fnThis_(fn), 0, 1
+            Emit OP_SUPER, 0, 0, -1
+            Emit OP_POP, 0, 0, -1
+        ElseIf Not parent Is Nothing Then
             DEmitFields parent, fnThis_(fn)
             DEmitBindMethods parent.GetValue("classMethods"), fnThis_(fn), True
         End If
         DEmitFields cls, fnThis_(fn)
-        DEmitBindMethods cls.GetValue("classMethods"), fnThis_(fn), False
+        DEmitBindMethods cls.GetValue("classMethods"), fnThis_(fn), (work(0) = "init")
     End If
     DEmitPlans plans
-    If work(0) = "new" Then
+    If restSlot >= 0 Then
+        EmitLoadName CStr(cls.GetValue("superClass"))
+        Emit OP_LOADL, fnThis_(fn), 0, 1
+        Emit OP_LOADL, restSlot, 0, 1
+        Emit OP_SUPER, 1, -1, -2
+        Emit OP_POP, 0, 0, -1
+    End If
+    If setup Then
         Emit OP_LOADL, fnThis_(fn), 0, 1
         Emit OP_RET, 0, 0, -1
     Else
@@ -3891,6 +3951,13 @@ Private Sub DCompileClassFunction(ByVal work As Variant)
     EndFunction fn, nParams
     raw_ = saveRaw
 End Sub
+
+' The parent a class declared in this script extends, if this script declares it too
+Private Function DParentOf(ByVal cls As ASF_Map) As ASF_Map
+    If Not cls.Exists("superClass") Then Exit Function
+    If cls.Exists("externalParent") Then Exit Function
+    If classes_.Exists(CStr(cls.GetValue("superClass"))) Then Set DParentOf = classes_.GetValue(CStr(cls.GetValue("superClass")))
+End Function
 
 ' The function literals of a class's field defaults
 Private Sub DScanFields(ByVal cls As ASF_Map, ctx As ASF_Map)

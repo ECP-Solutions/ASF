@@ -35,6 +35,7 @@ Private tryStart_() As Long, tryEnd_() As Long, tryHandler_() As Long, tryDepth_
 Private throwing_ As Boolean            ' a throw goes up the calls; LAST_ERROR_ holds its value
 Private mainFn_ As Long
 Private clsNew_() As Long, clsMap_() As Variant, nCls_ As Long ' class number -> constructor function, class value
+Private clsInit_() As Long, clsCtor_() As Long ' class number -> its fields and methods, its constructor alone (classes of modules)
 Private clsKeep_() As Boolean, clsCap_ As Long ' the classes of modules stay after a run
 
 ' modules: run once per engine, then kept with their globals, classes and the cells made while loading
@@ -136,6 +137,7 @@ Private Sub LoadCode()
     tryStart_ = BC_.TryStarts(): tryEnd_ = BC_.TryEnds(): tryHandler_ = BC_.TryHandlers(): tryDepth_ = BC_.TryDepths()
     nTry_ = BC_.TryCount()
     clsNew_ = BC_.ClassConstructors(): nCls_ = BC_.ClassCount()
+    clsInit_ = BC_.ClassInits(): clsCtor_ = BC_.ClassCtors()
     ' a module compiled while a program runs adds code: what the program holds stays
     If clsCap_ = 0 Then
         ReDim clsMap_(1 To UBound(clsNew_)): ReDim clsKeep_(1 To UBound(clsNew_))
@@ -232,7 +234,7 @@ Dispatch:
     On op_(pc) GoTo X1, X2, X3, X4, X5, X6, X7, X8, X9, X10, X11, X12, X13, X14, X15, X16, X17, X18, X19, X20, _
         X21, X22, X23, X24, X25, X26, X27, X28, X29, X30, X31, X32, X33, X34, X35, X36, X37, X38, X39, X40, _
         X41, X42, X43, X44, X45, X46, X47, X48, X49, X50, X51, X52, X53, X54, X55, X56, X57, X58, X59, X60, X61, _
-        X62, X63, X64, X65, X66, X67, X68, X69, X70, X71, X72, X73, X74, X75, X76, X77, X78, X79, X80, X81, X82, X83, X84, X85, X86, X87
+        X62, X63, X64, X65, X66, X67, X68, X69, X70, X71, X72, X73, X74, X75, X76, X77, X78, X79, X80, X81, X82, X83, X84, X85, X86, X87, X88
 X1: ' HALT
     GoTo Finished
 X2: ' PUSHK
@@ -756,6 +758,45 @@ X87: ' EXPORTPROTO a: the prototype; pops its function
     stk_(sp) = Empty
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
+X88: ' SUPER a: 0 the fields and methods, 1 the constructor, of a module's class; b: arguments (-1: an
+    ' array of them on top), under them this, under it the class -> what the function gives
+    n = ob_(pc)
+    If n < 0 Then
+        SetItem rv, stk_(sp)
+        stk_(sp) = Empty
+        sp = sp - 1
+        n = 0
+        If IsArray(rv) Then
+            If UBound(rv) >= LBound(rv) Then
+                If sp + UBound(rv) - LBound(rv) + 2 >= stkCap_ Then GrowStack sp + UBound(rv) - LBound(rv) + 2
+                For i = LBound(rv) To UBound(rv)
+                    sp = sp + 1
+                    SetItem stk_(sp), rv(i)
+                    n = n + 1
+                Next i
+            End If
+        End If
+        rv = Empty
+    End If
+    fn = ParentCode(stk_(sp - n - 1), oa_(pc))
+    ' the class goes: this and the arguments move down
+    For i = sp - n - 1 To sp - 1
+        SetItem stk_(i), stk_(i + 1)
+    Next i
+    stk_(sp) = Empty
+    sp = sp - 1
+    If fn = 0 Then
+        ' a class without a constructor: nothing runs
+        For i = sp - n To sp
+            stk_(i) = Empty
+        Next i
+        sp = sp - n
+        pc = pc + 1: GoTo Dispatch
+    End If
+    res = sp - n: newEnv = 0
+    hasThis = True
+    SetItem thisVal, stk_(sp - n)
+    GoTo CallSetup
 
 MethodCall:
     ' receiver.name(n arguments): an object's own function is called here with this; anything
@@ -1241,6 +1282,24 @@ Private Function ClassCode(ByRef v As Variant, ByVal pc As Long, ByRef fn As Lon
             Exit Function
     End Select
     ClassCode = True
+End Function
+
+' The function of a module's class a class of another script extends: 0 its fields and methods,
+' 1 its constructor (0 when it has none)
+Private Function ParentCode(ByRef v As Variant, ByVal kind As Long) As Long
+    Dim i As Long
+    If IsObject(v) Then
+        For i = 1 To nCls_
+            If IsObject(clsMap_(i)) Then
+                If clsMap_(i) Is v Then
+                    If clsInit_(i) = 0 Then Exit For
+                    If kind = 0 Then ParentCode = clsInit_(i) Else ParentCode = clsCtor_(i)
+                    Exit Function
+                End If
+            End If
+        Next i
+    End If
+    Err.Raise vbObjectError + 5014, "VM.Super", "A class extends a value that is not a class of a module"
 End Function
 
 ' Class.name(): the class's method of that name, as EvalMemberNode finds it

@@ -108,8 +108,16 @@ names of its fields, a method `{type: 'Method', name, params, isStatic, fn}` and
 `{type: 'BoundMethod', name, fn, instance}`, where `fn` is the number of the compiled function.
 Printing an instance shows its methods that way, without their code. The constructor of each class
 is compiled with the field defaults and the method bindings (the parent's fields and methods
-first). `super(...)` calls the constructor of the parent of the class it is written in. A class
-extends a class declared in the same script.
+first). `super(...)` calls the constructor of the parent of the class it is written in.
+
+A class may extend a class of a module (imported, or exported by a module that the script imports
+through another one). Each class of a module also gets two functions, kept by class number: `@init`,
+which sets its fields and binds its methods on an instance (and its own parent's first), and
+`@ctor`, its constructor alone. A class whose parent is not declared in its script finds them at
+run time with `SUPER`, from the class value its parent's name holds: its constructor runs the
+parent's `@init` before its own fields and methods, and `super(...)` the parent's `@ctor`; without
+a constructor of its own, the arguments of `new` go to the parent's. Extending a value that is not
+a class of a module is an error of the constructor.
 
 ### Modules and the host
 
@@ -151,8 +159,8 @@ registered.
 - Names are lexical (see *Scope rules*): a named function does not see the locals of its caller.
 - `super(...)` is the parent of the class it is written in; ASF 3 took the parent of the
   instance's class, so with three levels it called the same constructor until the stack ran out.
-- A class extends a class of the same script; ASF 3 also found one declared by an earlier script
-  or a module.
+- A class extends a class of the same script or of a module; a class declared by another script
+  is not visible (each script has its own globals, as in ASF 3).
 - `o.inc().inc()` runs the first `inc()` once; ASF 3 ran it twice.
 - `` `${null}` `` is the text `null`, as in JavaScript; ASF 3 stopped with a type mismatch.
 - `a[f()] = v` evaluates `f()` once and stores the value; ASF 3 stopped the statement.

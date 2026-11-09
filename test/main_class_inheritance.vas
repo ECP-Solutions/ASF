@@ -1,0 +1,16 @@
+scwd(wd);
+import { Shape, Mid } from './classes_lib.vas';
+class Square extends Shape {
+    constructor(s) { super('square'); this.side = s; }
+    area() { return this.side * this.side; }
+};
+class Named extends Shape {
+    hello() { return 'hi ' + this.name; }
+};
+class Top extends Mid {
+    constructor(v) { super(v + 1); }
+};
+let q = new Square(3);
+let n = new Named('x');
+let t = new Top(1);
+return `${q.name} ${q.area()} ${q.describe()} ${q.kind} ${n.hello()} ${n.describe()} ${t.get()} ${t.twice()}`;

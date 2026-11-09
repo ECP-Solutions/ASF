@@ -312,6 +312,7 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("assignments",               "assignment_in_parentheses") Then assignment_in_parentheses: EndTest
     If StartTest("loops",                     "break_outside_a_loop") Then break_outside_a_loop: EndTest
     If StartTest("module_system",             "module_system_export_fun") Then module_system_export_fun: EndTest
+    If StartTest("module_system",             "module_system_class_inheritance") Then module_system_class_inheritance: EndTest
     If StartTest("compile_errors",            "compile_errors_messages") Then compile_errors_messages: EndTest
     If StartTest("compile_errors",            "compile_error_keeps_nothing") Then compile_error_keeps_nothing: EndTest
     If StartTest("call_trace",                "call_trace_records_calls") Then call_trace_records_calls: EndTest
@@ -5043,6 +5044,25 @@ Private Sub call_trace_records_calls()
     expected = "6|CALL: <anonymous>(2) -> 6;CALL: f(2) -> 3;"
     AssertEqual expected, actual
 
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub module_system_class_inheritance()
+    Dim wd As String
+    Dim eng As New ASF
+    wd = ThisWorkbook.path
+    With eng
+        .InjectVariable "wd", wd
+        On Error GoTo TestFail
+        ' classes of a script extend classes of a module: with and without a constructor, and a
+        ' module class that extends another of its module
+        actual = CStr(.Execute(wd & "\main_class_inheritance.vas"))
+    End With
+    expected = "square 9 square:9 shape hi x x:0 4 8"
+    AssertEqual expected, actual
 TestExit:
     Exit Sub
 TestFail:
