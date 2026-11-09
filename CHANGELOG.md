@@ -5,17 +5,12 @@ All notable changes for ASF. This file combines the release notes from the proje
 ## [v4.0.0] - 2026-11-09
 https://github.com/ECP-Solutions/ASF/releases/tag/v4.0.0
 
-ASF 4 compiles every script to bytecode and runs it on a virtual machine; ASF 3.4.0 is the last version that runs the AST. The language is the same; the differences are listed under **Changed**.
-
-## [v4.0.0] - 2026-11-09
-https://github.com/ECP-Solutions/ASF/releases/tag/v4.0.0
-
-ASF 4 compiles every script to bytecode and runs it on a virtual machine; ASF 3.4.0 is the last version that runs the AST. The language is the same; the differences are listed under **Changed**.
+ASF 4 compiles every script to bytecode and runs it on a virtual machine, in every engine and with no option to set; ASF 3.4.0 is the last version that runs the AST. The language is the same; the differences are listed under **Changed**.
 
 ## Highlights
 
 - **Changed**
-    - **Bytecode only** — `ASF_Compiler` compiles a script from its tokens straight to bytecode in `Long` arrays, without building an AST: names resolved at compile time (locals and globals by slot, closures over shared cells), constant folding and fused instructions. `ASF_VM` runs it in one dispatch loop (`On ... GoTo`, a preallocated value stack, frames on arrays, an inline cache for properties, built-in methods by number, `try`/`catch` regions in a table). `ASF_Runtime` is the library of values: methods of arrays, strings, objects, collections, Math and regex, printing, host objects and their prototypes, `@(...)` and the files of modules. On LibreOffice the 46 workloads of `test/VersionBench.bas` run 2 to 39 times faster than on ASF 3.4 (about 13 for arithmetic, functions and recursion, 5 for strings and classes), a 300-statement script runs its first time in half the time, and every workload gives the same result. [src/BYTECODE.md](src/BYTECODE.md) describes the design.
+    - **Bytecode only** — `ASF_Compiler` compiles a script from its tokens straight to bytecode in `Long` arrays, without building an AST: names resolved at compile time (locals and globals by slot, closures over shared cells), constant folding and fused instructions. `ASF_VM` runs it in one dispatch loop (`On ... GoTo`, a preallocated value stack, frames on arrays, an inline cache for properties, built-in methods by number, `try`/`catch` regions in a table). `ASF_Runtime` is the library of values: methods of arrays, strings, objects, collections, Math and regex, printing, host objects and their prototypes, `@(...)` and the files of modules. On LibreOffice the 46 workloads of `test/VersionBench.bas` run 2.5 to 82 times faster than on ASF 3.2.1, the AST engine as ASF 3 users run it (about 25 for arithmetic and function calls, 36 for recursion, 7 to 10 for strings and classes), and a 300-statement script runs its first time 8.6 times faster. ASF 3.3 and 3.4 brought their speed-ups behind conditional compilation arguments and a setting of each engine; in ASF 4 they are how every script runs. [src/BYTECODE.md](src/BYTECODE.md) describes the design.
     - **Names are lexical** — a function sees its locals, those of the functions that enclose it and the globals; in ASF 3 a named function could also read and write the locals of its caller.
     - **Compile errors** — a source with an error raises it from `Compile`, with the message and number ASF 3 gave (`vbObjectError + 8001` for a `?` without `:`, `+ 8004` for `;` between object properties, `+ 9002` for a rest parameter that is not last, `+ 9024` for unbalanced parentheses, `+ 9025` for the others), also in named functions that no code calls; nothing of a source that does not compile is kept. `if`, `for`, `while`, `switch`, `try` and `fun` without their parentheses or block, which ASF 3 skipped in some cases, are errors.
     - **Classes** — `super(...)` calls the constructor of the parent of the class it is written in (ASF 3 took the parent of the instance's class, which recursed with three levels).
@@ -23,7 +18,7 @@ ASF 4 compiles every script to bytecode and runs it on a virtual machine; ASF 3.
     - **Modules** compile to bytecode and run once per engine with their own global slots; their globals, classes and closures stay across runs until `ClearModuleCache`.
 
 - **Added**
-    - **ASF 3.4.0 in `src/old/`** — its classes have the suffix `_OLD` (`ASF_OLD`, `ASF_Compiler_OLD`, `ASF_VM_OLD`, `ASF_Map_OLD`...), so both versions can be imported into one project. `test/VersionBench.bas` compares them (`run_tests.py versionbench` on LibreOffice, which loads both).
+    - **ASF 3.2.1 in `src/old/`** — the AST engine as ASF 3 users run it; its classes have the suffix `_OLD` (`ASF_OLD`, `ASF_Compiler_OLD`, `ASF_VM_OLD`, `ASF_Map_OLD`...), so both versions can be imported into one project. `test/VersionBench.bas` compares them (`run_tests.py versionbench` on LibreOffice, which loads both).
     - **`a[f()] = v`** — an index with a call is evaluated once and the value stored, also in nested targets (`m[f()][1] = v`, `o.items[f()] = v`); ASF 3 stopped the statement.
     - **`export fun name(...) { }`** in a module exports the function.
     - **Classes that extend classes of modules** — `import { Shape } from './shapes.vas'; class Square extends Shape { ... }`: the module's class sets its fields and methods on the instance first, `super(...)` runs its constructor, and a class without a constructor passes the arguments of `new` to it; it also works across several modules (a module class that extends a class of another module) and with `export default`.
@@ -32,7 +27,7 @@ ASF 4 compiles every script to bytecode and runs it on a virtual machine; ASF 3.
     - **`PathSeparator` and `JoinPath`** — `Application.PathSeparator` exists only in Excel and Word, so the portable host failed in PowerPoint. `eng.PathSeparator(path)` returns the separator of folders that `path` uses (`\` on Windows, `/` on macOS and Linux, `:` in the paths of Office 2011 for Mac), or else the one of the current folder (`CurDir`), which every host has, LibreOffice included; `eng.JoinPath(folder, name)` joins them with it, once. `OfficeHost.bas`, `ExcelHost.bas`, TestRunner and the documentation use them.
 
 - **Removed**
-    - The AST compiler and the tree VM (now `ASF_Compiler_OLD` and `ASF_VM_OLD` in `src/old/`), `ASF_ScopeStack`, the folder `src/ASF bytecode/` (its classes are `ASF_Compiler` and `ASF_VM` now), the conditional compilation arguments `ASF_BYTECODE` and `ASF_FASTVM_DEFAULT`, the engine properties `FastVM`, `Backend` and `FallbackReason`, and `Tools/DirectCompiler/`, which checked that compiling from the tokens made the code the AST compiler made.
+    - The AST compiler and the tree VM (`src/old/` keeps those of 3.2.1 as `ASF_Compiler_OLD` and `ASF_VM_OLD`), `ASF_ScopeStack`, the folder `src/ASF bytecode/` (its classes are `ASF_Compiler` and `ASF_VM` now), the conditional compilation arguments `ASF_BYTECODE` and `ASF_FASTVM_DEFAULT`, the engine properties `FastVM`, `Backend` and `FallbackReason`, and `Tools/DirectCompiler/`, which checked that compiling from the tokens made the code the AST compiler made.
     - `gPrograms` keeps the source of a program and the tokens of a named function instead of their AST.
 
 - **Fixed**

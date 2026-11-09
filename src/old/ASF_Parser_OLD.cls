@@ -136,11 +136,7 @@ Tokenize_MainLoop:
                     ' or the scape character itself (\)
                     If c = "\" Then
                         nxt = mid$(sourceCode, i + 1, 1)
-                        If nxt = "`" Then
-                            ' kept escaped: the compiler splits the template and would end it here
-                            curLit = curLit & c & nxt
-                            i = i + 2
-                        ElseIf nxt = "/" Or nxt = "\" Then
+                        If nxt = "`" Or nxt = "/" Or nxt = "\" Then
                             curLit = curLit & nxt
                             i = i + 2
                         Else
@@ -328,8 +324,7 @@ Tokenize_CollapseLoop:
     Do While idx <= toks.Count
         If idx > toks.Count Then Exit Do ' FIX: Bounds
         tk = toks(idx)
-        ' not after a keyword: return [3] is an array literal, not the element 3 of "return"
-        If tk(0) = "IDENT" And idx + 3 <= toks.Count And Not IsKeywordBeforeValue(tk(1)) Then
+        If tk(0) = "IDENT" And idx + 3 <= toks.Count Then
             If toks(idx + 1)(0) = "PAREN" And toks(idx + 1)(1) = "[" And toks(idx + 2)(0) = "NUMBER" And toks(idx + 3)(0) = "PAREN" And toks(idx + 3)(1) = "]" Then
                 out.Add Array("IDENT", tk(1) & "[" & toks(idx + 2)(1) & "]")
                 idx = idx + 4
@@ -341,14 +336,6 @@ Tokenize_CollapseLoop:
     Loop
 
     Set Tokenize = out
-End Function
-
-' Keywords an expression (so an array literal) can follow
-Private Function IsKeywordBeforeValue(ByVal word As String) As Boolean
-    Select Case LCase$(word)
-        Case "return", "typeof", "throw", "case", "in", "of", "else", "delete", "void", "instanceof"
-            IsKeywordBeforeValue = True
-    End Select
 End Function
 
 

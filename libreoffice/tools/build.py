@@ -34,7 +34,7 @@ REGEX_ENGINE = "ASF_RegexEngine"
 
 # conditional compilation arguments of the LibreOffice edition
 DEFINES = {}
-# ASF 3.4.0, the last version that runs the AST, with the suffix _OLD on its classes
+# ASF 3.2.1, the AST engine as ASF 3 users run it by default, with the suffix _OLD on its classes
 OLD_DIR = "old"
 
 
@@ -77,7 +77,7 @@ def src_classes(repo=ROOT):
 
 
 def old_classes(repo=ROOT):
-    """the classes of ASF 3.4.0 in src/old/"""
+    """the classes of ASF 3.2.1 in src/old/"""
     return sorted(glob.glob(os.path.join(repo, "src", OLD_DIR, "*.cls")))
 
 
@@ -812,8 +812,8 @@ def to_old(code):
 
 
 def old_library_modules(repo=ROOT):
-    """[(name, code, 'class')] of ASF 3.4.0 (src/old/), to load next to the library's modules: the
-    passes run on the code with the names of 3.4.0 (some of them look for these names), then the
+    """[(name, code, 'class')] of ASF 3.2.1 (src/old/), to load next to the library's modules: the
+    passes run on the code with the names of 3.2.1 (some of them look for these names), then the
     names get their suffix again"""
     def plain(path):
         return re.sub(r"\b(ASF\w*?)_OLD\b", r"\1", load(path))

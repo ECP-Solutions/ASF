@@ -1,6 +1,6 @@
 Attribute VB_Name = "VersionBench"
 ' VersionBench
-' ASF 3.4 (src/old, the classes with the suffix _OLD, which run the AST) against ASF 4 (bytecode),
+' ASF 3.2.1 (src/old, the classes with the suffix _OLD, which run the AST) against ASF 4 (bytecode),
 ' one workload per aspect of the language. For each workload: the run time of a compiled program
 ' on each version, the cold time (a fresh engine, Compile and the first Run), and the result of each
 ' against the expected one. Times are milliseconds per call; each is repeated until it has taken
@@ -12,8 +12,8 @@ Option Explicit
 Private Const MIN_SECONDS As Double = 0.3
 
 Public Sub RunVersionBenchmarks()
-    Debug.Print "=== ASF 3.4 against ASF 4 (ms per call) ==="
-    Debug.Print "workload | 3.4 run | 4.0 run | speed-up | 3.4 cold | 4.0 cold | result | check"
+    Debug.Print "=== ASF 3.2.1 against ASF 4 (ms per call) ==="
+    Debug.Print "workload | 3.2.1 run | 4.0 run | speed-up | 3.2.1 cold | 4.0 cold | result | check"
     ' expressions and control flow
     Bench "Arithmetic, top level", "let s = 0; for (let i = 1, i <= 300, i += 1) { s = s + i * 2 - 1; }; return s;", "90000"
     Bench "Arithmetic, in a function", "fun f() { let s = 0; for (let i = 1, i <= 300, i += 1) { s = s + i * 2 - 1; }; return s; }; return f();", "90000"
@@ -112,7 +112,7 @@ Private Sub Bench(ByVal label As String, ByVal script As String, ByVal expected 
     If newResult <> expected Then
         check = "4.0 gives " & newResult & ", expected " & expected
     ElseIf oldResult <> newResult Then
-        check = "3.4 gives " & oldResult
+        check = "3.2.1 gives " & oldResult
     Else
         check = "ok"
     End If
@@ -150,7 +150,7 @@ Private Function TimeRun(ByVal eng As Object, ByVal idx As Long) As Double
     TimeRun = el * 1000 / n
 End Function
 
-' Milliseconds per fresh engine, Compile and first Run; isNew: ASF 4, else ASF 3.4
+' Milliseconds per fresh engine, Compile and first Run; isNew: ASF 4, else ASF 3.2.1
 Private Function TimeCold(ByVal script As String, ByVal isNew As Boolean) As Double
     Dim n As Long, i As Long, t0 As Double, el As Double
     Dim eng As Object, r As Variant

@@ -100,7 +100,7 @@ def run(suites, keep_log=False, vba_expressions=None):
 
     mods = build.library_modules()
     if "versionbench" in suites:
-        # the benchmarks compare ASF 4 with ASF 3.4 (src/old)
+        # the benchmarks compare ASF 4 with ASF 3.2.1 (src/old)
         mods += build.old_library_modules()
     if "regex" in suites:
         mods.append(("RegexTests", build.normal_module(build.load(os.path.join(TEST_DIR, "RegexTests.bas"))), "normal"))

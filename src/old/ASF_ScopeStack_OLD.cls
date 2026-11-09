@@ -40,23 +40,6 @@ Public Function CaptureByReference() As ASF_ScopeStack_OLD
     s.LoadRawByRef refFrames
     Set CaptureByReference = s
 End Function
-' A new stack over the same frame objects, as closures capture them (shared-write semantics);
-' same result as LoadRawByRef(RawByRef) without the two intermediate Collections
-Public Function ShareFrames() As ASF_ScopeStack_OLD
-    Dim s As ASF_ScopeStack_OLD: Set s = New ASF_ScopeStack_OLD
-    s.AdoptFrames pFrames
-    Set ShareFrames = s
-End Function
-
-' Replace the frames by references to the frames of another stack (see ShareFrames)
-Public Sub AdoptFrames(frames As Collection)
-    Set pFrames = New Collection
-    Dim f As Variant
-    For Each f In frames
-        pFrames.Add f
-    Next f
-End Sub
-
 ' Return clones of frames (safe outward view)
 Public Property Get Raw() As Collection
     Dim out As New Collection
@@ -123,13 +106,11 @@ Public Sub Pop()
     pFrames.Remove pFrames.Count
 End Sub
 
-' Frames are read through a typed variable: calls on a Collection item are late-bound
 ' Has: search top->bottom for key
 Public Function Has(key As String) As Boolean
-    Dim i As Long, fr As ASF_Map_OLD
+    Dim i As Long
     For i = pFrames.Count To 1 Step -1
-        Set fr = pFrames(i)
-        If fr.Exists(key) Then
+        If pFrames(i).Exists(key) Then
             Has = True
             Exit Function
         End If
@@ -139,11 +120,10 @@ End Function
 
 ' GetValue: search top->bottom
 Public Function GetValue(key As String) As Variant
-    Dim i As Long, fr As ASF_Map_OLD, v As Variant
+    Dim i As Long
     For i = pFrames.Count To 1 Step -1
-        Set fr = pFrames(i)
-        If fr.TryGetValue(key, v) Then
-            vAssignment GetValue, v
+        If pFrames(i).Exists(key) Then
+            vAssignment GetValue, pFrames(i).GetValue(key)
             Exit Function
         End If
     Next i
@@ -152,14 +132,18 @@ End Function
 
 ' SetValue: write to the first frame where key exists (top->bottom). Otherwise put into top frame.
 Public Sub SetValue(key As String, val As Variant)
-    Dim i As Long, fr As ASF_Map_OLD
+    Dim i As Long
     For i = pFrames.Count To 1 Step -1
-        Set fr = pFrames(i)
-        If fr.ReplaceValue(key, val) Then Exit Sub
+        If pFrames(i).Exists(key) Then
+            pFrames(i).SetValue key, val
+            Exit Sub
+        
+        End If
     Next i
     ' not found -> set in top frame
-    Set fr = pFrames(pFrames.Count)
-    fr.SetValue key, val
+    Dim top As ASF_Map_OLD
+    Set top = pFrames(pFrames.Count)
+    top.SetValue key, val
 End Sub
 
 ' Write directly into the top (current) frame, always creating/overwriting the key
