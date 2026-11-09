@@ -128,9 +128,9 @@ git merge upstream/main
    - `ASF.cls`
    - `ASF_Compiler.cls`
    - `ASF_VM.cls`
+   - `ASF_Runtime.cls`
    - `ASF_Parser.cls`
    - `ASF_Globals.cls`
-   - `ASF_ScopeStack.cls`
    - `ASF_Map.cls`
    - `ASF_RegexEngine.cls`
    - `UDFunctions.cls`
@@ -151,9 +151,12 @@ git merge upstream/main
 ASF/
 ├── src/                    # Source code
 │   ├── ASF.cls            # Main engine class
-│   ├── ASF_Compiler.cls   # Compiler
-│   ├── ASF_VM.cls         # Virtual machine
-│   ├── ASF_Parser.cls     # Parser
+│   ├── ASF_Parser.cls     # Tokenizer
+│   ├── ASF_Compiler.cls   # Compiler: tokens to bytecode
+│   ├── ASF_VM.cls         # Virtual machine: runs the bytecode
+│   ├── ASF_Runtime.cls    # Library of values: methods, printing, host objects
+│   ├── BYTECODE.md        # Design of the compiler and the VM
+│   ├── old/               # ASF 3.4.0 (AST), classes with the suffix _OLD
 │   └── ...
 ├── tests/                  # Test suite
 │   ├── TestRunner.bas     # Rubberduck tests
@@ -470,7 +473,7 @@ End Sub
 The LibreOffice edition runs the test suites headless (`python3 libreoffice/tools/run_tests.py`), but LibreOffice Basic compiles code that the VBA editor refuses. Before submitting changes to `src/`, run:
 
 ```bash
-python3 Tools/vba_check.py                                   # src/*.cls and src/ASF bytecode/*.cls
+python3 Tools/vba_check.py                                   # src/*.cls and src/old/*.cls
 python3 Tools/vba_check.py src/*.cls test/*.bas              # also the test modules
 ```
 

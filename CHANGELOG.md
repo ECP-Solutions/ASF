@@ -4,12 +4,42 @@ All notable changes for ASF. This file combines the release notes from the proje
 
 ## [Unreleased]
 
+## [v4.0.0] - 2026-11-09
+https://github.com/ECP-Solutions/ASF/releases/tag/v4.0.0
+
+
 ## Highlights
 
+- **Changed**
+    - **Bytecode only** — `ASF_Compiler` compiles a script from its tokens straight to bytecode in `Long` arrays, without building an AST: names resolved at compile time (locals and globals by slot, closures over shared cells), constant folding and fused instructions. `ASF_VM` runs it in one dispatch loop (`On ... GoTo`, a preallocated value stack, frames on arrays, an inline cache for properties, built-in methods by number, `try`/`catch` regions in a table). `ASF_Runtime` is the library of values: methods of arrays, strings, objects, collections, Math and regex, printing, host objects and their prototypes, `@(...)` and the files of modules. On LibreOffice the 46 workloads of `test/VersionBench.bas` run 2 to 39 times faster than on ASF 3.4 (about 13 for arithmetic, functions and recursion, 5 for strings and classes), a 300-statement script runs its first time in half the time, and every workload gives the same result. [src/BYTECODE.md](src/BYTECODE.md) describes the design.
+    - **Names are lexical** — a function sees its locals, those of the functions that enclose it and the globals; in ASF 3 a named function could also read and write the locals of its caller.
+    - **Compile errors** — a source with an error raises it from `Compile`, with the message and number ASF 3 gave (`vbObjectError + 8001` for a `?` without `:`, `+ 8004` for `;` between object properties, `+ 9002` for a rest parameter that is not last, `+ 9024` for unbalanced parentheses, `+ 9025` for the others), also in named functions that no code calls; nothing of a source that does not compile is kept. `if`, `for`, `while`, `switch`, `try` and `fun` without their parentheses or block, which ASF 3 skipped in some cases, are errors.
+    - **Classes** — `super(...)` calls the constructor of the parent of the class it is written in (ASF 3 took the parent of the instance's class, which recursed with three levels).
+    - **Smaller differences** — `o.inc().inc()` runs the first call once (ASF 3 ran it twice); `` `${null}` `` is the text `null`; printing an instance shows its methods as descriptors (`{type: 'Method', name, params, isStatic, fn}`), without their code.
+    - **Modules** compile to bytecode and run once per engine with their own global slots; their globals, classes and closures stay across runs until `ClearModuleCache`.
+
 - **Added**
-    - **Bytecode backend** — `src/ASF bytecode/` holds `ASF_Bytecode` (a compiler from the AST to bytecode in `Long` arrays, with names resolved at compile time, closures over shared cells, constant folding and fused instructions) and `ASF_FastVM` (one dispatch loop with `On ... GoTo`, a preallocated value stack, frames on arrays, an inline cache for properties, built-in methods by number and `try`/`catch` regions in a table). It takes the whole language: classes, `try`/`catch`/`throw`, modules, `prototype.COM`, `OverrideCollMethods` and `@(...)`, the last ones through the tree VM. `engine.FastVM = True` turns it on when the project defines `ASF_BYTECODE = 1`; `engine.Backend` says which VM ran a program and `engine.FallbackReason` why the tree VM did. On LibreOffice it runs the 46 workloads of `test/FastVMBench.bas` from 1.9 to 42 times faster (13 for recursion, 16 for arithmetic, 9 for classes) and all TestRunner tests give the same results on both VMs (`run_tests.py runner --fastvm`). Its README lists the differences: names are lexical, as in JavaScript, where the tree VM lets a function see its caller's locals.
+    - **ASF 3.4.0 in `src/old/`** — its classes have the suffix `_OLD` (`ASF_OLD`, `ASF_Compiler_OLD`, `ASF_VM_OLD`, `ASF_Map_OLD`...), so both versions can be imported into one project. `test/VersionBench.bas` compares them (`run_tests.py versionbench` on LibreOffice, which loads both).
+    - **`a[f()] = v`** — an index with a call is evaluated once and the value stored, also in nested targets (`m[f()][1] = v`, `o.items[f()] = v`); ASF 3 stopped the statement.
+    - **`export fun name(...) { }`** in a module exports the function.
+    - **Classes that extend classes of modules** — `import { Shape } from './shapes.vas'; class Square extends Shape { ... }`: the module's class sets its fields and methods on the instance first, `super(...)` runs its constructor, and a class without a constructor passes the arguments of `new` to it; it also works across several modules (a module class that extends a class of another module) and with `export default`.
+    - **`(x = v);`** assigns; `break` and `continue` outside a loop do nothing; any expression may be the step of a `for`.
+    - **`engine.Version`** — `"4.0.0"`.
     - **`PathSeparator` and `JoinPath`** — `Application.PathSeparator` exists only in Excel and Word, so the portable host failed in PowerPoint. `eng.PathSeparator(path)` returns the separator of folders that `path` uses (`\` on Windows, `/` on macOS and Linux, `:` in the paths of Office 2011 for Mac), or else the one of the current folder (`CurDir`), which every host has, LibreOffice included; `eng.JoinPath(folder, name)` joins them with it, once. `OfficeHost.bas`, `ExcelHost.bas`, TestRunner and the documentation use them.
-	
+
+- **Removed**
+    - The AST compiler and the tree VM (now `ASF_Compiler_OLD` and `ASF_VM_OLD` in `src/old/`), `ASF_ScopeStack`, the folder `src/ASF bytecode/` (its classes are `ASF_Compiler` and `ASF_VM` now), the conditional compilation arguments `ASF_BYTECODE` and `ASF_FASTVM_DEFAULT`, the engine properties `FastVM`, `Backend` and `FallbackReason`, and `Tools/DirectCompiler/`, which checked that compiling from the tokens made the code the AST compiler made.
+    - `gPrograms` keeps the source of a program and the tokens of a named function instead of their AST.
+
+- **Fixed**
+    - **`flatten()` and `clone()` evaluated their argument twice** — a call with side effects in the argument (`flatten(next())`) ran twice; they use the evaluated argument now.
+    - **`'1' == 1` was false** — VBA compares a number and a text as different values; a text that reads as a number now equals that number (`'a' == 1` and `'' == 0` stay false).
+    - **Writing into an array from VBA Expressions** — `@(...)` gives arrays from 0, and `a[1][2] = 42` on one wrote the first item of the row (`[[42, 8, 9]]`) in ASF 3; it writes the second.
+    - **Host functions and arrays after `SetGlobals`** — an engine that changed its globals kept the compiler of the old ones.
+    - **`==` on numbers of different types** — `i % 3 == 0` compares a Long and a Double directly, as two Doubles do (it went through the general comparison, 9 times slower).
+
+- **Test coverage**: `flatten_clone_evaluate_argument_once`, `write_into_array_from_VBAexpressions`, `assignment_index_with_call`, `assignment_in_parentheses`, `break_outside_a_loop`, `module_system_export_fun`, `compile_errors_messages`, `compile_error_keeps_nothing`, `call_trace_records_calls` and `module_system_class_inheritance` in `test/TestRunner.bas`.
+
 ## [v3.4.0] - 2026-11-05
 https://github.com/ECP-Solutions/ASF/releases/tag/v3.4.0
 

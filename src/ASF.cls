@@ -8,53 +8,37 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = False
 Option Explicit
+' ASF: compiles scripts to bytecode (ASF_Compiler) and runs them (ASF_VM, with the library of
+' values of ASF_Runtime). The classes of ASF 3, which ran the AST, are in src/old with the suffix _OLD.
+Private Const ASF_VERSION As String = "4.0.0"
 Private GLOBALS_ As ASF_Globals
-Private Compiler_ As ASF_Compiler
+Private RT_ As ASF_Runtime
+Private CP_ As ASF_Compiler
 Private VM_ As ASF_VM
+Private CP_GLOBALS_ As ASF_Globals      ' the globals the compiler and the VM belong to
 Private OUTPUT__ As Variant
 Private EVALUATOR_ As VBAexpressions
-' the bytecode backend (src/ASF bytecode) is compiled only with the argument ASF_BYTECODE = 1
-Private FASTVM_ON_ As Boolean
-Private BACKEND_ As String
-Private FALLBACK_ As String
-#If ASF_BYTECODE Then
-Private BC_ As ASF_Bytecode
-Private FVM_ As ASF_FastVM
-#End If
 
-' True runs programs on the bytecode backend when it takes them, and on the tree VM otherwise
-Public Property Get FastVM() As Boolean
-    FastVM = FASTVM_ON_
+Public Property Get Version() As String
+    Version = ASF_VERSION
 End Property
-Public Property Let FastVM(aValue As Boolean)
-    FASTVM_ON_ = aValue
-End Property
-' The backend that ran the last program: "bytecode" or "tree"
-Public Property Get Backend() As String
-    Backend = BACKEND_
-End Property
-' Why the last program ran on the tree VM with FastVM on
-Public Property Get FallbackReason() As String
-    FallbackReason = FALLBACK_
-End Property
-
 Public Property Get verbose() As Boolean
-    verbose = VM_.verbose
+    verbose = RT_.verbose
 End Property
 Public Property Let verbose(aValue As Boolean)
-    VM_.verbose = aValue
+    RT_.verbose = aValue
 End Property
 Public Property Get EnableCallTrace() As Boolean
-    EnableCallTrace = VM_.EnableCallTrace
+    EnableCallTrace = RT_.EnableCallTrace
 End Property
 Public Property Let EnableCallTrace(aValue As Boolean)
-    VM_.EnableCallTrace = aValue
+    RT_.EnableCallTrace = aValue
 End Property
 Public Property Get GetCallStackTrace() As String
-    GetCallStackTrace = VM_.GetCallStackTrace
+    GetCallStackTrace = RT_.GetCallStackTrace
 End Property
 Public Property Get GetCallStack() As Collection
-    Set GetCallStack = VM_.GetCallStack
+    Set GetCallStack = RT_.GetCallStack
 End Property
 Public Property Let WorkingDir(baseDir As String)
     GLOBALS_.CURRENT_MODULE_PATH = baseDir
@@ -66,34 +50,31 @@ Public Property Get Evaluator() As VBAexpressions
     Set Evaluator = EVALUATOR_
 End Property
 Public Property Get CastInjectedVars() As Boolean
-    CastInjectedVars = VM_.CastInjectedVars
+    CastInjectedVars = RT_.CastInjectedVars
 End Property
 Public Property Let CastInjectedVars(aValue As Boolean)
-    VM_.CastInjectedVars = aValue
+    RT_.CastInjectedVars = aValue
 End Property
 Public Property Get AppAccess() As Boolean
-    AppAccess = VM_.AppAccess
+    AppAccess = RT_.AppAccess
 End Property
 Public Property Let AppAccess(aValue As Boolean)
-    VM_.AppAccess = aValue
+    RT_.AppAccess = aValue
 End Property
 Public Property Get OverrideCollMethods() As Boolean
-    OverrideCollMethods = VM_.OverrideCollMethods
+    OverrideCollMethods = RT_.OverrideCollMethods
 End Property
 Public Property Let OverrideCollMethods(aValue As Boolean)
-    VM_.OverrideCollMethods = aValue
+    RT_.OverrideCollMethods = aValue
 End Property
 Private Sub Class_Initialize()
     INIT_
 End Sub
+' The program index of src; an error in it raises a compile error
 Public Function Compile(src As String, Optional progName As String = "@anon") As Long
-    If GLOBALS_ Is Nothing Then
-        INIT_
-    End If
-    With Compiler_
-        .SetGlobals GLOBALS_
-        Compile = .CompileProgram(src, progName)
-    End With
+    If GLOBALS_ Is Nothing Then INIT_
+    PrepareCode
+    Compile = CP_.CompileSource(src, progName)
 End Function
 Public Function CreateEvaluator(expression As String) As VBAexpressions
     Set EVALUATOR_ = New VBAexpressions
@@ -107,47 +88,29 @@ Public Function SetGlobals(aGlobals As ASF_Globals)
     Set GLOBALS_ = aGlobals
 End Function
 Public Sub InjectVariable(varName As String, VarValue As Variant)
-    VM_.InjectVariable varName, VarValue
+    RT_.InjectVariable varName, VarValue
 End Sub
-#If ASF_BYTECODE Then
-' Runs program idx on the bytecode backend; False when the compiler does not take it
-Private Function RunFast(idx As Long, params As Variant) As Boolean
-    If BC_ Is Nothing Then
-        Set BC_ = New ASF_Bytecode
-        BC_.SetGlobals GLOBALS_
-        Set FVM_ = New ASF_FastVM
-        FVM_.SetHost GLOBALS_, VM_, BC_
+' The compiler and the VM of the current globals: compiled programs belong to the globals they
+' were compiled with (SetGlobals changes them)
+Private Sub PrepareCode()
+    If Not CP_ Is Nothing Then
+        If Not CP_GLOBALS_ Is GLOBALS_ Then Set CP_ = Nothing
     End If
-    If VM_.EnableCallTrace Then
-        FALLBACK_ = "call trace"
-        Exit Function
+    If CP_ Is Nothing Then
+        Set CP_ = New ASF_Compiler
+        CP_.SetGlobals GLOBALS_
+        Set CP_GLOBALS_ = GLOBALS_
+        Set VM_ = New ASF_VM
+        VM_.SetHost GLOBALS_, RT_, CP_
     End If
-    If Not BC_.Prepare(idx) Then
-        FALLBACK_ = BC_.Reason
-        Exit Function
-    End If
-    FVM_.Run idx, params
-    vAssignment OUTPUT__, FVM_.OUTPUT_
-    BACKEND_ = "bytecode"
-    RunFast = True
-End Function
-#End If
-' Runs program idx on the backend that takes it
+    Set RT_.Globals = GLOBALS_
+End Sub
 Private Sub RunIndex(idx As Long, params As Variant)
-    FALLBACK_ = vbNullString
-    Dim done As Boolean
-#If ASF_BYTECODE Then
-    If FASTVM_ON_ Then done = RunFast(idx, params)
-#Else
-    If FASTVM_ON_ Then FALLBACK_ = "the bytecode backend is not compiled in (ASF_BYTECODE)"
-#End If
-    If Not done Then
-        BACKEND_ = "tree"
-        Set VM_.Globals = GLOBALS_
-        VM_.RunProgramByIndex idx, params
-        vAssignment OUTPUT__, VM_.OUTPUT_
-    End If
-    If VM_.verbose Then
+    PrepareCode
+    If Not CP_.Prepare(idx) Then Err.Raise vbObjectError + 9026, "ASF.Run", "No program " & idx & " was compiled with these globals"
+    VM_.Run idx, params
+    vAssignment OUTPUT__, VM_.OUTPUT_
+    If RT_.verbose Then
         Debug.Print "=== Runtime Log ==="
         Dim elm As Variant
         For Each elm In GLOBALS_.gRuntimeLog
@@ -158,23 +121,17 @@ End Sub
 Private Sub INIT_()
     Set GLOBALS_ = New ASF_Globals
     GLOBALS_.ASF_InitGlobals
-    Set Compiler_ = New ASF_Compiler
-    Set VM_ = New ASF_VM
-    VM_.verbose = False
-    VM_.EnableCallTrace = False
-    VM_.AppAccess = False
-    VM_.CastInjectedVars = True
-    VM_.OverrideCollMethods = False
-    Set VM_.Globals = GLOBALS_
+    Set RT_ = New ASF_Runtime
+    RT_.verbose = False
+    RT_.EnableCallTrace = False
+    RT_.AppAccess = False
+    RT_.CastInjectedVars = True
+    RT_.OverrideCollMethods = False
+    Set RT_.Globals = GLOBALS_
 End Sub
 ' The value of the last throw that no catch took, or the message of the last error, of the last Run
 Public Property Get LastError() As Variant
-#If ASF_BYTECODE Then
-    If BACKEND_ = "bytecode" Then
-        vAssignment LastError, FVM_.LastError
-        Exit Property
-    End If
-#End If
+    If VM_ Is Nothing Then Exit Property
     vAssignment LastError, VM_.LastError
 End Property
 Public Property Get OUTPUT_() As Variant
@@ -209,10 +166,10 @@ Private Sub vAssignment(ByRef var As Variant, ByRef vValue As Variant)
     End If
 End Sub
 Public Sub ClearCallStack()
-    VM_.ClearCallStack
+    RT_.ClearCallStack
 End Sub
 Public Function ReadTextFile(filePath As String) As String
-    ReadTextFile = VM_.ReadTextFile(filePath)
+    ReadTextFile = RT_.ReadTextFile(filePath)
 End Function
 ' The separator of folders: the one path uses, or else the one of the current folder; "\" on
 ' Windows, "/" on macOS and Linux, ":" in the paths of Office 2011 for Mac. Application.PathSeparator
@@ -244,7 +201,8 @@ Public Sub ClearModuleCache()
         Set GLOBALS_.gLoadingModules = New Collection
         GLOBALS_.CURRENT_MODULE_PATH = vbNullString
     End If
+    If Not VM_ Is Nothing Then VM_.ClearModules
 End Sub
 Public Function VarToASF(VarValue) As Variant
-    VarToASF = VM_.VarToASF(VarValue)
+    VarToASF = RT_.VarToASF(VarValue)
 End Function

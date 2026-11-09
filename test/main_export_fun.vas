@@ -1,0 +1,3 @@
+scwd(wd);
+import { twice, half } from './export_fun_lib.vas';
+return `${twice(5)} ${half(5)}`;

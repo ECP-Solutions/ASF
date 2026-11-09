@@ -18,7 +18,7 @@ from xml.sax.saxutils import escape
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LO_DIR = os.path.join(ROOT, "libreoffice")
 LIB_NAME = "ASF"
-VERSION = "3.3.2"
+VERSION = "4.0.0"
 EXTENSION_ID = "com.ecp-solutions.asf"
 
 # classes replaced by libreoffice/overrides/<name>.bas
@@ -32,9 +32,10 @@ VBA_EXPRESSIONS_LIB = "VBAExpressionsLib"
 REGEX_ENGINE = "ASF_RegexEngine"
 
 
-# conditional compilation arguments of the LibreOffice edition: it includes the bytecode backend
-DEFINES = {"ASF_BYTECODE": True}
-BYTECODE_DIR = "ASF bytecode"
+# conditional compilation arguments of the LibreOffice edition
+DEFINES = {}
+# ASF 3.4.0, the last version that runs the AST, with the suffix _OLD on its classes
+OLD_DIR = "old"
 
 
 def load(path):
@@ -71,9 +72,13 @@ def resolve_conditionals(s, defines=DEFINES):
 
 
 def src_classes(repo=ROOT):
-    """the classes of src/ and of the bytecode backend"""
-    return (sorted(glob.glob(os.path.join(repo, "src", "*.cls"))) +
-            sorted(glob.glob(os.path.join(repo, "src", BYTECODE_DIR, "*.cls"))))
+    """the classes of src/"""
+    return sorted(glob.glob(os.path.join(repo, "src", "*.cls")))
+
+
+def old_classes(repo=ROOT):
+    """the classes of ASF 3.4.0 in src/old/"""
+    return sorted(glob.glob(os.path.join(repo, "src", OLD_DIR, "*.cls")))
 
 
 # ---------------------------------------------------------------- text helpers
@@ -669,7 +674,7 @@ def asf_passes(name, s):
     s = re.sub(r"(?m)^(\s*)(\w+) = FreeFile\n\s*Open (\w+) For Binary As #\2\n\s*(\w+) = LOF\(\2\)\n\s*(\w+) = Space\$\(\4\)\n\s*Get #\2, , \5\n\s*Close #\2$",
                r"\1\5 = LOhelper.ReadTextFile(\3)", s)
     s = array_member_args(s)
-    if name == "ASF_VM":
+    if name in ("ASF_Runtime", "ASF_VM"):
         # Office's 2D arrays are for Excel's Range.Value2; UNO takes nested sequences, which
         # LOhelper.CallMember makes from ASF's arrays (UnoArray)
         s = s.replace("CastVBAparam = ASFto2Darray(aValue)", "CastVBAparam = aValue")
@@ -685,9 +690,9 @@ def asf_passes(name, s):
     return s
 
 
-def public_collections(repo):
+def public_collections(repo, classes=src_classes):
     names = set()
-    for path in src_classes(repo):
+    for path in classes(repo):
         names |= set(re.findall(r"(?m)^Public (\w+) As (?:New )?Collection\b", load(path)))
     return names
 
@@ -720,10 +725,10 @@ def call_by_name(max_args=30):
             "End Function\n")
 
 
-def property_set_names(repo=ROOT):
+def property_set_names(repo=ROOT, classes=src_classes):
     """Names of the Property Set procedures of the library's classes."""
     names = set()
-    for path in src_classes(repo):
+    for path in classes(repo):
         if os.path.splitext(os.path.basename(path))[0] not in VBA_EXPRESSIONS:
             names |= set(re.findall(r"(?m)^Public Property Set (\w+)\(", load(path)))
     return names
@@ -785,7 +790,7 @@ def library_modules(repo=ROOT):
             body = asf_passes(name, generic(load(path)))
             body = member_collections(body, pub)
         body = property_set_calls(property_set_subs(drop_self_returns(body)), psets)
-        if name == "ASF_FastVM":
+        if name == "ASF_VM":
             body = release_before_let(body)
         mods.append((name, class_module(name, body), "class"))
     for name in ("LOhelper", "VBAEhelper"):
@@ -793,6 +798,44 @@ def library_modules(repo=ROOT):
         if name == "LOhelper":
             code += if_redim_blocks(call_by_name())
         mods.append((name, "Option VBASupport 1\n" + code, "normal"))
+    return mods
+
+
+OLD_CLASSES = ("ASF_Compiler", "ASF_Globals", "ASF_Map", "ASF_Parser", "ASF_RegexEngine", "ASF_ScopeStack", "ASF_VM")
+
+
+def to_old(code):
+    """the class names of the library with the suffix _OLD"""
+    for n in OLD_CLASSES:
+        code = re.sub(r"\b%s\b" % n, n + "_OLD", code)
+    return re.sub(r"(\bAs (?:New )?|\bNew |\bIs )ASF\b(?!_)", r"\1ASF_OLD", code)
+
+
+def old_library_modules(repo=ROOT):
+    """[(name, code, 'class')] of ASF 3.4.0 (src/old/), to load next to the library's modules: the
+    passes run on the code with the names of 3.4.0 (some of them look for these names), then the
+    names get their suffix again"""
+    def plain(path):
+        return re.sub(r"\b(ASF\w*?)_OLD\b", r"\1", load(path))
+    paths = old_classes(repo)
+    pub, psets = set(), set()
+    for path in paths:
+        pub |= set(re.findall(r"(?m)^Public (\w+) As (?:New )?Collection\b", plain(path)))
+        psets |= set(re.findall(r"(?m)^Public Property Set (\w+)\(", plain(path)))
+    mods = []
+    for path in paths:
+        name = os.path.splitext(os.path.basename(path))[0][:-len("_OLD")]
+        if name in OVERRIDES:
+            body = default_returns(load(os.path.join(LO_DIR, "overrides", name + ".bas")))
+        else:
+            body = asf_passes(name, generic(plain(path)))
+            body = member_collections(body, pub)
+        body = property_set_calls(property_set_subs(drop_self_returns(body)), psets)
+        body = body.replace("LOhelper.NewASFMap", "LOhelper_OLD.NewASFMap")
+        mods.append((name + "_OLD", to_old(class_module(name, body)), "class"))
+    # the factory of ASF_Map_OLD, which ASF_Map_OLD cannot create itself
+    mods.append(("LOhelper_OLD", "Option VBASupport 1\nPublic Function NewASFMap() As Object\n"
+                 "    Set NewASFMap = New ASF_Map_OLD\nEnd Function\n", "normal"))
     return mods
 
 

@@ -1,0 +1,19 @@
+// Classes a script extends (module_system_class_inheritance)
+class Shape {
+    field kind = 'shape';
+    constructor(name) { this.name = name; }
+    area() { return 0; }
+    describe() { return `${this.name}:${this.area()}`; }
+};
+
+class Base {
+    constructor(v) { this.v = v; }
+    get() { return this.v; }
+};
+
+class Mid extends Base {
+    constructor(v) { super(v * 2); }
+    twice() { return this.get() * 2; }
+};
+
+export { Shape, Base, Mid };

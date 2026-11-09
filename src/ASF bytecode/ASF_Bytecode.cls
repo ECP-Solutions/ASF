@@ -89,14 +89,17 @@ Private Const OP_JNSW As Long = 73      ' switch: compares with =, jumps to a wh
 Private Const OP_ITERLIST As Long = 74  ' a: 0 for-of, 1 for-in: the values or keys to visit
 Private Const OP_FORNEXT As Long = 75   ' list, counter -> the next item, or a jump to a at the end
 Private Const OP_UNPACK As Long = 76    ' a: targets, b: 1 with a rest target
-Private Const OP_CLASS As Long = 77     ' a: the class declaration (constant), b: class number
+Private Const OP_CLASS As Long = 77     ' a: the class value to copy (constant), b: class number
 Private Const OP_NEWINST As Long = 78   ' a: class name -> a new instance
-Private Const OP_BINDM As Long = 79     ' a: method (constant), b: its name; pops the instance and binds the method to it
+Private Const OP_BINDM As Long = 79     ' a: method name, b: its function; pops the instance and binds the method to it
 Private Const OP_CALLFT As Long = 80    ' a: function, b: arguments, under them this
 Private Const OP_THROW As Long = 81     ' pops the value thrown
-Private Const OP_IMPORT As Long = 82    ' a: the import (constant), b: the names it binds, one per line -> their values
+Private Const OP_IMPORT As Long = 82    ' a: the import (source, defaultImport, namespaceImport, named) -> the values it binds
 Private Const OP_TREESTMT As Long = 83  ' a: a statement the tree VM runs (prototype, export)
 Private Const OP_VBAEXPR As Long = 84   ' a: the VBA expression, b: the names of the values under it, one per line
+Private Const OP_PROTO As Long = 85     ' a: the prototype (classType, methodName, funcIndex, params); pops its function
+Private Const OP_EXPORT As Long = 86    ' a: exported name; pops the value (a module being loaded keeps it)
+Private Const OP_EXPORTPROTO As Long = 87 ' a: the prototype, with exportName; pops its function
 Private Const METHOD_SHIFT As Long = 1024 ' b of CALLM...: arguments + METHOD_SHIFT * method number
 
 Private Const NOT_TAKEN As Long = -2147212480    ' vbObjectError + 9024 + 100: raised when the program is left to the tree VM
@@ -116,22 +119,26 @@ Private capKind_() As Long, capIdx_() As Long, nCap_ As Long   ' kind 0: a local
 Private fnKind_() As Long               ' 1: a method (keeps a throw to itself), 2: a constructor (also gives its instance)
 Private tryStart_() As Long, tryEnd_() As Long, tryHandler_() As Long, tryDepth_() As Long, nTry_ As Long
 Private clsNew_() As Long, nCls_ As Long                ' class number -> its constructor function
-Private methNode_() As Long, methFn_() As Long, nMeth_ As Long  ' method declaration (constant) -> its function
 Private progFn_ As ASF_Map              ' program index -> its main function, -1 when not taken
 Private progReason_ As ASF_Map
 Private progGlobals_ As ASF_Map         ' program index -> names of its global slots
+Private progGBase_ As ASF_Map           ' program index -> the slot before its first global
+Private nGTotal_ As Long                ' global slots of all programs: each program has its own range
 Private reason_ As String
 Private version_ As Long
 
 ' the program being compiled
 Private gSlot_ As ASF_Map               ' global name -> slot
 Private assignedGlobals_ As ASF_Map     ' the names the program assigns at its top level
-Private gNames_() As String, nG_ As Long
+Private gNames_() As String, nG_ As Long, gBase_ As Long
+Private isModule_ As Boolean            ' the program is a module: export keeps values
+Private pendingExports_ As Collection   ' export fun/class: the names exported when the module ends
 Private fnOf_ As ASF_Map                ' named function -> its function number in this program
 Private pending_ As Collection          ' named functions still to compile
 Private classes_ As ASF_Map             ' class name -> its declaration, for the classes of the program
 Private ctorFn_ As ASF_Map              ' class name -> the function of its constructor alone (for super)
 Private pendingCls_ As Collection       ' class functions still to compile: Array(kind, declaration, node, function)
+Private methodFns_ As Collection        ' Array(method declaration, its function) for the classes of the program
 
 ' functions: one context (an ASF_Map) each, with
 '   kind      "main", "named" or "literal"
@@ -155,11 +162,12 @@ Private Sub Class_Initialize()
     ReDim fnCapStart_(1 To 16): ReDim fnCapCount_(1 To 16)
     ReDim fnRest_(1 To 16): ReDim fnThis_(1 To 16): ReDim fnThisEnv_(1 To 16)
     ReDim cellSlot_(1 To 16): ReDim capKind_(1 To 16): ReDim capIdx_(1 To 16)
-    ReDim fnKind_(1 To 16): ReDim tryStart_(1 To 4): ReDim tryEnd_(1 To 4): ReDim tryHandler_(1 To 4): ReDim tryDepth_(1 To 4): ReDim clsNew_(1 To 4): ReDim methNode_(1 To 16): ReDim methFn_(1 To 16)
+    ReDim fnKind_(1 To 16): ReDim tryStart_(1 To 4): ReDim tryEnd_(1 To 4): ReDim tryHandler_(1 To 4): ReDim tryDepth_(1 To 4): ReDim clsNew_(1 To 4)
     Set kMap_ = New ASF_Map
     Set progFn_ = New ASF_Map
     Set progReason_ = New ASF_Map
     Set progGlobals_ = New ASF_Map
+    Set progGBase_ = New ASF_Map
 End Sub
 
 Public Sub SetGlobals(aGlobals As ASF_Globals)
@@ -245,15 +253,6 @@ End Function
 Public Function ClassCount() As Long
     ClassCount = nCls_
 End Function
-Public Function MethodNodes() As Variant
-    MethodNodes = methNode_
-End Function
-Public Function MethodFunctions() As Variant
-    MethodFunctions = methFn_
-End Function
-Public Function MethodCount() As Long
-    MethodCount = nMeth_
-End Function
 Public Function CaptureKinds() As Variant
     CaptureKinds = capKind_
 End Function
@@ -267,6 +266,12 @@ Public Function ProgramFunction(ByVal idx As Long) As Long
     ProgramFunction = progFn_.GetValue(CStr(idx))
 End Function
 ' names of the global slots of program idx, from 1
+Public Function ProgramGlobalBase(ByVal idx As Long) As Long
+    ProgramGlobalBase = progGBase_.GetValue(CStr(idx))
+End Function
+Public Property Get GlobalCount() As Long
+    GlobalCount = nGTotal_
+End Property
 Public Function ProgramGlobals(ByVal idx As Long) As Variant
     ProgramGlobals = progGlobals_.GetValue(CStr(idx))
 End Function
@@ -278,7 +283,7 @@ Public Function Disassemble(ByVal idx As Long) As String
                   "NOT NEG TYPEOF JMP JMPF JMPT ANDJ ORJ TOBOOL NULLJ POP CALLF RET RET0 PRINT INCL INCG " & _
                   "JNLT JNLE JNGT JNGE JNEQ JNNE ADDK DUP LOADC STOREC LOADE STOREE MKCLOS MKFUNC CALL NEWARR NEWOBJ " & _
                   "GETIDX GETIDXW SETIDXR GETPROP SETPROPV CALLM CALLMW EXPAND CALLFV CALLV CALLMV CALLMWV CALLB CALLBV TPL " & _
-                  "NEWARRS JNSW ITERLIST FORNEXT UNPACK CLASS NEWINST BINDM CALLFT THROW IMPORT TREESTMT VBAEXPR", " ")
+                  "NEWARRS JNSW ITERLIST FORNEXT UNPACK CLASS NEWINST BINDM CALLFT THROW IMPORT TREESTMT VBAEXPR PROTO EXPORT EXPORTPROTO", " ")
     Dim out As String, i As Long, fn As Long, k As Variant
     If Not Prepare(idx) Then
         Disassemble = "not taken: " & reason_
@@ -290,22 +295,21 @@ Public Function Disassemble(ByVal idx As Long) As String
               " captures " & fnCapCount_(fn) & vbLf
     Next fn
     For i = 1 To nK_
-        If IsObject(k_(i)) Then
-            out = out & "k" & i & " = " & TypeName(k_(i)) & vbLf
-        Else
-            out = out & "k" & i & " = " & TypeName(k_(i)) & " " & CStr(k_(i)) & vbLf
-        End If
+        out = out & "k" & i & " = " & TypeName(k_(i)) & ConstantText(k_(i)) & vbLf
     Next i
     For i = 1 To nOp_
         out = out & i & vbTab & names(op_(i) - 1) & " " & a_(i) & " " & b_(i)
         Select Case op_(i)
             Case OP_PUSHK, OP_ADDK, OP_GETPROP, OP_SETPROPV, OP_CALLM, OP_CALLMW, OP_CALLMV, OP_CALLMWV, OP_CALLB, OP_CALLBV
-                k = k_(a_(i))
-                out = out & "  ; " & TypeName(k) & " " & CStr(k)
+                out = out & "  ; " & TypeName(k_(a_(i))) & ConstantText(k_(a_(i)))
         End Select
         out = out & vbLf
     Next i
     Disassemble = out
+End Function
+
+Private Function ConstantText(ByRef k As Variant) As String
+    If Not IsObject(k) And Not IsNull(k) Then ConstantText = " " & CStr(k)
 End Function
 
 ' ---------------------------------------------------------------- compiling a program
@@ -322,9 +326,9 @@ Public Function Prepare(ByVal idx As Long) As Boolean
         Exit Function
     End If
     Dim saveOp As Long, saveK As Long, saveFn As Long, mainFn As Long, saveCell As Long, saveCap As Long
-    Dim saveCls As Long, saveMeth As Long, saveTry As Long
+    Dim saveCls As Long, saveTry As Long, saveG As Long
     saveOp = nOp_: saveK = nK_: saveFn = nFn_: saveCell = nCellSlot_: saveCap = nCap_
-    saveCls = nCls_: saveMeth = nMeth_: saveTry = nTry_
+    saveCls = nCls_: saveTry = nTry_: saveG = nGTotal_
     On Error GoTo NotTaken
     mainFn = CompileProgram(idx)
     progFn_.SetValue key, mainFn
@@ -335,7 +339,7 @@ Public Function Prepare(ByVal idx As Long) As Boolean
 NotTaken:
     If Err.Number = NOT_TAKEN Then reason_ = Err.Description Else reason_ = "compiler error: " & Err.Description
     nOp_ = saveOp: nFn_ = saveFn: nCellSlot_ = saveCell: nCap_ = saveCap
-    nCls_ = saveCls: nMeth_ = saveMeth: nTry_ = saveTry
+    nCls_ = saveCls: nTry_ = saveTry: nGTotal_ = saveG
     If nK_ <> saveK Then
         Dim i As Long
         For i = saveK + 1 To nK_
@@ -365,12 +369,15 @@ Private Function CompileProgram(ByVal idx As Long) As Long
     Dim p As Variant: p = GLOBALS_.gPrograms(idx)
     Dim stmts As Collection: Set stmts = p(1)
     Set gSlot_ = New ASF_Map
-    ReDim gNames_(1 To 16): nG_ = 0
+    ReDim gNames_(1 To 16): nG_ = 0: gBase_ = nGTotal_
+    isModule_ = (Left$(CStr(p(0)), 8) = "@module:")
+    Set pendingExports_ = New Collection
     Set fnOf_ = New ASF_Map
     Set pending_ = New Collection
     Set classes_ = New ASF_Map
     Set ctorFn_ = New ASF_Map
     Set pendingCls_ = New Collection
+    Set methodFns_ = New Collection
     Dim i As Long
     For i = 1 To stmts.Count
         If stmts(i).GetValue("type") = "ClassDecl" Then
@@ -395,6 +402,11 @@ Private Function CompileProgram(ByVal idx As Long) As Long
     BeginFunction ctx
     fnEntry_(mainFn) = nOp_ + 1
     EmitBlock stmts
+    Dim nm As Variant
+    For Each nm In pendingExports_
+        EmitLoadName CStr(nm)
+        Emit OP_EXPORT, Constant(CStr(nm)), 0, -1
+    Next nm
     Emit OP_HALT, 0, 0, 0
     EndFunction mainFn, 0
 
@@ -421,6 +433,8 @@ Private Function CompileProgram(ByVal idx As Long) As Long
         names(i) = gNames_(i)
     Next i
     progGlobals_.SetValue CStr(idx), names
+    progGBase_.SetValue CStr(idx), gBase_
+    nGTotal_ = gBase_ + nG_
     CompileProgram = mainFn
 End Function
 
@@ -495,22 +509,53 @@ Private Sub EmitClassDecl(node As ASF_Map)
     If nCls_ > UBound(clsNew_) Then ReDim Preserve clsNew_(1 To 2 * nCls_)
     clsNew_(nCls_) = NewFunction("@new " & name)
     pendingCls_.Add Array("new", node, node, clsNew_(nCls_))
+    ' the class value holds descriptors of its fields and methods, not their code
+    Dim cls As ASF_Map: Set cls = New ASF_Map
+    cls.Add "type", "Class"
+    cls.SetValue "name", name
+    Dim fields As Collection: Set fields = New Collection
+    Dim item As Variant
+    If Not node.GetValue("fields") Is Nothing Then
+        For Each item In node.GetValue("fields")
+            fields.Add CStr(item.GetValue("name"))
+        Next item
+    End If
+    cls.SetValue "fields", fields
     Dim methods As Collection: Set methods = node.GetValue("classMethods")
+    Dim descs As Collection: Set descs = New Collection
     Dim i As Long, fn As Long
     For i = 1 To methods.Count
         fn = NewFunction(name & "." & methods(i).GetValue("name"))
-        nMeth_ = nMeth_ + 1
-        If nMeth_ > UBound(methNode_) Then
-            ReDim Preserve methNode_(1 To 2 * nMeth_)
-            ReDim Preserve methFn_(1 To 2 * nMeth_)
-        End If
-        methNode_(nMeth_) = ObjectConstant(methods(i))
-        methFn_(nMeth_) = fn
+        methodFns_.Add Array(methods(i), fn)
         pendingCls_.Add Array("method", node, methods(i), fn)
+        descs.Add MethodDescriptor(methods(i), fn)
     Next i
-    Emit OP_CLASS, ObjectConstant(node), nCls_, 1
+    cls.SetValue "classMethods", descs
+    If node.Exists("constructor") Then cls.SetValue "constructor", MethodDescriptor(node.GetValue("constructor"), 0)
+    If node.Exists("superClass") Then cls.SetValue "superClass", node.GetValue("superClass")
+    Emit OP_CLASS, ObjectConstant(cls), nCls_, 1
     EmitStoreName name
 End Sub
+
+' {type: 'Method', name, params, isStatic, fn}: fn is a Long, unlike a closure's, and 0 for a constructor
+Private Function MethodDescriptor(node As ASF_Map, ByVal fn As Long) As ASF_Map
+    Dim d As ASF_Map: Set d = New ASF_Map
+    d.Add "type", "Method"
+    d.SetValue "name", CStr(node.GetValue("name"))
+    Dim params As Collection: Set params = New Collection
+    Dim item As Variant
+    If node.Exists("params") Then
+        For Each item In node.GetValue("params")
+            params.Add CStr(item)
+        Next item
+    End If
+    d.SetValue "params", params
+    Dim isStatic As Boolean
+    If node.Exists("isStatic") Then isStatic = node.GetValue("isStatic")
+    d.SetValue "isStatic", isStatic
+    If fn > 0 Then d.SetValue "fn", fn
+    Set MethodDescriptor = d
+End Function
 
 ' The function of the constructor of a class, alone: what super(...) calls
 Private Function ConstructorFunction(cls As ASF_Map) As Long
@@ -622,20 +667,20 @@ Private Sub EmitBindMethods(methods As Collection, ByVal thisSlot As Long, ByVal
         If methods(i).Exists("isStatic") Then isStatic = methods(i).GetValue("isStatic")
         If withStatic Or Not isStatic Then
             Emit OP_LOADL, thisSlot, 0, 1
-            Emit OP_BINDM, MethodConstant(methods(i)), Constant(CStr(methods(i).GetValue("name"))), -1
+            Emit OP_BINDM, Constant(CStr(methods(i).GetValue("name"))), MethodFunctionOf(methods(i)), -1
         End If
     Next i
 End Sub
 
-' The constant of a method declaration, as EmitClassDecl registered it
-Private Function MethodConstant(node As ASF_Map) As Long
-    Dim i As Long
-    For i = 1 To nMeth_
-        If k_(methNode_(i)) Is node Then
-            MethodConstant = methNode_(i)
+' The function of a method declaration, as EmitClassDecl made it
+Private Function MethodFunctionOf(node As ASF_Map) As Long
+    Dim pair As Variant
+    For Each pair In methodFns_
+        If pair(0) Is node Then
+            MethodFunctionOf = pair(1)
             Exit Function
         End If
-    Next i
+    Next pair
     NotSupported "a method of a class not declared yet"
 End Function
 
@@ -770,8 +815,8 @@ Private Function GlobalSlot(ByVal name As String) As Long
         nG_ = nG_ + 1
         If nG_ > UBound(gNames_) Then ReDim Preserve gNames_(1 To 2 * nG_)
         gNames_(nG_) = name
-        gSlot_.SetValue name, nG_
-        GlobalSlot = nG_
+        gSlot_.SetValue name, gBase_ + nG_
+        GlobalSlot = gBase_ + nG_
     End If
 End Function
 
@@ -1113,7 +1158,8 @@ Private Sub EmitStatement(node As ASF_Map)
         Case "ClassDecl": EmitClassDecl node
         Case "TryCatch": EmitTry node
         Case "Import": EmitImport node
-        Case "Prototype", "Export": Emit OP_TREESTMT, ObjectConstant(node), 0, 0
+        Case "Prototype": EmitPrototype node
+        Case "Export": EmitExport node
         Case "Throw"
             EmitExpr node.GetValue("expr")
             Emit OP_THROW, 0, 0, -1
@@ -1208,16 +1254,69 @@ Private Function ImportNames(node As ASF_Map) As Collection
     Set ImportNames = names
 End Function
 
-' The tree VM loads the module (it runs there) and gives the values; they go to the program's variables
+' export: a module being loaded keeps the values by name (in a program, export does nothing but
+' register a prototype, as in the tree VM); export fun/class exports the name when the module ends
+Private Sub EmitExport(node As ASF_Map)
+    Dim spec As Variant
+    If node.GetValue("isDefault") Then
+        EmitExpr node.GetValue("expression")
+        Emit OP_EXPORT, Constant("__default"), 0, -1
+    ElseIf node.Exists("namedExports") Then
+        For Each spec In node.GetValue("namedExports")
+            EmitLoadName CStr(spec.GetValue("local"))
+            Emit OP_EXPORT, Constant(CStr(spec.GetValue("exported"))), 0, -1
+        Next spec
+    ElseIf node.Exists("declarationType") Then
+        If isModule_ Then pendingExports_.Add CStr(node.GetValue("declarationName"))
+    ElseIf node.Exists("exportType") Then
+        If node.GetValue("exportType") = "prototype" Then EmitPrototype node.GetValue("prototypeNode"), CStr(node.GetValue("exportName"))
+    End If
+End Sub
+
+' prototype.COM.Type name(...) { }: the function is compiled here and runs here when a host object
+' of that type is asked for name
+Private Sub EmitPrototype(node As ASF_Map, Optional ByVal exportName As String)
+    Dim info As ASF_Map: Set info = New ASF_Map
+    info.SetValue "classType", CStr(node.GetValue("classType"))
+    info.SetValue "methodName", CStr(node.GetValue("methodName"))
+    info.SetValue "funcIndex", CLng(node.GetValue("funcIndex"))
+    Dim params As Collection: Set params = New Collection
+    Dim item As Variant
+    If Not node.GetValue("params") Is Nothing Then
+        For Each item In node.GetValue("params")
+            params.Add CStr(item)
+        Next item
+    End If
+    info.SetValue "params", params
+    info.SetValue "internalFuncName", CStr(node.GetValue("internalFuncName"))
+    Emit OP_MKFUNC, NamedFunction(CStr(node.GetValue("internalFuncName"))), 0, 1
+    If Len(exportName) > 0 Then
+        info.SetValue "exportName", exportName
+        Emit OP_EXPORTPROTO, ObjectConstant(info), 0, -1
+    Else
+        Emit OP_PROTO, ObjectConstant(info), 0, -1
+    End If
+End Sub
+
+' import: the VM loads the module (compiled and run once per engine) and pushes the values it binds,
+' which go to the program's variables
 Private Sub EmitImport(node As ASF_Map)
     If cx_.GetValue("kind") <> "main" Then NotSupported "an import inside a function"
     Dim names As Collection: Set names = ImportNames(node)
-    Dim joined As String, i As Long
-    For i = 1 To names.Count
-        If i > 1 Then joined = joined & vbLf
-        joined = joined & names(i)
-    Next i
-    Emit OP_IMPORT, ObjectConstant(node), Constant(joined), names.Count
+    Dim info As ASF_Map: Set info = New ASF_Map
+    info.SetValue "source", CStr(node.GetValue("source"))
+    If node.Exists("defaultImport") Then info.SetValue "defaultImport", True
+    If node.Exists("namespaceImport") Then info.SetValue "namespaceImport", True
+    Dim named As Collection: Set named = New Collection
+    Dim spec As Variant
+    If node.Exists("namedImports") Then
+        For Each spec In node.GetValue("namedImports")
+            named.Add CStr(spec.GetValue("imported"))
+        Next spec
+    End If
+    info.SetValue "named", named
+    Emit OP_IMPORT, ObjectConstant(info), 0, names.Count
+    Dim i As Long
     For i = names.Count To 1 Step -1
         EmitStoreName names(i)
     Next i

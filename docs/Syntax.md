@@ -12,7 +12,7 @@ description: "ASF syntax."
 
 This document defines the concrete syntax supported by the Advanced Scripting Framework (ASF) and contains a compact BNF grammar, operator precedence, and examples.
 
-> Note: ASF is embedded in VBA — scripts are supplied to the ASF compiler which tokenizes and produces an AST that the VM executes. Semicolons (`;`) are used as statement separators and are required in ambiguous cases; comma (`,`) is only used as an argument or element separator.
+> Note: ASF is embedded in VBA — scripts are supplied to the ASF compiler, which tokenizes them and compiles them to bytecode that the VM executes. Semicolons (`;`) are used as statement separators and are required in ambiguous cases; comma (`,`) is only used as an argument or element separator.
 
 ---
 

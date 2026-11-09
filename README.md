@@ -130,9 +130,9 @@ This transforms VBA Collections into JavaScript-like arrays with:
    - `ASF.cls` (main engine)
    - `ASF_Compiler.cls`
    - `ASF_VM.cls`
+   - `ASF_Runtime.cls`
    - `ASF_Parser.cls`
    - `ASF_Globals.cls`
-   - `ASF_ScopeStack.cls`
    - `ASF_Map.cls`
    - `ASF_RegexEngine.cls`
    - `UDFunctions.cls`
@@ -216,9 +216,10 @@ End Sub
 ### Compilation Pipeline
 
 1. **Lexical Analysis:** Pure VBA tokenizer with support for ES6+ syntax
-2. **Parsing:** Recursive descent parser generating AST nodes
-3. **Compilation:** AST transformation with scope analysis and optimization
-4. **Execution:** Stack-based virtual machine with proper `this` binding
+2. **Compilation:** One pass from the tokens to bytecode in `Long` arrays, with the scope analysis
+   (locals, closures over shared cells, globals by slot) and constant folding; no AST is built
+3. **Execution:** A virtual machine that runs the bytecode in one dispatch loop, with frames on
+   arrays and a preallocated value stack, and proper `this` binding
 
 ### VM Features
 
@@ -228,13 +229,17 @@ End Sub
 - **Memory Management:** Automatic garbage collection for ASF objects
 - **Error Handling:** Contained exceptions with full stack traces
 
-### Bytecode Backend (optional)
+### Bytecode (ASF 4)
 
-`src/ASF bytecode/` adds a second backend: the same language and compiler front end, compiled to
-flat bytecode and run in a single dispatch loop, from 2 to 40 times faster than the tree VM (about
-10 times on typical scripts). Import its two classes, set the conditional compilation argument
-`ASF_BYTECODE = 1` and turn it on per engine with `engine.FastVM = True`; `engine.Backend` tells
-which VM ran a program. See [src/ASF bytecode/README.md](src/ASF%20bytecode/README.md).
+Since version 4.0, ASF compiles every script to bytecode: `ASF_Compiler` compiles from the tokens,
+`ASF_VM` runs the code, and `ASF_Runtime` holds the library of values (methods of arrays, strings,
+objects and collections, Math, regex, printing, host objects, `@(...)`). Scripts run 2 to 60 times
+faster than on ASF 3.4, which walked an AST (about 10 times on typical scripts), and start about
+twice as fast. [src/BYTECODE.md](src/BYTECODE.md) describes the design.
+
+ASF 3.4.0, the last version that runs the AST, is kept in `src/old/`: its classes have the suffix
+`_OLD` (`ASF_OLD`, `ASF_VM_OLD`...), so both versions can be imported into one project, to compare
+them or to keep a script on the old engine while it is checked on the new one.
 
 ## When to Use ASF
 

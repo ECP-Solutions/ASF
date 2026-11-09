@@ -93,12 +93,14 @@ Code in `src/` must not resize an array in a one-line `If` (`If n > UBound(a) Th
 - [`compat/LOhelper.bas`](compat/LOhelper.bas): helpers the rewritten code calls, the factories and the output functions.
 - [`compat/VBAEhelper.bas`](compat/VBAEhelper.bas): creates `VBAExpressionsLib` evaluators.
 - [`overrides/ASF_Map.bas`](overrides/ASF_Map.bas): hand-written `ASF_Map`; keep it in step with `src/ASF_Map.cls`.
+
+The extension holds ASF 4 only; `build.old_library_modules()` builds the classes of `src/old/` (ASF 3.4.0) for the benchmarks.
 - [`extension-page.html`](extension-page.html): the description for the extension's page on extensions.libreoffice.org.
 
 ## Tests
 
 ```sh
-python3 libreoffice/tools/run_tests.py [regex|runner|all|bench|asfbench] [--keep-log] [--vba-expressions=VBAExpressions.oxt]
+python3 libreoffice/tools/run_tests.py [regex|runner|all|bench|asfbench|versionbench] [--keep-log] [--vba-expressions=VBAExpressions.oxt]
 ```
 
-builds the library, starts a headless LibreOffice with a throw-away profile and runs `test/RegexTests.bas` and `test/TestRunner.bas`; `bench` runs the regex engine benchmarks of `test/RegexBench.bas` and `asfbench` the compiler and VM benchmarks of `test/AsfBench.bas`, and both print the milliseconds per call. It needs LibreOffice and its Python bindings (`python3-uno`). The VBA expression tests run when the VBA Expressions extension, or its unpacked `VBAExpressionsLib` folder, is given. Tests that need Excel or the UDFs of `src/UDFunctions.cls` are skipped.
+builds the library, starts a headless LibreOffice with a throw-away profile and runs `test/RegexTests.bas` and `test/TestRunner.bas`; `bench` runs the regex engine benchmarks of `test/RegexBench.bas` `asfbench` the compiler and VM benchmarks of `test/AsfBench.bas`, and `versionbench` the workloads of `test/VersionBench.bas` on ASF 3.4 (`src/old/`, built with the same passes and loaded next to ASF 4) and ASF 4; they print the milliseconds per call. It needs LibreOffice and its Python bindings (`python3-uno`). The VBA expression tests run when the VBA Expressions extension, or its unpacked `VBAExpressionsLib` folder, is given. Tests that need Excel or the UDFs of `src/UDFunctions.cls` are skipped.

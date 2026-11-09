@@ -34,8 +34,14 @@ Private tryStart_() As Long, tryEnd_() As Long, tryHandler_() As Long, tryDepth_
 Private throwing_ As Boolean            ' a throw goes up the calls; LAST_ERROR_ holds its value
 Private mainFn_ As Long
 Private clsNew_() As Long, clsMap_() As Variant, nCls_ As Long ' class number -> constructor function, class value
-Private methNode_() As Variant, methFn_() As Long, nMeth_ As Long ' method declaration -> its function
-Private methHint_() As Long             ' per instruction: the method last called there
+Private clsKeep_() As Boolean, clsCap_ As Long ' the classes of modules stay after a run
+
+' modules: run once per engine, then kept with their globals, classes and the cells made while loading
+Private modules_ As ASF_Map             ' path -> {path, exports, defaultExport}
+Private loading_ As Collection          ' paths being loaded, for circular imports
+Private curExports_ As ASF_Map          ' the exports of the module being loaded
+Private globKeep_() As Boolean, globCap_ As Long ' the global slots of modules stay after a run
+Private keepCell_ As Long, keepEnv_ As Long     ' cells and environments below these stay too
 
 ' the arena of a run: cells (variables closures share) and environments (cell numbers)
 Private cell_() As Variant, nCell_ As Long
@@ -62,6 +68,26 @@ Private Sub Class_Initialize()
     ReDim frEnv_(1 To frCap_): ReDim frKind_(1 To frCap_): ReDim frRecv_(1 To frCap_)
     ReDim cell_(1 To 64): ReDim env_(1 To 64)
     Set MathObj_ = New Collection
+    Set modules_ = New ASF_Map
+    Set loading_ = New Collection
+End Sub
+
+' ClearModuleCache: modules load again, and their values go
+Public Sub ClearModules()
+    Set modules_ = New ASF_Map
+    Dim i As Long
+    For i = 1 To globCap_
+        globKeep_(i) = False
+        glob_(i) = Empty
+    Next i
+    For i = 1 To clsCap_
+        clsKeep_(i) = False
+        clsMap_(i) = Empty
+    Next i
+    For i = 1 To keepCell_
+        cell_(i) = Empty
+    Next i
+    keepCell_ = 0: keepEnv_ = 0
 End Sub
 
 Public Sub SetHost(aGlobals As ASF_Globals, aVM As ASF_VM, aCompiler As ASF_Bytecode)
@@ -83,7 +109,7 @@ Public Sub Run(ByVal idx As Long, params As Variant)
     If version_ <> BC_.Version Then LoadCode
     LAST_ERROR_ = Empty
     throwing_ = False
-    BindGlobals idx, params
+    BindGlobals idx, params, False
     Dim mainFn As Long: mainFn = BC_.ProgramFunction(idx)
     mainFn_ = mainFn
     If fnMaxStack_(mainFn) >= stkCap_ Then GrowStack fnMaxStack_(mainFn)
@@ -108,42 +134,51 @@ Private Sub LoadCode()
     tryStart_ = BC_.TryStarts(): tryEnd_ = BC_.TryEnds(): tryHandler_ = BC_.TryHandlers(): tryDepth_ = BC_.TryDepths()
     nTry_ = BC_.TryCount()
     clsNew_ = BC_.ClassConstructors(): nCls_ = BC_.ClassCount()
-    ReDim clsMap_(1 To UBound(clsNew_))
-    methFn_ = BC_.MethodFunctions(): nMeth_ = BC_.MethodCount()
-    Dim nodes As Variant: nodes = BC_.MethodNodes()
-    ReDim methNode_(1 To UBound(methFn_))
-    Dim i As Long
-    For i = 1 To nMeth_
-        Set methNode_(i) = k_(nodes(i))
-    Next i
+    ' a module compiled while a program runs adds code: what the program holds stays
+    If clsCap_ = 0 Then
+        ReDim clsMap_(1 To UBound(clsNew_)): ReDim clsKeep_(1 To UBound(clsNew_))
+    ElseIf UBound(clsNew_) > clsCap_ Then
+        ReDim Preserve clsMap_(1 To UBound(clsNew_)): ReDim Preserve clsKeep_(1 To UBound(clsNew_))
+    End If
+    clsCap_ = UBound(clsNew_)
+    If globCap_ = 0 Then
+        ReDim glob_(0 To BC_.GlobalCount + 16): ReDim globKeep_(0 To BC_.GlobalCount + 16)
+        globCap_ = BC_.GlobalCount + 16
+    ElseIf BC_.GlobalCount > globCap_ Then
+        ReDim Preserve glob_(0 To 2 * BC_.GlobalCount): ReDim Preserve globKeep_(0 To 2 * BC_.GlobalCount)
+        globCap_ = 2 * BC_.GlobalCount
+    End If
     ReDim hint_(1 To UBound(op_))
-    ReDim methHint_(1 To UBound(op_))
     version_ = BC_.Version
 End Sub
 
-' The global slots: undefined, then Math, $1, $2... and the injected variables by name
-Private Sub BindGlobals(ByVal idx As Long, params As Variant)
+' The global slots of program idx: Math, $1, $2... and the injected variables by name; a module
+' has Math only, as its scope in the tree VM
+Private Sub BindGlobals(ByVal idx As Long, params As Variant, ByVal isModule As Boolean)
     Dim names As Variant: names = BC_.ProgramGlobals(idx)
+    Dim gBase As Long: gBase = BC_.ProgramGlobalBase(idx)
     Dim n As Long: n = UBound(names)
-    ReDim glob_(0 To n)
-    Dim injected As Collection: Set injected = VM_.InjectedVariables
+    Dim injected As Collection
+    If Not isModule Then Set injected = VM_.InjectedVariables
     Dim i As Long, k As Long, item As Variant, nm As String
     For i = 1 To n
+        glob_(gBase + i) = Empty
+        globKeep_(gBase + i) = isModule
         nm = names(i)
         If nm = "Math" Then
             Set math_ = VM_.MathObject
-            Set glob_(i) = math_
-        ElseIf Left$(nm, 1) = "$" Then
+            Set glob_(gBase + i) = math_
+        ElseIf Left$(nm, 1) = "$" And Not isModule Then
             If IsNumeric(Mid$(nm, 2)) And IsArray(params) Then
                 k = CLng(Mid$(nm, 2))
                 If k >= 1 And k <= UBound(params) - LBound(params) + 1 Then
-                    SetItem glob_(i), VM_.PrepareParam(params(LBound(params) + k - 1))
+                    SetItem glob_(gBase + i), VM_.PrepareParam(params(LBound(params) + k - 1))
                 End If
             End If
         End If
         If Not injected Is Nothing Then
             For Each item In injected
-                If CStr(item(LBound(item))) = nm Then SetItem glob_(i), item(UBound(item))
+                If CStr(item(LBound(item))) = nm Then SetItem glob_(gBase + i), item(UBound(item))
             Next item
         End If
     Next i
@@ -157,14 +192,16 @@ Private Sub ReleaseValues()
         stk_(i) = Empty
     Next i
     stkHigh_ = 0
-    Erase glob_
-    For i = 1 To nCell_
+    For i = 1 To globCap_
+        If Not globKeep_(i) Then glob_(i) = Empty
+    Next i
+    For i = keepCell_ + 1 To nCell_
         cell_(i) = Empty
     Next i
-    nCell_ = 0
-    nEnv_ = 0
-    For i = 1 To nCls_
-        clsMap_(i) = Empty
+    nCell_ = keepCell_
+    nEnv_ = keepEnv_
+    For i = 1 To clsCap_
+        If Not clsKeep_(i) Then clsMap_(i) = Empty
     Next i
     Set math_ = Nothing
 End Sub
@@ -193,7 +230,7 @@ Dispatch:
     On op_(pc) GoTo X1, X2, X3, X4, X5, X6, X7, X8, X9, X10, X11, X12, X13, X14, X15, X16, X17, X18, X19, X20, _
         X21, X22, X23, X24, X25, X26, X27, X28, X29, X30, X31, X32, X33, X34, X35, X36, X37, X38, X39, X40, _
         X41, X42, X43, X44, X45, X46, X47, X48, X49, X50, X51, X52, X53, X54, X55, X56, X57, X58, X59, X60, X61, _
-        X62, X63, X64, X65, X66, X67, X68, X69, X70, X71, X72, X73, X74, X75, X76, X77, X78, X79, X80, X81, X82, X83, X84
+        X62, X63, X64, X65, X66, X67, X68, X69, X70, X71, X72, X73, X74, X75, X76, X77, X78, X79, X80, X81, X82, X83, X84, X85, X86, X87
 X1: ' HALT
     GoTo Finished
 X2: ' PUSHK
@@ -634,6 +671,7 @@ X77: ' CLASS a: declaration, b: class number
     sp = sp + 1
     Set stk_(sp) = NewClass(k_(oa_(pc)))
     Set clsMap_(ob_(pc)) = stk_(sp)
+    clsKeep_(ob_(pc)) = Not curExports_ Is Nothing
     pc = pc + 1: GoTo Dispatch
 X78: ' NEWINST a: class name
     Set m = New ASF_Map
@@ -643,13 +681,14 @@ X78: ' NEWINST a: class name
     Set stk_(sp) = m
     Set m = Nothing
     pc = pc + 1: GoTo Dispatch
-X79: ' BINDM a: method, b: name; pops the instance
+X79: ' BINDM a: method name, b: its function; pops the instance
     Set m = stk_(sp)
     Set m2 = New ASF_Map
     m2.Add "type", "BoundMethod"
-    m2.SetValue "method", k_(oa_(pc))
+    m2.SetValue "name", k_(oa_(pc))
+    m2.SetValue "fn", ob_(pc)
     m2.SetValue "instance", m
-    m.SetValue CStr(k_(ob_(pc))), m2
+    m.SetValue CStr(k_(oa_(pc))), m2
     Set m = Nothing: Set m2 = Nothing
     stk_(sp) = Empty
     sp = sp - 1
@@ -667,9 +706,9 @@ X81: ' THROW
     If IsObject(LAST_ERROR_) Then errDesc = "throw" Else errDesc = CStr(LAST_ERROR_)
     If VM_.verbose Then GLOBALS_.gRuntimeLog.Add "VM statement error: " & errDesc
     GoTo Unwind
-X82: ' IMPORT a: the import, b: the names it binds -> their values
+X82: ' IMPORT a: the import -> the values it binds
     topSp_ = sp: topFt_ = ft
-    rv = VM_.ImportValues(k_(oa_(pc)), Split(CStr(k_(ob_(pc))), vbLf))
+    rv = ImportValues(k_(oa_(pc)))
     If sp + UBound(rv) + 2 >= stkCap_ Then GrowStack sp + UBound(rv) + 2
     For i = LBound(rv) To UBound(rv)
         sp = sp + 1
@@ -693,6 +732,25 @@ X84: ' VBAEXPR a: the expression, b: the names of the values on the stack
     sp = sp - n + 1
     If IsObject(rv) Then Set stk_(sp) = rv Else stk_(sp) = rv
     rv = Empty
+    pc = pc + 1: GoTo Dispatch
+X85: ' PROTO a: the prototype; pops its function
+    topSp_ = sp: topFt_ = ft
+    Set m = k_(oa_(pc))
+    VM_.RegisterCOMPrototype CStr(m.GetValue("classType")), CStr(m.GetValue("methodName")), CLng(m.GetValue("funcIndex")), m.GetValue("params"), stk_(sp)
+    Set m = Nothing
+    stk_(sp) = Empty
+    sp = sp - 1
+    pc = pc + 1: GoTo Dispatch
+X86: ' EXPORT a: name; pops the value, which the module being loaded keeps
+    If Not curExports_ Is Nothing Then curExports_.SetValue CStr(k_(oa_(pc))), stk_(sp)
+    stk_(sp) = Empty
+    sp = sp - 1
+    pc = pc + 1: GoTo Dispatch
+X87: ' EXPORTPROTO a: the prototype; pops its function
+    topSp_ = sp: topFt_ = ft
+    ExportPrototype k_(oa_(pc)), stk_(sp)
+    stk_(sp) = Empty
+    sp = sp - 1
     pc = pc + 1: GoTo Dispatch
 
 MethodCall:
@@ -1012,16 +1070,150 @@ Private Function TryAt(ByVal pc As Long) As Long
     TryAt = best
 End Function
 
+' ---------------------------------------------------------------- modules
+' import: the values it binds, in the order of the compiler's names (default, namespace, named)
+Private Function ImportValues(ByVal info As ASF_Map) As Variant
+    Dim path As String: path = VM_.ResolveModule(CStr(info.GetValue("source")))
+    Dim moduleObj As ASF_Map: Set moduleObj = LoadModule(path)
+    Dim exportsMap As ASF_Map: Set exportsMap = moduleObj.GetValue("exports")
+    RegisterPrototypes exportsMap
+    Dim named As Collection: Set named = info.GetValue("named")
+    Dim out() As Variant, n As Long, i As Long
+    ReDim out(0 To 2 + named.Count)
+    If info.Exists("defaultImport") Then
+        If moduleObj.Exists("defaultExport") Then SetItem out(n), moduleObj.GetValue("defaultExport")
+        n = n + 1
+    End If
+    If info.Exists("namespaceImport") Then
+        Dim ns As ASF_Map: Set ns = New ASF_Map
+        For i = 1 To exportsMap.Count
+            ns.SetValue exportsMap.key(i), exportsMap.GetValue(exportsMap.key(i))
+        Next i
+        Set out(n) = ns
+        n = n + 1
+    End If
+    For i = 1 To named.Count
+        If Not exportsMap.Exists(CStr(named(i))) Then
+            Err.Raise vbObjectError + 9001, "VM.ExecuteStmtNode", "Export '" & named(i) & "' not found in module '" & path & "'"
+        End If
+        SetItem out(n), exportsMap.GetValue(CStr(named(i)))
+        n = n + 1
+    Next i
+    If n = 0 Then
+        ImportValues = Array()
+    Else
+        ReDim Preserve out(0 To n - 1)
+        ImportValues = out
+    End If
+End Function
+
+' The module at path, compiled and run on its first import; the tree VM runs one this compiler does
+' not take
+Private Function LoadModule(ByVal path As String) As ASF_Map
+    If modules_.Exists(path) Then
+        Set LoadModule = modules_.GetValue(path)
+        Exit Function
+    End If
+    Dim k As Long
+    For k = 1 To loading_.Count
+        If loading_(k) = path Then Err.Raise vbObjectError + 9010, "VM.LoadModule", "Circular dependency detected: " & path
+    Next k
+    Dim src As String
+    On Error Resume Next
+    src = VM_.ReadModuleSource(path)
+    If Err.Number <> 0 Then
+        On Error GoTo 0
+        Err.Raise vbObjectError + 9011, "VM.LoadModule", "Failed to load module: " & path
+    End If
+    On Error GoTo 0
+    Dim compiler As ASF_Compiler: Set compiler = New ASF_Compiler
+    compiler.SetGlobals GLOBALS_
+    compiler.CurrentModulePath = path
+    compiler.IsModuleMode = True
+    Dim idx As Long: idx = compiler.CompileProgram(src, "@module:" & path)
+    If Not BC_.Prepare(idx) Then
+        Set LoadModule = VM_.LoadModule(path)
+        modules_.SetValue path, LoadModule
+        Exit Function
+    End If
+    If version_ <> BC_.Version Then LoadCode
+    loading_.Add path
+    Dim exportsMap As ASF_Map: Set exportsMap = New ASF_Map
+    GLOBALS_.gModuleExports.SetValue path, exportsMap
+    Dim previousPath As String: previousPath = GLOBALS_.CURRENT_MODULE_PATH
+    GLOBALS_.CURRENT_MODULE_PATH = path
+    Dim previousExports As ASF_Map: Set previousExports = curExports_
+    Set curExports_ = exportsMap
+    BindGlobals idx, Empty, True
+    ' the module's code runs as a call: an error or a throw in it stops it, as in the tree VM
+    Dim savedSp As Long, savedFt As Long, first As Long, none As Variant, mainFn As Long
+    mainFn = BC_.ProgramFunction(idx)
+    savedSp = topSp_: savedFt = topFt_
+    first = topSp_ + 1
+    If first + fnMaxStack_(mainFn) + 8 >= stkCap_ Then GrowStack first + fnMaxStack_(mainFn) + 8
+    stk_(first) = Empty
+    Execute 0, first, 1, topFt_, 0, topFt_, mainFn, 0, 0, False, none
+    stk_(first) = Empty
+    topSp_ = savedSp: topFt_ = savedFt
+    Set curExports_ = previousExports
+    GLOBALS_.CURRENT_MODULE_PATH = previousPath
+    loading_.Remove loading_.Count
+    If nCell_ > keepCell_ Then keepCell_ = nCell_
+    If nEnv_ > keepEnv_ Then keepEnv_ = nEnv_
+    Dim moduleObj As ASF_Map: Set moduleObj = New ASF_Map
+    moduleObj.SetValue "path", path
+    moduleObj.SetValue "exports", exportsMap
+    If exportsMap.Exists("__default") Then
+        moduleObj.SetValue "defaultExport", exportsMap.GetValue("__default")
+        exportsMap.Remove "__default"
+    End If
+    modules_.SetValue path, moduleObj
+    Set LoadModule = moduleObj
+End Function
+
+' export prototype...: registered now, and kept as a descriptor that an import registers again
+Private Sub ExportPrototype(ByVal info As ASF_Map, ByRef closure As Variant)
+    VM_.RegisterCOMPrototype CStr(info.GetValue("classType")), CStr(info.GetValue("methodName")), CLng(info.GetValue("funcIndex")), info.GetValue("params"), closure
+    If curExports_ Is Nothing Then Exit Sub
+    Dim desc As ASF_Map: Set desc = New ASF_Map
+    desc.SetValue "type", "PrototypeDescriptor"
+    desc.SetValue "classType", info.GetValue("classType")
+    desc.SetValue "methodName", info.GetValue("methodName")
+    desc.SetValue "funcIndex", info.GetValue("funcIndex")
+    desc.SetValue "internalFuncName", info.GetValue("internalFuncName")
+    desc.SetValue "params", info.GetValue("params")
+    desc.SetValue "closure", closure
+    curExports_.SetValue CStr(info.GetValue("exportName")), desc
+End Sub
+
+' The prototypes a module exports go live on every import of it, as in the tree VM
+Private Sub RegisterPrototypes(ByVal exportsMap As ASF_Map)
+    Dim i As Long, v As Variant, desc As ASF_Map, closure As Variant
+    For i = 1 To exportsMap.Count
+        SetItem v, exportsMap.GetValue(exportsMap.key(i))
+        If IsObject(v) Then
+            If TypeOf v Is ASF_Map Then
+                Set desc = v
+                If desc.Exists("type") Then
+                    If desc.GetValue("type") = "PrototypeDescriptor" Then
+                        closure = Empty
+                        If desc.Exists("closure") Then Set closure = desc.GetValue("closure")
+                        VM_.RegisterCOMPrototype CStr(desc.GetValue("classType")), CStr(desc.GetValue("methodName")), CLng(desc.GetValue("funcIndex")), desc.GetValue("params"), closure
+                    End If
+                End If
+            End If
+        End If
+    Next i
+End Sub
+
 ' ---------------------------------------------------------------- classes
-' The class value of the tree VM (ExecClassDecl)
-Private Function NewClass(ByVal node As ASF_Map) As ASF_Map
+' A class value: a copy of the one the compiler made, whose descriptors it shares
+Private Function NewClass(ByVal template As ASF_Map) As ASF_Map
     Dim klass As ASF_Map: Set klass = New ASF_Map
-    klass.Add "type", "Class"
-    klass.SetValue "name", node.GetValue("name")
-    klass.SetValue "fields", node.GetValue("fields")
-    klass.SetValue "classMethods", node.GetValue("classMethods")
-    If node.Exists("constructor") Then klass.SetValue "constructor", node.GetValue("constructor")
-    If node.Exists("superClass") Then klass.SetValue "superClass", node.GetValue("superClass")
+    Dim i As Long
+    For i = 1 To template.Count
+        klass.SetValue template.key(i), template.GetValue(template.key(i))
+    Next i
     Set NewClass = klass
 End Function
 
@@ -1030,15 +1222,17 @@ Private Function ClassCode(ByRef v As Variant, ByVal pc As Long, ByRef fn As Lon
     If Not IsObject(v) Then Exit Function
     If Not TypeOf v Is ASF_Map Then Exit Function
     Dim m As ASF_Map: Set m = v
-    Dim kind As Variant, item As Variant, i As Long
+    Dim kind As Variant, code As Variant, i As Long
     If Not m.TryGetValue("type", kind) Then Exit Function
     Select Case kind
-        Case "BoundMethod"
-            If Not MethodFunction(m.GetValue("method"), pc, fn) Then Exit Function
-            hasThis = True
-            Set thisVal = m.GetValue("instance")
-        Case "Method"
-            If Not MethodFunction(m, pc, fn) Then Exit Function
+        Case "BoundMethod", "Method"
+            If Not m.TryGetValue("fn", code) Then Exit Function
+            If VarType(code) <> vbLong Then Exit Function
+            fn = code
+            If kind = "BoundMethod" Then
+                hasThis = True
+                Set thisVal = m.GetValue("instance")
+            End If
         Case "Class"
             For i = 1 To nCls_
                 If IsObject(clsMap_(i)) Then
@@ -1056,33 +1250,19 @@ Private Function ClassCode(ByRef v As Variant, ByVal pc As Long, ByRef fn As Lon
     ClassCode = True
 End Function
 
-Private Function MethodFunction(ByRef node As Variant, ByVal pc As Long, ByRef fn As Long) As Boolean
-    Dim i As Long: i = methHint_(pc)
-    If i > 0 Then
-        If methNode_(i) Is node Then
-            fn = methFn_(i)
-            MethodFunction = True
-            Exit Function
-        End If
-    End If
-    For i = 1 To nMeth_
-        If methNode_(i) Is node Then
-            methHint_(pc) = i
-            fn = methFn_(i)
-            MethodFunction = True
-            Exit Function
-        End If
-    Next i
-End Function
-
 ' Class.name(): the class's method of that name, as EvalMemberNode finds it
 Private Function StaticMethod(cls As ASF_Map, ByVal name As String, ByVal pc As Long, ByRef fn As Long) As Boolean
-    Dim methods As Variant, item As Variant
+    Dim methods As Variant, item As Variant, code As Variant
     If Not cls.TryGetValue("classMethods", methods) Then Exit Function
     If Not IsObject(methods) Then Exit Function
     For Each item In methods
         If item.GetValue("name") = name Then
-            StaticMethod = MethodFunction(item, pc, fn)
+            If item.TryGetValue("fn", code) Then
+                If VarType(code) = vbLong Then
+                    fn = code
+                    StaticMethod = True
+                End If
+            End If
             Exit Function
         End If
     Next item
