@@ -55,7 +55,7 @@ Private glob_() As Variant
 Private frRet_() As Long, frFp_() As Long, frRes_() As Long, frFn_() As Long, frEnv_() As Long, frCap_ As Long
 Private frKind_() As Long, frRecv_() As Variant ' kind 1: a method call whose receiver is written back after it
 Private math_ As Object
-Private topSp_ As Long, topFt_ As Long  ' the stack and frames in use when the tree VM is called
+Private topSp_ As Long, topFt_ As Long  ' the stack and frames in use when ASF_Runtime is called
 
 Private OUTPUT__ As Variant
 Private LAST_ERROR_ As Variant
@@ -155,7 +155,7 @@ Private Sub LoadCode()
 End Sub
 
 ' The global slots of program idx: Math, $1, $2... and the injected variables by name; a module
-' has Math only, as its scope in the tree VM
+' has Math only
 Private Sub BindGlobals(ByVal idx As Long, params As Variant, ByVal isModule As Boolean)
     Dim names As Variant: names = BC_.ProgramGlobals(idx)
     Dim gBase As Long: gBase = BC_.ProgramGlobalBase(idx)
@@ -213,7 +213,7 @@ Private Sub SetItem(ByRef dst As Variant, ByRef v As Variant)
 End Sub
 
 ' ---------------------------------------------------------------- the dispatch loop
-' Runs from pc until the program ends, or, for a call from the tree VM (stopFt >= 0), until the
+' Runs from pc until the program ends, or, for a call from ASF_Runtime (stopFt >= 0), until the
 ' frame it enters (enterFn with enterN arguments on the stack) returns: its value is the result
 Private Function Execute(ByVal pc As Long, ByVal sp As Long, ByVal fp As Long, ByVal ft As Long, ByVal env As Long, _
                          ByVal stopFt As Long, ByVal enterFn As Long, ByVal enterN As Long, ByVal enterEnv As Long, _
@@ -759,7 +759,7 @@ X87: ' EXPORTPROTO a: the prototype; pops its function
 
 MethodCall:
     ' receiver.name(n arguments): an object's own function is called here with this; anything
-    ' else (built-in methods, host objects) goes to the tree VM
+    ' else (built-in methods, host objects) goes to ASF_Runtime
     If IsObject(stk_(sp - n)) Then
         If TypeOf stk_(sp - n) Is ASF_Map Then
             Set m = stk_(sp - n)
@@ -963,7 +963,7 @@ Unwind:
     If ft = 0 Then GoTo Finished
     If trace_ Then RT_.TraceError TraceName(frFn_(ft)), errDesc
     If RT_.verbose Then GLOBALS_.gRuntimeLog.Add "InvokeClosure error: Error during closure execution"
-    ' a constructor that fails still gives its instance, as the tree VM's statements stop there;
+    ' a constructor that fails still gives its instance, as its statements stop there;
     ' methods and constructors keep a throw to themselves
     rv = Empty
     If fnKind_(frFn_(ft)) = 2 Then SetItem rv, stk_(fp + fnThis_(frFn_(ft)))
@@ -981,7 +981,7 @@ Unwind:
     pc = frRet_(ft): fp = frFp_(ft): env = frEnv_(ft)
     ft = ft - 1
     If ft = stopFt Then
-        ' a call from a built-in method or the tree VM gives undefined, the throw stops there
+        ' a call from a built-in method gives undefined, the throw stops there
         throwing_ = False
         SetItem result, rv
         rv = Empty
@@ -1138,7 +1138,7 @@ Private Function LoadModule(ByVal path As String) As ASF_Map
     Dim previousExports As ASF_Map: Set previousExports = curExports_
     Set curExports_ = exportsMap
     BindGlobals idx, Empty, True
-    ' the module's code runs as a call: an error or a throw in it stops it, as in the tree VM
+    ' the module's code runs as a call: an error or a throw in it stops it
     Dim savedSp As Long, savedFt As Long, first As Long, none As Variant, mainFn As Long
     mainFn = BC_.ProgramFunction(idx)
     savedSp = topSp_: savedFt = topFt_
@@ -1179,7 +1179,7 @@ Private Sub ExportPrototype(ByVal info As ASF_Map, ByRef closure As Variant)
     curExports_.SetValue CStr(info.GetValue("exportName")), desc
 End Sub
 
-' The prototypes a module exports go live on every import of it, as in the tree VM
+' The prototypes a module exports go live on every import of it
 Private Sub RegisterPrototypes(ByVal exportsMap As ASF_Map)
     Dim i As Long, v As Variant, desc As ASF_Map, closure As Variant
     For i = 1 To exportsMap.Count
@@ -1262,8 +1262,8 @@ Private Function StaticMethod(cls As ASF_Map, ByVal name As String, ByVal pc As 
 End Function
 
 ' ---------------------------------------------------------------- built-in methods
-' The methods the bytecode VM runs itself, as the tree VM does them: id from ASF_Bytecode.MethodId,
-' the receiver at recvAt with n arguments after it. False leaves the call to the tree VM.
+' The methods this VM runs itself, as ASF_Runtime does them: id from ASF_Compiler.MethodId,
+' the receiver at recvAt with n arguments after it. False leaves the call to ASF_Runtime.
 Private Function NativeMethod(ByVal id As Long, ByVal recvAt As Long, ByVal n As Long, ByRef result As Variant, _
                               ByRef wrote As Boolean, ByRef written As Variant) As Boolean
     Dim recv As Variant
@@ -1359,7 +1359,7 @@ Private Function NativeMethod(ByVal id As Long, ByVal recvAt As Long, ByVal n As
     NativeMethod = True
 End Function
 
-' push: a new array with the items added, and its length, counted as the tree VM counts it
+' push: a new array with the items added, and its length
 Private Function ArrayPush(ByRef arr As Variant, ByVal first As Long, ByVal n As Long, ByRef newArr As Variant) As Long
     Dim offs As Long, lb As Long, oldLen As Long, i As Long, out() As Variant
     If UBound(arr) = -1 Then
@@ -1514,7 +1514,7 @@ Private Function ArgsArray(ByVal first As Long, ByVal n As Long) As Variant
     ArgsArray = a
 End Function
 
-' The extra arguments of a function with a rest parameter, as the tree VM collects them
+' The extra arguments of a function with a rest parameter
 Private Function RestArgs(ByVal first As Long, ByVal count As Long) As Variant
     Dim a() As Variant, i As Long
     If count <= 0 Then
@@ -1530,7 +1530,7 @@ Private Function RestArgs(ByVal first As Long, ByVal count As Long) As Variant
     RestArgs = a
 End Function
 
-' Spread arguments in place: strings give their characters, arrays their items (as the tree VM's
+' Spread arguments in place: strings give their characters, arrays their items (as ASF 3's
 ' calls do); returns the count of items now from first
 Private Function ExpandItems(ByVal first As Long, ByVal n As Long, ByVal flags As String) As Long
     Dim items As Collection: Set items = New Collection
@@ -1578,7 +1578,7 @@ Private Function TemplateText(ByVal first As Long, ByVal n As Long) As String
     TemplateText = out
 End Function
 
-' An array literal with spread items, as the tree VM builds it
+' An array literal with spread items
 Private Function NewArraySpread(ByVal first As Long, ByVal n As Long, ByVal flags As String) As Variant
     Dim items As Collection: Set items = New Collection
     Dim i As Long, j As Long, v As Variant
@@ -1730,7 +1730,7 @@ Private Function NewObject(ByVal first As Long, ByVal n As Long) As ASF_Map
     Set NewObject = m
 End Function
 
-' c[k], as the tree VM reads it: indexes from 1, objects by key
+' c[k]: indexes from 1, objects by key
 Private Function IndexValue(ByRef c As Variant, ByRef k As Variant) As Variant
     Dim pos As Long: pos = CLng(k)
     If pos < 1 Then Err.Raise vbObjectError + 5001, "VM.EvalIndexNode", "Invalid index (must >= base)"
@@ -1745,7 +1745,7 @@ Private Function IndexValue(ByRef c As Variant, ByRef k As Variant) As Variant
     End If
 End Function
 
-' c[k] of a container about to be written: undefined where the tree VM would create it
+' c[k] of a container about to be written: undefined where the write creates it
 Private Function IndexForWrite(ByRef c As Variant, ByRef k As Variant) As Variant
     If IsArray(c) Then
         Dim pos As Long: pos = CLng(k)
@@ -1785,7 +1785,7 @@ Private Function WithIndex(ByRef c As Variant, ByRef k As Variant, ByRef v As Va
     WithIndex = arr
 End Function
 
-' obj.key, as the tree VM reads it; hint is the instruction's cache
+' obj.key; hint is the instruction's cache
 Private Function PropertyValue(ByRef obj As Variant, ByVal key As String, ByRef hint As Long) As Variant
     If IsObject(obj) Then
         If TypeOf obj Is ASF_Map Then
@@ -1822,8 +1822,8 @@ Private Sub SetProperty(ByRef obj As Variant, ByVal key As String, ByRef v As Va
     End If
 End Sub
 
-' ---------------------------------------------------------------- values, as the tree VM treats them
-' IsTruthy of the tree VM: numbers and numeric strings by value, 'true' and 'false' by name
+' ---------------------------------------------------------------- values
+' Truthiness: numbers and numeric strings by value, 'true' and 'false' by name
 Private Function Truthy(ByRef v As Variant) As Boolean
     If IsObject(v) Then Truthy = Not v Is Nothing: Exit Function
     If IsNull(v) Then Exit Function
@@ -1841,7 +1841,7 @@ Private Function Truthy(ByRef v As Variant) As Boolean
     Truthy = True
 End Function
 
-' + of the tree VM (SafeAdd): numbers add, a string on either side concatenates
+' +: numbers add, a string on either side concatenates
 Private Function AddValues(ByRef a As Variant, ByRef b As Variant) As Variant
     If Not IsObject(a) And Not IsObject(b) Then
         If VarType(a) <> vbString And VarType(b) <> vbString Then
@@ -1886,7 +1886,7 @@ Private Function IsMapValue(ByRef v As Variant) As Boolean
     If IsObject(v) Then IsMapValue = TypeOf v Is ASF_Map
 End Function
 
-' == of the tree VM: same objects, arrays with the same items, null as undefined
+' ==: same objects, arrays with the same items, null as undefined
 Private Function IsNumberType(ByRef v As Variant) As Boolean
     Select Case VarType(v)
         Case vbInteger, vbLong, vbSingle, vbDouble, vbCurrency, vbDecimal, vbByte: IsNumberType = True
@@ -1957,7 +1957,7 @@ Private Function OperandText(ByRef v As Variant) As String
     End If
 End Function
 
-' The message of an error of a binary operator, as the tree VM words it
+' The message of an error of a binary operator
 Private Function OperatorMessage(ByVal code As Long, ByVal sp As Long, ByVal errNum As Long, ByVal errDesc As String) As String
     OperatorMessage = errDesc
     If errNum = vbObjectError + 5013 Then Exit Function

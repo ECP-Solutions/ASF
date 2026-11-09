@@ -559,7 +559,7 @@ ErrHandler:
         vAssignment MemberValue, Empty
     End If
 End Function
-' target.name(args) on values, as EvalCall does it: a built-in method, a prototype of a host
+' target.name(args) on values: a built-in method, a prototype of a host
 ' object, or a function the object holds, called with this; wrote and written: the array a method
 ' changed, for the caller to write back
 Private Function MethodCallValue(ByRef target As Variant, ByVal name As String, evaluated As Collection, ByVal isMath As Boolean, _
@@ -838,7 +838,7 @@ Private Sub WriteBack(ByRef value As Variant)
     vAssignment METHOD_WRITTEN_, value
 End Sub
 
-' Array methods of EvalMethodCall
+' Array methods
 Private Function ArrayMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim optBase_sp As Long, len_sp As Long
     Dim optBase_u2 As Long
@@ -2216,7 +2216,7 @@ exitfun:
 End Function
 
 
-' Regex methods of EvalMethodCall
+' Regex methods
 Private Function RegexMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' Expose regex module methods with the Regex object
     Select Case propN
@@ -2308,7 +2308,7 @@ exitfun:
     RegexMethod = True
 End Function
 
-' String methods of EvalMethodCall
+' String methods
 Private Function StringMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim nidx As Long
     Dim eidx As Long
@@ -2957,7 +2957,7 @@ exitfun:
 End Function
 
 
-' Map methods of EvalMethodCall
+' Map methods
 Private Function MapMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' an object's own function member wins over the builtin method of the same name, as in
     ' JavaScript: class methods such as set(), get() or has() are called, not shadowed
@@ -3359,7 +3359,7 @@ exitfun:
 End Function
 
 
-' Collection methods of EvalMethodCall
+' Collection methods
 Private Function CollectionMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant, ByVal isMath As Boolean) As Boolean
     If isMath Then
         If isMath Then
@@ -3574,7 +3574,7 @@ Private Function makeStringForPadding(padStr As String, tLen As Long) As String
     makeStringForPadding = tmpResult
 End Function
 ' ---------------------
-' Utilities adapted from previous VM
+' Utilities
 ' ---------------------
 Private Function IsTruthy(v As Variant) As Boolean
     If IsObject(v) Then IsTruthy = Not v Is Nothing: Exit Function
@@ -3922,12 +3922,9 @@ err_Handler:
     vAssignment cTypeExprRes, vbEmpty
 End Function
 
- ' ---------------------
- ' Closure / function-value support (runtime helpers)
- ' ---------------------
-
- ' Create and call closures (closureMap is a Map with keys:
- '  "type" = "Closure", "params" = Collection, "body" = Collection (stmts), "env" = ScopeStack)
+' ---------------------
+' Closures: a callback (map, sort...) calls a closure of ASF_VM, {type: 'Closure', fn, env}
+' ---------------------
 Private Function CallClosure(ByVal closureMap As ASF_Map, ByVal evaluatedArgs As Collection, Optional thisVal As Variant) As Variant
     ' a closure of ASF_VM: a function number and an environment
     If VM_ Is Nothing Then Exit Function
@@ -3938,8 +3935,6 @@ Private Function CallClosure(ByVal closureMap As ASF_Map, ByVal evaluatedArgs As
         vAssignment CallClosure, VM_.CallFromRuntime(closureMap, evaluatedArgs, True, thisVal)
     End If
 End Function
-
- ' ----------------- LValue resolution and helpers -----------------
 
 ' ---------------------
 ' Builtin helper functions (range/flatten/clone) and helpers for array methods

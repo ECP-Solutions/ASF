@@ -33,7 +33,7 @@ This document describes the runtime API exposed by ASF scripts and the VM builti
 
 ## Runtime model & conventions
 
-- **Program**: a compiled AST that can be executed by the VM. The ASF host exposes `.Compile(script)` → programIndex and `.Run(programIndex)` to run. The `Run` method returns the result of the program being executed.
+- **Program**: a script compiled to bytecode, which the VM executes. The ASF host exposes `.Compile(script)` → programIndex and `.Run(programIndex)` to run. The `Run` method returns the result of the program being executed.
 - **AppAccess**: Boolean property controlling Office object access (default: `False`). When `True`, scripts can access Office objects passed as runtime parameters (`$1`, `$2`, etc.). Always disable when not needed for security.
 - **Scope / closures**: closures capture the environment by reference (shared-write semantics). That means nested functions can mutate outer-scope variables and see changes across closures.
 - **Indexing base**: arrays honor `__option_base` set in runtime globals (commonly 0 or 1). All array helpers and methods handle this consistently.
