@@ -10,9 +10,10 @@ walked an AST. The classes:
 | `ASF_VM.cls` | Runs the bytecode in a single dispatch loop, with array-based frames and an arena for closure environments. |
 | `ASF_Runtime.cls` | The library of values the VM calls: methods of arrays, strings, objects, collections, Math and regex, printing, host objects and their prototypes, `@(...)`, the files of modules. |
 
-`src/old/` holds ASF 3.4.0, the last version that runs the AST, with the suffix `_OLD` on its
-classes (`ASF_OLD`, `ASF_Compiler_OLD`, `ASF_VM_OLD`...): both versions can be imported into one
-project.
+`src/old/` holds ASF 3.2.1, the AST engine as ASF 3 users run it (ASF 3.3 and 3.4 added their
+speed-ups behind conditional compilation arguments and a setting of each engine), with the suffix
+`_OLD` on its classes (`ASF_OLD`, `ASF_Compiler_OLD`, `ASF_VM_OLD`...): both versions can be
+imported into one project.
 
 ```vb
 Dim engine As New ASF
@@ -174,44 +175,47 @@ too, as LibreOffice Basic shares arrays between variables.
 
 ## Performance
 
-LibreOffice 24.2, milliseconds per run of a compiled program (`versionbench`, 46 workloads, which
-give the same results on both versions), and the cold time: a new engine, `Compile` and the first
-`Run`.
+LibreOffice 24.2, milliseconds per run of a compiled program against ASF 3.2.1 (`versionbench`,
+46 workloads), and the cold time: a new engine, `Compile` and the first `Run`. Three workloads give
+other results on 3.2.1, which later versions fixed: nested arrays, a `switch` with `break`, and the
+value `catch` receives from `throw`.
 
-| Workload | 3.4 | 4.0 | Speed-up | 3.4 cold | 4.0 cold |
+| Workload | 3.2.1 | 4.0 | Speed-up | 3.2.1 cold | 4.0 cold |
 |---|---:|---:|---:|---:|---:|
-| Arithmetic, top level | 855 | 64 | 13.5× | 732 | 89 |
-| Comparisons and branches | 1017 | 66 | 15.4× | 1540 | 101 |
-| While loop | 671 | 45 | 15.1× | 877 | 71 |
-| Function calls | 1574 | 108 | 14.6× | 1183 | 108 |
-| Recursion (fib 14) | 4991 | 364 | 13.7× | 4186 | 349 |
-| Deep recursion (300) | 3341 | 104 | 32.3× | 3371 | 103 |
-| Closure calls | 1219 | 167 | 7.3× | 1460 | 228 |
-| Property reads | 1484 | 172 | 8.6× | 1223 | 164 |
-| Array index write | 1544 | 406 | 3.8× | 2059 | 476 |
-| Nested arrays | 2683 | 1053 | 2.5× | 2668 | 1133 |
-| String methods | 2484 | 497 | 5.0× | 2323 | 355 |
-| map / filter / reduce | 765 | 196 | 3.9× | 662 | 236 |
-| Math methods | 1492 | 101 | 14.8× | 1736 | 216 |
-| Classes | 2065 | 378 | 5.5× | 1987 | 352 |
-| Static methods | 1540 | 250 | 6.2× | 1908 | 289 |
-| try without throw | 773 | 23 | 33.6× | 824 | 46 |
-| throw and catch | 349 | 27 | 13.1× | 314 | 48 |
-| Module function calls | 1211 | 191 | 6.4× | 1389 | 237 |
-| Regex | 517 | 125 | 4.1× | 497 | 208 |
-| Start-up (`return 1`) | 1.5 | 0.6 | 2.3× | 6.0 | 7.0 |
-| Long script (300 statements) | 237 | 6 | 39.3× | 1558 | 782 |
+| Arithmetic, top level | 1467 | 43 | 34.5× | 1373 | 81 |
+| Comparisons and branches | 1558 | 87 | 18.0× | 1884 | 82 |
+| Logical operators | 2021 | 47 | 43.1× | 2147 | 85 |
+| While loop | 1018 | 45 | 22.5× | 1158 | 81 |
+| Function calls | 1899 | 78 | 24.5× | 2732 | 89 |
+| Recursion (fib 14) | 7228 | 200 | 36.1× | 6695 | 239 |
+| Deep recursion (300) | 6517 | 114 | 57.3× | 8042 | 86 |
+| Closure calls | 1698 | 128 | 13.3× | 2040 | 208 |
+| Array literals | 2632 | 128 | 20.5× | 3023 | 170 |
+| Property reads | 2539 | 109 | 23.3× | 2364 | 151 |
+| Array index write | 2359 | 501 | 4.7× | 3080 | 463 |
+| String methods | 4648 | 477 | 9.7× | 5057 | 429 |
+| map / filter / reduce | 1106 | 221 | 5.0× | 1051 | 291 |
+| Math methods | 3272 | 165 | 19.9× | 3329 | 118 |
+| Classes | 3879 | 544 | 7.1× | 4646 | 298 |
+| Static methods | 3215 | 171 | 18.8× | 3130 | 224 |
+| try without throw | 932 | 21 | 44.8× | 947 | 65 |
+| Module function calls | 2050 | 157 | 13.1× | 1806 | 166 |
+| Regex | 764 | 131 | 5.8× | 936 | 215 |
+| Error in a function | 707 | 287 | 2.5× | 948 | 381 |
+| Start-up (`return 1`) | 1.1 | 0.6 | 1.8× | 5.9 | 7.5 |
+| Long script (300 statements) | 508 | 6 | 82.2× | 5060 | 591 |
 
-The work `ASF_Runtime` does for the VM (strings, regex, sort with a comparator, host objects) gains
-least. A new engine creates a compiler and a VM besides the runtime, so `return 1` starts slightly
-slower; any script with a loop or 300 statements is faster from its first run.
+The work `ASF_Runtime` does for the VM (strings, regex, sort with a comparator, host objects) and
+errors gain least. A new engine creates a compiler and a VM besides the runtime, so `return 1`
+starts slightly slower; any script with a loop or 300 statements is faster from its first run (the
+300 statements, 8.6 times).
 
 ## Testing
 
 - **Test suites**: `python3 libreoffice/tools/run_tests.py all` runs `test/TestRunner.bas` and
   `test/RegexTests.bas` on the LibreOffice edition.
 - **Benchmarks**: `python3 libreoffice/tools/run_tests.py versionbench` runs every workload of
-  `test/VersionBench.bas` on ASF 3.4 (`src/old`, loaded next to ASF 4) and ASF 4, checks the
+  `test/VersionBench.bas` on ASF 3.2.1 (`src/old`, loaded next to ASF 4) and ASF 4, checks the
   results and prints both times; `asfbench` runs `test/AsfBench.bas`.
 - **VBA**: `python3 Tools/vba_check.py` finds the compile errors of VBA that LibreOffice lets
   through.

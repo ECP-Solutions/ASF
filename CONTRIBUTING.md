@@ -156,7 +156,7 @@ ASF/
 │   ├── ASF_VM.cls         # Virtual machine: runs the bytecode
 │   ├── ASF_Runtime.cls    # Library of values: methods, printing, host objects
 │   ├── BYTECODE.md        # Design of the compiler and the VM
-│   ├── old/               # ASF 3.4.0 (AST), classes with the suffix _OLD
+│   ├── old/               # ASF 3.2.1 (AST), classes with the suffix _OLD
 │   └── ...
 ├── tests/                  # Test suite
 │   ├── TestRunner.bas     # Rubberduck tests

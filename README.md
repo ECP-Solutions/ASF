@@ -233,13 +233,14 @@ End Sub
 
 Since version 4.0, ASF compiles every script to bytecode: `ASF_Compiler` compiles from the tokens,
 `ASF_VM` runs the code, and `ASF_Runtime` holds the library of values (methods of arrays, strings,
-objects and collections, Math, regex, printing, host objects, `@(...)`). Scripts run 2 to 60 times
-faster than on ASF 3.4, which walked an AST (about 10 times on typical scripts), and start about
-twice as fast. [src/BYTECODE.md](src/BYTECODE.md) describes the design.
+objects and collections, Math, regex, printing, host objects, `@(...)`). Scripts run 2.5 to 80
+times faster than on ASF 3.2.1, which walked an AST (about 20 times on typical scripts), with no
+option to set: every engine runs bytecode. [src/BYTECODE.md](src/BYTECODE.md) describes the design.
 
-ASF 3.4.0, the last version that runs the AST, is kept in `src/old/`: its classes have the suffix
-`_OLD` (`ASF_OLD`, `ASF_VM_OLD`...), so both versions can be imported into one project, to compare
-them or to keep a script on the old engine while it is checked on the new one.
+ASF 3.2.1 is kept in `src/old/`: the AST engine as ASF 3 users run it (ASF 3.3 and 3.4 added their
+speed-ups behind conditional compilation arguments and a setting of each engine). Its classes have
+the suffix `_OLD` (`ASF_OLD`, `ASF_VM_OLD`...), so both versions can be imported into one project,
+to compare them or to keep a script on the old engine while it is checked on the new one.
 
 ## When to Use ASF
 
