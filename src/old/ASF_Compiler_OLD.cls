@@ -1,0 +1,4132 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "ASF_Compiler_OLD"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = False
+Attribute VB_Exposed = False
+' ---------------------
+' Compiler class
+' ---------------------
+' Class Module: Compiler
+Option Explicit
+Private GLOBALS_ As ASF_Globals_OLD
+Private CURRENT_MODULE_PATH_ As String
+Private IS_MODULE_MODE_ As Boolean
+
+' Produces AST (Maps) for program and functions.
+Public Sub SetGlobals(ByRef aGlobals As ASF_Globals_OLD)
+    Set GLOBALS_ = aGlobals
+End Sub
+Public Property Let CurrentModulePath(path As String)
+    CURRENT_MODULE_PATH_ = path
+End Property
+
+Public Property Get CurrentModulePath() As String
+    CurrentModulePath = CURRENT_MODULE_PATH_
+End Property
+
+Public Property Let IsModuleMode(value As Boolean)
+    IS_MODULE_MODE_ = value
+End Property
+
+Public Property Get IsModuleMode() As Boolean
+    IsModuleMode = IS_MODULE_MODE_
+End Property
+
+Private Function MakeNode(nodeType As String) As ASF_Map_OLD
+    Dim m As New ASF_Map_OLD
+    m.Add "type", nodeType
+    Set MakeNode = m
+End Function
+
+' ---------------------
+' Utility: deep-clone a Collection of Maps or primitive values
+' ---------------------
+Private Function CloneCollectionOfVariants(src As Variant) As Collection
+    Dim out As New Collection
+    Dim it As Variant
+    For Each it In src
+        If IsObject(it) Then
+            If typeName(it) = "ASF_Map_OLD" Then
+                out.Add it.Clone
+            ElseIf typeName(it) = "Collection" Then
+                out.Add CloneCollectionOfVariants(it)
+            Else
+                out.Add it
+            End If
+        Else
+            out.Add it
+        End If
+    Next it
+    Set CloneCollectionOfVariants = out
+End Function
+' ---------------------
+' Helper: Check if token is spread operator
+' ---------------------
+Private Function IsSpreadToken(toks As Collection, idx As Long) As Boolean
+    If idx > toks.Count Then
+        IsSpreadToken = False
+        Exit Function
+    End If
+    IsSpreadToken = (toks(idx)(0) = "SPREAD" Or toks(idx)(0) = "OP") And toks(idx)(1) = "..."
+End Function
+
+' ---------------------
+' Brackets of the code: those in strings and comments are text, as in return 'a)';
+Private Function CheckParents(src As String) As Boolean
+    Dim i As Long, n As Long
+    Dim openPar As Long
+    Dim ch As String, quote As String
+    n = Len(src)
+    i = 1
+    Do While i <= n
+        ch = mid$(src, i, 1)
+        If Len(quote) > 0 Then
+            If ch = "\" Then
+                i = i + 1
+            ElseIf ch = quote Then
+                quote = vbNullString
+            End If
+        Else
+            Select Case ch
+                Case "'", """", "`"
+                    quote = ch
+                Case "#"
+                    i = LineEnd(src, i)
+                Case "/"
+                    If mid$(src, i + 1, 1) = "/" Then
+                        i = LineEnd(src, i)
+                    ElseIf mid$(src, i + 1, 1) = "*" Then
+                        i = InStr(i + 2, src, "*/")
+                        If i = 0 Then Exit Do
+                        i = i + 1
+                    End If
+                Case "[", "{", "("
+                    openPar = openPar + 1
+                Case "]", "}", ")"
+                    openPar = openPar - 1
+            End Select
+        End If
+        i = i + 1
+    Loop
+    CheckParents = Not CBool(openPar And 1)
+End Function
+
+' Position of the last character of the line that holds position i
+Private Function LineEnd(src As String, ByVal i As Long) As Long
+    Do While i < Len(src)
+        Select Case mid$(src, i + 1, 1)
+            Case vbCr, vbLf: Exit Do
+        End Select
+        i = i + 1
+    Loop
+    LineEnd = i
+End Function
+Public Function CompileProgram(src As String, Optional progName As String = "@anon") As Long
+    If Not CheckParents(src) Then GoTo NotBalancedParents
+    Dim p As ASF_Parser_OLD
+    Dim toks As Collection
+    Dim progScope As ASF_ScopeStack_OLD
+    Dim stmtsAST As Collection
+    Dim stmtTokens As Collection
+    Dim i As Long
+    Dim node As ASF_Map_OLD
+    Dim fname As String
+    Dim argList As Collection
+    Dim bodyTokens As Collection
+    Dim depth As Long
+    Dim funcIdx As Long
+    Dim pa() As String
+    Dim j As Long
+    Dim classNode As ASF_Map_OLD
+    Dim braceDepth As Long
+    Dim parenDepth As Long
+    Dim bracketDepth As Long
+    Dim hasRestParam As Boolean
+    Dim restParamName As String
+    
+    GLOBALS_.ASF_InitGlobals
+
+    If GLOBALS_.ProgramCache.Exists(src) Then
+        CompileProgram = GLOBALS_.ProgramCache.GetValue(src)
+        Exit Function
+    End If
+
+    Set p = New ASF_Parser_OLD
+    With p
+        .SetGlobals GLOBALS_
+        Set toks = .Tokenize(src)
+    End With
+    
+    Set progScope = New ASF_ScopeStack_OLD
+    progScope.Push
+
+    Set stmtsAST = New Collection
+    i = 1
+
+Compiler_MainLoop:
+    Do While i <= toks.Count
+        ' skip comments at top level
+        If toks(i)(0) = "COMMENT" Then
+            i = i + 1
+            GoTo Compiler_MainLoop
+        End If
+        
+        ' Import statement at top-level
+        If toks(i)(0) = "KEYWORD" And toks(i)(1) = "import" Then
+            Dim importNode As ASF_Map_OLD
+            Set importNode = ParseImportStatement(toks, i)
+            stmtsAST.Add importNode
+            GoTo Compiler_MainLoop
+        End If
+        
+        ' Export statement at top-level
+        If toks(i)(0) = "KEYWORD" And toks(i)(1) = "export" Then
+            Dim exportNode As ASF_Map_OLD
+            Set exportNode = ParseExportStatement(toks, i)
+            stmtsAST.Add exportNode
+            GoTo Compiler_MainLoop
+        End If
+        
+        ' Function definition at top-level
+        If toks(i)(0) = "IDENT" And toks(i)(1) = "fun" Then
+            i = i + 1
+            ' skip comments
+            Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
+                i = i + 1
+            Loop
+            If i > toks.Count Then err.Raise vbObjectError + 1, , "Unexpected end after fun"
+            
+            ' Get function name
+            fname = toks(i)(1)
+            i = i + 1
+            
+            ' Skip comments
+            Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
+                i = i + 1
+            Loop
+
+            ' Parse parameters (with rest parameter support)
+            Set argList = New Collection
+            hasRestParam = False
+            restParamName = vbNullString
+            
+            If i <= toks.Count And toks(i)(0) = "PAREN" And toks(i)(1) = "(" Then
+                i = i + 1
+                Do While i <= toks.Count And Not (safeTVRetInner(toks, i, 0) = "PAREN" And safeTVRetInner(toks, i, 1) = ")")
+                    If toks(i)(0) = "COMMENT" Then
+                        i = i + 1
+                    Else
+                        ' Check for rest parameter (...)
+                        If (toks(i)(0) = "SPREAD" Or toks(i)(0) = "OP") And toks(i)(1) = "..." Then
+                            ' Next token should be parameter name
+                            i = i + 1
+                            If i > toks.Count Or toks(i)(0) <> "IDENT" Then
+                                err.Raise vbObjectError + 9001, , "Expected parameter name after ..."
+                            End If
+                            
+                            ' Validate rest is last
+                            If hasRestParam Then
+                                err.Raise vbObjectError + 9003, , "Multiple rest parameters not allowed"
+                            End If
+                            
+                            restParamName = toks(i)(1)
+                            hasRestParam = True
+                            i = i + 1
+                            
+                            ' Check there are no more parameters after rest
+                            Dim nextIdx As Long: nextIdx = i
+                            Do While nextIdx <= toks.Count And toks(nextIdx)(0) = "COMMENT"
+                                nextIdx = nextIdx + 1
+                            Loop
+                            If nextIdx <= toks.Count Then
+                                If Not (toks(nextIdx)(0) = "PAREN" And toks(nextIdx)(1) = ")") Then
+                                    If toks(nextIdx)(0) = "SEP" Then
+                                        err.Raise vbObjectError + 9002, , "Rest parameter must be last parameter"
+                                    End If
+                                End If
+                            End If
+                        Else
+                            ' Regular parameter
+                            If hasRestParam Then
+                                err.Raise vbObjectError + 9002, , "Rest parameter must be last parameter"
+                            End If
+                            If toks(i)(0) = "IDENT" Then argList.Add toks(i)(1)
+                            i = i + 1
+                        End If
+                    End If
+                Loop
+                If i <= toks.Count And toks(i)(0) = "PAREN" And toks(i)(1) = ")" Then i = i + 1
+            End If
+            ' Skip comments before body
+            Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
+                i = i + 1
+            Loop
+            If i > toks.Count Or Not (toks(i)(0) = "PAREN" And toks(i)(1) = "{") Then
+                err.Raise vbObjectError + 2, , "Expected function body"
+            End If
+            
+            ' Collect function body
+            i = i + 1
+            depth = 0
+            Set bodyTokens = New Collection
+            Do While i <= toks.Count
+                If toks(i)(0) = "PAREN" Then
+                    If toks(i)(1) = "{" Then
+                        depth = depth + 1
+                    ElseIf toks(i)(1) = "}" Then
+                        If depth = 0 Then
+                            Exit Do
+                        Else
+                            depth = depth - 1
+                        End If
+                    End If
+                End If
+                bodyTokens.Add toks(i)
+                i = i + 1
+            Loop
+
+            ' Compile function (pass rest parameter info)
+            If hasRestParam Then
+                funcIdx = CompileFunctionASTWithRest(fname, argList, bodyTokens, restParamName)
+            Else
+                funcIdx = CompileFunctionAST(fname, argList, bodyTokens)
+            End If
+            GLOBALS_.gFuncTable.Add fname, funcIdx
+
+            ' Store parameters
+            If argList.Count > 0 Then
+                ReDim pa(0 To argList.Count - 1)
+                For j = 1 To argList.Count
+                    pa(j - 1) = argList(j)
+                Next j
+            Else
+                ReDim pa(0 To 0)
+                pa(0) = vbNullString
+            End If
+            GLOBALS_.gFuncParams.Add fname, pa
+            ' Skip closing brace
+            If i <= toks.Count Then i = i + 1
+            GoTo Compiler_MainLoop
+            
+        ElseIf toks(i)(0) = "IDENT" And toks(i)(1) = "class" Then
+            ' Class definition at top-level
+            Set classNode = ParseClassDecl(toks, i)
+            stmtsAST.Add classNode
+            GoTo Compiler_MainLoop
+        ElseIf toks(i)(0) = "IDENT" And toks(i)(1) = "prototype" Then
+            ' Prototype definition at top-level
+            Dim prototypeNode As ASF_Map_OLD
+            Set prototypeNode = ParsePrototypeStatement(toks, i)
+            stmtsAST.Add prototypeNode
+            GoTo Compiler_MainLoop
+        Else
+            ' collect a top-level statement tokens (nesting-aware) then parse to AST node
+            braceDepth = 0
+            parenDepth = 0
+            bracketDepth = 0
+            
+            Set stmtTokens = New Collection
+            
+            Do While i <= toks.Count
+                If toks(i)(0) = "COMMENT" Then
+                    i = i + 1
+                    GoTo CollectNextTop
+                End If
+
+                If toks(i)(0) = "PAREN" Then
+                    Select Case toks(i)(1)
+                        Case "{"
+                            braceDepth = braceDepth + 1
+                        Case "}"
+                            If braceDepth > 0 Then
+                                braceDepth = braceDepth - 1
+                            End If
+                        Case "("
+                            parenDepth = parenDepth + 1
+                        Case ")"
+                            If parenDepth > 0 Then
+                                parenDepth = parenDepth - 1
+                            End If
+                        Case "["
+                            bracketDepth = bracketDepth + 1
+                        Case "]"
+                            If bracketDepth > 0 Then
+                                bracketDepth = bracketDepth - 1
+                            End If
+                    End Select
+                End If
+
+                ' Top-level statement separator: semicolon (commas are argument separators) if we are not nested
+                If toks(i)(0) = "SEP" And toks(i)(1) = ";" And braceDepth = 0 And parenDepth = 0 And bracketDepth = 0 Then
+                    i = i + 1
+                    Exit Do
+                End If
+
+                stmtTokens.Add toks(i)
+                i = i + 1
+CollectNextTop:
+            Loop
+
+            If stmtTokens.Count > 0 Then
+                Set node = ParseStatementTokensToAST(stmtTokens)
+                If Not node Is Nothing Then
+                    ' add a clone to avoid accidental reference reuse
+                    stmtsAST.Add node
+                End If
+            End If
+            GoTo Compiler_MainLoop
+        End If
+    Loop
+    
+    Dim optionBase As Long: optionBase = 1
+    Dim filteredStmts As New Collection
+    For i = 1 To stmtsAST.Count
+        Dim stmt As ASF_Map_OLD: Set stmt = stmtsAST(i)
+        If stmt.GetValue("type") = "OptionBase" Then
+            optionBase = CLng(stmt.GetValue("value"))
+        Else
+            filteredStmts.Add stmt
+        End If
+    Next i
+    Set stmtsAST = filteredStmts
+    Dim pIndex As Long
+    Dim normalizedStmts As Collection
+    ' Normalize assignment-like expression-statements into proper Assign AST nodes
+    Set normalizedStmts = NormalizeAssignsInStmts(stmtsAST)
+    pIndex = GLOBALS_.gPrograms.Count + 1
+    GLOBALS_.gPrograms.Add Array(progName, normalizedStmts, progScope.Raw, optionBase)
+    GLOBALS_.ProgramCache.Add src, pIndex
+    CompileProgram = pIndex
+    Exit Function
+NotBalancedParents:
+    err.Raise vbObjectError + 9024, "Compiler.CompileProgram", "Unbalanced opening or closing parentheses."
+End Function
+' Compile a function body (AST) and register it as separate program
+Private Function CompileFunctionAST(fname As String, argList As Collection, bodyTokens As Collection) As Long
+    Dim funcScope As ASF_ScopeStack_OLD
+    Dim i As Long
+    Dim bodyStmtsAST As Collection
+    Set funcScope = New ASF_ScopeStack_OLD
+    funcScope.Push
+    For i = 1 To argList.Count
+        funcScope.SetValue argList(i), Empty
+    Next i
+    Dim idx As Long
+    Set bodyStmtsAST = ParseTokensToAST(bodyTokens)
+    ' Normalize assignments inside function body as well
+    Set bodyStmtsAST = NormalizeAssignsInStmts(bodyStmtsAST)
+    idx = GLOBALS_.gPrograms.Count + 1
+    GLOBALS_.gPrograms.Add Array(fname, bodyStmtsAST, funcScope.Raw)
+    CompileFunctionAST = idx
+End Function
+Private Function CompileFunctionASTWithRest(fname As String, argList As Collection, bodyTokens As Collection, restParam As String) As Long
+    ' Same as CompileFunctionAST but stores rest parameter info in the program entry
+    Dim funcScope As ASF_ScopeStack_OLD
+    Dim i As Long
+    Dim bodyStmtsAST As Collection
+    Set funcScope = New ASF_ScopeStack_OLD
+    funcScope.Push
+    
+    ' Bind regular parameters to scope
+    For i = 1 To argList.Count
+        funcScope.SetValue argList(i), Empty
+    Next i
+    
+    ' Also bind rest parameter (will be array at runtime)
+    funcScope.SetValue restParam, Empty
+    
+    Dim idx As Long
+    Set bodyStmtsAST = ParseTokensToAST(bodyTokens)
+    Set bodyStmtsAST = NormalizeAssignsInStmts(bodyStmtsAST)
+    idx = GLOBALS_.gPrograms.Count + 1
+    
+    ' Store with rest parameter info: Array(fname, bodyStmtsAST, funcScope.Raw, restParam)
+    GLOBALS_.gPrograms.Add Array(fname, bodyStmtsAST, funcScope.Raw, restParam)
+    CompileFunctionASTWithRest = idx
+End Function
+' Parse a list of tokens representing a block into AST statements (returns Collection of Map nodes)
+Private Function ParseTokensToAST(toks As Collection) As Collection
+    Dim out As Collection
+    Dim stmtTokens As Collection
+    Set out = New Collection
+    Dim i As Long: i = 1
+    Dim closedTopLevelBlock As Boolean
+    
+ParseMain:
+    Do While i <= toks.Count
+        If toks(i)(0) = "COMMENT" Then
+            i = i + 1
+            GoTo ParseMain
+        End If
+        Set stmtTokens = New Collection
+        Dim braceDepth As Long: braceDepth = 0
+        Dim parenDepth As Long: parenDepth = 0
+        Dim bracketDepth As Long: bracketDepth = 0
+
+ParseInner:
+        Do While i <= toks.Count
+            If toks(i)(0) = "COMMENT" Then
+                i = i + 1
+                GoTo ParseInner
+            End If
+            If toks(i)(0) = "PAREN" Then
+                Select Case toks(i)(1)
+                    Case "{"
+                        braceDepth = braceDepth + 1
+                    Case "}"
+                        ' decrement only if we have an inner brace to close
+                        If braceDepth > 0 Then
+                            braceDepth = braceDepth - 1
+                        End If
+                    
+                        ' If we've just closed a top-level block (braceDepth now 0),
+                        ' usually that signals the end of a statement — BUT not if the next
+                        ' non-comment token is 'elseif' or 'else' (they belong to the same if).
+                        If braceDepth = 0 Then
+                            ' Append the closing brace to the current statement token buffer.
+                            stmtTokens.Add toks(i)
+                            i = i + 1
+                    
+                            ' Peek ahead to the next non-comment token to see whether this
+                            ' closing brace is followed by 'elseif', 'else' or 'catch'. If so, continue
+                            ' collecting tokens into the same stmtTokens (do not finalize yet).
+                            Dim nexti As Long: nexti = i
+                            Do While nexti <= toks.Count And safeTVRetInner(toks, nexti, 0) = "COMMENT"
+                                nexti = nexti + 1
+                            Loop
+
+                            If nexti <= toks.Count Then
+                                If toks(nexti)(0) = "IDENT" Then
+                                    Dim nextKw As String: nextKw = LCase$(safeTVRetInner(toks, nexti, 1))
+                                    If nextKw = "elseif" Or nextKw = "else" Or nextKw = "catch" Then
+                                        ' Don't finalize the statement: continue the inner loop
+                                        ' so the elseif/else, catch tokens will be collected into stmtTokens.
+                                        GoTo ParseInner
+                                    End If
+                                End If
+                            End If
+                    
+                            ' Not an elseif/else continuation: mark statement finished.
+                            closedTopLevelBlock = True
+                            Exit Do
+                        End If
+                    Case "("
+                        parenDepth = parenDepth + 1
+                    Case ")"
+                        If parenDepth > 0 Then
+                            parenDepth = parenDepth - 1
+                        End If
+                    Case "["
+                        bracketDepth = bracketDepth + 1
+                    Case "]"
+                        If bracketDepth > 0 Then
+                            bracketDepth = bracketDepth - 1
+                        End If
+                End Select
+            End If
+
+            ' Only a semicolon (;) is a top-level statement separator.
+            If toks(i)(0) = "SEP" And toks(i)(1) = ";" And braceDepth = 0 And parenDepth = 0 And bracketDepth = 0 Then
+                i = i + 1
+                Exit Do
+            End If
+    
+            ' default: append current token and continue
+            stmtTokens.Add toks(i)
+            i = i + 1
+        Loop
+        If stmtTokens.Count > 0 Then
+            Dim tmpNode As ASF_Map_OLD
+            Set tmpNode = ParseStatementTokensToAST(stmtTokens)
+            If Not tmpNode Is Nothing Then
+                ' If we closed a top-level block and the next token is not a semicolon,
+                ' warn the user (do not silently swallow).
+                If closedTopLevelBlock Then
+                    If i <= toks.Count Then
+                        If Not (toks(i)(0) = "SEP" And toks(i)(1) = ";") Then
+                            ' If the next token is not a comment and not end-of-input, log warning.
+                            If Not (toks(i)(0) = "COMMENT") Then
+                                On Error Resume Next
+                                ' best-effort: add to runtime log if present, and print to Immediate
+                                If Not GLOBALS_.gRuntimeLog Is Nothing Then GLOBALS_.gRuntimeLog.Add "COMPILER: missing ';' after block near token index " & CStr(i)
+                                On Error GoTo 0
+                            End If
+                        Else
+                            ' consume explicit semicolon
+                            i = i + 1
+                        End If
+                    End If
+                    closedTopLevelBlock = False
+                End If
+                out.Add tmpNode
+            End If
+        End If
+        GoTo ParseMain
+    Loop
+
+    Set ParseTokensToAST = out
+End Function
+
+' Parse a single statement token collection into an AST node (Map)
+Private Function ParseStatementTokensToAST(stmtTokens As Collection) As ASF_Map_OLD
+    If stmtTokens.Count = 0 Then
+        Set ParseStatementTokensToAST = Nothing
+        Exit Function
+    End If
+
+    ' quick check for print
+    If stmtTokens.Count >= 2 Then
+        If stmtTokens(1)(0) = "IDENT" And LCase$(stmtTokens(1)(1)) = "print" Then
+            Dim k As Long: k = 2
+            Do While k <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, k, 0) = "PAREN" And safeTVRetInner(stmtTokens, k, 1) = "(")
+                k = k + 1
+            Loop
+            If k <= stmtTokens.Count Then
+                Dim opened As Long: opened = 1
+                k = k + 1
+                Dim innerToks As Collection
+                Set innerToks = New Collection
+                Do While k <= stmtTokens.Count And opened > 0
+                    If stmtTokens(k)(0) = "PAREN" Then
+                        If stmtTokens(k)(1) = "(" Then
+                            opened = opened + 1
+                        ElseIf stmtTokens(k)(1) = ")" Then
+                            opened = opened - 1
+                        End If
+                    End If
+                    If opened > 0 Then innerToks.Add stmtTokens(k)
+                    k = k + 1
+                Loop
+                Dim args As Collection: Set args = ParseArgsTokensToExprNodes(innerToks)
+                Dim node As ASF_Map_OLD: Set node = MakeNode("Print")
+                node.SetValue "args", args
+                Set ParseStatementTokensToAST = node
+                Exit Function
+            End If
+        End If
+    End If
+
+    ' keywords
+    If stmtTokens(1)(0) = "IDENT" Then
+        Dim kw As String: kw = LCase$(stmtTokens(1)(1))
+        Select Case kw
+            Case "if"
+                Set ParseStatementTokensToAST = ParseIfAST(stmtTokens)
+                Exit Function
+            Case "for"
+                Set ParseStatementTokensToAST = ParseForAST(stmtTokens)
+                Exit Function
+            Case "while"
+                Set ParseStatementTokensToAST = ParseWhileAST(stmtTokens)
+                Exit Function
+            Case "try"
+                Set ParseStatementTokensToAST = ParseTryCatchAST(stmtTokens)
+                Exit Function
+            Case "throw"
+                Dim tw As ASF_Map_OLD: Set tw = MakeNode("Throw")
+                Dim twTok As Collection: Set twTok = New Collection
+                Dim twi As Long
+                For twi = 2 To stmtTokens.Count: twTok.Add stmtTokens(twi): Next twi
+                If twTok.Count > 0 Then tw.SetValue "expr", ParseExprTokensToNode(twTok) Else tw.SetValue "expr", Nothing
+                Set ParseStatementTokensToAST = tw
+                Exit Function
+            Case "switch"
+                Set ParseStatementTokensToAST = ParseSwitchAST(stmtTokens)
+                Exit Function
+            Case "break"
+                Dim b As ASF_Map_OLD: Set b = MakeNode("Break")
+                Set ParseStatementTokensToAST = b
+                Exit Function
+            Case "continue"
+                Dim c As ASF_Map_OLD: Set c = MakeNode("Continue")
+                Set ParseStatementTokensToAST = c
+                Exit Function
+            Case "return"
+                Dim rv As ASF_Map_OLD: Set rv = MakeNode("Return")
+                If stmtTokens.Count >= 2 Then
+                    Dim rhs As New Collection, m As Long
+                    For m = 2 To stmtTokens.Count: rhs.Add stmtTokens(m): Next m
+                    Dim rexpr As ASF_Map_OLD: Set rexpr = ParseExprTokensToNode(rhs)
+                    rv.SetValue "expr", rexpr
+                Else
+                    rv.SetValue "expr", Nothing
+                End If
+                Set ParseStatementTokensToAST = rv
+                Exit Function
+            Case "option"
+                If stmtTokens.Count >= 3 And LCase$(stmtTokens(2)(1)) = "base" Then
+                    If stmtTokens.Count >= 4 And stmtTokens(3)(0) = "NUMBER" Then
+                        Dim baseVal As Long: baseVal = CLng(stmtTokens(3)(1))
+                        If baseVal = 0 Or baseVal = 1 Then
+                            ' Set as program flag - return special node
+                            Dim optNode As ASF_Map_OLD: Set optNode = MakeNode("OptionBase")
+                            optNode.SetValue "value", baseVal
+                            Set ParseStatementTokensToAST = optNode
+                            Exit Function
+                        End If
+                    End If
+                End If
+        End Select
+    End If
+
+    ' assignment: find top-level "=" operator position or compound-assignment like "+=", "-=", "*=", etc.
+    Dim assignPos As Long: assignPos = 0
+    Dim compoundOp As String: compoundOp = vbNullString
+    Dim ii As Long
+    Dim depthB As Long, depthP As Long, depthBr As Long
+    For ii = 1 To stmtTokens.Count
+        If stmtTokens(ii)(0) = "PAREN" Then
+            Select Case stmtTokens(ii)(1)
+                Case "{"
+                    depthB = depthB + 1
+                Case "}"
+                    If depthB > 0 Then depthB = depthB - 1
+                Case "("
+                    depthP = depthP + 1
+                Case ")"
+                    If depthP > 0 Then depthP = depthP - 1
+                Case "["
+                    depthBr = depthBr + 1
+                Case "]"
+                    If depthBr > 0 Then depthBr = depthBr - 1
+            End Select
+        End If
+        If depthB = 0 And depthP = 0 And depthBr = 0 And stmtTokens(ii)(0) = "OP" Then
+            Dim opv As String: opv = CStr(stmtTokens(ii)(1))
+            ' plain assignment
+            If opv = "=" Then
+                assignPos = ii
+                Exit For
+            End If
+            ' compound assignment operators we support
+            Select Case opv
+                Case "+=", "-=", "*=", "/=", "%=", "^=", "&=", "|=", "<<=", ">>="
+                    assignPos = ii
+                    compoundOp = opv
+                    Exit For
+            End Select
+        End If
+    Next ii
+
+    If assignPos > 0 Then
+        Dim lhsT As Collection, rhsT As Collection, t As Long
+        Set lhsT = New Collection: Set rhsT = New Collection
+        For t = 1 To assignPos - 1: lhsT.Add stmtTokens(t): Next t
+        For t = assignPos + 1 To stmtTokens.Count: rhsT.Add stmtTokens(t): Next t
+        
+        ' Check for array destructuring pattern: [ id, id, ... ] = expr
+        Dim isArrayDestructuring As Boolean: isArrayDestructuring = False
+        If lhsT.Count >= 3 Then
+            If lhsT(1)(0) = "PAREN" And lhsT(1)(1) = "[" And lhsT(lhsT.Count)(0) = "PAREN" And lhsT(lhsT.Count)(1) = "]" Then
+                isArrayDestructuring = True
+            End If
+        End If
+        Dim rhsNode As ASF_Map_OLD
+        If isArrayDestructuring Then
+            ' Parse array destructuring assignment
+            Dim destNode As ASF_Map_OLD: Set destNode = MakeNode("ArrayDestructuring")
+            Dim targets As New Collection
+            Dim hasRestInDest As Boolean: hasRestInDest = False
+            Dim restTargetName As String: restTargetName = vbNullString
+            Dim targetVar As ASF_Map_OLD
+            ' Parse elements between [ and ]
+            Dim dt As Long: dt = 2 ' skip opening [
+            Do While dt < lhsT.Count
+                If lhsT(dt)(0) = "COMMENT" Then
+                    dt = dt + 1
+                    GoTo ContinueDestParse
+                End If
+                
+                ' Check for rest element (...identifier)
+                If IsSpreadToken(lhsT, dt) Then
+                    dt = dt + 1
+                    ' Skip comments after spread
+                    Do While dt < lhsT.Count And lhsT(dt)(0) = "COMMENT"
+                        dt = dt + 1
+                    Loop
+                    
+                    If dt < lhsT.Count And lhsT(dt)(0) = "IDENT" Then
+                        If hasRestInDest Then
+                            err.Raise vbObjectError + 9003, "Compiler.ParseStatementTokensToAST", "Multiple rest elements in destructuring"
+                        End If
+                        hasRestInDest = True
+                        restTargetName = lhsT(dt)(1)
+                        dt = dt + 1
+                        
+                        ' Validate rest is last (only closing bracket should follow)
+                        Do While dt < lhsT.Count And lhsT(dt)(0) = "COMMENT"
+                            dt = dt + 1
+                        Loop
+                        If dt < lhsT.Count And Not (lhsT(dt)(0) = "PAREN" And lhsT(dt)(1) = "]") Then
+                            If lhsT(dt)(0) = "SEP" And lhsT(dt)(1) = "," Then
+                                err.Raise vbObjectError + 9002, "Compiler.ParseStatementTokensToAST", "Rest element must be last in destructuring"
+                            End If
+                        End If
+                    Else
+                        err.Raise vbObjectError + 9004, "Compiler.ParseStatementTokensToAST", "Expected identifier after ... in destructuring"
+                    End If
+                ElseIf lhsT(dt)(0) = "IDENT" Then
+                    ' Regular target identifier
+                    If hasRestInDest Then
+                        err.Raise vbObjectError + 9002, "Compiler.ParseStatementTokensToAST", "Rest element must be last in destructuring"
+                    End If
+                    Set targetVar = MakeNode("Variable")
+                    targetVar.SetValue "name", lhsT(dt)(1)
+                    targets.Add targetVar
+                    dt = dt + 1
+                ElseIf lhsT(dt)(0) = "SEP" And lhsT(dt)(1) = "," Then
+                    ' Skip comma separators
+                    dt = dt + 1
+                Else
+                    ' Unexpected token in destructuring pattern
+                    dt = dt + 1
+                End If
+ContinueDestParse:
+            Loop
+            
+            destNode.SetValue "targets", targets
+            If hasRestInDest Then
+                destNode.SetValue "restTarget", restTargetName
+            End If
+            
+            ' Parse RHS
+            Set rhsNode = ParseExprTokensToNode(rhsT)
+            
+            destNode.SetValue "source", rhsNode
+            Set ParseStatementTokensToAST = destNode
+            Exit Function
+        End If
+        Dim lhsNode As ASF_Map_OLD
+        Set lhsNode = ParseExprTokensToNode(lhsT)
+        If compoundOp <> vbNullString Then
+            ' For compound assignments like "a += 3" produce:
+            ' Assign { left: lhsNode, right: Binary { left: (clone of lhsNode), op: <op>, right: <rhsExpr> } }
+            Dim innerOp As String: innerOp = left$(compoundOp, Len(compoundOp) - 1)
+            Dim rightExpr As ASF_Map_OLD: Set rightExpr = ParseExprTokensToNode(rhsT)
+            Dim lhsClone As ASF_Map_OLD: Set lhsClone = lhsNode.Clone
+            Dim bin As ASF_Map_OLD: Set bin = MakeNode("Binary")
+            bin.SetValue "left", lhsClone
+            bin.SetValue "op", innerOp
+            bin.SetValue "right", rightExpr
+            Set rhsNode = bin
+        Else
+            Set rhsNode = ParseExprTokensToNode(rhsT)
+        End If
+
+        Dim asn As ASF_Map_OLD: Set asn = MakeNode("Assign")
+        asn.SetValue "left", lhsNode
+        asn.SetValue "right", rhsNode
+        Set ParseStatementTokensToAST = asn
+        Exit Function
+    End If
+    ' fallback: expression statement
+    Dim exprNode As ASF_Map_OLD
+    Set exprNode = ParseExprTokensToNode(stmtTokens)
+    Dim es As ASF_Map_OLD: Set es = MakeNode("ExprStmt")
+    es.SetValue "expr", exprNode
+    Set ParseStatementTokensToAST = es
+End Function
+
+' ---------------------
+' Expression parsing -> Expr AST nodes
+' ---------------------
+
+Private Function ParseArgsTokensToExprNodes(argTokens As Collection) As Collection
+    Dim out As New Collection
+    If argTokens.Count = 0 Then
+        Set ParseArgsTokensToExprNodes = out
+        Exit Function
+    End If
+    Dim i As Long: i = 1
+    Dim braceDepth As Long: braceDepth = 0
+    Dim parenDepth As Long: parenDepth = 0
+    Dim bracketDepth As Long: bracketDepth = 0
+    Dim cur As New Collection
+ParseArgsMain:
+    Do While i <= argTokens.Count
+        If argTokens(i)(0) = "PAREN" Then
+            Select Case argTokens(i)(1)
+                Case "{"
+                    braceDepth = braceDepth + 1
+                Case "}"
+                    If braceDepth > 0 Then braceDepth = braceDepth - 1
+                Case "("
+                    parenDepth = parenDepth + 1
+                Case ")"
+                    If parenDepth > 0 Then parenDepth = parenDepth - 1
+                Case "["
+                    bracketDepth = bracketDepth + 1
+                Case "]"
+                    If bracketDepth > 0 Then bracketDepth = bracketDepth - 1
+            End Select
+        End If
+        ' Argument/element separator: comma only (semicolon is NOT an argument separator)
+        If argTokens(i)(0) = "SEP" And argTokens(i)(1) = "," And braceDepth = 0 And parenDepth = 0 And bracketDepth = 0 Then
+            If cur.Count > 0 Then out.Add ParseExprTokensToNode(cur)
+            Set cur = New Collection
+            i = i + 1
+            GoTo ParseArgsMain
+        End If
+
+        cur.Add argTokens(i)
+        i = i + 1
+    Loop
+    If cur.Count > 0 Then out.Add ParseExprTokensToNode(cur)
+    Set ParseArgsTokensToExprNodes = out
+End Function
+
+Private Function ParseExprFromStringToNode(exprStr As String) As ASF_Map_OLD
+    Dim p As ASF_Parser_OLD
+    Set p = New ASF_Parser_OLD
+    Dim toks As Collection
+    Set toks = p.Tokenize(exprStr)
+    Set ParseExprFromStringToNode = ParseExprTokensToNode(toks)
+End Function
+
+Private Function ParseExprTokensToNode(toks As Collection) As ASF_Map_OLD
+    Dim n As Long: n = toks.Count
+    If n = 0 Then
+        Set ParseExprTokensToNode = MakeNode("Literal"): ParseExprTokensToNode.SetValue "value", Empty
+        Exit Function
+    End If
+
+    Dim types() As String, vals() As Variant, i As Long
+    ReDim types(0 To n - 1)
+    ReDim vals(0 To n - 1)
+    For i = 1 To n
+        types(i - 1) = toks(i)(0)
+        vals(i - 1) = toks(i)(1)
+    Next i
+
+    Dim idx As Long: idx = 0
+    Set ParseExprTokensToNode = ParseTernaryNode(types, vals, n, idx)
+End Function
+
+' Recursive descent building nodes
+
+Private Function ParseTernaryNode(types() As String, vals() As Variant, n As Long, ByRef idx As Long) As ASF_Map_OLD
+    ' parse cond ? trueExpr : falseExpr (right-assoc)
+    Dim cond As ASF_Map_OLD
+    Set cond = ParseBinaryNode(types, vals, n, idx, 1)
+    If idx < n Then
+        If safeTVRet(types, idx) = "OP" And safeTVRet(vals, idx) = "?" Then
+            idx = idx + 1
+            Dim trueExpr As ASF_Map_OLD
+            Set trueExpr = ParseTernaryNode(types, vals, n, idx) ' right-assoc: allow nested ternary
+            ' expect ':'
+            If idx < n And safeTVRet(types, idx) = "OP" And safeTVRet(vals, idx) = ":" Then
+                idx = idx + 1
+            Else
+                err.Raise vbObjectError + 8001, "Compiler.ParseTernaryNode", "Expected ':' in ternary expression"
+            End If
+            Dim falseExpr As ASF_Map_OLD
+            Set falseExpr = ParseTernaryNode(types, vals, n, idx)
+            Dim tn As New ASF_Map_OLD
+            tn.Add "type", "Ternary"
+            tn.SetValue "cond", cond
+            tn.SetValue "trueExpr", trueExpr
+            tn.SetValue "falseExpr", falseExpr
+            Set ParseTernaryNode = tn
+            Exit Function
+        End If
+    End If
+    Set ParseTernaryNode = cond
+End Function
+
+' Binary operators by precedence climbing: one loop instead of a function per precedence level,
+' which a primary went through about ten deep. Levels, lowest first: ?? || && (== = !=)
+' (< > <= >=) (<< >>) (+ - &) (* / %) ^; ?? and ^ group to the right, the rest to the left, and
+' unary operators bind tighter than ^ (ParseUnaryNode)
+Private Function ParseBinaryNode(types() As String, vals() As Variant, n As Long, ByRef idx As Long, ByVal minPrec As Long) As ASF_Map_OLD
+    Dim left_ As ASF_Map_OLD
+    Dim right_ As ASF_Map_OLD
+    Dim node As ASF_Map_OLD
+    Dim op As String
+    Dim prec As Long
+    Set left_ = ParseUnaryNode(types, vals, n, idx)
+    Do While idx < n
+        If safeTVRet(types, idx) <> "OP" Then Exit Do
+        op = safeTVRet(vals, idx)
+        prec = BinaryPrec(op)
+        If prec = 0 Or prec < minPrec Then Exit Do
+        idx = idx + 1
+        If prec = 1 Or prec = 9 Then
+            Set right_ = ParseBinaryNode(types, vals, n, idx, prec)
+        Else
+            Set right_ = ParseBinaryNode(types, vals, n, idx, prec + 1)
+        End If
+        Set node = MakeNode("Binary")
+        node.SetValue "op", op
+        node.SetValue "left", left_
+        node.SetValue "right", right_
+        Set left_ = node
+    Loop
+    Set ParseBinaryNode = left_
+End Function
+
+' Precedence of a binary operator (see ParseBinaryNode), 0 for anything else
+Private Function BinaryPrec(ByVal op As String) As Long
+    Select Case op
+        Case "??": BinaryPrec = 1
+        Case "||": BinaryPrec = 2
+        Case "&&": BinaryPrec = 3
+        Case "==", "=", "!=": BinaryPrec = 4
+        Case "<", ">", "<=", ">=": BinaryPrec = 5
+        Case "<<", ">>": BinaryPrec = 6
+        Case "+", "-", "&": BinaryPrec = 7
+        Case "*", "/", "%": BinaryPrec = 8
+        Case "^": BinaryPrec = 9
+    End Select
+End Function
+
+Private Function ParseUnaryNode(types() As String, vals() As Variant, n As Long, ByRef idx As Long) As ASF_Map_OLD
+    If idx < n And safeTVRet(types, idx) = "OP" Then
+        Dim op As String: op = safeTVRet(vals, idx)
+        If op = "!" Or op = "-" Then
+            idx = idx + 1
+            Dim v As ASF_Map_OLD: Set v = ParseUnaryNode(types, vals, n, idx)
+            Dim node As ASF_Map_OLD: Set node = MakeNode("Unary")
+            node.SetValue "op", op
+            node.SetValue "expr", v
+            Set ParseUnaryNode = node
+            Exit Function
+        End If
+    End If
+    Set ParseUnaryNode = ParsePrimaryNode(types, vals, n, idx)
+End Function
+
+' ParseCollapsedIdent: Parses a collapsed identifier string like "a[2].b"
+' and returns the AST node chain. The base of the chain will be a Variable
+' node that can be replaced by the caller.
+Private Function ParseCollapsedIdent(ByVal collapsedStr As String, _
+                                     types() As String, vals() As Variant, _
+                                     n As Long, ByRef idx As Long) As ASF_Map_OLD
+    Dim s As String: s = collapsedStr
+    Dim poss As Long: poss = 1
+    Dim L As Long: L = Len(s)
+    Dim ident As String: ident = vbNullString
+    Dim propName As String
+    Dim currentNode As ASF_Map_OLD
+    Dim mem As ASF_Map_OLD
+    Dim indexNode As ASF_Map_OLD
+    
+    ' Read leading identifier
+    Do While poss <= L
+        Dim ch0 As String: ch0 = mid$(s, poss, 1)
+        If ch0 = "." Or ch0 = "[" Then Exit Do
+        ident = ident & ch0
+        poss = poss + 1
+    Loop
+    Set currentNode = MakeNode("Variable")
+    currentNode.SetValue "name", ident
+    
+    ' Parse internal segments embedded in string (handles a[1][2].b)
+    Do While poss <= L
+        Dim ch As String: ch = mid$(s, poss, 1)
+        If ch = "." Then
+            poss = poss + 1
+            propName = vbNullString
+            Do While poss <= L
+                Dim ch2 As String: ch2 = mid$(s, poss, 1)
+                If ch2 = "." Or ch2 = "[" Then Exit Do
+                propName = propName & ch2
+                poss = poss + 1
+            Loop
+            Set mem = MakeNode("Member")
+            mem.SetValue "base", currentNode
+            mem.SetValue "prop", propName
+            Set currentNode = mem
+        ElseIf ch = "[" Then
+            ' Find closing bracket inside the string
+            Dim depthBr As Long: depthBr = 0
+            Dim posClose As Long: posClose = 0
+            Dim iCh As Long
+            For iCh = poss To L
+                Dim cch As String: cch = mid$(s, iCh, 1)
+                If cch = "[" Then
+                    depthBr = depthBr + 1
+                ElseIf cch = "]" Then
+                    depthBr = depthBr - 1
+                    If depthBr = 0 Then
+                        posClose = iCh
+                        Exit For
+                    End If
+                End If
+            Next iCh
+            If posClose = 0 Then
+                err.Raise vbObjectError + 8002, "Compiler.ParseCollapsedIdent", _
+                          "Invalid collapsed identifier: missing ']' in " & s
+            End If
+            Dim idxStr As String: idxStr = mid$(s, poss + 1, posClose - poss - 1)
+            Dim idxNodeFromStr As ASF_Map_OLD
+            Set idxNodeFromStr = ParseExprFromStringToNode(idxStr)
+            Set indexNode = MakeNode("Index")
+            indexNode.SetValue "base", currentNode
+            indexNode.SetValue "index", idxNodeFromStr
+            Set currentNode = indexNode
+            poss = posClose + 1
+        Else
+            Exit Do
+        End If
+    Loop
+    
+    ' Handle any immediately following bracket tokens in token stream
+    Do While idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "["
+        idx = idx + 1
+        Dim idxTok As Collection: Set idxTok = New Collection
+        Dim depthIdx As Long: depthIdx = 0
+        Do While idx < n
+            If safeTVRet(types, idx) = "PAREN" Then
+                If safeTVRet(vals, idx) = "[" Then
+                    depthIdx = depthIdx + 1
+                ElseIf safeTVRet(vals, idx) = "]" Then
+                    If depthIdx = 0 Then
+                        Exit Do
+                    Else
+                        depthIdx = depthIdx - 1
+                    End If
+                End If
+            End If
+            idxTok.Add Array(safeTVRet(types, idx), safeTVRet(vals, idx))
+            idx = idx + 1
+        Loop
+        Dim idxExprNode As ASF_Map_OLD
+        Set idxExprNode = ParseExprTokensToNode(idxTok)
+        If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "]" Then
+            idx = idx + 1
+        End If
+        Dim moreIndex As ASF_Map_OLD: Set moreIndex = MakeNode("Index")
+        moreIndex.SetValue "base", currentNode
+        moreIndex.SetValue "index", idxExprNode
+        Set currentNode = moreIndex
+    Loop
+    
+    Set ParseCollapsedIdent = currentNode
+End Function
+
+' ReplaceLeafVariable: Recursively finds the leftmost Variable node and replaces it
+Private Sub ReplaceLeafVariable(node As ASF_Map_OLD, newBase As ASF_Map_OLD)
+    Dim baseNode As ASF_Map_OLD
+    Dim varName As String
+    
+    Select Case node.GetValue("type")
+        Case "Variable"
+            ' Can't replace the node itself, but we shouldn't reach this case
+            Exit Sub
+            
+        Case "Member"
+            Set baseNode = node.GetValue("base")
+            If baseNode.GetValue("type") = "Variable" Then
+                ' Create Member node: newBase.propertyName
+                varName = baseNode.GetValue("name")
+                Dim memberNode As ASF_Map_OLD: Set memberNode = MakeNode("Member")
+                memberNode.SetValue "base", newBase.Clone
+                memberNode.SetValue "prop", varName
+                node.SetValue "base", memberNode
+            Else
+                ' Recurse into the base
+                Call ReplaceLeafVariable(baseNode, newBase)
+            End If
+            
+        Case "Index"
+            Set baseNode = node.GetValue("base")
+            If baseNode.GetValue("type") = "Variable" Then
+                ' Create Member node: newBase.propertyName
+                varName = baseNode.GetValue("name")
+                Dim memberNode2 As ASF_Map_OLD: Set memberNode2 = MakeNode("Member")
+                memberNode2.SetValue "base", newBase.Clone
+                memberNode2.SetValue "prop", varName
+                node.SetValue "base", memberNode2
+            Else
+                ' Recurse into the base
+                Call ReplaceLeafVariable(baseNode, newBase)
+            End If
+    End Select
+End Sub
+' Helper: perform postfix chaining (.prop, [index], (args)) on a given currentNode.
+' Returns the updated currentNode (NOT cloned) and advances idx accordingly.
+Private Function DoPostfixChaining(ByVal currentNode As ASF_Map_OLD, types() As String, vals() As Variant, n As Long, ByRef idx As Long) As ASF_Map_OLD
+    Dim mem As ASF_Map_OLD
+    Dim indexNode As ASF_Map_OLD
+    Dim propName As String
+
+    Do While idx < n
+        ' member access .prop (with .length -> __len__ call)
+        If safeTVRet(types, idx) = "SYM" And safeTVRet(vals, idx) = "." Then
+            idx = idx + 1
+            If idx < n And safeTVRet(types, idx) = "IDENT" Then
+                propName = CStr(safeTVRet(vals, idx))
+                idx = idx + 1
+                
+                ' Check if propName is a collapsed identifier (contains [ or .)
+                If InStr(propName, "[") > 0 Or InStr(propName, ".") > 0 Then
+                    ' Parse the collapsed identifier
+                    Dim collapsedNode As ASF_Map_OLD
+                    Set collapsedNode = ParseCollapsedIdent(propName, types, vals, n, idx)
+                    ' Replace its base Variable with currentNode
+                    Call ReplaceLeafVariable(collapsedNode, currentNode)
+                    Set currentNode = collapsedNode
+                Else
+                    ' Simple property name
+                    Set mem = MakeNode("Member")
+                    mem.SetValue "base", currentNode
+                    mem.SetValue "prop", propName
+                    Set currentNode = mem
+                End If
+            Else
+                ' invalid member access; stop postfixing
+                Exit Do
+            End If
+
+        ' index access a[expr]
+        ElseIf safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "[" Then
+            idx = idx + 1
+            Dim idxTok As Collection: Set idxTok = New Collection
+            Dim depthIdx As Long: depthIdx = 0
+            Do While idx < n
+                If safeTVRet(types, idx) = "PAREN" Then
+                    If safeTVRet(vals, idx) = "[" Then
+                        depthIdx = depthIdx + 1
+                    ElseIf safeTVRet(vals, idx) = "]" Then
+                        If depthIdx = 0 Then
+                            Exit Do
+                        Else
+                            depthIdx = depthIdx - 1
+                        End If
+                    End If
+                End If
+                idxTok.Add Array(safeTVRet(types, idx), safeTVRet(vals, idx))
+                idx = idx + 1
+            Loop
+            Dim idxExprNode As ASF_Map_OLD: Set idxExprNode = ParseExprTokensToNode(idxTok)
+            If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "]" Then idx = idx + 1
+            Set indexNode = MakeNode("Index")
+            indexNode.SetValue "base", currentNode
+            indexNode.SetValue "index", idxExprNode
+            Set currentNode = indexNode
+
+        ' function / method call: ( arglist ) - with spread support
+        ElseIf safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "(" Then
+            idx = idx + 1
+            Dim argNodes As Collection: Set argNodes = New Collection
+            Dim argTok As Collection
+            Dim argTokDepthParen As Long, argTokDepthBr As Long, argTokDepthB As Long
+            Do
+                Dim isSpreadArg As Boolean: isSpreadArg = False
+                
+                ' Check for spread operator before argument
+                If idx < n And ((safeTVRet(types, idx) = "SPREAD") Or (safeTVRet(types, idx) = "OP")) And safeTVRet(vals, idx) = "..." Then
+                    isSpreadArg = True
+                    idx = idx + 1
+                End If
+                
+                Set argTok = New Collection
+                argTokDepthParen = 0: argTokDepthBr = 0: argTokDepthB = 0
+                Do While idx < n
+                    If safeTVRet(types, idx) = "PAREN" Then
+                        Select Case CStr(safeTVRet(vals, idx))
+                            Case "("
+                                argTokDepthParen = argTokDepthParen + 1
+                            Case ")"
+                                If argTokDepthParen = 0 Then Exit Do Else argTokDepthParen = argTokDepthParen - 1
+                            Case "["
+                                argTokDepthBr = argTokDepthBr + 1
+                            Case "]"
+                                If argTokDepthBr = 0 Then Exit Do Else argTokDepthBr = argTokDepthBr - 1
+                            Case "{"
+                                argTokDepthB = argTokDepthB + 1
+                            Case "}"
+                                If argTokDepthB = 0 Then Exit Do Else argTokDepthB = argTokDepthB - 1
+                        End Select
+                    ElseIf safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = "," And argTokDepthParen = 0 And argTokDepthBr = 0 And argTokDepthB = 0 Then
+                        Exit Do
+                    End If
+                    argTok.Add Array(safeTVRet(types, idx), safeTVRet(vals, idx))
+                    idx = idx + 1
+                Loop
+
+                If argTok.Count > 0 Then
+                    If isSpreadArg Then
+                        ' Create SpreadElement node
+                        Dim spreadArgNode As ASF_Map_OLD: Set spreadArgNode = MakeNode("SpreadElement")
+                        spreadArgNode.SetValue "argument", ParseExprTokensToNode(argTok)
+                        argNodes.Add spreadArgNode
+                    Else
+                        argNodes.Add ParseExprTokensToNode(argTok)
+                    End If
+                Else
+                    If Not isSpreadArg Then
+                        Dim litEmpty As ASF_Map_OLD: Set litEmpty = MakeNode("Literal")
+                        litEmpty.SetValue "value", Empty
+                        argNodes.Add litEmpty.Clone
+                    End If
+                End If
+
+                If idx < n Then
+                    If safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = "," Then
+                        idx = idx + 1
+                        ' continue parsing next arg
+                    ElseIf safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = ")" Then
+                        idx = idx + 1
+                        Exit Do
+                    Else
+                        ' unexpected token -> stop args parsing
+                        Exit Do
+                    End If
+                Else
+                    Exit Do
+                End If
+            Loop
+
+            Dim callNode As ASF_Map_OLD: Set callNode = MakeNode("Call")
+            callNode.SetValue "callee", currentNode
+            callNode.SetValue "args", argNodes
+            Set currentNode = callNode
+        Else
+            Exit Do
+        End If
+    Loop
+
+    Set DoPostfixChaining = currentNode
+End Function
+
+
+' The main ParsePrimaryNode function: calls DoPostfixChaining from each relevant primary case.
+Private Function ParsePrimaryNode(types() As String, vals() As Variant, n As Long, ByRef idx As Long) As ASF_Map_OLD
+    If idx >= n Then
+        Set ParsePrimaryNode = MakeNode("Literal")
+        ParsePrimaryNode.SetValue "value", Empty
+        Exit Function
+    End If
+
+    Dim t As String: t = safeTVRet(types, idx)
+    Dim v As Variant: v = safeTVRet(vals, idx)
+    Dim prim As ASF_Map_OLD
+
+    Select Case t
+        Case "NUMBER"
+            Dim nNode As ASF_Map_OLD: Set nNode = MakeNode("Literal")
+            nNode.SetValue "value", CDbl(v)
+            idx = idx + 1
+            Set ParsePrimaryNode = nNode
+            Exit Function
+
+        Case "STRING"
+            Set prim = ParsePrimaryString(types, vals, n, idx)
+            If Not prim Is Nothing Then
+                Set ParsePrimaryNode = prim
+                Exit Function
+            End If
+        Case "VBEXPR"
+            Dim vbNode As ASF_Map_OLD: Set vbNode = MakeNode("VBAexpr")
+            vbNode.SetValue "expr", CStr(v)
+            idx = idx + 1
+            Set ParsePrimaryNode = vbNode
+            Exit Function
+
+        Case "IDENT"
+            Set prim = ParsePrimaryIdent(types, vals, n, idx)
+            If Not prim Is Nothing Then
+                Set ParsePrimaryNode = prim
+                Exit Function
+            End If
+        Case "PAREN"
+            Set prim = ParsePrimaryParen(types, vals, n, idx)
+            If Not prim Is Nothing Then
+                Set ParsePrimaryNode = prim
+                Exit Function
+            End If
+    End Select
+
+    Dim defN As ASF_Map_OLD: Set defN = MakeNode("Literal")
+    defN.SetValue "value", Empty
+    Set ParsePrimaryNode = defN
+End Function
+
+' String token of ParsePrimaryNode; Nothing when it makes no node
+Private Function ParsePrimaryString(types() As String, vals() As Variant, n As Long, ByRef idx As Long) As ASF_Map_OLD
+    Dim v As Variant: v = safeTVRet(vals, idx)
+    Dim currentNode As ASF_Map_OLD
+        Dim rawS As String: rawS = CStr(v)
+        ' If this is a template (backtick-wrapped), compile it into a Template AST node
+        If Len(rawS) >= 2 And left$(rawS, 1) = "`" And right$(rawS, 1) = "`" Then
+            ' Template string -> build Template AST with parts
+            Dim tplParts As Collection
+            Set tplParts = ParseTemplatePartsFromString(rawS)
+
+            Dim partsNodes As New Collection
+            Dim pi As Long
+            For pi = 1 To tplParts.Count
+                Dim p As Variant: p = tplParts(pi)
+                If p(0) = "LITERAL" Then
+                    Dim litNode As ASF_Map_OLD: Set litNode = MakeNode("Literal")
+                    litNode.SetValue "value", p(1)
+                    partsNodes.Add litNode
+                ElseIf p(0) = "EXPR" Then
+                    Dim exprNode As ASF_Map_OLD
+                    Set exprNode = ParseExprFromStringToNode(CStr(p(1)))
+                    partsNodes.Add exprNode
+                End If
+            Next pi
+
+            Dim tnode As ASF_Map_OLD: Set tnode = MakeNode("Template")
+            tnode.SetValue "parts", partsNodes
+            idx = idx + 1
+            ' a template is a string: members and calls chain on it as on a string literal
+            Set ParsePrimaryString = DoPostfixChaining(tnode, types, vals, n, idx)
+            Exit Function
+        Else
+            Dim sNode As ASF_Map_OLD: Set sNode = MakeNode("Literal")
+            sNode.SetValue "value", v
+            idx = idx + 1
+            ' Allow postfix chaining on string literal results
+            Set currentNode = sNode
+            Set currentNode = DoPostfixChaining(currentNode, types, vals, n, idx)
+            Set ParsePrimaryString = currentNode
+            Exit Function
+        End If
+
+    Set ParsePrimaryString = Nothing
+End Function
+
+' Ident token of ParsePrimaryNode; Nothing when it makes no node
+Private Function ParsePrimaryIdent(types() As String, vals() As Variant, n As Long, ByRef idx As Long) As ASF_Map_OLD
+    Dim v As Variant: v = safeTVRet(vals, idx)
+    Dim currentNode As ASF_Map_OLD
+        Dim name As String: name = v
+        If LCase$(name) = "true" Then
+            Dim bt As ASF_Map_OLD: Set bt = MakeNode("Literal")
+            bt.SetValue "value", True
+            idx = idx + 1
+            Set ParsePrimaryIdent = bt
+            Exit Function
+        ElseIf LCase$(name) = "false" Then
+            Dim bf As ASF_Map_OLD: Set bf = MakeNode("Literal")
+            bf.SetValue "value", False
+            idx = idx + 1
+            Set ParsePrimaryIdent = bf
+            Exit Function
+        ElseIf LCase$(name) = "null" Then
+            Dim vn As ASF_Map_OLD: Set vn = MakeNode("Literal")
+            vn.SetValue "value", Null
+            idx = idx + 1
+            Set ParsePrimaryIdent = vn
+            Exit Function
+        ElseIf LCase$(name) = "undefined" Then
+            Dim vun As ASF_Map_OLD: Set vun = MakeNode("Literal")
+            vun.SetValue "value", Empty
+            idx = idx + 1
+            Set ParsePrimaryIdent = vun
+            Exit Function
+        End If
+
+        ' Fun literal as expression
+        If LCase$(name) = "fun" Then
+            idx = idx + 1
+            Dim params As Collection: Set params = New Collection
+            Dim hasRestParam_anon As Boolean: hasRestParam_anon = False
+            Dim restParamName_anon As String: restParamName_anon = vbNullString
+
+            If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "(" Then
+                idx = idx + 1
+                Do While idx < n And Not (safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = ")")
+                    ' Check for rest parameter (...)
+                    If (safeTVRet(types, idx) = "SPREAD" Or safeTVRet(types, idx) = "OP") And safeTVRet(vals, idx) = "..." Then
+                        idx = idx + 1
+                        If idx >= n Or safeTVRet(types, idx) <> "IDENT" Then
+                            err.Raise vbObjectError + 9001, , "Expected parameter name after ..."
+                        End If
+
+                        If hasRestParam_anon Then
+                            err.Raise vbObjectError + 9003, , "Multiple rest parameters not allowed"
+                        End If
+
+                        restParamName_anon = CStr(safeTVRet(vals, idx))
+                        hasRestParam_anon = True
+                        idx = idx + 1
+
+                        ' Skip comma if present
+                        If idx < n And safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = "," Then
+                            ' Rest parameter followed by comma means more params - ERROR
+                            err.Raise vbObjectError + 9002, , "Rest parameter must be last parameter"
+                        End If
+                    ElseIf safeTVRet(types, idx) = "IDENT" Then
+                        If hasRestParam_anon Then
+                            err.Raise vbObjectError + 9002, , "Rest parameter must be last parameter"
+                        End If
+                        params.Add CStr(safeTVRet(vals, idx))
+                        idx = idx + 1
+                        If idx < n And safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = "," Then idx = idx + 1
+                    ElseIf safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = "," Then
+                        idx = idx + 1
+                    Else
+                        idx = idx + 1
+                    End If
+                Loop
+                If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = ")" Then idx = idx + 1
+            End If
+
+            If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "{" Then
+                idx = idx + 1
+                Dim depthBody As Long: depthBody = 0
+                Dim bodyTok As Collection: Set bodyTok = New Collection
+                Do While idx < n
+                    If safeTVRet(types, idx) = "PAREN" Then
+                        If safeTVRet(vals, idx) = "{" Then
+                            depthBody = depthBody + 1
+                        ElseIf safeTVRet(vals, idx) = "}" Then
+                            If depthBody = 0 Then
+                                Exit Do
+                            Else
+                                depthBody = depthBody - 1
+                            End If
+                        End If
+                    End If
+                    bodyTok.Add Array(safeTVRet(types, idx), safeTVRet(vals, idx))
+                    idx = idx + 1
+                Loop
+                If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "}" Then idx = idx + 1
+                Dim bodyStmts As Collection: Set bodyStmts = ParseTokensToAST(bodyTok)
+                Dim fnode As ASF_Map_OLD: Set fnode = MakeNode("FuncLiteral")
+                fnode.SetValue "params", params
+                If hasRestParam_anon Then
+                    fnode.SetValue "restParam", restParamName_anon
+                End If
+                ' a function literal's body is normalized as a function's: for (i = 1, ...) assigns
+                fnode.SetValue "body", NormalizeAssignsInStmts(bodyStmts)
+                Set ParsePrimaryIdent = fnode
+                Exit Function
+            Else
+                Dim fnode2 As ASF_Map_OLD: Set fnode2 = MakeNode("FuncLiteral")
+                fnode2.SetValue "params", params
+                ' Add rest parameter if present
+                If hasRestParam_anon Then
+                    fnode2.SetValue "restParam", restParamName_anon
+                End If
+                Dim emptyCol As New Collection
+                fnode2.SetValue "body", emptyCol
+                Set ParsePrimaryIdent = fnode2
+                Exit Function
+            End If
+        End If
+
+        ' support typeof operator: typeof x  OR  typeof(x)
+        If LCase$(name) = "typeof" Then
+            ' consume 'typeof'
+            idx = idx + 1
+
+            ' the next unary subtree: typeof x.y, typeof [1], typeof -x, and typeof (x).y as in
+            ' JavaScript, where the parentheses group only x
+            Dim operandNode As ASF_Map_OLD
+            Set operandNode = ParseUnaryNode(types, vals, n, idx)
+
+            Dim uNode_tf As ASF_Map_OLD: Set uNode_tf = MakeNode("Unary")
+            uNode_tf.SetValue "op", "typeof"
+            uNode_tf.SetValue "expr", operandNode
+            Set ParsePrimaryIdent = uNode_tf
+            Exit Function
+        End If
+
+        If LCase$(name) = "new" Then
+            idx = idx + 1
+            ' Parse the class name and call expression
+            Dim newTarget As ASF_Map_OLD
+            Set newTarget = ParsePrimaryIdent(types, vals, n, idx)
+
+            ' The result should be a Call node - mark it as instantiation
+            If Not newTarget Is Nothing And newTarget.GetValue("type") = "Call" Then
+                newTarget.SetValue "isNew", True
+            End If
+
+            Set ParsePrimaryIdent = newTarget
+            Exit Function
+        End If
+        If LCase$(name) = "super" Then
+            ' Parse super(args) as a special Call node
+            idx = idx + 1
+            Dim superArgs As Collection: Set superArgs = New Collection
+
+            If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "(" Then
+                idx = idx + 1
+                ' Parse arguments
+                Do While idx < n And Not (safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = ")")
+                    Dim superArgTok As Collection: Set superArgTok = New Collection
+                    Dim saDepth As Long: saDepth = 0
+                    Do While idx < n
+                        If safeTVRet(types, idx) = "PAREN" Then
+                            Select Case safeTVRet(vals, idx)
+                                Case "("
+                                    saDepth = saDepth + 1
+                                Case ")"
+                                    If saDepth = 0 Then Exit Do
+                                    saDepth = saDepth - 1
+                            End Select
+                        ElseIf safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = "," And saDepth = 0 Then
+                            Exit Do
+                        End If
+                        superArgTok.Add Array(safeTVRet(types, idx), safeTVRet(vals, idx))
+                        idx = idx + 1
+                    Loop
+
+                    If superArgTok.Count > 0 Then
+                        superArgs.Add ParseExprTokensToNode(superArgTok)
+                    End If
+
+                    If idx < n And safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = "," Then
+                        idx = idx + 1
+                    End If
+                Loop
+
+                If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = ")" Then
+                    idx = idx + 1
+                End If
+            End If
+
+            Dim superNode As ASF_Map_OLD: Set superNode = MakeNode("SuperCall")
+            superNode.SetValue "args", superArgs
+            Set ParsePrimaryIdent = superNode
+            Exit Function
+        End If
+        ' Collapsed identifiers path (a.b[2].c style, possibly with bracket tokens following the IDENT)
+        Set currentNode = Nothing
+        If InStr(name, ".") > 0 Or InStr(name, "[") > 0 Then
+            Set currentNode = ParseCollapsedIdent(name, types, vals, n, idx)
+            idx = idx + 1
+        End If
+
+        ' if collapsed form was not used, create a simple variable node
+        If currentNode Is Nothing Then
+            Set currentNode = MakeNode("Variable")
+            currentNode.SetValue "name", name
+            idx = idx + 1
+        End If
+
+        ' Run postfix chaining via helper (this still handles .prop, (args), extra [] if any remain)
+        Set currentNode = DoPostfixChaining(currentNode, types, vals, n, idx)
+        Set ParsePrimaryIdent = currentNode
+        Exit Function
+    Set ParsePrimaryIdent = Nothing
+End Function
+
+' Paren token of ParsePrimaryNode; Nothing when it makes no node
+Private Function ParsePrimaryParen(types() As String, vals() As Variant, n As Long, ByRef idx As Long) As ASF_Map_OLD
+    Dim t As String: t = safeTVRet(types, idx)
+    Dim v As Variant: v = safeTVRet(vals, idx)
+    Dim currentNode As ASF_Map_OLD
+        ' Handles parenthesized expressions and array/object literals.
+        If v = "(" Then
+            ' Consume opening "("
+            idx = idx + 1
+
+            ' Collect tokens inside the parentheses only (respect nested (), [], {})
+            Dim innerTok As New Collection
+            Dim depth As Long: depth = 1
+            Do While idx < n And depth > 0
+                Dim tType As String: tType = safeTVRet(types, idx)
+                Dim tVal As Variant: tVal = safeTVRet(vals, idx)
+
+                If tType = "PAREN" Then
+                    Select Case CStr(tVal)
+                        Case "("
+                            ' nested open -> include token and increment depth
+                            innerTok.Add Array(tType, tVal)
+                            depth = depth + 1
+                            idx = idx + 1
+                            GoTo ContinueParenInner
+                        Case ")"
+                            ' matching close -> consume; if depth>1 it's a nested close and should be added,
+                            ' if depth==1 this closes the outermost paren and we must consume it and stop.
+                            depth = depth - 1
+                            idx = idx + 1
+                            If depth = 0 Then
+                                Exit Do
+                            Else
+                                innerTok.Add Array(tType, tVal)
+                                GoTo ContinueParenInner
+                            End If
+                    End Select
+                End If
+
+                ' Normal token inside parentheses -> collect it
+                innerTok.Add Array(tType, tVal)
+                idx = idx + 1
+
+    ContinueParenInner:
+            Loop
+
+            ' Parse the inner token slice safely (won't see tokens after the closing ')')
+            Dim innerNode As ASF_Map_OLD
+            Set innerNode = ParseExprTokensToNode(innerTok)
+
+            ' Prepare node for postfix chaining
+            Set currentNode = innerNode
+
+            ' Allow postfix chaining starting at the token after the closing ')'
+            Set currentNode = DoPostfixChaining(currentNode, types, vals, n, idx)
+
+            Set ParsePrimaryParen = currentNode
+            Exit Function
+
+        ElseIf v = "[" Then
+            ' Array literal parsing (with spread support)
+            idx = idx + 1
+            Dim arrList As Collection: Set arrList = New Collection
+
+            ' empty array literal []
+            If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "]" Then
+                idx = idx + 1
+                Dim emptyArrNode As ASF_Map_OLD: Set emptyArrNode = MakeNode("Array")
+                emptyArrNode.SetValue "items", arrList
+                Set currentNode = emptyArrNode
+                Set currentNode = DoPostfixChaining(currentNode, types, vals, n, idx)
+                Set ParsePrimaryParen = currentNode
+                Exit Function
+            End If
+            Dim spreadNode As ASF_Map_OLD
+            Dim elemTok As Collection
+            Dim edepth As Long
+            Dim isSpread As Boolean
+            Do While idx < n And Not (safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "]")
+                Set elemTok = New Collection
+                edepth = 0
+                isSpread = False
+
+                ' Check for spread operator
+                If (safeTVRet(types, idx) = "SPREAD" Or safeTVRet(types, idx) = "OP") And safeTVRet(vals, idx) = "..." Then
+                    isSpread = True
+                    idx = idx + 1
+                End If
+
+                ' Collect element expression tokens
+                Do While idx < n
+                    If edepth = 0 Then
+                        If (safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = ",") _
+                           Or (safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "]") Then
+                            Exit Do
+                        End If
+                    End If
+                    elemTok.Add Array(safeTVRet(types, idx), safeTVRet(vals, idx))
+                    If safeTVRet(types, idx) = "PAREN" Then
+                        Select Case safeTVRet(vals, idx)
+                            Case "[", "(", "{"
+                                edepth = edepth + 1
+                            Case "]", ")", "}"
+                                If edepth > 0 Then edepth = edepth - 1
+                        End Select
+                    End If
+                    idx = idx + 1
+                Loop
+
+                ' Create appropriate node
+                If isSpread Then
+                    If elemTok.Count > 0 Then
+                        Set spreadNode = MakeNode("SpreadElement")
+                        spreadNode.SetValue "argument", ParseExprTokensToNode(elemTok)
+                        arrList.Add spreadNode
+                    End If
+                Else
+                    If elemTok.Count > 0 Then
+                        arrList.Add ParseExprTokensToNode(elemTok)
+                    End If
+                End If
+
+                If idx < n And safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = "," Then idx = idx + 1
+                If idx = n Then Exit Do
+            Loop
+
+            If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "]" Then idx = idx + 1
+            Dim arrNode As ASF_Map_OLD: Set arrNode = MakeNode("Array")
+            arrNode.SetValue "items", arrList
+
+            ' Allow postfix chaining on array literal results
+            Set currentNode = arrNode
+            Set currentNode = DoPostfixChaining(currentNode, types, vals, n, idx)
+            Set ParsePrimaryParen = currentNode
+            Exit Function
+
+        ElseIf v = "{" Then
+            ' Object literal parsing (with spread support)
+            idx = idx + 1
+            Dim objItems As Collection: Set objItems = New Collection
+            Dim pair As Collection
+            Dim keyTok As String
+            Dim valTok As Collection
+            Dim spreadSrcTok As Collection
+            Dim sDepth As Long
+            Dim spreadPropNode As ASF_Map_OLD
+            Dim vDepth As Long
+            Dim valNode As ASF_Map_OLD
+
+            Do While idx < n And Not (safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "}")
+                ' Check for spread operator in object
+                If (safeTVRet(types, idx) = "SPREAD" Or safeTVRet(types, idx) = "OP") And safeTVRet(vals, idx) = "..." Then
+                    idx = idx + 1
+
+                    ' Collect expression tokens for the spread source
+                    Set spreadSrcTok = New Collection
+                    sDepth = 0
+                    Do While idx < n
+                        If sDepth = 0 Then
+                            If (safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = ",") _
+                               Or (safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "}") Then
+                                Exit Do
+                            End If
+                        End If
+                        spreadSrcTok.Add Array(safeTVRet(types, idx), safeTVRet(vals, idx))
+                        If safeTVRet(types, idx) = "PAREN" Then
+                            Select Case safeTVRet(vals, idx)
+                                Case "[", "(", "{"
+                                    sDepth = sDepth + 1
+                                Case "]", ")", "}"
+                                    If sDepth > 0 Then sDepth = sDepth - 1
+                            End Select
+                        End If
+                        idx = idx + 1
+                    Loop
+
+                    If spreadSrcTok.Count > 0 Then
+                        ' Create SpreadProperty node
+                        Set spreadPropNode = MakeNode("SpreadProperty")
+                        spreadPropNode.SetValue "argument", ParseExprTokensToNode(spreadSrcTok)
+
+                        Set pair = New Collection
+                        pair.Add "__SPREAD__"  ' Special marker
+                        pair.Add spreadPropNode
+                        objItems.Add pair
+                    End If
+
+                    If idx < n And safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = "," Then idx = idx + 1
+                    GoTo ContinueObjParse
+                End If
+
+                ' Original key-value parsing
+                If safeTVRet(types, idx) = "IDENT" Or safeTVRet(types, idx) = "STRING" Then
+                    keyTok = CStr(safeTVRet(vals, idx))
+                    idx = idx + 1
+                Else
+                    err.Raise vbObjectError + 8002, "Compiler.ParsePrimary", "Invalid object key"
+                End If
+
+                If idx < n And safeTVRet(types, idx) = "OP" And safeTVRet(vals, idx) = ":" Then
+                    idx = idx + 1
+                Else
+                    err.Raise vbObjectError + 8003, "Compiler.ParsePrimary", "Expected ':' after object key"
+                End If
+
+                ' Collect tokens for value expression
+                Set valTok = New Collection
+                vDepth = 0
+                Do While idx < n
+                    If vDepth = 0 Then
+                        If (safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = ",") _
+                           Or (safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "}") Then
+                            Exit Do
+                        End If
+                        ' a ';' here would swallow the properties after it into this value
+                        If safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = ";" Then
+                            err.Raise vbObjectError + 8004, "Compiler.ParsePrimary", "Expected ',' between object properties, found ';'"
+                        End If
+                    End If
+                    valTok.Add Array(safeTVRet(types, idx), safeTVRet(vals, idx))
+                    If safeTVRet(types, idx) = "PAREN" Then
+                        Select Case safeTVRet(vals, idx)
+                            Case "[", "(", "{"
+                                vDepth = vDepth + 1
+                            Case "]", ")", "}"
+                                If vDepth > 0 Then vDepth = vDepth - 1
+                        End Select
+                    End If
+                    idx = idx + 1
+                Loop
+                Set valNode = ParseExprTokensToNode(valTok)
+                Set pair = New Collection
+                pair.Add keyTok
+                pair.Add valNode
+                objItems.Add pair
+
+                If idx < n And safeTVRet(types, idx) = "SEP" And safeTVRet(vals, idx) = "," Then idx = idx + 1
+
+    ContinueObjParse:
+            Loop
+
+            If idx < n And safeTVRet(types, idx) = "PAREN" And safeTVRet(vals, idx) = "}" Then idx = idx + 1
+            Dim onode As ASF_Map_OLD: Set onode = MakeNode("Object")
+            onode.SetValue "items", objItems
+
+            ' Allow postfix chaining on object literal results
+            Set currentNode = onode
+            Set currentNode = DoPostfixChaining(currentNode, types, vals, n, idx)
+            Set ParsePrimaryParen = currentNode
+            Exit Function
+        End If
+    Set ParsePrimaryParen = Nothing
+End Function
+
+
+' ---------------------
+' AST builders for control structures
+' ---------------------
+
+Private Function ParseIfAST(stmtTokens As Collection) As ASF_Map_OLD
+    Dim node As ASF_Map_OLD: Set node = MakeNode("If")
+    Dim i As Long: i = 2
+    Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "(")
+        i = i + 1
+    Loop
+    If i > stmtTokens.Count Then Set ParseIfAST = node: Exit Function
+    i = i + 1
+    Dim condTokens As Collection
+    Set condTokens = New Collection
+    Dim condDepth As Long: condDepth = 0
+    Do While i <= stmtTokens.Count
+        If stmtTokens(i)(0) = "PAREN" Then
+            If stmtTokens(i)(1) = "(" Then
+                condDepth = condDepth + 1
+            ElseIf stmtTokens(i)(1) = ")" Then
+                If condDepth = 0 Then
+                    Exit Do
+                Else
+                    condDepth = condDepth - 1
+                End If
+            End If
+        End If
+        condTokens.Add stmtTokens(i)
+        i = i + 1
+    Loop
+    node.SetValue "cond", ParseExprTokensToNode(condTokens)
+
+    Do While i <= stmtTokens.Count And Not (safeTVRet(stmtTokens(i), 0) = "PAREN" And safeTVRet(stmtTokens(i), 1) = "{")
+        i = i + 1
+    Loop
+    If i > stmtTokens.Count Then Set ParseIfAST = node: GoTo clean_
+    Dim j As Long: j = i + 1
+    Dim depth As Long: depth = 0
+    Dim thenTokens As Collection
+    Set thenTokens = New Collection
+    Do While j <= stmtTokens.Count
+        If stmtTokens(j)(0) = "PAREN" Then
+            If stmtTokens(j)(1) = "{" Then
+                depth = depth + 1
+            ElseIf stmtTokens(j)(1) = "}" Then
+                If depth = 0 Then
+                    Exit Do
+                Else
+                    depth = depth - 1
+                End If
+            End If
+        End If
+        thenTokens.Add stmtTokens(j)
+        j = j + 1
+    Loop
+    node.SetValue "then", ParseTokensToAST(thenTokens)
+
+    Dim pos As Long: pos = j + 1
+    Dim elseifConds As Collection, elseifBlocks As Collection
+    Dim hasElse As Boolean: hasElse = False
+    Dim tname As String
+    Dim eCondTok As Collection
+    Dim eBlockTok As Collection
+    Dim elseTok As Collection
+    Dim edepth As Long
+    Set elseifConds = New Collection
+    Set elseifBlocks = New Collection
+    Do While pos <= stmtTokens.Count
+        If stmtTokens(pos)(0) = "COMMENT" Then
+            pos = pos + 1
+            GoTo IfParseNext
+        End If
+        If stmtTokens(pos)(0) = "IDENT" Then
+            tname = LCase$(stmtTokens(pos)(1))
+            If tname = "elseif" Then
+                pos = pos + 1
+                Do While pos <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, pos, 0) = "PAREN" And safeTVRetInner(stmtTokens, pos, 1) = "(")
+                    pos = pos + 1
+                Loop
+                If pos > stmtTokens.Count Then Exit Do
+                pos = pos + 1
+                edepth = 0
+                Set eCondTok = New Collection
+                Do While pos <= stmtTokens.Count
+                    If stmtTokens(pos)(0) = "PAREN" Then
+                        If stmtTokens(pos)(1) = "(" Then
+                            edepth = edepth + 1
+                        ElseIf stmtTokens(pos)(1) = ")" Then
+                            If edepth = 0 Then
+                                Exit Do
+                            Else
+                                edepth = edepth - 1
+                            End If
+                        End If
+                    End If
+                    eCondTok.Add stmtTokens(pos)
+                    pos = pos + 1
+                Loop
+                Do While pos <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, pos, 0) = "PAREN" And safeTVRetInner(stmtTokens, pos, 1) = "{")
+                    pos = pos + 1
+                Loop
+                If pos > stmtTokens.Count Then Exit Do
+                pos = pos + 1
+                Set eBlockTok = New Collection
+                depth = 0
+                Do While pos <= stmtTokens.Count
+                    If stmtTokens(pos)(0) = "PAREN" Then
+                        If stmtTokens(pos)(1) = "{" Then
+                            depth = depth + 1
+                        ElseIf stmtTokens(pos)(1) = "}" Then
+                            If depth = 0 Then
+                                Exit Do
+                            Else
+                                depth = depth - 1
+                            End If
+                        End If
+                    End If
+                    eBlockTok.Add stmtTokens(pos)
+                    pos = pos + 1
+                Loop
+                elseifConds.Add ParseExprTokensToNode(eCondTok)
+                elseifBlocks.Add ParseTokensToAST(eBlockTok)
+                pos = pos + 1
+                GoTo IfParseNext
+            ElseIf tname = "else" Then
+                pos = pos + 1
+                Do While pos <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, pos, 0) = "PAREN" And safeTVRetInner(stmtTokens, pos, 1) = "{")
+                    pos = pos + 1
+                Loop
+                If pos > stmtTokens.Count Then Exit Do
+                pos = pos + 1
+                Set elseTok = New Collection
+                depth = 0
+                Do While pos <= stmtTokens.Count
+                    If stmtTokens(pos)(0) = "PAREN" Then
+                        If stmtTokens(pos)(1) = "{" Then
+                            depth = depth + 1
+                        ElseIf stmtTokens(pos)(1) = "}" Then
+                            If depth = 0 Then
+                                Exit Do
+                            Else
+                                depth = depth - 1
+                            End If
+                        End If
+                    End If
+                    elseTok.Add stmtTokens(pos)
+                    pos = pos + 1
+                Loop
+                hasElse = True
+                node.SetValue "else", ParseTokensToAST(elseTok)
+                Exit Do
+            Else
+                Exit Do
+            End If
+        Else
+            Exit Do
+        End If
+IfParseNext:
+    Loop
+
+    node.SetValue "elseif_conds", CloneCollectionOfVariants(elseifConds)
+    node.SetValue "elseif_blocks", CloneCollectionOfVariants(elseifBlocks)
+    node.SetValue "hasElse", hasElse
+    Set ParseIfAST = node
+clean_:
+    Set node = Nothing
+    Set eCondTok = Nothing
+    Set eBlockTok = Nothing
+    Set elseTok = Nothing
+    Set elseifConds = Nothing
+    Set elseifBlocks = Nothing
+End Function
+
+' Replace the existing ParseForAST with the function below
+Private Function ParseForAST(stmtTokens As Collection) As ASF_Map_OLD
+    Dim node As ASF_Map_OLD: Set node = MakeNode("For")
+    Dim initTok As Collection
+    Dim condTok As Collection
+    Dim stepTok As Collection
+    Dim bodyToks As Collection
+    Dim i As Long: i = 2
+
+    ' locate opening '(' of the for header
+    Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "(")
+        i = i + 1
+    Loop
+    If i > stmtTokens.Count Then Set ParseForAST = node: Exit Function
+
+    ' enter header (consume '(')
+    i = i + 1
+
+    ' collect header tokens until the matching ')'
+    Set initTok = New Collection
+    Dim hdrParen As Long, hdrBracket As Long, hdrBrace As Long
+    hdrParen = 0: hdrBracket = 0: hdrBrace = 0
+    Do While i <= stmtTokens.Count
+        If stmtTokens(i)(0) = "PAREN" Then
+            Select Case stmtTokens(i)(1)
+                Case "("
+                    hdrParen = hdrParen + 1
+                Case ")"
+                    If hdrParen > 0 Then
+                        hdrParen = hdrParen - 1
+                    Else
+                        ' closing header paren found (do not consume it here; caller logic will advance)
+                        Exit Do
+                    End If
+                Case "["
+                    hdrBracket = hdrBracket + 1
+                Case "]"
+                    If hdrBracket > 0 Then hdrBracket = hdrBracket - 1
+                Case "{"
+                    hdrBrace = hdrBrace + 1
+                Case "}"
+                    If hdrBrace > 0 Then hdrBrace = hdrBrace - 1
+            End Select
+        End If
+
+        ' if we are at top-level header and found a separator (comma/semicolon) treat as classic for parts boundary
+        If hdrParen = 0 And hdrBracket = 0 And hdrBrace = 0 And stmtTokens(i)(0) = "SEP" And _
+                        (stmtTokens(i)(1) = "," Or stmtTokens(i)(1) = ";") Then
+            i = i + 1
+            Exit Do
+        End If
+
+        initTok.Add stmtTokens(i)
+        i = i + 1
+    Loop
+
+    ' Try to detect "for (<left> in <right>)" or "for (<left> of <right>)"
+    Dim foundPos As Long: foundPos = 0
+    Dim foundKind As String: foundKind = vbNullString
+    If initTok.Count > 0 Then
+        Dim depthP As Long: depthP = 0
+        Dim depthB As Long: depthB = 0
+        Dim depthC As Long: depthC = 0
+        Dim tIdx As Long
+        For tIdx = 1 To initTok.Count
+            Dim tkType As String: tkType = CStr(initTok(tIdx)(0))
+            Dim tkVal As String: tkVal = CStr(initTok(tIdx)(1))
+            If tkType = "PAREN" Then
+                Select Case tkVal
+                    Case "(", "[", "{"
+                        If tkVal = "(" Then depthP = depthP + 1
+                        If tkVal = "[" Then depthB = depthB + 1
+                        If tkVal = "{" Then depthC = depthC + 1
+                    Case ")", "]", "}"
+                        If tkVal = ")" And depthP > 0 Then depthP = depthP - 1
+                        If tkVal = "]" And depthB > 0 Then depthB = depthB - 1
+                        If tkVal = "}" And depthC > 0 Then depthC = depthC - 1
+                End Select
+            End If
+            ' only consider 'in' / 'of' at top-level (no nested parens/brackets/braces)
+            If depthP = 0 And depthB = 0 And depthC = 0 Then
+                If tkType = "IDENT" Then
+                    If LCase$(tkVal) = "in" Or LCase$(tkVal) = "of" Then
+                        foundPos = tIdx
+                        foundKind = LCase$(tkVal) ' "in" or "of"
+                        Exit For
+                    End If
+                End If
+            End If
+        Next tIdx
+    End If
+
+    If foundPos > 0 Then
+        ' Build for-in / for-of node: left = tokens before foundPos, right = tokens after foundPos
+        Dim leftTok As Collection: Set leftTok = New Collection
+        Dim rightTok As Collection: Set rightTok = New Collection
+        Dim k As Long
+        For k = 1 To foundPos - 1
+            leftTok.Add initTok(k)
+        Next k
+        For k = foundPos + 1 To initTok.Count
+            rightTok.Add initTok(k)
+        Next k
+
+        ' parse expressions for left and right sides
+        Dim leftNode As ASF_Map_OLD: Set leftNode = ParseExprTokensToNode(leftTok)
+        Dim rightNode As ASF_Map_OLD: Set rightNode = ParseExprTokensToNode(rightTok)
+
+        node.SetValue "kind", foundKind ' "in" or "of"
+        node.SetValue "each", leftNode
+        node.SetValue "iter", rightNode
+
+        ' advance i past the ')' that closes the header (stmtTokens(i) should be ')')
+        If i <= stmtTokens.Count And (stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = ")") Then
+            i = i + 1
+        End If
+
+        ' now find body opening '{'
+        Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "{")
+            i = i + 1
+        Loop
+        If i > stmtTokens.Count Then
+            Set ParseForAST = node
+            Exit Function
+        End If
+
+        ' collect body tokens (between '{' and matching '}')
+        Dim j As Long: j = i + 1
+        Dim depth As Long: depth = 0
+        Set bodyToks = New Collection
+        Do While j <= stmtTokens.Count
+            If stmtTokens(j)(0) = "PAREN" Then
+                If stmtTokens(j)(1) = "{" Then
+                    depth = depth + 1
+                ElseIf stmtTokens(j)(1) = "}" Then
+                    If depth = 0 Then
+                        Exit Do
+                    Else
+                        depth = depth - 1
+                    End If
+                End If
+            End If
+            bodyToks.Add stmtTokens(j)
+            j = j + 1
+        Loop
+        node.SetValue "body", ParseTokensToAST(bodyToks)
+        Set ParseForAST = node
+
+        ' cleanup
+        Set bodyToks = Nothing
+        Set initTok = Nothing
+        Set leftTok = Nothing
+        Set rightTok = Nothing
+        Exit Function
+    End If
+
+    ' ---------- classic for(init; cond; step) parsing (fallback to original behaviour) ----------
+    node.SetValue "init", ParseExprTokensToNode(initTok)
+
+    ' parse cond (tokens between first sep and second sep or closing ')')
+    Set condTok = New Collection
+    hdrParen = 0: hdrBracket = 0: hdrBrace = 0
+    Do While i <= stmtTokens.Count
+        If stmtTokens(i)(0) = "PAREN" Then
+            Select Case stmtTokens(i)(1)
+                Case "("
+                    hdrParen = hdrParen + 1
+                Case ")"
+                    If hdrParen > 0 Then
+                        hdrParen = hdrParen - 1
+                    Else
+                        Exit Do
+                    End If
+                Case "["
+                    hdrBracket = hdrBracket + 1
+                Case "]"
+                    If hdrBracket > 0 Then hdrBracket = hdrBracket - 1
+                Case "{"
+                    hdrBrace = hdrBrace + 1
+                Case "}"
+                    If hdrBrace > 0 Then hdrBrace = hdrBrace - 1
+            End Select
+        End If
+        If hdrParen = 0 And hdrBracket = 0 And hdrBrace = 0 And stmtTokens(i)(0) = "SEP" And _
+                        (stmtTokens(i)(1) = "," Or stmtTokens(i)(1) = ";") Then
+            i = i + 1
+            Exit Do
+        End If
+        condTok.Add stmtTokens(i)
+        i = i + 1
+    Loop
+    node.SetValue "cond", ParseExprTokensToNode(condTok)
+
+    ' parse step (rest until closing ')' at header-level)
+    Set stepTok = New Collection
+    hdrParen = 0: hdrBracket = 0: hdrBrace = 0
+    Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = ")")
+        If stmtTokens(i)(0) = "PAREN" Then
+            Select Case stmtTokens(i)(1)
+                Case "("
+                    hdrParen = hdrParen + 1
+                Case ")"
+                    If hdrParen > 0 Then hdrParen = hdrParen - 1
+                Case "["
+                    hdrBracket = hdrBracket + 1
+                Case "]"
+                    If hdrBracket > 0 Then hdrBracket = hdrBracket - 1
+                Case "{"
+                    hdrBrace = hdrBrace + 1
+                Case "}"
+                    If hdrBrace > 0 Then hdrBrace = hdrBrace - 1
+            End Select
+        End If
+        stepTok.Add stmtTokens(i)
+        i = i + 1
+    Loop
+    node.SetValue "step", ParseStatementTokensToAST(stepTok)
+
+    ' find body opening '{'
+    Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "{")
+        i = i + 1
+    Loop
+    If i > stmtTokens.Count Then Set ParseForAST = node: GoTo clean_
+
+    ' collect body tokens
+    Dim j2 As Long: j2 = i + 1
+    Dim depth2 As Long: depth2 = 0
+    Set bodyToks = New Collection
+    Do While j2 <= stmtTokens.Count
+        If stmtTokens(j2)(0) = "PAREN" Then
+            If stmtTokens(j2)(1) = "{" Then
+                depth2 = depth2 + 1
+            ElseIf stmtTokens(j2)(1) = "}" Then
+                If depth2 = 0 Then
+                    Exit Do
+                Else
+                    depth2 = depth2 - 1
+                End If
+            End If
+        End If
+        bodyToks.Add stmtTokens(j2)
+        j2 = j2 + 1
+    Loop
+    node.SetValue "body", ParseTokensToAST(bodyToks)
+    Set ParseForAST = node
+
+clean_:
+    Set node = Nothing
+    Set bodyToks = Nothing
+    Set stepTok = Nothing
+    Set condTok = Nothing
+    Set initTok = Nothing
+End Function
+
+Private Function ParseWhileAST(stmtTokens As Collection) As ASF_Map_OLD
+    Dim node As ASF_Map_OLD: Set node = MakeNode("While")
+    Dim i As Long: i = 2
+    Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "(")
+        i = i + 1
+    Loop
+    If i > stmtTokens.Count Then Set ParseWhileAST = node: Exit Function
+    i = i + 1
+    Dim condTok As Collection
+    Set condTok = New Collection
+    Dim depthP As Long: depthP = 0
+    Do While i <= stmtTokens.Count
+        If stmtTokens(i)(0) = "PAREN" Then
+            If stmtTokens(i)(1) = "(" Then
+                depthP = depthP + 1
+            ElseIf stmtTokens(i)(1) = ")" Then
+                If depthP = 0 Then
+                    Exit Do
+                Else
+                    depthP = depthP - 1
+                End If
+            End If
+        End If
+        condTok.Add stmtTokens(i)
+        i = i + 1
+    Loop
+    node.SetValue "cond", ParseExprTokensToNode(condTok)
+
+    Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "{")
+        i = i + 1
+    Loop
+    If i > stmtTokens.Count Then Set ParseWhileAST = node: Exit Function
+    Dim j As Long: j = i + 1
+    Dim depth As Long: depth = 0
+    Dim bodyToks As Collection
+    Set bodyToks = New Collection
+    Do While j <= stmtTokens.Count
+        If stmtTokens(j)(0) = "PAREN" Then
+            If stmtTokens(j)(1) = "{" Then
+                depth = depth + 1
+            ElseIf stmtTokens(j)(1) = "}" Then
+                If depth = 0 Then
+                    Exit Do
+                Else
+                    depth = depth - 1
+                End If
+            End If
+        End If
+        bodyToks.Add stmtTokens(j)
+        j = j + 1
+    Loop
+    node.SetValue "body", ParseTokensToAST(bodyToks)
+    Set ParseWhileAST = node
+End Function
+
+Private Function ParseTryCatchAST(stmtTokens As Collection) As ASF_Map_OLD
+    Dim node As ASF_Map_OLD: Set node = MakeNode("TryCatch")
+    Dim i As Long: i = 2
+    Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "{")
+        i = i + 1
+    Loop
+    If i > stmtTokens.Count Then Set ParseTryCatchAST = node: Exit Function
+    Dim j As Long: j = i + 1
+    Dim n As Long
+    Dim depth As Long: depth = 0
+    Dim tryTok As Collection
+    Set tryTok = New Collection
+    n = stmtTokens.Count
+    Do While j <= n
+        If stmtTokens(j)(0) = "PAREN" Then
+            If stmtTokens(j)(1) = "{" Then
+                depth = depth + 1
+            ElseIf stmtTokens(j)(1) = "}" Then
+                If depth = 0 Then
+                    Exit Do
+                Else
+                    depth = depth - 1
+                End If
+            End If
+        End If
+        tryTok.Add stmtTokens(j)
+        j = j + 1
+    Loop
+    node.SetValue "try", ParseTokensToAST(tryTok)
+
+    Dim k As Long: k = j + 1
+    Dim catchTok As Collection
+    Set catchTok = New Collection
+    Do While k <= stmtTokens.Count
+        If stmtTokens(k)(0) = "IDENT" And LCase$(stmtTokens(k)(1)) = "catch" Then
+            Dim kk As Long: kk = k + 1
+            ' catch (e): the variable that receives the error
+            If safeTVRetInner(stmtTokens, kk, 1) = "(" And safeTVRetInner(stmtTokens, kk + 1, 0) = "IDENT" Then
+                node.SetValue "catchVar", CStr(stmtTokens(kk + 1)(1))
+            End If
+            Do While kk <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, kk, 0) = "PAREN" And safeTVRetInner(stmtTokens, kk, 1) = "{")
+                kk = kk + 1
+            Loop
+            If kk <= stmtTokens.Count Then
+                kk = kk + 1
+                Dim depth2 As Long: depth2 = 0
+                Do While kk <= stmtTokens.Count
+                    If stmtTokens(kk)(0) = "PAREN" Then
+                        If stmtTokens(kk)(1) = "{" Then
+                            depth2 = depth2 + 1
+                        ElseIf stmtTokens(kk)(1) = "}" Then
+                            If depth2 = 0 Then
+                                Exit Do
+                            Else
+                                depth2 = depth2 - 1
+                            End If
+                        End If
+                    End If
+                    catchTok.Add stmtTokens(kk)
+                    kk = kk + 1
+                Loop
+            End If
+            Exit Do
+        End If
+        k = k + 1
+    Loop
+    node.SetValue "catch", ParseTokensToAST(catchTok)
+    Set ParseTryCatchAST = node
+End Function
+
+Private Function ParseSwitchAST(stmtTokens As Collection) As ASF_Map_OLD
+    Dim node As ASF_Map_OLD: Set node = MakeNode("Switch")
+    Dim i As Long: i = 2
+    Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "(")
+        i = i + 1
+    Loop
+    If i > stmtTokens.Count Then Set ParseSwitchAST = node: Exit Function
+    i = i + 1
+    Dim condTok As New Collection
+    Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = ")")
+        condTok.Add stmtTokens(i)
+        i = i + 1
+    Loop
+    node.SetValue "expr", ParseExprTokensToNode(condTok)
+
+    Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "{")
+        i = i + 1
+    Loop
+    If i > stmtTokens.Count Then Set ParseSwitchAST = node: Exit Function
+    i = i + 1
+    Dim cases As Collection
+    Set cases = New Collection
+    Dim defaultBlock As Collection
+    Dim valTok As Collection
+    Do While i <= stmtTokens.Count And Not (safeTVRetInner(stmtTokens, i, 0) = "PAREN" And safeTVRetInner(stmtTokens, i, 1) = "}")
+        If stmtTokens(i)(0) = "IDENT" And LCase$(stmtTokens(i)(1)) = "case" Then
+            i = i + 1
+            Set valTok = New Collection
+            Dim cvParen As Long: cvParen = 0
+            Dim cvBracket As Long: cvBracket = 0
+            Dim cvBrace As Long: cvBrace = 0
+            Do While i <= stmtTokens.Count
+                If stmtTokens(i)(0) = "PAREN" Then
+                    Select Case stmtTokens(i)(1)
+                        Case "("
+                            cvParen = cvParen + 1
+                        Case ")"
+                            If cvParen > 0 Then cvParen = cvParen - 1
+                        Case "["
+                            cvBracket = cvBracket + 1
+                        Case "]"
+                            If cvBracket > 0 Then cvBracket = cvBracket - 1
+                        Case "{"
+                            If cvParen = 0 And cvBracket = 0 Then
+                                Exit Do
+                            Else
+                                cvBrace = cvBrace + 1
+                            End If
+                        Case "}"
+                            If cvBrace > 0 Then cvBrace = cvBrace - 1
+                    End Select
+                End If
+                valTok.Add stmtTokens(i)
+                i = i + 1
+            Loop
+            If i > stmtTokens.Count Or IsColonCase(valTok) Then SwitchSyntaxError "case"
+            Dim caseValNode As ASF_Map_OLD: Set caseValNode = ParseExprTokensToNode(valTok)
+            If i <= stmtTokens.Count And stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = "{" Then
+                i = i + 1
+                Dim depth As Long: depth = 0
+                Dim blockTok As Collection
+                Dim pair As Collection
+                Dim caseBlock As Collection
+                Set blockTok = New Collection
+                Do While i <= stmtTokens.Count
+                    If stmtTokens(i)(0) = "PAREN" Then
+                        If stmtTokens(i)(1) = "{" Then
+                            depth = depth + 1
+                        ElseIf stmtTokens(i)(1) = "}" Then
+                            If depth = 0 Then
+                                Exit Do
+                            Else
+                                depth = depth - 1
+                            End If
+                        End If
+                    End If
+                    blockTok.Add stmtTokens(i)
+                    i = i + 1
+                Loop
+                Set caseBlock = ParseTokensToAST(blockTok)
+                Set pair = New Collection
+                pair.Add caseValNode
+                pair.Add caseBlock
+                cases.Add pair
+                i = i + 1
+            End If
+        ElseIf (stmtTokens(i)(0) = "IDENT" Or stmtTokens(i)(0) = "KEYWORD") And LCase$(stmtTokens(i)(1)) = "default" Then
+            ' the tokenizer marks default as a keyword, for export default
+            i = i + 1
+            If safeTVRetInner(stmtTokens, i, 1) = ":" Then SwitchSyntaxError "default"
+            Do While i <= stmtTokens.Count And Not (stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = "{")
+                i = i + 1
+            Loop
+            If i <= stmtTokens.Count And stmtTokens(i)(0) = "PAREN" And stmtTokens(i)(1) = "{" Then
+                i = i + 1
+                Dim depth2 As Long: depth2 = 0
+                Dim defTok As New Collection
+                Do While i <= stmtTokens.Count
+                    If stmtTokens(i)(0) = "PAREN" Then
+                        If stmtTokens(i)(1) = "{" Then
+                            depth2 = depth2 + 1
+                        ElseIf stmtTokens(i)(1) = "}" Then
+                            If depth2 = 0 Then
+                                Exit Do
+                            Else
+                                depth2 = depth2 - 1
+                            End If
+                        End If
+                    End If
+                    defTok.Add stmtTokens(i)
+                    i = i + 1
+                Loop
+                Set defaultBlock = ParseTokensToAST(defTok)
+                i = i + 1
+            End If
+        Else
+            i = i + 1
+        End If
+    Loop
+    node.SetValue "cases", cases
+    node.SetValue "default", defaultBlock
+    Set ParseSwitchAST = node
+End Function
+
+' case 2: ... as in JavaScript: a colon outside brackets that no ? opens
+Private Function IsColonCase(valTok As Collection) As Boolean
+    Dim k As Long, depth As Long, questions As Long
+    For k = 1 To valTok.Count
+        Select Case CStr(valTok(k)(1))
+            Case "(", "[", "{": If valTok(k)(0) = "PAREN" Then depth = depth + 1
+            Case ")", "]", "}": If valTok(k)(0) = "PAREN" Then depth = depth - 1
+            Case "?": If depth = 0 Then questions = questions + 1
+            Case ":"
+                If depth = 0 Then
+                    If questions = 0 Then IsColonCase = True: Exit Function
+                    questions = questions - 1
+                End If
+        End Select
+    Next k
+End Function
+
+Private Sub SwitchSyntaxError(ByVal part As String)
+    err.Raise vbObjectError + 9025, "Compiler.ParseSwitchAST", _
+              "switch: every " & part & " takes a block, as in case 2 { ... } and default { ... }; there is no " & part & ":, and cases do not fall through"
+End Sub
+
+
+' Compiler AST normalization pass
+' Converts expression statements like (Binary op "=" ...) into Assign nodes
+' when the left-hand side is a valid assignment target (Variable or Index).
+' Also normalizes `for` init/step and recursively visits blocks.
+'
+Private Function IsAssignableNode(n As ASF_Map_OLD) As Boolean
+    If n Is Nothing Then
+        IsAssignableNode = False: Exit Function
+    End If
+    Dim t As String: t = n.GetValue("type")
+    ' Accept variable, indexed access (arr[i]) and member access (obj.prop)
+    If t = "Variable" Or t = "Index" Or t = "Member" Then
+        IsAssignableNode = True
+    Else
+        IsAssignableNode = False
+    End If
+End Function
+
+Private Function NormalizeExprNodeRecursive(expr As ASF_Map_OLD) As ASF_Map_OLD
+    ' Recursively walk expression nodes and normalize inner expressions as needed.
+    If expr Is Nothing Then
+        Set NormalizeExprNodeRecursive = Nothing: Exit Function
+    End If
+    Dim t As String: t = expr.GetValue("type")
+    Select Case t
+        Case "Binary"
+            Dim left_ As ASF_Map_OLD: Set left_ = NormalizeExprNodeRecursive(expr.GetValue("left"))
+            Dim right_ As ASF_Map_OLD: Set right_ = NormalizeExprNodeRecursive(expr.GetValue("right"))
+            ' create new Binary node only if children changed, otherwise return original
+            If (Not left_ Is expr.GetValue("left")) Or (Not right_ Is expr.GetValue("right")) Then
+                Dim nb As New ASF_Map_OLD
+                nb.Add "type", "Binary"
+                nb.SetValue "op", expr.GetValue("op")
+                nb.SetValue "left", IIf(left_ Is Nothing, expr.GetValue("left"), left_)
+                nb.SetValue "right", IIf(right_ Is Nothing, expr.GetValue("right"), right_)
+                Set NormalizeExprNodeRecursive = nb
+                Exit Function
+            End If
+            Set NormalizeExprNodeRecursive = expr
+            Exit Function
+        Case "Unary"
+            Dim rec As ASF_Map_OLD: Set rec = NormalizeExprNodeRecursive(expr.GetValue("expr"))
+            If Not rec Is expr.GetValue("expr") Then
+                Dim nu As New ASF_Map_OLD
+                nu.Add "type", "Unary"
+                nu.SetValue "op", expr.GetValue("op")
+                nu.SetValue "expr", rec
+                Set NormalizeExprNodeRecursive = nu
+                Exit Function
+            End If
+            Set NormalizeExprNodeRecursive = expr
+            Exit Function
+        Case "Call"
+            ' normalize args
+            Dim args As Collection: Set args = expr.GetValue("args")
+            If Not args Is Nothing Then
+                Dim newArgs As New Collection
+                Dim changed As Boolean: changed = False
+                Dim i As Long
+                For i = 1 To args.Count
+                    Dim ae As ASF_Map_OLD: Set ae = NormalizeExprNodeRecursive(args(i))
+                    If Not ae Is args(i) Then changed = True: newArgs.Add ae Else newArgs.Add args(i)
+                Next i
+                If changed Then
+                    Dim nc As New ASF_Map_OLD
+                    nc.Add "type", "Call"
+                    nc.SetValue "name", expr.GetValue("name")
+                    nc.SetValue "args", newArgs
+                    Set NormalizeExprNodeRecursive = nc
+                    Exit Function
+                End If
+            End If
+            Set NormalizeExprNodeRecursive = expr
+            Exit Function
+        Case "Index"
+            Dim b As ASF_Map_OLD: Set b = NormalizeExprNodeRecursive(expr.GetValue("base"))
+            Dim idx As ASF_Map_OLD: Set idx = NormalizeExprNodeRecursive(expr.GetValue("index"))
+            If Not b Is expr.GetValue("base") Or Not idx Is expr.GetValue("index") Then
+                Dim ni As New ASF_Map_OLD
+                ni.Add "type", "Index"
+                ni.SetValue "base", IIf(b Is Nothing, expr.GetValue("base"), b)
+                ni.SetValue "index", IIf(idx Is Nothing, expr.GetValue("index"), idx)
+                Set NormalizeExprNodeRecursive = ni
+                Exit Function
+            End If
+            Set NormalizeExprNodeRecursive = expr
+            Exit Function
+        Case "Array"
+            Dim items As Collection: Set items = expr.GetValue("items")
+            If Not items Is Nothing Then
+                Dim newit As New Collection
+                Dim ch As Boolean: ch = False
+                Dim ii As Long
+                For ii = 1 To items.Count
+                    Dim ei As ASF_Map_OLD: Set ei = NormalizeExprNodeRecursive(items(ii))
+                    If Not ei Is items(ii) Then ch = True: newit.Add ei Else newit.Add items(ii)
+                Next ii
+                If ch Then
+                    Dim na As New ASF_Map_OLD
+                    na.Add "type", "Array"
+                    na.SetValue "items", newit
+                    Set NormalizeExprNodeRecursive = na
+                    Exit Function
+                End If
+            End If
+            Set NormalizeExprNodeRecursive = expr
+            Exit Function
+        Case Else
+            Set NormalizeExprNodeRecursive = expr
+            Exit Function
+    End Select
+End Function
+
+Private Function NormalizeNodeRecursive(node As ASF_Map_OLD) As ASF_Map_OLD
+    ' Normalize a statement node and recursively process inner blocks.
+    If node Is Nothing Then
+        Set NormalizeNodeRecursive = Nothing: Exit Function
+    End If
+    Dim expr As ASF_Map_OLD
+    Dim left_ As ASF_Map_OLD
+    Dim a As ASF_Map_OLD
+    Dim r As ASF_Map_OLD
+    Dim newExpr As ASF_Map_OLD
+    Dim ns As ASF_Map_OLD
+    Dim cond As ASF_Map_OLD
+    Dim thenBlk As Collection
+    Dim outThen As Collection
+    Dim elseifConds As Collection
+    Dim elseifBlocks As Collection
+    Dim outElseIfConds As Collection
+    Dim outElseIfBlocks As Collection
+    Dim eb As Collection
+    Dim nb As Collection
+    Dim elseBlk As Collection
+    Dim outElse As Collection
+    Dim nif As ASF_Map_OLD
+    Dim initNode As ASF_Map_OLD
+    Dim condNode As ASF_Map_OLD
+    Dim stepNode As ASF_Map_OLD
+    Dim nInit As ASF_Map_OLD, nCond As ASF_Map_OLD, nStep As ASF_Map_OLD
+    Dim na As ASF_Map_OLD
+    Dim L As ASF_Map_OLD
+    Dim e As ASF_Map_OLD
+    Dim L2 As ASF_Map_OLD
+    Dim na2 As ASF_Map_OLD
+    Dim SL As ASF_Map_OLD
+    Dim na3 As ASF_Map_OLD
+    Dim newBody As Collection
+    Dim nf As ASF_Map_OLD
+    Dim cnd As ASF_Map_OLD
+    Dim bdy As Collection
+    Dim nbdy As Collection
+    Dim nw As ASF_Map_OLD
+    Dim tryBlk As Collection
+    Dim catchBlk As Collection
+    Dim nt As Collection, nc As Collection
+    Dim ntc As ASF_Map_OLD
+    Dim cases As Collection
+    Dim ncases As Collection
+    Dim pair As Collection
+    Dim caseExpr As ASF_Map_OLD
+    Dim blockStmts As Collection
+    Dim newPair As Collection
+    Dim def As Collection
+    Dim ndef As Collection
+    Dim nsw As ASF_Map_OLD
+    Dim leftA As ASF_Map_OLD
+    Dim rightA As ASF_Map_OLD
+    Dim naNode As ASF_Map_OLD
+    Dim tP As String: tP = node.GetValue("type")
+    Select Case tP
+        Case "ExprStmt"
+            Set expr = node.GetValue("expr")
+            ' If expression is a Binary "=" with assignable LHS, convert to Assign node.
+            If Not expr Is Nothing Then
+                If expr.GetValue("type") = "Binary" Then
+                    If CStr(expr.GetValue("op")) = "=" Then
+                        Set left_ = expr.GetValue("left")
+                        If Not left_ Is Nothing Then
+                            If IsAssignableNode(left_) Then
+                                a.Add "type", "Assign"
+                                a.SetValue "left", left_
+                                ' right: normalize recursively as expression
+                                Set r = NormalizeExprNodeRecursive(expr.GetValue("right"))
+                                If r Is Nothing Then Set r = expr.GetValue("right")
+                                a.SetValue "right", r
+                                Set NormalizeNodeRecursive = a
+                                Exit Function
+                            End If
+                        End If
+                    End If
+                End If
+            End If
+            ' otherwise just normalize inner expression (if any)
+            If Not expr Is Nothing Then
+                Set newExpr = NormalizeExprNodeRecursive(expr)
+                If Not newExpr Is expr Then
+                    Set ns = New ASF_Map_OLD
+                    ns.Add "type", "ExprStmt"
+                    ns.SetValue "expr", newExpr
+                    Set NormalizeNodeRecursive = ns
+                    Exit Function
+                End If
+            End If
+            Set NormalizeNodeRecursive = node
+            Exit Function
+
+        Case "If"
+            Set cond = NormalizeExprNodeRecursive(node.GetValue("cond"))
+            Set thenBlk = node.GetValue("then")
+            Dim i As Long
+            If Not thenBlk Is Nothing Then
+                Set outThen = New Collection
+                For i = 1 To thenBlk.Count
+                    outThen.Add NormalizeNodeRecursive(thenBlk(i))
+                Next i
+            End If
+            Set elseifConds = node.GetValue("elseif_conds")
+            Set elseifBlocks = node.GetValue("elseif_blocks")
+            Set outElseIfConds = New Collection
+            Set outElseIfBlocks = New Collection
+            If Not elseifConds Is Nothing Then
+                For i = 1 To elseifConds.Count
+                    outElseIfConds.Add NormalizeExprNodeRecursive(elseifConds(i))
+                Next i
+            End If
+            If Not elseifBlocks Is Nothing Then
+                For i = 1 To elseifBlocks.Count
+                    Set eb = elseifBlocks(i)
+                    Set nb = New Collection
+                    Dim j As Long
+                    For j = 1 To eb.Count
+                        nb.Add NormalizeNodeRecursive(eb(j))
+                    Next j
+                    outElseIfBlocks.Add nb
+                Next i
+            End If
+            Set elseBlk = node.GetValue("else")
+            If Not elseBlk Is Nothing Then
+                Set outElse = New Collection
+                For i = 1 To elseBlk.Count
+                    outElse.Add NormalizeNodeRecursive(elseBlk(i))
+                Next i
+            End If
+            Set nif = New ASF_Map_OLD
+            nif.Add "type", "If"
+            nif.SetValue "cond", IIf(cond Is Nothing, node.GetValue("cond"), cond)
+            nif.SetValue "then", outThen
+            nif.SetValue "elseif_conds", outElseIfConds
+            nif.SetValue "elseif_blocks", outElseIfBlocks
+            nif.SetValue "hasElse", node.GetValue("hasElse")
+            If Not outElse Is Nothing Then nif.SetValue "else", outElse
+            Set NormalizeNodeRecursive = nif
+            Exit Function
+            
+        Case "For"
+            ' Normalize For nodes.
+            ' If node has "kind" => this is a for-in / for-of form: normalize "each" and "iter".
+            ' Otherwise, treat as classic for(init; cond; step).
+            Set newBody = New Collection
+            Dim bodyOrig As Collection: Set bodyOrig = node.GetValue("body")
+            If Not bodyOrig Is Nothing Then
+                Dim bidx As Long
+                For bidx = 1 To bodyOrig.Count
+                    newBody.Add NormalizeNodeRecursive(bodyOrig(bidx))
+                Next bidx
+            End If
+
+            If node.Exists("kind") Then
+                Dim kindVal As String: kindVal = CStr(node.GetValue("kind"))
+                Dim eachOrig As ASF_Map_OLD: Set eachOrig = Nothing
+                Dim iterOrig As ASF_Map_OLD: Set iterOrig = Nothing
+                If node.Exists("each") Then Set eachOrig = node.GetValue("each")
+                If node.Exists("iter") Then Set iterOrig = node.GetValue("iter")
+
+                Dim nEach As ASF_Map_OLD: Set nEach = Nothing
+                Dim nIter As ASF_Map_OLD: Set nIter = Nothing
+                If Not eachOrig Is Nothing Then Set nEach = NormalizeExprNodeRecursive(eachOrig)
+                If Not iterOrig Is Nothing Then Set nIter = NormalizeExprNodeRecursive(iterOrig)
+
+                Dim nfKind As New ASF_Map_OLD
+                nfKind.Add "type", "For"
+                nfKind.SetValue "kind", kindVal
+                If nEach Is Nothing Then
+                    If Not eachOrig Is Nothing Then nfKind.SetValue "each", eachOrig
+                Else
+                    nfKind.SetValue "each", nEach
+                End If
+                If nIter Is Nothing Then
+                    If Not iterOrig Is Nothing Then nfKind.SetValue "iter", iterOrig
+                Else
+                    nfKind.SetValue "iter", nIter
+                End If
+                nfKind.SetValue "body", newBody
+
+                Set NormalizeNodeRecursive = nfKind
+                Exit Function
+            End If
+
+            ' --- classic for(init; cond; step) normalization (unchanged behavior) ---
+            Set initNode = node.GetValue("init")
+            Set condNode = node.GetValue("cond")
+            Set stepNode = node.GetValue("step")
+
+            If Not initNode Is Nothing Then
+                If initNode.GetValue("type") = "Binary" And CStr(initNode.GetValue("op")) = "=" Then
+                    Set L = initNode.GetValue("left")
+                    If Not L Is Nothing And IsAssignableNode(L) Then
+                        Set na = New ASF_Map_OLD
+                        na.Add "type", "Assign"
+                        na.SetValue "left", L
+                        na.SetValue "right", NormalizeExprNodeRecursive(initNode.GetValue("right"))
+                        Set nInit = na
+                    Else
+                        Set nInit = NormalizeExprNodeRecursive(initNode)
+                    End If
+                ElseIf initNode.GetValue("type") = "ExprStmt" Then
+                    Set e = initNode.GetValue("expr")
+                    If Not e Is Nothing And e.GetValue("type") = "Binary" And CStr(e.GetValue("op")) = "=" Then
+                        Set L2 = e.GetValue("left")
+                        If Not L2 Is Nothing And IsAssignableNode(L2) Then
+                            Set na2 = New ASF_Map_OLD
+                            na2.Add "type", "Assign"
+                            na2.SetValue "left", L2
+                            na2.SetValue "right", NormalizeExprNodeRecursive(e.GetValue("right"))
+                            Set nInit = na2
+                        Else
+                            Set nInit = NormalizeExprNodeRecursive(e)
+                        End If
+                    Else
+                        Set nInit = NormalizeExprNodeRecursive(e)
+                    End If
+                Else
+                    Set nInit = NormalizeExprNodeRecursive(initNode)
+                End If
+            End If
+
+            If Not condNode Is Nothing Then Set nCond = NormalizeExprNodeRecursive(condNode)
+
+            If Not stepNode Is Nothing Then
+                If stepNode.GetValue("type") <> "Assign" Then
+                    If stepNode.GetValue("type") = "Binary" And CStr(stepNode.GetValue("op")) = "=" Then
+                        Set SL = stepNode.GetValue("left")
+                        If Not SL Is Nothing And IsAssignableNode(SL) Then
+                            Set na3 = New ASF_Map_OLD
+                            na3.Add "type", "Assign"
+                            na3.SetValue "left", SL
+                            na3.SetValue "right", NormalizeExprNodeRecursive(stepNode.GetValue("right"))
+                            Set nStep = na3
+                        Else
+                            Set nStep = NormalizeExprNodeRecursive(stepNode)
+                        End If
+                    Else
+                        Set nStep = NormalizeExprNodeRecursive(stepNode)
+                    End If
+                Else
+                    Set nStep = NormalizeExprNodeRecursive(stepNode)
+                End If
+            End If
+
+            Set nf = New ASF_Map_OLD
+            nf.Add "type", "For"
+            If Not nInit Is Nothing Then nf.SetValue "init", nInit
+            If Not nCond Is Nothing Then nf.SetValue "cond", nCond
+            If Not nStep Is Nothing Then nf.SetValue "step", nStep
+            nf.SetValue "body", newBody
+
+            Set NormalizeNodeRecursive = nf
+            Exit Function
+
+        Case "While"
+            Set cnd = NormalizeExprNodeRecursive(node.GetValue("cond"))
+            Set bdy = node.GetValue("body")
+            Set nbdy = New Collection
+            If Not bdy Is Nothing Then
+                Dim bi As Long
+                For bi = 1 To bdy.Count
+                    nbdy.Add NormalizeNodeRecursive(bdy(bi))
+                Next bi
+            End If
+            Set nw = New ASF_Map_OLD
+            nw.Add "type", "While"
+            nw.SetValue "cond", IIf(cnd Is Nothing, node.GetValue("cond"), cnd)
+            nw.SetValue "body", nbdy
+            Set NormalizeNodeRecursive = nw
+            Exit Function
+
+        Case "TryCatch"
+            Set tryBlk = node.GetValue("try")
+            Set catchBlk = node.GetValue("catch")
+            Set nt = New Collection: Set nc = New Collection
+            Dim ti As Long
+            If Not tryBlk Is Nothing Then
+                For ti = 1 To tryBlk.Count: nt.Add NormalizeNodeRecursive(tryBlk(ti)): Next ti
+            End If
+            If Not catchBlk Is Nothing Then
+                For ti = 1 To catchBlk.Count: nc.Add NormalizeNodeRecursive(catchBlk(ti)): Next ti
+            End If
+            Set ntc = New ASF_Map_OLD
+            ntc.Add "type", "TryCatch"
+            ntc.SetValue "try", nt
+            ntc.SetValue "catch", nc
+            If node.Exists("catchVar") Then ntc.SetValue "catchVar", node.GetValue("catchVar")
+            Set NormalizeNodeRecursive = ntc
+            Exit Function
+
+        Case "Switch"
+            Set cases = node.GetValue("cases")
+            Set ncases = New Collection
+            If Not cases Is Nothing Then
+                Dim ci As Long
+                For ci = 1 To cases.Count
+                    Set pair = cases(ci)
+                    Set caseExpr = NormalizeExprNodeRecursive(pair(1))
+                    Set blockStmts = pair(2)
+                    Set nb = New Collection
+                    Dim bi2 As Long
+                    For bi2 = 1 To blockStmts.Count
+                        nb.Add NormalizeNodeRecursive(blockStmts(bi2))
+                    Next bi2
+                    Set newPair = New Collection
+                    newPair.Add caseExpr
+                    newPair.Add nb
+                    ncases.Add newPair
+                Next ci
+            End If
+            Set def = node.GetValue("default")
+            If Not def Is Nothing Then
+                Set ndef = New Collection
+                Dim di As Long
+                For di = 1 To def.Count: ndef.Add NormalizeNodeRecursive(def(di)): Next di
+            End If
+            Set nsw = New ASF_Map_OLD
+            nsw.Add "type", "Switch"
+            nsw.SetValue "expr", NormalizeExprNodeRecursive(node.GetValue("expr"))
+            nsw.SetValue "cases", ncases
+            If Not ndef Is Nothing Then nsw.SetValue "default", ndef
+            Set NormalizeNodeRecursive = nsw
+            Exit Function
+
+        Case Else
+            ' Assign, Print, Return, Break, Continue, etc. often have expr fields to normalize.
+            If node.GetValue("type") = "Assign" Then
+                Set leftA = node.GetValue("left")
+                Set rightA = NormalizeExprNodeRecursive(node.GetValue("right"))
+                Set naNode = New ASF_Map_OLD
+                naNode.Add "type", "Assign"
+                naNode.SetValue "left", leftA
+                naNode.SetValue "right", IIf(rightA Is Nothing, node.GetValue("right"), rightA)
+                Set NormalizeNodeRecursive = naNode
+                Exit Function
+            End If
+            Set NormalizeNodeRecursive = node
+            Exit Function
+    End Select
+End Function
+
+Private Function NormalizeAssignsInStmts(stmts As Collection) As Collection
+    Dim out As New Collection
+    If stmts Is Nothing Then
+        Set NormalizeAssignsInStmts = out: Exit Function
+    End If
+    Dim i As Long
+    Dim n As ASF_Map_OLD
+    For i = 1 To stmts.Count
+        Set n = stmts(i)
+        out.Add NormalizeNodeRecursive(n)
+    Next i
+    Set NormalizeAssignsInStmts = out
+End Function
+
+Private Function safeTVRet(ByRef arr As Variant, idx As Long) As String
+    On Error GoTo err_Handler
+    safeTVRet = arr(idx)
+    Exit Function
+err_Handler:
+    safeTVRet = vbNullString
+End Function
+Private Function safeTVRetInner(ByRef arr As Variant, idx1 As Long, idx2 As Long) As String
+    On Error GoTo err_Handler
+    safeTVRetInner = arr(idx1)(idx2)
+    Exit Function
+err_Handler:
+    safeTVRetInner = vbNullString
+End Function
+' Compile a backtick-wrapped template string (like `foo ${a+1} bar`) into a Template AST node.
+Private Function ParseTemplateStringToNode(ByVal rawBacktickString As String) As ASF_Map_OLD
+    ' rawBacktickString includes the backticks: "`...`"
+    Dim inner As String
+    inner = mid$(rawBacktickString, 2, Len(rawBacktickString) - 2)
+
+    Dim parts As New Collection
+    Dim i As Long: i = 1
+    Dim Ls As Long: Ls = Len(inner)
+    Dim curLit As String: curLit = vbNullString
+
+    Do While i <= Ls
+        Dim ch As String: ch = mid$(inner, i, 1)
+        If ch = "\" Then
+            ' preserve escapes in literal
+            curLit = curLit & "\"
+            i = i + 1
+            GoTo PT_continue
+        End If
+
+        If ch = "$" And i < Ls And mid$(inner, i + 1, 1) = "{" Then
+            ' flush literal
+            If Len(curLit) > 0 Then
+                Dim litNode As ASF_Map_OLD: Set litNode = MakeNode("Literal")
+                litNode.SetValue "value", curLit
+                parts.Add litNode
+                curLit = vbNullString
+            End If
+            ' capture expression until matching brace
+            i = i + 2
+            Dim depth As Long: depth = 1
+            Dim exprStart As Long: exprStart = i
+            Do While i <= Ls And depth > 0
+                Dim cc As String: cc = mid$(inner, i, 1)
+                If cc = "\" Then
+                    If i < Ls Then i = i + 2 Else i = i + 1
+                Else
+                    If cc = "{" Then
+                        depth = depth + 1
+                    ElseIf cc = "}" Then
+                        depth = depth - 1
+                    End If
+                    i = i + 1
+                End If
+            Loop
+            Dim exprLen As Long: exprLen = i - exprStart - 1
+            Dim exprSrc As String
+            If exprLen >= 0 Then exprSrc = mid$(inner, exprStart, exprLen) Else exprSrc = vbNullString
+            ' parse expression string to an AST node (reuse existing helper)
+            Dim exprNode As ASF_Map_OLD: Set exprNode = ParseExprFromStringToNode(exprSrc)
+            parts.Add exprNode
+            GoTo PT_continue
+        End If
+
+        ' normal literal char
+        curLit = curLit & ch
+        i = i + 1
+PT_continue:
+    Loop
+
+    If Len(curLit) > 0 Then
+        Dim lastLit As ASF_Map_OLD: Set lastLit = MakeNode("Literal")
+        lastLit.SetValue "value", curLit
+        parts.Add lastLit
+    End If
+
+    Dim tnode As ASF_Map_OLD: Set tnode = MakeNode("Template")
+    tnode.SetValue "parts", parts
+    Set ParseTemplateStringToNode = tnode
+End Function
+
+' ---------- Template parts parser ----------
+' Input: tokenStr is the raw token text starting with backtick, e.g. "`/${regobj.escape(name)}/g`"
+' Output: Collection of Array("LITERAL", text) or Array("EXPR", text)
+Private Function ParseTemplatePartsFromString(ByVal tokenStr As String) As Collection
+    Dim parts As New Collection
+    If Len(tokenStr) = 0 Then
+        Set ParseTemplatePartsFromString = parts
+        Exit Function
+    End If
+    If mid$(tokenStr, 1, 1) <> "`" Then
+        parts.Add Array("LITERAL", tokenStr)
+        Set ParseTemplatePartsFromString = parts: Exit Function
+    End If
+
+    Dim i As Long: i = 2 ' start after opening backtick
+    Dim Ls As Long: Ls = Len(tokenStr)
+    Dim curLit As String: curLit = vbNullString
+    Dim ch As String
+    Dim nx As String
+    Dim curExpr As String
+    Dim depth As Long
+    Dim c2 As String
+    Dim escapedChar As String
+    Dim braces As Long, quote As String
+    
+    Do While i <= Ls
+        ch = mid$(tokenStr, i, 1)
+
+        ' Backslash escapes in template literal (outside ${}): unescape `, /, \, $, {, }
+        If ch = "\" Then
+            nx = mid$(tokenStr, i + 1, 1)
+            Select Case nx
+                Case "`", "/", "\", "$", "{", "}"
+                    curLit = curLit & nx
+                    i = i + 2
+                Case Else
+                    ' keep the backslash as-is if it doesn't precede a recognized escape
+                    curLit = curLit & ch
+                    i = i + 1
+            End Select
+            GoTo ContinueMainLoop
+        End If
+
+        ' Placeholder start ${ ... }
+        If ch = "$" And i < Ls And mid$(tokenStr, i + 1, 1) = "{" Then
+            ' flush current literal (outside placeholders)
+            If Len(curLit) > 0 Then
+                parts.Add Array("LITERAL", curLit)
+                curLit = vbNullString
+            End If
+
+            ' consume "${"
+            i = i + 2
+
+            ' Collect placeholder content with escaping and nested-${} support.
+            ' semantics:
+            '  - backslash inside placeholder escapes the next char if equal to '{' or '$' or '}'
+            '  - unescaped "${" starts a nested split: flush current expr (if any) and start collecting nested
+            '  - unescaped "}" closes the *current* placeholder chunk and the collected text is added as an EXPR
+            curExpr = vbNullString
+            depth = 1
+            braces = 0: quote = vbNullString
+
+            Do While i <= Ls And depth > 0
+                c2 = mid$(tokenStr, i, 1)
+
+                ' a string inside the placeholder is taken whole: ${'}'}
+                If Len(quote) > 0 Then
+                    If c2 = "\" And i < Ls Then
+                        curExpr = curExpr & mid$(tokenStr, i, 2)
+                        i = i + 2
+                    Else
+                        If c2 = quote Then quote = vbNullString
+                        curExpr = curExpr & c2
+                        i = i + 1
+                    End If
+                    GoTo ContinuePlaceholderLoop
+                ElseIf c2 = "'" Or c2 = """" Then
+                    quote = c2
+                    curExpr = curExpr & c2
+                    i = i + 1
+                    GoTo ContinuePlaceholderLoop
+                End If
+
+                ' escaped char inside placeholder -> take next char literally
+                If c2 = "\" Then
+                    If i < Ls Then
+                        escapedChar = mid$(tokenStr, i + 1, 1)
+                        ' append the escaped character verbatim into the current expr buffer
+                        Select Case escapedChar
+                            Case "$", "{", "}"
+                                curExpr = curExpr & escapedChar
+                                i = i + 2
+                            Case Else
+                                'literal "\"
+                                curExpr = curExpr & c2
+                                i = i + 1
+                        End Select
+                    Else
+                        ' trailing backslash => keep it
+                        curExpr = curExpr & c2
+                        i = i + 1
+                    End If
+                    GoTo ContinuePlaceholderLoop
+                End If
+
+                ' nested unescaped ${ -> split: flush current expr (if any) and continue with a fresh expr for nested part
+                If c2 = "$" And i < Ls And mid$(tokenStr, i + 1, 1) = "{" Then
+                    If Len(curExpr) > 0 Then
+                        parts.Add Array("EXPR", curExpr)
+                        curExpr = vbNullString
+                    End If
+                    ' consume nested "${" and increase depth
+                    depth = depth + 1
+                    i = i + 2
+                    GoTo ContinuePlaceholderLoop
+                End If
+
+                ' the braces of the expression itself: ${{a: 1}}
+                If c2 = "{" Then
+                    braces = braces + 1
+                ElseIf c2 = "}" And braces > 0 Then
+                    braces = braces - 1
+                    curExpr = curExpr & c2
+                    i = i + 1
+                    GoTo ContinuePlaceholderLoop
+                End If
+
+                ' unescaped '}' closes current placeholder level
+                If c2 = "}" Then
+                    ' consume closing brace
+                    i = i + 1
+                    depth = depth - 1
+                    ' only add non-empty expression fragments
+                    If Len(curExpr) > 0 Then
+                        parts.Add Array("EXPR", curExpr)
+                        curExpr = vbNullString
+                    End If
+                    ' if depth > 0 we continue collecting outer-level remainder into a new expr (will be added later or at another close)
+                    GoTo ContinuePlaceholderLoop
+                End If
+
+                ' any other char inside placeholder: append literally
+                curExpr = curExpr & c2
+                i = i + 1
+
+ContinuePlaceholderLoop:
+            Loop
+
+            ' If the placeholder wasn't properly closed (unterminated), treat whatever collected as an EXPR
+            If Len(curExpr) > 0 Then
+                parts.Add Array("EXPR", curExpr)
+                curExpr = vbNullString
+            End If
+
+            ' continue scanning main template loop
+            GoTo ContinueMainLoop
+        End If
+
+        ' closing backtick ends template (outside any placeholder)
+        If ch = "`" Then
+            If Len(curLit) > 0 Then parts.Add Array("LITERAL", curLit): curLit = vbNullString
+            i = i + 1 ' consume closing backtick
+            Exit Do
+        End If
+
+        ' normal literal char (outside placeholder)
+        curLit = curLit & ch
+        i = i + 1
+
+ContinueMainLoop:
+    Loop
+
+    ' leftover (unterminated) literal
+    If Len(curLit) > 0 Then parts.Add Array("LITERAL", curLit)
+
+    Set ParseTemplatePartsFromString = parts
+End Function
+
+Private Function ParseClassDecl(toks As Collection, ByRef i As Long) As ASF_Map_OLD
+    Dim classNode As ASF_Map_OLD: Set classNode = MakeNode("ClassDecl")
+    
+    ' Skip 'class' keyword
+    i = i + 1
+    
+    ' Skip comments
+    Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
+        i = i + 1
+    Loop
+    
+    If i > toks.Count Then err.Raise vbObjectError + 1, , "Expected class name"
+    
+    ' Get class name
+    Dim className As String: className = toks(i)(1)
+    classNode.SetValue "name", className
+    i = i + 1
+    
+    ' Skip comments
+    Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
+        i = i + 1
+    Loop
+    
+    ' Check for extends
+    Dim superClass As String: superClass = vbNullString
+    If i <= toks.Count And LCase$(toks(i)(1)) = "extends" Then
+        i = i + 1
+        Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
+            i = i + 1
+        Loop
+        If i <= toks.Count Then
+            superClass = toks(i)(1)
+            classNode.SetValue "superClass", superClass
+            i = i + 1
+        End If
+    End If
+    
+    ' Skip comments before body
+    Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
+        i = i + 1
+    Loop
+    
+    ' Expect '{'
+    If i > toks.Count Or Not (toks(i)(0) = "PAREN" And toks(i)(1) = "{") Then
+        err.Raise vbObjectError + 2, , "Expected class body"
+    End If
+    i = i + 1
+    
+    ' Parse class body
+    Dim fields As Collection: Set fields = New Collection
+    Dim methods As Collection: Set methods = New Collection
+    Dim constructor As ASF_Map_OLD
+    Dim depth As Long: depth = 0
+    
+    Do While i <= toks.Count
+        ' Skip comments
+        If toks(i)(0) = "COMMENT" Then
+            i = i + 1
+            GoTo ContinueClassBody
+        End If
+        
+        ' Check for closing brace
+        If toks(i)(0) = "PAREN" Then
+            If toks(i)(1) = "{" Then
+                depth = depth + 1
+                i = i + 1
+                GoTo ContinueClassBody
+            ElseIf toks(i)(1) = "}" Then
+                If depth = 0 Then
+                    Exit Do
+                Else
+                    depth = depth - 1
+                    i = i + 1
+                    GoTo ContinueClassBody
+                End If
+            End If
+        End If
+        
+        ' Parse member
+        If toks(i)(0) = "IDENT" Then
+            Dim memberName As String: memberName = LCase$(toks(i)(1))
+            Dim isStatic As Boolean: isStatic = False
+            
+            ' Check for static modifier
+            If memberName = "static" Then
+                isStatic = True
+                i = i + 1
+                ' Skip comments after static
+                Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
+                    i = i + 1
+                Loop
+                If i > toks.Count Then GoTo ContinueClassBody
+                memberName = LCase$(toks(i)(1))
+            End If
+            
+            Select Case memberName
+                Case "field"
+                    ' Fields cannot be static
+                    If isStatic Then
+                        err.Raise vbObjectError + 4, , "Fields cannot be static"
+                    End If
+                    ' Parse field declaration: field name1, name2 = defaultValue, name3;
+                    i = i + 1
+                    Dim valToks As Collection
+                    Do While i <= toks.Count
+                        If toks(i)(0) = "COMMENT" Then
+                            i = i + 1
+                            GoTo ContinueFieldParse
+                        End If
+                        
+                        ' End of field declaration
+                        If toks(i)(0) = "SEP" And toks(i)(1) = ";" Then
+                            i = i + 1
+                            Exit Do
+                        End If
+                        
+                        ' Get field name
+                        If toks(i)(0) = "IDENT" Then
+                            Dim fieldName As String: fieldName = toks(i)(1)
+                            i = i + 1
+                            
+                            ' Check for default value
+                            Dim defaultVal As ASF_Map_OLD
+                            Set defaultVal = Nothing
+                            
+                            If i <= toks.Count And toks(i)(0) = "OP" And toks(i)(1) = "=" Then
+                                i = i + 1
+                                ' Collect tokens until comma or semicolon
+                                Set valToks = New Collection
+                                Dim vDepth As Long: vDepth = 0
+                                Do While i <= toks.Count
+                                    If toks(i)(0) = "PAREN" Then
+                                        Select Case toks(i)(1)
+                                            Case "(", "[", "{"
+                                                vDepth = vDepth + 1
+                                            Case ")", "]", "}"
+                                                If vDepth > 0 Then vDepth = vDepth - 1
+                                        End Select
+                                    End If
+                                    
+                                    If vDepth = 0 Then
+                                        If (toks(i)(0) = "SEP" And (toks(i)(1) = "," Or toks(i)(1) = ";")) Then
+                                            Exit Do
+                                        End If
+                                    End If
+                                    
+                                    valToks.Add toks(i)
+                                    i = i + 1
+                                Loop
+                                
+                                If valToks.Count > 0 Then
+                                    Set defaultVal = ParseExprTokensToNode(valToks)
+                                End If
+                            End If
+                            
+                            ' Add field
+                            Dim fieldNode As ASF_Map_OLD: Set fieldNode = MakeNode("Field")
+                            fieldNode.SetValue "name", fieldName
+                            If Not defaultVal Is Nothing Then
+                                fieldNode.SetValue "default", defaultVal
+                            End If
+                            fields.Add fieldNode
+                            
+                            ' Skip comma
+                            If i <= toks.Count And toks(i)(0) = "SEP" And toks(i)(1) = "," Then
+                                i = i + 1
+                            End If
+                        End If
+ContinueFieldParse:
+                    Loop
+                    
+                Case "constructor"
+                    ' Constructors cannot be static
+                    If isStatic Then
+                        err.Raise vbObjectError + 5, , "Constructors cannot be static"
+                    End If
+                    ' Parse constructor
+                    Set constructor = ParseMethodDecl(toks, i, True, False)
+                    
+                Case Else
+                    ' Parse method
+                    Dim methodNode As ASF_Map_OLD
+                    Set methodNode = ParseMethodDecl(toks, i, False, isStatic)
+                    methods.Add methodNode
+            End Select
+        Else
+            i = i + 1
+        End If
+ContinueClassBody:
+    Loop
+    
+    ' Skip closing brace
+    If i <= toks.Count And toks(i)(0) = "PAREN" And toks(i)(1) = "}" Then
+        i = i + 1
+    End If
+    
+    ' Build class node
+    classNode.SetValue "fields", fields
+    classNode.SetValue "classMethods", methods
+    If Not constructor Is Nothing Then
+        classNode.SetValue "constructor", constructor
+    End If
+    
+    Set ParseClassDecl = classNode
+End Function
+
+' Parse method declaration
+Private Function ParseMethodDecl(toks As Collection, ByRef i As Long, isConstructor As Boolean, isStatic As Boolean) As ASF_Map_OLD
+    Dim methodNode As ASF_Map_OLD: Set methodNode = MakeNode("Method")
+    
+    ' Get method name
+    Dim methodName As String: methodName = toks(i)(1)
+    methodNode.SetValue "name", methodName
+    methodNode.SetValue "isConstructor", isConstructor
+    methodNode.SetValue "isStatic", isStatic
+    i = i + 1
+    
+    ' Skip comments
+    Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
+        i = i + 1
+    Loop
+    
+    ' Parse parameters (with rest support)
+    Dim params As Collection
+    Set params = New Collection
+    Dim methodHasRest As Boolean: methodHasRest = False
+    Dim methodRestName As String: methodRestName = vbNullString
+    
+    If i <= toks.Count And toks(i)(0) = "PAREN" And toks(i)(1) = "(" Then
+        i = i + 1
+        Do While i <= toks.Count And Not (safeTVRetInner(toks, i, 0) = "PAREN" And safeTVRetInner(toks, i, 1) = ")")
+            If toks(i)(0) = "COMMENT" Then
+                i = i + 1
+            Else
+                If IsSpreadToken(toks, i) Then
+                    i = i + 1
+                    Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
+                        i = i + 1
+                    Loop
+                    
+                    If i <= toks.Count And toks(i)(0) = "IDENT" Then
+                        methodHasRest = True
+                        methodRestName = toks(i)(1)
+                        i = i + 1
+                        Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
+                            i = i + 1
+                        Loop
+                        If i <= toks.Count And safeTVRetInner(toks, i, 0) = "SEP" And safeTVRetInner(toks, i, 1) = "," Then
+                            err.Raise vbObjectError + 9002, "Compiler.ParseMethodDecl", "Rest parameter must be last"
+                        End If
+                    End If
+                ElseIf toks(i)(0) = "IDENT" Then
+                    If methodHasRest Then
+                        err.Raise vbObjectError + 9002, "Compiler.ParseMethodDecl", "Rest parameter must be last"
+                    End If
+                    params.Add toks(i)(1)
+                    i = i + 1
+                Else
+                    i = i + 1
+                End If
+            End If
+        Loop
+        If i <= toks.Count And toks(i)(0) = "PAREN" And toks(i)(1) = ")" Then i = i + 1
+    End If
+    methodNode.SetValue "params", params
+    If methodHasRest Then
+        methodNode.SetValue "restParam", methodRestName
+    End If
+    
+    ' Skip comments before body
+    Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
+        i = i + 1
+    Loop
+    
+    ' Parse body
+    If i > toks.Count Or Not (toks(i)(0) = "PAREN" And toks(i)(1) = "{") Then
+        err.Raise vbObjectError + 3, , "Expected method body"
+    End If
+    i = i + 1
+    
+    Dim bodyTokens As Collection
+    Set bodyTokens = New Collection
+    Dim depth As Long: depth = 0
+    Do While i <= toks.Count
+        If toks(i)(0) = "PAREN" Then
+            If toks(i)(1) = "{" Then
+                depth = depth + 1
+            ElseIf toks(i)(1) = "}" Then
+                If depth = 0 Then
+                    Exit Do
+                Else
+                    depth = depth - 1
+                End If
+            End If
+        End If
+        bodyTokens.Add toks(i)
+        i = i + 1
+    Loop
+    
+    ' Skip closing brace
+    If i <= toks.Count Then i = i + 1
+    
+    Dim bodyStmts As Collection
+    Set bodyStmts = ParseTokensToAST(bodyTokens)
+    methodNode.SetValue "body", bodyStmts
+    
+    Set ParseMethodDecl = methodNode
+End Function
+' ---------------------
+' Module System: Parse Import Statement
+' ---------------------
+Private Function ParseImportStatement(toks As Collection, ByRef i As Long) As ASF_Map_OLD
+    ' Supports:
+    ' import { name1, name2 } from 'module'
+    ' import { name1 as alias1 } from 'module'
+    ' import defaultName from 'module'
+    ' import * as namespace from 'module'
+    ' import defaultName, { name1 } from 'module'
+    ' import 'module'   (side effects only, e.g. a prototype library)
+    
+    Dim importNode As ASF_Map_OLD: Set importNode = MakeNode("Import")
+    Dim namedImports As New Collection
+    Dim defaultImport As String: defaultImport = vbNullString
+    Dim namespaceImport As String: namespaceImport = vbNullString
+    Dim modulePath As String
+    
+    i = i + 1 ' skip 'import'
+    
+    ' Skip comments
+    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+        i = i + 1
+    Loop
+    
+    If i > toks.Count Then err.Raise vbObjectError + 8001, "Compiler.ParseImportStatement", "Unexpected end after import"
+    
+    ' Side-effect import: import 'module'
+    If toks(i)(0) = "STRING" Then
+        importNode.SetValue "source", toks(i)(1)
+        i = i + 1
+        Set ParseImportStatement = importNode
+        Exit Function
+    End If
+    
+    ' Check for namespace import: import * as name from 'module'
+    If toks(i)(0) = "OP" And toks(i)(1) = "*" Then
+        i = i + 1
+        ' Expect 'as'
+        Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+            i = i + 1
+        Loop
+        If i > toks.Count Or Not (toks(i)(0) = "KEYWORD" And toks(i)(1) = "as") Then
+            err.Raise vbObjectError + 8002, "Compiler.ParseImportStatement", "Expected 'as' after * in import"
+        End If
+        i = i + 1
+        ' Get namespace name
+        Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+            i = i + 1
+        Loop
+        If i > toks.Count Or toks(i)(0) <> "IDENT" Then
+            err.Raise vbObjectError + 8003, "Compiler.ParseImportStatement", "Expected identifier after 'as'"
+        End If
+        namespaceImport = toks(i)(1)
+        i = i + 1
+    ' Check for named imports: import { ... } from 'module'
+    ElseIf toks(i)(0) = "PAREN" And toks(i)(1) = "{" Then
+        i = i + 1
+        ' Parse named imports
+        Do While i <= toks.Count And Not (toks(i)(0) = "PAREN" And toks(i)(1) = "}")
+            If toks(i)(0) = "COMMENT" Then
+                i = i + 1
+            ElseIf toks(i)(0) = "IDENT" Then
+                Dim importName As String: importName = toks(i)(1)
+                Dim localName As String: localName = importName
+                i = i + 1
+                
+                ' Check for 'as' alias
+                Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+                    i = i + 1
+                Loop
+                If i <= toks.Count And toks(i)(0) = "KEYWORD" And toks(i)(1) = "as" Then
+                    i = i + 1
+                    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+                        i = i + 1
+                    Loop
+                    If i > toks.Count Or toks(i)(0) <> "IDENT" Then
+                        err.Raise vbObjectError + 8004, "Compiler.ParseImportStatement", "Expected identifier after 'as'"
+                    End If
+                    localName = toks(i)(1)
+                    i = i + 1
+                End If
+                
+                ' Add to named imports
+                Dim importSpec As ASF_Map_OLD: Set importSpec = MakeNode("ImportSpecifier")
+                importSpec.SetValue "imported", importName
+                importSpec.SetValue "local", localName
+                namedImports.Add importSpec
+                
+                ' Skip comma
+                Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+                    i = i + 1
+                Loop
+                If i <= toks.Count And toks(i)(0) = "SEP" And toks(i)(1) = "," Then
+                    i = i + 1
+                End If
+            ElseIf toks(i)(0) = "SEP" And toks(i)(1) = "," Then
+                i = i + 1
+            Else
+                i = i + 1
+            End If
+        Loop
+        
+        If i <= toks.Count And toks(i)(0) = "PAREN" And toks(i)(1) = "}" Then
+            i = i + 1
+        End If
+    ' Default import: import name from 'module'
+    ElseIf toks(i)(0) = "IDENT" Then
+        defaultImport = toks(i)(1)
+        i = i + 1
+        
+        ' Check for optional named imports after default: import def, { name } from 'module'
+        Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+            i = i + 1
+        Loop
+        If i <= toks.Count And toks(i)(0) = "SEP" And toks(i)(1) = "," Then
+            i = i + 1
+            Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+                i = i + 1
+            Loop
+            If i <= toks.Count And toks(i)(0) = "PAREN" And toks(i)(1) = "{" Then
+                ' Parse named imports (same logic as above)
+                i = i + 1
+                Do While i <= toks.Count And Not (toks(i)(0) = "PAREN" And toks(i)(1) = "}")
+                    If toks(i)(0) = "COMMENT" Then
+                        i = i + 1
+                    ElseIf toks(i)(0) = "IDENT" Then
+                        importName = toks(i)(1)
+                        localName = importName
+                        i = i + 1
+                        
+                        Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+                            i = i + 1
+                        Loop
+                        If i <= toks.Count And toks(i)(0) = "KEYWORD" And toks(i)(1) = "as" Then
+                            i = i + 1
+                            Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+                                i = i + 1
+                            Loop
+                            If i > toks.Count Or toks(i)(0) <> "IDENT" Then
+                                err.Raise vbObjectError + 8004, "Compiler.ParseImportStatement", "Expected identifier after 'as'"
+                            End If
+                            localName = toks(i)(1)
+                            i = i + 1
+                        End If
+                        
+                        Set importSpec = MakeNode("ImportSpecifier")
+                        importSpec.SetValue "imported", importName
+                        importSpec.SetValue "local", localName
+                        namedImports.Add importSpec
+                        
+                        Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+                            i = i + 1
+                        Loop
+                        If i <= toks.Count And toks(i)(0) = "SEP" And toks(i)(1) = "," Then
+                            i = i + 1
+                        End If
+                    ElseIf toks(i)(0) = "SEP" And toks(i)(1) = "," Then
+                        i = i + 1
+                    Else
+                        i = i + 1
+                    End If
+                Loop
+                
+                If i <= toks.Count And toks(i)(0) = "PAREN" And toks(i)(1) = "}" Then
+                    i = i + 1
+                End If
+            End If
+        End If
+    Else
+        err.Raise vbObjectError + 8005, "Compiler.ParseImportStatement", "Invalid import syntax"
+    End If
+    
+    ' Expect 'from'
+    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+        i = i + 1
+    Loop
+    If i > toks.Count Or Not (toks(i)(0) = "IDENT" And toks(i)(1) = "from") Then
+        err.Raise vbObjectError + 8006, "Compiler.ParseImportStatement", "Expected 'from' in import statement"
+    End If
+    i = i + 1
+    
+    ' Get module path (string literal)
+    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+        i = i + 1
+    Loop
+    If i > toks.Count Or toks(i)(0) <> "STRING" Then
+        err.Raise vbObjectError + 8007, "Compiler.ParseImportStatement", "Expected string literal for module path"
+    End If
+    modulePath = toks(i)(1)
+    i = i + 1
+    
+    ' Build import node
+    importNode.SetValue "source", modulePath
+    If defaultImport <> vbNullString Then
+        importNode.SetValue "defaultImport", defaultImport
+    End If
+    If namespaceImport <> vbNullString Then
+        importNode.SetValue "namespaceImport", namespaceImport
+    End If
+    If namedImports.Count > 0 Then
+        importNode.SetValue "namedImports", namedImports
+    End If
+    
+    Set ParseImportStatement = importNode
+End Function
+
+' ---------------------
+' Module System: Parse Export Statement
+' ---------------------
+Private Function ParseExportStatement(toks As Collection, ByRef i As Long) As ASF_Map_OLD
+    ' Supports:
+    ' export { name1, name2 }
+    ' export { name1 as alias1 }
+    ' export default expression
+    ' export fun name() { ... }
+    ' export class Name { ... }
+    
+    Dim exportNode As ASF_Map_OLD: Set exportNode = MakeNode("Export")
+    
+    i = i + 1 ' skip 'export'
+    
+    ' Skip comments
+    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+        i = i + 1
+    Loop
+    
+    If i > toks.Count Then err.Raise vbObjectError + 8010, "Compiler.ParseExportStatement", "Unexpected end after export"
+    
+    ' Check for default export
+    If toks(i)(0) = "KEYWORD" And toks(i)(1) = "default" Then
+        exportNode.SetValue "isDefault", True
+        i = i + 1
+        
+        ' The default export value is an expression - collect tokens until statement end
+        Dim exprTokens As New Collection
+        Dim exprDepth As Long: exprDepth = 0
+        
+        Do While i <= toks.Count
+            If toks(i)(0) = "PAREN" Then
+                Select Case toks(i)(1)
+                    Case "{", "(", "["
+                        exprDepth = exprDepth + 1
+                    Case "}", ")", "]"
+                        If exprDepth > 0 Then exprDepth = exprDepth - 1
+                End Select
+            End If
+            
+            ' Statement end
+            If exprDepth = 0 And toks(i)(0) = "SEP" And toks(i)(1) = ";" Then
+                Exit Do
+            End If
+            
+            exprTokens.Add toks(i)
+            i = i + 1
+        Loop
+        
+        ' Skip semicolon
+        If i <= toks.Count And toks(i)(0) = "SEP" And toks(i)(1) = ";" Then
+            i = i + 1
+        End If
+        
+        Dim defaultExpr As ASF_Map_OLD
+        Set defaultExpr = ParseExprTokensToNode(exprTokens)
+        exportNode.SetValue "expression", defaultExpr
+        
+        Set ParseExportStatement = exportNode
+        Exit Function
+    End If
+    
+    ' Check for named exports with braces: export { name1, name2 }
+    If toks(i)(0) = "PAREN" And toks(i)(1) = "{" Then
+        exportNode.SetValue "isDefault", False
+        Dim namedExports As New Collection
+        i = i + 1
+        
+        Do While i <= toks.Count And Not (toks(i)(0) = "PAREN" And toks(i)(1) = "}")
+            If toks(i)(0) = "COMMENT" Then
+                i = i + 1
+            ElseIf toks(i)(0) = "IDENT" Then
+                Dim localName As String: localName = toks(i)(1)
+                Dim exportedName As String: exportedName = localName
+                i = i + 1
+                
+                ' Check for 'as' alias
+                Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+                    i = i + 1
+                Loop
+                If i <= toks.Count And toks(i)(0) = "KEYWORD" And toks(i)(1) = "as" Then
+                    i = i + 1
+                    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+                        i = i + 1
+                    Loop
+                    If i > toks.Count Or toks(i)(0) <> "IDENT" Then
+                        err.Raise vbObjectError + 8011, "Compiler.ParseExportStatement", "Expected identifier after 'as'"
+                    End If
+                    exportedName = toks(i)(1)
+                    i = i + 1
+                End If
+                
+                Dim exportSpec As ASF_Map_OLD: Set exportSpec = MakeNode("ExportSpecifier")
+                exportSpec.SetValue "local", localName
+                exportSpec.SetValue "exported", exportedName
+                namedExports.Add exportSpec
+                
+                ' Skip comma
+                Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+                    i = i + 1
+                Loop
+                If i <= toks.Count And toks(i)(0) = "SEP" And toks(i)(1) = "," Then
+                    i = i + 1
+                End If
+            ElseIf toks(i)(0) = "SEP" And toks(i)(1) = "," Then
+                i = i + 1
+            Else
+                i = i + 1
+            End If
+        Loop
+        
+        If i <= toks.Count And toks(i)(0) = "PAREN" And toks(i)(1) = "}" Then
+            i = i + 1
+        End If
+        
+        exportNode.SetValue "namedExports", namedExports
+        Set ParseExportStatement = exportNode
+        Exit Function
+    End If
+    
+    ' Export declaration (function, class, etc.)
+    ' Only handles function exports inline
+    If toks(i)(0) = "IDENT" And LCase$(toks(i)(1)) = "fun" Then
+        exportNode.SetValue "isDefault", False
+        
+        ' Mark function name for export
+        i = i + 1
+        Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+            i = i + 1
+        Loop
+        
+        If i > toks.Count Or toks(i)(0) <> "IDENT" Then
+            err.Raise vbObjectError + 8012, "Compiler.ParseExportStatement", "Expected function name after 'fun'"
+        End If
+        
+        Dim funcName As String: funcName = toks(i)(1)
+        exportNode.SetValue "declarationType", "function"
+        exportNode.SetValue "declarationName", funcName
+        
+        ' The function will be parsed by the main loop
+        ' Decrement i to let the main loop parse the function
+        i = i - 2 ' Back to 'fun' keyword
+        
+        Set ParseExportStatement = exportNode
+        Exit Function
+    End If
+    
+    ' Export prototype: export prototype.COM.<classtype> <methodname>(<params>){<body>}
+    If toks(i)(0) = "IDENT" And toks(i)(1) = "prototype" Then
+        Dim protoNode As ASF_Map_OLD: Set protoNode = ParsePrototypeStatement(toks, i)
+        exportNode.SetValue "isDefault", False
+        exportNode.SetValue "exportType", "prototype"
+        exportNode.SetValue "prototypeNode", protoNode
+        exportNode.SetValue "exportName", protoNode.GetValue("classType") & "_" & protoNode.GetValue("methodName")
+        Set ParseExportStatement = exportNode
+        Exit Function
+    End If
+
+    err.Raise vbObjectError + 8013, "Compiler.ParseExportStatement", "Invalid export syntax"
+End Function
+' ---------------------
+' Parse Prototype Statement: Prototype.COM.<classtype> <methodname>(<params>){<body>};
+' ---------------------
+Private Function ParsePrototypeStatement(toks As Collection, ByRef i As Long) As ASF_Map_OLD
+    Dim prototypeNode As ASF_Map_OLD: Set prototypeNode = MakeNode("Prototype")
+    
+    i = i + 1 ' Skip 'Prototype'
+    ' Skip comments
+    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+        i = i + 1
+    Loop
+    ' Expect '.'
+    If i > toks.Count Or Not (toks(i)(0) = "SYM" And toks(i)(1) = ".") Then
+        err.Raise vbObjectError + 9100, "Compiler.ParsePrototypeStatement", "Expected '.' after Prototype"
+    End If
+    i = i + 1
+    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+        i = i + 1
+    Loop
+    ' Expect 'COM'
+    If i > toks.Count Or Not (toks(i)(0) = "IDENT" And toks(i)(1) = "COM") Then
+        err.Raise vbObjectError + 9101, "Compiler.ParsePrototypeStatement", "Expected 'COM' after Prototype."
+    End If
+    i = i + 1
+    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+        i = i + 1
+    Loop
+    ' Expect '.'
+    If i > toks.Count Or Not (toks(i)(0) = "SYM" And toks(i)(1) = ".") Then
+        err.Raise vbObjectError + 9102, "Compiler.ParsePrototypeStatement", "Expected '.' after COM"
+    End If
+    i = i + 1
+    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+        i = i + 1
+    Loop
+    ' Get class type
+    If i > toks.Count Or toks(i)(0) <> "IDENT" Then
+        err.Raise vbObjectError + 9103, "Compiler.ParsePrototypeStatement", "Expected class type after Prototype.COM."
+    End If
+    Dim classType As String: classType = toks(i)(1)
+    i = i + 1
+    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+        i = i + 1
+    Loop
+    ' Get method name
+    If i > toks.Count Or toks(i)(0) <> "IDENT" Then
+        err.Raise vbObjectError + 9104, "Compiler.ParsePrototypeStatement", "Expected method name"
+    End If
+    Dim methodName As String: methodName = toks(i)(1)
+    i = i + 1
+    Do While i <= toks.Count And toks(i)(0) = "COMMENT"
+        i = i + 1
+    Loop
+    ' Parse parameters
+    Dim argList As New Collection
+    Dim hasRestParam As Boolean: hasRestParam = False
+    Dim restParamName As String: restParamName = vbNullString
+    
+    If i <= toks.Count And toks(i)(0) = "PAREN" And toks(i)(1) = "(" Then
+        i = i + 1
+        Do While i <= toks.Count And Not (safeTVRetInner(toks, i, 0) = "PAREN" And safeTVRetInner(toks, i, 1) = ")")
+            If toks(i)(0) = "COMMENT" Then
+                i = i + 1
+            Else
+                ' Check for rest parameter (...)
+                If (toks(i)(0) = "SPREAD" Or toks(i)(0) = "OP") And toks(i)(1) = "..." Then
+                    ' Next token should be parameter name
+                    i = i + 1
+                    If i > toks.Count Or toks(i)(0) <> "IDENT" Then
+                        err.Raise vbObjectError + 9105, "Compiler.ParsePrototypeStatement", "Expected parameter name after ..."
+                    End If
+                    If hasRestParam Then
+                        err.Raise vbObjectError + 9106, "Compiler.ParsePrototypeStatement", "Multiple rest parameters not allowed"
+                    End If
+                    restParamName = toks(i)(1)
+                    hasRestParam = True
+                    i = i + 1
+                Else
+                    ' Regular parameter
+                    If hasRestParam Then
+                        err.Raise vbObjectError + 9107, "Compiler.ParsePrototypeStatement", "Rest parameter must be last parameter"
+                    End If
+                    If toks(i)(0) = "IDENT" Then argList.Add toks(i)(1)
+                    i = i + 1
+                End If
+            End If
+        Loop
+        If i <= toks.Count And toks(i)(0) = "PAREN" And toks(i)(1) = ")" Then i = i + 1
+    End If
+    Do While i <= toks.Count And safeTVRetInner(toks, i, 0) = "COMMENT"
+        i = i + 1
+    Loop
+    ' Expect function body
+    If i > toks.Count Or Not (toks(i)(0) = "PAREN" And toks(i)(1) = "{") Then
+        err.Raise vbObjectError + 9108, "Compiler.ParsePrototypeStatement", "Expected method body"
+    End If
+    ' Collect function body
+    i = i + 1
+    Dim depth As Long: depth = 0
+    Dim bodyTokens As New Collection
+    Do While i <= toks.Count
+        If toks(i)(0) = "PAREN" Then
+            If toks(i)(1) = "{" Then
+                depth = depth + 1
+            ElseIf toks(i)(1) = "}" Then
+                If depth = 0 Then
+                    Exit Do
+                Else
+                    depth = depth - 1
+                End If
+            End If
+        End If
+        bodyTokens.Add toks(i)
+        i = i + 1
+    Loop
+    ' Create internal function name for the prototype method
+    Dim internalFuncName As String
+    internalFuncName = "__PROTOTYPE_" & UCase$(classType) & "_" & UCase$(methodName)
+    ' Compile the function
+    Dim funcIdx As Long
+    If hasRestParam Then
+        funcIdx = CompileFunctionASTWithRest(internalFuncName, argList, bodyTokens, restParamName)
+    Else
+        funcIdx = CompileFunctionAST(internalFuncName, argList, bodyTokens)
+    End If
+    GLOBALS_.gFuncTable.Add internalFuncName, funcIdx
+    ' Store parameters for the function
+    Dim pa() As String
+    If argList.Count > 0 Then
+        ReDim pa(0 To argList.Count - 1)
+        Dim j As Long
+        For j = 1 To argList.Count
+            pa(j - 1) = argList(j)
+        Next j
+    Else
+        ReDim pa(0 To 0)
+        pa(0) = vbNullString
+    End If
+    GLOBALS_.gFuncParams.Add internalFuncName, pa
+    ' Store prototype information in the node
+    prototypeNode.SetValue "classType", classType
+    prototypeNode.SetValue "methodName", methodName
+    prototypeNode.SetValue "funcIndex", funcIdx
+    prototypeNode.SetValue "internalFuncName", internalFuncName
+    prototypeNode.SetValue "params", argList
+    ' Skip closing brace
+    If i <= toks.Count Then i = i + 1
+    
+    Set ParsePrototypeStatement = prototypeNode
+End Function
+' ---------------------
+' End Compiler class
+' ---------------------

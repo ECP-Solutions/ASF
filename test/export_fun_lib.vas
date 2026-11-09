@@ -1,0 +1,8 @@
+// export fun: the function is exported when the module ends
+export fun twice(x) {
+    return x * 2;
+};
+
+export fun half(x) {
+    return x / 2;
+};

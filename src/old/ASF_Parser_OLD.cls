@@ -1,0 +1,369 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "ASF_Parser_OLD"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = False
+Attribute VB_Exposed = False
+' Class Module: Parser
+Option Explicit
+Private Const d_Apostrophe As String = "'"
+
+Private GLOBALS_ As ASF_Globals_OLD
+
+Public Sub SetGlobals(ByRef aGlobals As ASF_Globals_OLD)
+    Set GLOBALS_ = aGlobals
+End Sub
+Private Function ReplaceDQuotes(src As String) As String
+    ReplaceDQuotes = Replace(src, ChrW$(34), "'")
+End Function
+
+Public Function Tokenize(src As String) As Collection
+    Dim toks As New Collection
+    Dim i As Long, n As Long
+    Dim ch As String
+    Dim nxt As String
+    Dim tmpIdent As String
+    Dim j As Long, jC As Long, jB As Long
+    Dim sourceCode As String: sourceCode = ReplaceDQuotes(src)
+    Dim tk As Variant
+    Dim idx As Long
+    Dim out As New Collection
+    Dim cjvb As String
+    Dim vbContent As String
+    Dim depthVB As Long
+    Dim jvb As Long
+    Dim j3 As Long
+    Dim j2 As Long
+    Dim nx As String
+    Dim cj As String
+    Dim sb As String
+    Dim two As String
+    Dim three As String
+    Dim c As String
+    Dim Ls As Long
+    Dim curLit As String
+    Dim PH As Long
+    Dim jH As Long
+    Dim foundClose As Boolean
+    
+    n = Len(sourceCode)
+    i = 1
+
+Tokenize_MainLoop:
+    Do While i <= n
+        If i > n Then Exit Do ' FIX: Bounds
+        ch = mid$(sourceCode, i, 1)
+        ' comments and slash handling
+        If ch = "/" And i < n Then
+            nxt = mid$(sourceCode, i + 1, 1)
+            If nxt = "/" Then
+                jC = i + 2
+                Do While jC <= n And mid$(sourceCode, jC, 1) <> vbCr And mid$(sourceCode, jC, 1) <> vbLf
+                    jC = jC + 1
+                Loop
+                toks.Add Array("COMMENT", mid$(sourceCode, i + 2, jC - i - 2))
+                i = jC
+                GoTo Tokenize_SkipToLoopEnd
+            ElseIf nxt = "*" Then
+                jB = i + 2
+                foundClose = False
+                Do While jB <= n - 1
+                    If mid$(sourceCode, jB, 2) = "*/" Then
+                        foundClose = True
+                        Exit Do
+                    End If
+                    jB = jB + 1
+                Loop
+                If foundClose Then
+                    toks.Add Array("COMMENT", mid$(sourceCode, i + 2, jB - i - 2))
+                    i = jB + 2
+                    GoTo Tokenize_SkipToLoopEnd
+                Else
+                    toks.Add Array("COMMENT", mid$(sourceCode, i + 2))
+                    i = n + 1
+                    GoTo Tokenize_SkipToLoopEnd
+                End If
+            End If
+        End If
+
+        If ch = "#" Then
+            jH = i + 1
+            Do While jH <= n And mid$(sourceCode, jH, 1) <> vbCr And mid$(sourceCode, jH, 1) <> vbLf
+                jH = jH + 1
+            Loop
+            toks.Add Array("COMMENT", mid$(sourceCode, i + 1, jH - i - 1))
+            i = jH
+            GoTo Tokenize_SkipToLoopEnd
+        End If
+        ' Spread/Rest operator (...)
+        If ch = "." And i + 2 <= n Then
+            If mid$(sourceCode, i, 3) = "..." Then
+                toks.Add Array("SPREAD", "...")
+                i = i + 3
+                GoTo Tokenize_SkipToLoopEnd
+            End If
+        End If
+        ' Placeholders variables ($1, $2,...)
+        If ch = "$" And i + 1 <= n Then
+            PH = i + 1
+            Do While PH <= n And mid$(sourceCode, PH, 1) Like "[0-9]"
+                PH = PH + 1
+            Loop
+            toks.Add Array("IDENT", mid$(sourceCode, i, PH - i))
+            i = PH
+            GoTo Tokenize_SkipToLoopEnd
+        End If
+        Select Case ch
+            Case " ", vbTab, vbCr, vbLf
+                i = i + 1
+                GoTo Tokenize_SkipToLoopEnd
+
+            ' TEMPLATE literal handling: `...${ expr }...`
+            ' Returns the content between two unescaped backticks
+            Case "`"
+                ' consume opening backtick
+                i = i + 1
+                curLit = "`"
+                Ls = n
+                Do While i <= Ls
+                    c = mid$(sourceCode, i, 1)
+            
+                    ' escape sequences - keep them as raw characters in the literal
+                    ' if not succeeded by the backtick (`) or the slash (/) symbol
+                    ' or the scape character itself (\)
+                    If c = "\" Then
+                        nxt = mid$(sourceCode, i + 1, 1)
+                        If nxt = "`" Then
+                            ' kept escaped: the compiler splits the template and would end it here
+                            curLit = curLit & c & nxt
+                            i = i + 2
+                        ElseIf nxt = "/" Or nxt = "\" Then
+                            curLit = curLit & nxt
+                            i = i + 2
+                        Else
+                            curLit = curLit & c
+                            i = i + 1
+                        End If
+                        GoTo ContinueTemplateLoop
+                    ElseIf c = "`" Then
+                        ' consume closing backtick and finish token
+                        curLit = curLit & c
+                        i = i + 1
+                        Exit Do
+                    Else
+                        curLit = curLit & c
+                        i = i + 1
+                    End If
+ContinueTemplateLoop:
+                Loop
+                toks.Add Array("STRING", curLit)
+                GoTo Tokenize_SkipToLoopEnd
+            Case ","
+                toks.Add Array("SEP", ch): i = i + 1: GoTo Tokenize_SkipToLoopEnd
+            Case ";"
+                toks.Add Array("SEP", ch): i = i + 1: GoTo Tokenize_SkipToLoopEnd
+            Case "(", ")", "{", "}", "[", "]"
+                toks.Add Array("PAREN", ch): i = i + 1: GoTo Tokenize_SkipToLoopEnd
+            Case "+", "-", "*", "/", "^", "%", "&", "|"
+                ' support +=, -=, *=, /=, ^=, %=, &=, |=
+                If i < n And mid$(sourceCode, i + 1, 1) = "=" Then
+                    toks.Add Array("OP", ch & "="): i = i + 2
+                Else
+                    If ch = "&" Then
+                        If i < n And mid$(sourceCode, i + 1, 1) = "&" Then toks.Add Array("OP", "&&"): i = i + 2 Else toks.Add Array("OP", "&"): i = i + 1
+                    ElseIf ch = "|" Then
+                        If i < n And mid$(sourceCode, i + 1, 1) = "|" Then toks.Add Array("OP", "||"): i = i + 2 Else toks.Add Array("SYM", "|"): i = i + 1
+                    Else
+                        toks.Add Array("OP", ch): i = i + 1
+                    End If
+                End If
+                GoTo Tokenize_SkipToLoopEnd
+            Case "!"
+                If i < n And mid$(sourceCode, i + 1, 1) = "=" Then toks.Add Array("OP", "!="): i = i + 2 Else toks.Add Array("OP", "!"): i = i + 1
+                GoTo Tokenize_SkipToLoopEnd
+            Case "<", ">"
+                If i < n Then two = mid$(sourceCode, i, 2) Else two = vbNullString
+                If two = ">=" Or two = "<=" Then
+                    toks.Add Array("OP", two): i = i + 2
+                Else
+                    If i < n Then three = mid$(sourceCode, i, 3) Else three = vbNullString
+                    If three = "<<=" Or three = ">>=" Then 'Support for compound shift assignment
+                        toks.Add Array("OP", three): i = i + 3
+                    Else
+                        If two = "<<" Or two = ">>" Then 'Support for eleft and right shifts
+                            toks.Add Array("OP", two): i = i + 2
+                        Else
+                            toks.Add Array("OP", ch): i = i + 1
+                        End If
+                    End If
+                End If
+                GoTo Tokenize_SkipToLoopEnd
+            Case "="
+                If i < n And mid$(sourceCode, i + 1, 1) = "=" Then toks.Add Array("OP", "=="): i = i + 2 Else toks.Add Array("OP", "="): i = i + 1
+                GoTo Tokenize_SkipToLoopEnd
+            Case "?"
+                If i < n Then two = mid$(sourceCode, i, 2) Else two = vbNullString
+                If two = "??" Then 'Null coalescing support
+                    toks.Add Array("OP", two): i = i + 2: GoTo Tokenize_SkipToLoopEnd
+                Else
+                    toks.Add Array("OP", ch): i = i + 1: GoTo Tokenize_SkipToLoopEnd
+                End If
+            Case ":"
+                toks.Add Array("OP", ch): i = i + 1: GoTo Tokenize_SkipToLoopEnd
+            Case "'"
+                j = i + 1
+                sb = vbNullString
+                Do While j <= n
+                    cj = mid$(sourceCode, j, 1)
+                    If cj = "\" Then
+                        If j + 1 <= n Then
+                            nx = mid$(sourceCode, j + 1, 1)
+                            Select Case nx
+                                Case "'": sb = sb & "'": j = j + 2: GoTo ContinueDo
+                                Case "\": sb = sb & "\": j = j + 2: GoTo ContinueDo
+                                Case "n": sb = sb & vbLf: j = j + 2: GoTo ContinueDo
+                                Case "r": sb = sb & vbCr: j = j + 2: GoTo ContinueDo
+                                Case "t": sb = sb & vbTab: j = j + 2: GoTo ContinueDo
+                                Case Else: sb = sb & nx: j = j + 2: GoTo ContinueDo
+                            End Select
+                        Else
+                            sb = sb & "\"
+                            j = j + 1
+                            GoTo ContinueDo
+                        End If
+                    ElseIf cj = "'" Then
+                        Exit Do
+                    Else
+                        sb = sb & cj
+                        j = j + 1
+                    End If
+ContinueDo:
+                Loop
+                If j <= n And mid$(sourceCode, j, 1) = "'" Then
+                    toks.Add Array("STRING", sb)
+                    i = j + 1
+                    GoTo Tokenize_SkipToLoopEnd
+                Else
+                    If GLOBALS_.STRICT_STRINGS Then err.Raise vbObjectError + 1001, "Parser.Tokenize", "Unterminated string literal"
+                    toks.Add Array("STRING", sb)
+                    i = n + 1
+                    GoTo Tokenize_SkipToLoopEnd
+                End If
+            Case Else
+                If ch Like "[0-9]" Then
+                    j2 = i
+                    Do While j2 <= n And mid$(sourceCode, j2, 1) Like "[0-9.]"
+                        j2 = j2 + 1
+                    Loop
+                    toks.Add Array("NUMBER", mid$(sourceCode, i, j2 - i))
+                    i = j2
+                    GoTo Tokenize_SkipToLoopEnd
+                ElseIf ch Like "[A-Za-z_]" Then
+                    j3 = i
+                    Do While j3 <= n And mid$(sourceCode, j3, 1) Like "[A-Za-z0-9_]"
+                        j3 = j3 + 1
+                    Loop
+                    tmpIdent = mid$(sourceCode, i, j3 - i)
+                    ' Skip/mark reserved keywords
+                    If tmpIdent <> "let" Then
+                        If tmpIdent = "import" Then
+                            toks.Add Array("KEYWORD", "import")
+                        ElseIf tmpIdent = "export" Then
+                            toks.Add Array("KEYWORD", "export")
+                        ElseIf tmpIdent = "default" Then
+                            toks.Add Array("KEYWORD", "default")
+                        ElseIf tmpIdent = "as" Then
+                            toks.Add Array("KEYWORD", "as")
+                        Else
+                            toks.Add Array("IDENT", tmpIdent)
+                        End If
+                    End If
+                    i = j3
+                    GoTo Tokenize_SkipToLoopEnd
+                ' forced VBAexpression: @(...). Capture whole balanced parentheses block as a single VBEXPR token.
+                ElseIf ch = "@" And i < n And mid$(sourceCode, i + 1, 1) = "(" Then
+                    jvb = i + 2
+                    depthVB = 1
+                    vbContent = vbNullString
+                    Do While jvb <= n And depthVB > 0
+                        cjvb = mid$(sourceCode, jvb, 1)
+                        If cjvb = "(" Then
+                            depthVB = depthVB + 1
+                            vbContent = vbContent & cjvb
+                            jvb = jvb + 1
+                        ElseIf cjvb = ")" Then
+                            depthVB = depthVB - 1
+                            If depthVB = 0 Then
+                                ' matched closing ')', stop without adding this ')'
+                                Exit Do
+                            Else
+                                vbContent = vbContent & cjvb
+                                jvb = jvb + 1
+                            End If
+                        Else
+                            vbContent = vbContent & cjvb
+                            jvb = jvb + 1
+                        End If
+                    Loop
+                    ' vbContent now contains inner characters between parentheses
+                    toks.Add Array("VBEXPR", vbContent)
+                    i = jvb + 1  ' position after ')'
+                    GoTo Tokenize_SkipToLoopEnd
+                Else
+                    toks.Add Array("SYM", ch)
+                    i = i + 1
+                    GoTo Tokenize_SkipToLoopEnd
+                End If
+        End Select
+
+Tokenize_SkipToLoopEnd:
+    Loop
+
+    ' collapse array index tokens: IDENT [ NUMBER ] -> IDENT "name[index]"
+    idx = 1
+Tokenize_CollapseLoop:
+    Do While idx <= toks.Count
+        If idx > toks.Count Then Exit Do ' FIX: Bounds
+        tk = toks(idx)
+        ' not after a keyword: return [3] is an array literal, not the element 3 of "return"
+        If tk(0) = "IDENT" And idx + 3 <= toks.Count And Not IsKeywordBeforeValue(tk(1)) Then
+            If toks(idx + 1)(0) = "PAREN" And toks(idx + 1)(1) = "[" And toks(idx + 2)(0) = "NUMBER" And toks(idx + 3)(0) = "PAREN" And toks(idx + 3)(1) = "]" Then
+                out.Add Array("IDENT", tk(1) & "[" & toks(idx + 2)(1) & "]")
+                idx = idx + 4
+                GoTo Tokenize_CollapseLoop
+            End If
+        End If
+        out.Add tk
+        idx = idx + 1
+    Loop
+
+    Set Tokenize = out
+End Function
+
+' Keywords an expression (so an array literal) can follow
+Private Function IsKeywordBeforeValue(ByVal word As String) As Boolean
+    Select Case LCase$(word)
+        Case "return", "typeof", "throw", "case", "in", "of", "else", "delete", "void", "instanceof"
+            IsKeywordBeforeValue = True
+    End Select
+End Function
+
+
+Public Function JoinTokens(tokens As Collection) As String
+    Dim s As String: s = vbNullString
+    Dim i As Long
+    For i = 1 To tokens.Count
+        If tokens(i)(0) = "STRING" Then
+            s = s & ToLiteralString(CStr(tokens(i)(1))) & " "
+        Else
+            s = s & tokens(i)(1) & " "
+        End If
+    Next i
+    JoinTokens = Trim$(s)
+End Function
+Private Function ToLiteralString(ByRef aString As String) As String
+    ToLiteralString = d_Apostrophe & aString & d_Apostrophe
+End Function

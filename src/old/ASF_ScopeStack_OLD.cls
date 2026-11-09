@@ -2,7 +2,7 @@ VERSION 1.0 CLASS
 BEGIN
   MultiUse = -1  'True
 END
-Attribute VB_Name = "ASF_ScopeStack"
+Attribute VB_Name = "ASF_ScopeStack_OLD"
 Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
@@ -24,14 +24,14 @@ Private pFrames As Collection ' collection of Map objects (frames)
 Private Sub Class_Initialize()
     Set pFrames = New Collection
     ' initial frame
-    Dim m As New ASF_Map
+    Dim m As New ASF_Map_OLD
     pFrames.Add m
 End Sub
 
-Public Function CaptureByReference() As ASF_ScopeStack
-    ' Create a New ASF_ScopeStack whose frames reference the same Map objects
+Public Function CaptureByReference() As ASF_ScopeStack_OLD
+    ' Create a New ASF_ScopeStack_OLD whose frames reference the same Map objects
     ' currently stored in this ScopeStack's pFrames. Useful for closures.
-    Dim s As New ASF_ScopeStack
+    Dim s As New ASF_ScopeStack_OLD
     Dim refFrames As New Collection
     Dim i As Long
     For i = 1 To pFrames.Count
@@ -42,8 +42,8 @@ Public Function CaptureByReference() As ASF_ScopeStack
 End Function
 ' A new stack over the same frame objects, as closures capture them (shared-write semantics);
 ' same result as LoadRawByRef(RawByRef) without the two intermediate Collections
-Public Function ShareFrames() As ASF_ScopeStack
-    Dim s As ASF_ScopeStack: Set s = New ASF_ScopeStack
+Public Function ShareFrames() As ASF_ScopeStack_OLD
+    Dim s As ASF_ScopeStack_OLD: Set s = New ASF_ScopeStack_OLD
     s.AdoptFrames pFrames
     Set ShareFrames = s
 End Function
@@ -82,15 +82,15 @@ Public Sub LoadRaw(framesCol As Collection) 'expects a collection
     Set pFrames = New Collection
     Dim f As Variant
     For Each f In framesCol
-        If TypeName(f) = "ASF_Map" Then
+        If TypeName(f) = "ASF_Map_OLD" Then
             pFrames.Add f.Clone
         Else
-            Dim tmp As New ASF_Map
+            Dim tmp As New ASF_Map_OLD
             pFrames.Add tmp
         End If
     Next f
     If pFrames.Count = 0 Then
-        Dim mm As New ASF_Map
+        Dim mm As New ASF_Map_OLD
         pFrames.Add mm
     End If
 End Sub
@@ -100,21 +100,21 @@ Public Sub LoadRawByRef(framesCol As Collection)
     Set pFrames = New Collection
     Dim f As Variant
     For Each f In framesCol
-        If TypeName(f) = "ASF_Map" Then
+        If TypeName(f) = "ASF_Map_OLD" Then
             pFrames.Add f
         Else
-            Dim tmp As New ASF_Map
+            Dim tmp As New ASF_Map_OLD
             pFrames.Add tmp
         End If
     Next f
     If pFrames.Count = 0 Then
-        Dim mm2 As New ASF_Map
+        Dim mm2 As New ASF_Map_OLD
         pFrames.Add mm2
     End If
 End Sub
 
 Public Sub Push()
-    Dim fr As New ASF_Map
+    Dim fr As New ASF_Map_OLD
     pFrames.Add fr
 End Sub
 
@@ -126,7 +126,7 @@ End Sub
 ' Frames are read through a typed variable: calls on a Collection item are late-bound
 ' Has: search top->bottom for key
 Public Function Has(key As String) As Boolean
-    Dim i As Long, fr As ASF_Map
+    Dim i As Long, fr As ASF_Map_OLD
     For i = pFrames.Count To 1 Step -1
         Set fr = pFrames(i)
         If fr.Exists(key) Then
@@ -139,7 +139,7 @@ End Function
 
 ' GetValue: search top->bottom
 Public Function GetValue(key As String) As Variant
-    Dim i As Long, fr As ASF_Map, v As Variant
+    Dim i As Long, fr As ASF_Map_OLD, v As Variant
     For i = pFrames.Count To 1 Step -1
         Set fr = pFrames(i)
         If fr.TryGetValue(key, v) Then
@@ -152,7 +152,7 @@ End Function
 
 ' SetValue: write to the first frame where key exists (top->bottom). Otherwise put into top frame.
 Public Sub SetValue(key As String, val As Variant)
-    Dim i As Long, fr As ASF_Map
+    Dim i As Long, fr As ASF_Map_OLD
     For i = pFrames.Count To 1 Step -1
         Set fr = pFrames(i)
         If fr.ReplaceValue(key, val) Then Exit Sub
@@ -166,14 +166,14 @@ End Sub
 ' in the current frame regardless of whether the same name exists in outer frames.
 ' Use this for binding function parameters / declaring locals.
 Public Sub SetLocalValue(key As String, val As Variant)
-    Dim top As ASF_Map
+    Dim top As ASF_Map_OLD
     Set top = pFrames(pFrames.Count)
     top.SetValue key, val
 End Sub
 
-' Clone the ScopeStack (deep): returns a New ASF_ScopeStack with cloned frames
-Public Function Clone() As ASF_ScopeStack
-    Dim s As New ASF_ScopeStack
+' Clone the ScopeStack (deep): returns a New ASF_ScopeStack_OLD with cloned frames
+Public Function Clone() As ASF_ScopeStack_OLD
+    Dim s As New ASF_ScopeStack_OLD
     Dim arr As New Collection
     Dim i As Long
     For i = 1 To pFrames.Count

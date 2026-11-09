@@ -1,20 +1,19 @@
-Attribute VB_Name = "FastVMBench"
-' FastVMBench
-' The tree VM against the bytecode backend (src/ASF bytecode), one workload per aspect of the
-' language. For each workload: the run time of a compiled program on each backend, the cold time
-' (a fresh engine, Compile and the first Run, which includes the bytecode compiler), the result of
-' each backend against the expected one, and the backend that took it (a program the bytecode
-' compiler does not take yet runs on the tree VM: "tree" then). Times are milliseconds per call;
-' each is repeated until it has taken MIN_SECONDS. Needs ASF_BYTECODE = 1.
+Attribute VB_Name = "VersionBench"
+' VersionBench
+' ASF 3.4 (src/old, the classes with the suffix _OLD, which run the AST) against ASF 4 (bytecode),
+' one workload per aspect of the language. For each workload: the run time of a compiled program
+' on each version, the cold time (a fresh engine, Compile and the first Run), and the result of each
+' against the expected one. Times are milliseconds per call; each is repeated until it has taken
+' MIN_SECONDS. Import the classes of src/ and of src/old/ to run it.
 '
-'   RunFastVMBenchmarks
+'   RunVersionBenchmarks
 Option Explicit
 
 Private Const MIN_SECONDS As Double = 0.3
 
-Public Sub RunFastVMBenchmarks()
-    Debug.Print "=== tree VM against bytecode (ms per call) ==="
-    Debug.Print "workload | tree run | bytecode run | speed-up | tree cold | bytecode cold | result | check | backend"
+Public Sub RunVersionBenchmarks()
+    Debug.Print "=== ASF 3.4 against ASF 4 (ms per call) ==="
+    Debug.Print "workload | 3.4 run | 4.0 run | speed-up | 3.4 cold | 4.0 cold | result | check"
     ' expressions and control flow
     Bench "Arithmetic, top level", "let s = 0; for (let i = 1, i <= 300, i += 1) { s = s + i * 2 - 1; }; return s;", "90000"
     Bench "Arithmetic, in a function", "fun f() { let s = 0; for (let i = 1, i <= 300, i += 1) { s = s + i * 2 - 1; }; return s; }; return f();", "90000"
@@ -60,8 +59,8 @@ Public Sub RunFastVMBenchmarks()
     Bench "Inheritance and super", "class A { constructor(x) { this.x = x; } v() { return this.x; } }; class B extends A { constructor(x) { super(x); } w() { return this.v() + 1; } }; let n = 0; for (let i = 1, i <= 100, i += 1) { let b = new B(i); n = n + b.w(); }; return n;", "5150"
     Bench "Static methods", "class M { static sq(x) { return x * x; } }; let s = 0; for (let i = 1, i <= 300, i += 1) { s = s + M.sq(i % 10); }; return s;", "8550"
     Bench "Bound method as a value", "class P { field k = 2; m(x) { return x * this.k; } }; let f = new P().m; let s = 0; for (let i = 1, i <= 300, i += 1) { s = s + f(i); }; return s;", "90300"
-    ' modules (they run on the tree VM; their functions are called through it)
-    Bench "Module function calls", "scwd('" & ModuleFolder() & "'); import { add } from './fastvm_bench_module.vas'; let s = 0; for (let i = 1, i <= 300, i += 1) { s = add(s, i); }; return s;", "45150"
+    ' modules
+    Bench "Module function calls", "scwd('" & ModuleFolder() & "'); import { add } from './bench_module.vas'; let s = 0; for (let i = 1, i <= 300, i += 1) { s = add(s, i); }; return s;", "45150"
     RemoveModule
     Bench "try without throw", "let n = 0; for (let i = 1, i <= 300, i += 1) { try { n += 1; } catch (e) { n -= 1; }; }; return n;", "300"
     Bench "throw and catch", "let n = 0; for (let i = 1, i <= 100, i += 1) { try { throw i; } catch (e) { n = n + e; }; }; return n;", "5050"
@@ -76,7 +75,7 @@ Private Function ModuleFolder() As String
     Dim sep As String: sep = "/"
     If InStr(CurDir$, "\") > 0 Then sep = "\"
     Dim f As Integer: f = FreeFile
-    Open CurDir$ & sep & "fastvm_bench_module.vas" For Output As #f
+    Open CurDir$ & sep & "bench_module.vas" For Output As #f
     Print #f, "fun add(a, b) { return a + b; }; export { add };"
     Close #f
     ModuleFolder = CurDir$
@@ -84,7 +83,7 @@ End Function
 
 Private Sub RemoveModule()
     On Error Resume Next
-    Kill CurDir$ & IIf(InStr(CurDir$, "\") > 0, "\", "/") & "fastvm_bench_module.vas"
+    Kill CurDir$ & IIf(InStr(CurDir$, "\") > 0, "\", "/") & "bench_module.vas"
 End Sub
 
 ' 300 statements, to weigh the compilers
@@ -98,32 +97,29 @@ Private Function LongScript() As String
 End Function
 
 Private Sub Bench(ByVal label As String, ByVal script As String, ByVal expected As String)
-    Dim treeEng As ASF, fastEng As ASF, treeIdx As Long, fastIdx As Long
-    Set treeEng = New ASF
-    treeIdx = treeEng.Compile(script)
-    Set fastEng = New ASF
-    fastEng.FastVM = True
-    fastIdx = fastEng.Compile(script)
-    Dim treeResult As String, fastResult As String
-    treeResult = Shown(treeEng.Run(treeIdx))
-    fastResult = Shown(fastEng.Run(fastIdx))
-    Dim backend As String: backend = fastEng.Backend
-    If backend <> "bytecode" Then backend = "tree (" & fastEng.FallbackReason & ")"
-    Dim treeRun As Double, fastRun As Double
-    treeRun = TimeRun(treeEng, treeIdx)
-    fastRun = TimeRun(fastEng, fastIdx)
+    Dim oldEng As ASF_OLD, newEng As ASF, oldIdx As Long, newIdx As Long
+    Set oldEng = New ASF_OLD
+    oldIdx = oldEng.Compile(script)
+    Set newEng = New ASF
+    newIdx = newEng.Compile(script)
+    Dim oldResult As String, newResult As String
+    oldResult = Shown(oldEng.Run(oldIdx))
+    newResult = Shown(newEng.Run(newIdx))
+    Dim oldRun As Double, newRun As Double
+    oldRun = TimeRun(oldEng, oldIdx)
+    newRun = TimeRun(newEng, newIdx)
     Dim check As String
-    If treeResult <> expected Then
-        check = "tree gives " & treeResult & ", expected " & expected
-    ElseIf fastResult <> treeResult Then
-        check = "DIFFERENT"
+    If newResult <> expected Then
+        check = "4.0 gives " & newResult & ", expected " & expected
+    ElseIf oldResult <> newResult Then
+        check = "3.4 gives " & oldResult
     Else
         check = "ok"
     End If
-    Debug.Print label & " | " & Format$(treeRun, "0.000") & " | " & Format$(fastRun, "0.000") & " | " & _
-                Format$(treeRun / IIf(fastRun > 0, fastRun, 0.001), "0.0") & "x | " & _
+    Debug.Print label & " | " & Format$(oldRun, "0.000") & " | " & Format$(newRun, "0.000") & " | " & _
+                Format$(oldRun / IIf(newRun > 0, newRun, 0.001), "0.0") & "x | " & _
                 Format$(TimeCold(script, False), "0.000") & " | " & Format$(TimeCold(script, True), "0.000") & " | " & _
-                fastResult & " | " & check & " | " & backend
+                newResult & " | " & check
 End Sub
 
 Private Function Shown(ByVal v As Variant) As String
@@ -137,7 +133,7 @@ Private Function Shown(ByVal v As Variant) As String
 End Function
 
 ' Milliseconds per Run of a compiled program
-Private Function TimeRun(ByVal eng As ASF, ByVal idx As Long) As Double
+Private Function TimeRun(ByVal eng As Object, ByVal idx As Long) As Double
     Dim n As Long, i As Long, t0 As Double, el As Double
     Dim r As Variant
     n = 1
@@ -154,16 +150,15 @@ Private Function TimeRun(ByVal eng As ASF, ByVal idx As Long) As Double
     TimeRun = el * 1000 / n
 End Function
 
-' Milliseconds per fresh engine, Compile and first Run
-Private Function TimeCold(ByVal script As String, ByVal fast As Boolean) As Double
+' Milliseconds per fresh engine, Compile and first Run; isNew: ASF 4, else ASF 3.4
+Private Function TimeCold(ByVal script As String, ByVal isNew As Boolean) As Double
     Dim n As Long, i As Long, t0 As Double, el As Double
-    Dim eng As ASF, r As Variant
+    Dim eng As Object, r As Variant
     n = 1
     Do
         t0 = Timer
         For i = 1 To n
-            Set eng = New ASF
-            eng.FastVM = fast
+            If isNew Then Set eng = New ASF Else Set eng = New ASF_OLD
             r = eng.Run(eng.Compile(script))
         Next i
         el = Timer - t0

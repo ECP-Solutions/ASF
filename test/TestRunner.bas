@@ -307,8 +307,14 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("calling_native_app_level",  "calling_array_method_from_collection") Then calling_array_method_from_collection: EndTest
     If StartTest("advanced_prototyping",      "monkey_patch_worksheets_name") Then monkey_patch_worksheets_name: EndTest
     If StartTest("Nullish coalescing",        "nullish_coalescing") Then nullish_coalescing: EndTest
-    If StartTest("Backends",                  "program_from_tokens_on_tree") Then program_from_tokens_on_tree: EndTest
     If StartTest("host_VBA_Expressions",      "write_into_array_from_VBAexpressions") Then write_into_array_from_VBAexpressions: EndTest
+    If StartTest("assignments",               "assignment_index_with_call") Then assignment_index_with_call: EndTest
+    If StartTest("assignments",               "assignment_in_parentheses") Then assignment_in_parentheses: EndTest
+    If StartTest("loops",                     "break_outside_a_loop") Then break_outside_a_loop: EndTest
+    If StartTest("module_system",             "module_system_export_fun") Then module_system_export_fun: EndTest
+    If StartTest("compile_errors",            "compile_errors_messages") Then compile_errors_messages: EndTest
+    If StartTest("compile_errors",            "compile_error_keeps_nothing") Then compile_error_keeps_nothing: EndTest
+    If StartTest("call_trace",                "call_trace_records_calls") Then call_trace_records_calls: EndTest
     On Error GoTo 0
 
     Dim summary As String
@@ -4913,23 +4919,12 @@ TestFail:
     AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
-Private Sub program_from_tokens_on_tree()
+Private Sub write_into_array_from_VBAexpressions()
     On Error GoTo TestFail
-    Set scriptEngine = New ASF
-    Dim progIdx As Long, secondIdx As Long
 
-    With scriptEngine
-        ' compiled for the bytecode backend, run on the tree VM
-        .FastVM = True
-        progIdx = .Compile("fun sq(x) { return x * x; }; let a = [1, 2]; let f = fun(y) { return sq(y) + a[1]; }; return f(a[2]);")
-        secondIdx = .Compile("return `${sq(3)}`;")
-        .FastVM = False
-        .Run progIdx
-        actual = .OUTPUT_ & "|"
-        .Run secondIdx
-        actual = actual & .OUTPUT_
-    End With
-    expected = "5|9"
+    ' VBA Expressions gives arrays from 0: a[1][2] is the second item of the first row
+    actual = CStr(GetResult("a=@({{7;8;9};{1;2;3}}); a[1][2]=42; a[2][3]=5; a[1][4]=0; return `${a}`;"))
+    expected = "[ [ 7, 42, 9, 0 ], [ 1, 2, 5 ] ]"
     AssertEqual expected, actual
 
 TestExit:
@@ -4938,12 +4933,114 @@ TestFail:
     AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
-Private Sub write_into_array_from_VBAexpressions()
+Private Sub assignment_index_with_call()
     On Error GoTo TestFail
 
-    ' VBA Expressions gives arrays from 0: a[1][2] is the second item of the first row
-    actual = CStr(GetResult("a=@({{7;8;9};{1;2;3}}); a[1][2]=42; a[2][3]=5; a[1][4]=0; return `${a}`;"))
-    expected = "[ [ 7, 42, 9, 0 ], [ 1, 2, 5 ] ]"
+    ' the index is evaluated once, before the value is stored
+    actual = CStr(GetResult("let a = [1, 2]; let k = 0; fun g() { k = k + 1; return 2; }; a[g()] = 9; return `${a}|${k}`;"))
+    expected = "[ 1, 9 ]|1"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("let m = [[1, 2], [3, 4]]; let o = {items: [0, 0]}; fun g() { return 2; }; m[g()][1] = 7; o.items[g()] = 5; return `${m} ${o.items}`;"))
+    expected = "[ [ 1, 2 ], [ 7, 4 ] ] [ 0, 5 ]"
+    AssertEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub assignment_in_parentheses()
+    On Error GoTo TestFail
+
+    actual = CStr(GetResult("let a = 1; (a = 5); return a;"))
+    expected = "5"
+    AssertEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub break_outside_a_loop()
+    On Error GoTo TestFail
+
+    ' break and continue outside a loop do nothing; a for step may be any expression
+    actual = CStr(GetResult("break; continue; let n = 0; for (let i = 1, i <= 3, i) { n += 1; if (n > 4) { break; }; }; return n;"))
+    expected = "5"
+    AssertEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub module_system_export_fun()
+    Dim wd As String
+    Dim eng As New ASF
+    wd = ThisWorkbook.path
+    With eng
+        .InjectVariable "wd", wd
+        On Error GoTo TestFail
+        actual = CStr(.Execute(wd & "\main_export_fun.vas"))
+    End With
+    expected = "10 2.5"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Function CompileErrorOf(ByVal src As String) As String
+    Dim eng As New ASF
+    On Error Resume Next
+    eng.Compile src
+    CompileErrorOf = (err.Number - vbObjectError) & " " & err.Description
+End Function
+Private Sub compile_errors_messages()
+    AssertEqual "9025 Expected (condition) { ... } after if", CompileErrorOf("if true { return 1; }; return 2;")
+    AssertEqual "8001 Expected ':' in ternary expression", CompileErrorOf("return 1 ? 2;")
+    AssertEqual "9024 Unbalanced opening or closing parentheses.", CompileErrorOf("return (1 + 2;")
+    AssertEqual "9025 Function 'f' is already defined", CompileErrorOf("fun f() { return 1; }; fun f() { return 2; }; return f();")
+    AssertEqual "8002 Expected ':' after object key", CompileErrorOf("let o = { a 1 }; return 1;")
+    AssertEqual "9025 Fields cannot be static", CompileErrorOf("class A { static field x = 1; }; return 1;")
+    AssertEqual "9025 Invalid assignment target: a call", CompileErrorOf("f() = 3; return 1;")
+    ' a function nothing calls compiles too
+    AssertEqual "8001 Expected ':' in ternary expression", CompileErrorOf("fun g(u) { return u ? 1; }; return 0;")
+End Sub
+Private Sub compile_error_keeps_nothing()
+    On Error GoTo TestFail
+    Dim eng As New ASF, idx As Long
+
+    ' a source that does not compile registers none of its functions
+    On Error Resume Next
+    eng.Compile "fun f() { return 1; }; return 1 ? 2;"
+    On Error GoTo TestFail
+    idx = eng.Compile("fun f() { return 7; }; return f();")
+    eng.Run idx
+    actual = CStr(eng.OUTPUT_)
+    expected = "7"
+    AssertEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub call_trace_records_calls()
+    On Error GoTo TestFail
+    Dim eng As New ASF
+
+    With eng
+        .EnableCallTrace = True
+        .Run .Compile("fun f(x) { return x + 1; }; let g = fun(y) { return f(y) * 2; }; return g(2);")
+        actual = CStr(.OUTPUT_) & "|" & Replace(.GetCallStackTrace, vbCrLf, ";")
+    End With
+    expected = "6|CALL: <anonymous>(2) -> 6;CALL: f(2) -> 3;"
     AssertEqual expected, actual
 
 TestExit:

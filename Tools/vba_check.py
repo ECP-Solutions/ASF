@@ -1,6 +1,6 @@
 """Static checks for compile errors of VBA that LibreOffice Basic lets through.
 
-    python3 Tools/vba_check.py                 # src/*.cls and src/ASF bytecode/*.cls
+    python3 Tools/vba_check.py                 # src/*.cls and src/old/*.cls
     python3 Tools/vba_check.py src/ASF_VM.cls
 
 The LibreOffice edition (libreoffice/tools/run_tests.py) runs the test suites, but LibreOffice
@@ -220,7 +220,7 @@ def check(paths):
 
 if __name__ == "__main__":
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    paths = sys.argv[1:] or sorted(glob.glob(os.path.join(root, "src", "*.cls")) + glob.glob(os.path.join(root, "src", "ASF bytecode", "*.cls")))
+    paths = sys.argv[1:] or sorted(glob.glob(os.path.join(root, "src", "*.cls")) + glob.glob(os.path.join(root, "src", "old", "*.cls")))
     found = check(paths)
     for p in found:
         print(p)
