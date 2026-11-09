@@ -7,6 +7,7 @@ All notable changes for ASF. This file combines the release notes from the proje
 ## [v4.0.0] - 2026-11-09
 https://github.com/ECP-Solutions/ASF/releases/tag/v4.0.0
 
+ASF 4 compiles every script to bytecode and runs it on a virtual machine; ASF 3.4.0 is the last version that runs the AST. The language is the same; the differences are listed under **Changed**.
 
 ## Highlights
 
