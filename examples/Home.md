@@ -52,7 +52,7 @@ Below is a single-file reference describing the **ASF** scripting language featu
 - **Array literal**: `[1, 'a', 3]`  
 - **Object literal**: `{ key: 'value', foo: 1 }`  
 - **Function literal** (expression-level): `fun(x, y) { return x + y; }`  
-- **Top-level named function**: `fun main(a,b) { ... }` — only one top-level named function is accepted; other functions should be function literals assigned to variables.
+- **Named function**: `fun name(a, b) { ... }` — declared at the top level of a script or module; a script may declare as many as it needs, and they can call each other. Inside a function, use a function literal assigned to a variable: `let helper = fun(x) { ... };`.
 
 ---
 
@@ -61,7 +61,7 @@ Below is a single-file reference describing the **ASF** scripting language featu
 - Arithmetic: `+`, `-`, `*`, `/`, `%`, `^` (exponent right-associative)  
 - Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`  
 - Logical: `&&`, `||`, `!`  
-- Bitwise (if implemented): `&`, `|`, `^`, `<<`, `>>`  
+- Bit shifts: `<<`, `>>` (there are no other bitwise operators: `&` joins values as text, `'a' & 1` is `'a1'`; `^` is the exponent; `|` is not an operator)  
 - String concatenation: `+` (JS-like)  
 - **Ternary**: `cond ? exprTrue : exprFalse` (right-associative)
 
