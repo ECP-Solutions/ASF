@@ -46,6 +46,10 @@ This document describes the runtime API exposed by ASF scripts and the VM builti
 ## Value model
 
 - Core types: `Number`, `String`, `Boolean`, `Array` (Variant arrays), `Object` (`ASF_Map`), `Null` (`null` literal), `Closure` (map representing a function), `Empty`.
+- Number literals: `42`, `3.14`, `1.5e10`, `2.5E-3`; the decimal separator is always a point, whatever the locale.
+- In arithmetic and comparisons `true` is 1 and `false` is 0, as in JavaScript (VBA's `True` is -1): `true + 1` is 2, `-true` is -1, `n += x > 0` counts.
+- `%` is JavaScript's remainder: the sign of the dividend and the fraction kept (`5.5 % 2` is 1.5, `-7 % 3` is -1), also past VBA's Long range.
+- As text (`+` with a string, templates, `join`, `toString`, `print`), booleans are `true` and `false`, and numbers are written as JavaScript writes them, with a point whatever the locale: `0.5`, `1000000000000000`, `1e+21`, `1e-7`. Numbers keep up to 15 significant digits, VBA's precision (JavaScript shows up to 17).
 - Arrays are Variant arrays with explicit LBound/UBound.
 - Objects are `ASF_Map` instances (Map-like behavior with `.GetValue` / `.SetValue`).
 
@@ -280,6 +284,14 @@ All string indexing in ASF is **zero-based**. String methods that accept negativ
 
 ---
 
+## Number methods
+
+- `toFixed(digits?)` — `n.toFixed(d)` — The number with `d` decimals (0 to 100, default 0), as text, rounded as JavaScript rounds (the nearer value, the larger on a tie). The decimal separator is always a point, whatever the locale. Beyond 15 decimals the digits are zeros. — `(19.999).toFixed(2) -> '20.00'`, `(1.005).toFixed(2) -> '1.00'`
+- `toString()` — `n.toString()` — The number as text, as `'' + n` gives it. — `(2.5).toString() -> '2.5'`
+- Any other name raises `'name' is not a method of a number`.
+
+---
+
 ## Regex Object API
 ASF provides a **native regex engine** exposed through the `regex()` constructor and slash-regex syntax.
   
@@ -309,13 +321,15 @@ Regex objects are **stateful**, configurable, and reusable, and integrate seamle
 		```
 - `execAll(subject)`
 	- `regex.execAll(subject)`
-	- Returns **all matches** as an array.
-	- Each element is the **full match string only** (groups ignored).
-	- Equivalent to JS global matching.
+	- Returns **all matches** as an array, one element per match.
+	- Each element is an array like `exec` gives: the full match, then its groups.
+	- Equivalent to JS `[...subject.matchAll(re)]`.
 	- Example:
 		```js
 		regex(`\\d+`).execAll('a1b22c333')
-		// -> ['1', '22', '333']
+		// -> [['1'], ['22'], ['333']]
+		regex(`(\\w)(\\d)`).execAll('a1 b2')
+		// -> [['a1', 'a', '1'], ['b2', 'b', '2']]
 		```
 - `test(subject)`
 	- `regex.test(subject)`
@@ -702,7 +716,11 @@ try {
 ## Errors & failure modes
 
 - Many method builtins validate their arguments and return `Empty` if arguments are invalid (for example calling an array method on a non-array base will typically produce `Empty`).
-- Parser/compile errors raise exceptions during `.Compile()`; runtime errors in expressions raise errors inside `.Run()` (try/catch inside ASF scripts can be used to handle runtime exceptions).
+- Syntax errors raise from `.Compile()`, with a message: unbalanced brackets, an operator without its operand (`1 +`, `(a &&)`, `let x = ;`), a `?` without `:`... Nothing of a source that does not compile is kept.
+- `.Run()` and `.Execute()` do not raise: an error that no `catch` takes ends the script, which gives `Empty`, and `LastError` holds the message (or the thrown value).
+- Reading a property or calling a method of `undefined` or `null` is an error, as in JavaScript: `o.missing.x` raises `Cannot read properties of undefined (reading 'x')`. Reading a property an object does not have gives `undefined`.
+- `throw` goes up to the nearest `catch`: out of functions, class methods and constructors, and out of the callbacks of built-in methods (`map`, `filter`, `forEach`, `reduce`, `sort`, `replace`...), which stop at once.
+- An error that is not a `throw` inside a function (a member of `undefined`, a type mismatch) makes that function give `undefined`, and the caller goes on; a `try` inside the function itself takes it. Use `throw` for errors the caller must see.
 - Tests exercise many edge cases — consult `TestRunner.bas` for the canonical expected behavior.
 
 ---
@@ -715,8 +733,8 @@ a = [1,2,3,4,5];
 sum = a.filter(fun(x){ return x > 2 }).reduce(fun(acc,x){ return acc + x }, 0);
 return(sum); // 12
 
-// using bound method as first-class
-m = a.map;
+// a method passed around as a function: wrap it (a.map without a call is undefined)
+m = fun(f){ return a.map(f) };
 b = m(fun(x){ return x * 10 });
 
 // from with mapper

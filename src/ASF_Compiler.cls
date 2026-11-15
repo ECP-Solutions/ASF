@@ -1287,8 +1287,8 @@ Private Function DTopLevel(ByVal from As Long, ByVal upTo As Long) As Collection
     Set DTopLevel = stmts
 End Function
 
-' The statements of a block: a ; at depth 0 ends one,
-' and so does the } that closes a block, unless elseif, else or catch follows
+' The statements of a block: a ; at depth 0 ends one, and so does the } that closes a block (not
+' one inside ( or [, as a function literal passed to a call), unless elseif, else or catch follows
 Private Function DBlock(ByVal from As Long, ByVal upTo As Long) As Collection
     Dim stmts As Collection
     Dim i As Long, s As Long, bD As Long, pD As Long, kD As Long, closed As Boolean, ended As Boolean
@@ -1313,7 +1313,7 @@ Private Function DBlock(ByVal from As Long, ByVal upTo As Long) As Collection
                     Case "{": bD = bD + 1
                     Case "}"
                         If bD > 0 Then bD = bD - 1
-                        If bD = 0 Then
+                        If bD = 0 And pD = 0 And kD = 0 Then
                             i = i + 1
                             If Not (IsWord(i, "elseif") Or IsWord(i, "else") Or IsWord(i, "catch")) Or i >= upTo Then
                                 closed = True
@@ -1406,6 +1406,7 @@ Private Function DPlan(ByVal s As Long, ByVal e As Long) As Variant
         End If
     Next k
     If a > 0 Then
+        If a + 1 >= e Then CompileError "Expected an expression after " & tv_(a)
         If a - s >= 3 And IsTok(s, "PAREN", "[") And IsTok(a - 1, "PAREN", "]") Then
             DPlan = DPlanDestructuring(s, a, e)
         Else
@@ -2009,6 +2010,20 @@ Private Sub DExpr(ByVal s As Long, ByVal e As Long)
     p_ = saveP: lim_ = saveL
 End Sub
 
+' After an operator an operand must follow: 1 + ; and (a &&) are errors
+Private Sub NeedOperand(ByVal after As String)
+    Dim ok As Boolean
+    If p_ < lim_ Then
+        Select Case tt_(p_)
+            Case "OP": ok = (tv_(p_) = "!" Or tv_(p_) = "-")
+            Case "SEP": ok = False
+            Case "PAREN": ok = (tv_(p_) = "(" Or tv_(p_) = "[" Or tv_(p_) = "{")
+            Case Else: ok = True
+        End Select
+    End If
+    If Not ok Then CompileError "Expected an expression after " & after
+End Sub
+
 Private Function PeekOp(ByVal op As String) As Boolean
     If p_ < lim_ Then PeekOp = (tt_(p_) = "OP" And tv_(p_) = op)
 End Function
@@ -2028,9 +2043,11 @@ Private Sub DTernary()
                 DJumpIfFalse start, q, falses
                 lim_ = saveL
                 p_ = q + 1
+                NeedOperand "?"
                 DTernary
                 If Not PeekOp(":") Then CompileError "Expected ':' in ternary expression", ERR_TERNARY
                 p_ = p_ + 1
+                NeedOperand ":"
                 Emit OP_JMP, 0, 0, -1
                 Dim endJump As Long: endJump = nOp_
                 PatchAll falses, nOp_ + 1
@@ -2046,9 +2063,11 @@ Private Sub DTernary()
     DBinary 1
     If PeekOp("?") Then
         p_ = p_ + 1
+        NeedOperand "?"
         DTernary
         If Not PeekOp(":") Then CompileError "Expected ':' in ternary expression", ERR_TERNARY
         p_ = p_ + 1
+        NeedOperand ":"
         DTernary
     End If
 End Sub
@@ -2093,6 +2112,7 @@ Private Sub DBinary(ByVal minPrec As Long)
         prec = DPrec(op)
         If prec = 0 Or prec < minPrec Then Exit Do
         p_ = p_ + 1
+        NeedOperand op
         If mode_ <> 0 Then
             If prec = 1 Or prec = 9 Then DBinary prec Else DBinary prec + 1
         Else
@@ -2180,6 +2200,7 @@ Private Sub DUnary()
         If tt_(p_) = "OP" And (tv_(p_) = "!" Or tv_(p_) = "-") Then
             Dim op As String: op = tv_(p_)
             p_ = p_ + 1
+            NeedOperand op
             Dim start As Long: start = nOp_ + 1
             DUnary
             If mode_ <> 0 Then Exit Sub
@@ -2213,7 +2234,8 @@ Private Sub DPrimary()
     Dim c As Long
     Select Case tt_(p_)
         Case "NUMBER"
-            DPushK CDbl(tv_(p_))
+            ' Val reads a point as the decimal separator whatever the locale, and the exponent
+            DPushK Val(tv_(p_))
             p_ = p_ + 1
         Case "STRING"
             If Len(tv_(p_)) >= 2 And Left$(tv_(p_), 1) = "`" And Right$(tv_(p_), 1) = "`" Then

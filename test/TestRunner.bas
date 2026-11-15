@@ -49,6 +49,17 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("if",                        "if_else_if") Then if_else_if: EndTest
     If StartTest("if",                        "if_else_if_without_else") Then if_else_if_without_else: EndTest
     If StartTest("if",                        "if_else_if_with_elseif") Then if_else_if_with_elseif: EndTest
+    If StartTest("syntax",                    "chain_after_function_literal_in_block") Then chain_after_function_literal_in_block: EndTest
+    If StartTest("syntax",                    "strings_with_the_other_quote") Then strings_with_the_other_quote: EndTest
+    If StartTest("syntax",                    "missing_operand_is_compile_error") Then missing_operand_is_compile_error: EndTest
+    If StartTest("try_catch",                 "throw_from_callbacks") Then throw_from_callbacks: EndTest
+    If StartTest("try_catch",                 "throw_from_methods_and_constructors") Then throw_from_methods_and_constructors: EndTest
+    If StartTest("objects",                   "member_of_undefined_is_error") Then member_of_undefined_is_error: EndTest
+    If StartTest("numbers",                   "number_methods") Then number_methods: EndTest
+    If StartTest("numbers",                   "booleans_in_arithmetic") Then booleans_in_arithmetic: EndTest
+    If StartTest("numbers",                   "number_literals_with_exponent") Then number_literals_with_exponent: EndTest
+    If StartTest("numbers",                   "values_as_text") Then values_as_text: EndTest
+    If StartTest("numbers",                   "remainder_like_javascript") Then remainder_like_javascript: EndTest
     If StartTest("for",                       "for_simple") Then for_simple: EndTest
     If StartTest("for",                       "for_break_continue") Then for_break_continue: EndTest
     If StartTest("while",                     "while_break_continue") Then while_break_continue: EndTest
@@ -491,7 +502,7 @@ Private Sub negation_unary()
     With Globals
         actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
-    expected = "PRINT:-2, True, False"
+    expected = "PRINT:-2, true, false"
     AssertEqual expected, actual
 
 TestExit:
@@ -1951,7 +1962,7 @@ Private Sub array_includes_indexOf_lastIndexOf()
     On Error GoTo TestFail
     actual = CStr(GetResult("a=[1,2,3,2]; inc = a.includes(2); idx = a.indexOf(2);" & _
                             "lidx = a.lastIndexOf(2); return(inc & '|' & idx & '|' & lidx);"))
-    expected = "True|2|4"
+    expected = "true|2|4"
     AssertEqual expected, actual
 TestExit:
     Exit Sub
@@ -2064,7 +2075,7 @@ Private Sub array_entries_and_every_find_combo()
     With Globals
         actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
-    expected = "PRINT:True, PRINT:6"
+    expected = "PRINT:true, PRINT:6"
     AssertEqual expected, actual
 TestExit:
     Exit Sub
@@ -2082,7 +2093,7 @@ Private Sub array_includes_and_index_checks_with_objects()
         actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     ' indexOf returns first occurrence using deep equality; option base is 1
-    expected = "PRINT:1, PRINT:True"
+    expected = "PRINT:1, PRINT:true"
     AssertEqual expected, actual
 TestExit:
     Exit Sub
@@ -4547,7 +4558,7 @@ Private Sub regex_local_match()
     On Error GoTo TestFail
     
     actual = CStr(GetResult("let r = regex(`,`, false, false, false, false); return(r.replace('a,b,c', ';') + '|' + `${r.split('a,b,c')}` + '|' + r.getglobal());"))
-    expected = "a;b,c|[ 'a', 'b,c' ]|False"
+    expected = "a;b,c|[ 'a', 'b,c' ]|false"
     AssertEqual expected, actual
     actual = CStr(GetResult("let r = regex(`,`); r.setglobal(false); let one = r.replace('a,b,c', ';'); r.setglobal(true); return(one + '|' + r.replace('a,b,c', ';'));"))
     expected = "a;b,c|a;b;c"
@@ -4597,10 +4608,10 @@ Private Sub class_methods_named_like_builtins()
     
     actual = CStr(GetResult("class S { constructor() { this.n = 0; } set(x) { this.n = x; } get(d) { return this.n + d; } has(x) { return x == this.n; } }; " & _
                             "let s = new S(); s.set(5); return(`${s.get(1)}|${s.has(5)}|${s.n}`);"))
-    expected = "6|True|5"
+    expected = "6|true|5"
     AssertEqual expected, actual
     actual = CStr(GetResult("let o = { a: 1 }; o.set('b', 2); return(`${o.get('b')}|${o.has('a')}`);"))
-    expected = "2|True"
+    expected = "2|true"
     AssertEqual expected, actual
 
 TestExit:
@@ -4645,7 +4656,7 @@ Private Sub equality_with_arrays_and_objects()
     On Error GoTo TestFail
     actual = CStr(GetResult("let m = [1, 2]; let o = { a: 1 }; let p = o; " & _
                             "return [m == null, m != null, o == null, o == p, o == { a: 1 }, [1, [2]] == [1, [2]], [1] != [2], 'a' == 1, '1' == 1].join('|');"))
-    expected = Join(Array(CStr(False), CStr(True), CStr(False), CStr(True), CStr(False), CStr(True), CStr(True), CStr(False), CStr(True)), "|")
+    expected = "false|true|false|true|false|true|true|false|true"
     AssertEqual expected, actual
     actual = CStr(GetResult("let f = fun(m) { if (m == null) { return 'none'; }; return m.length; }; return `${f(null)} ${f([5, 6])}`;"))
     expected = "none 2"
@@ -4724,13 +4735,14 @@ TestFail:
     Resume TestExit
 End Sub
 Private Sub unknown_member_of_array_or_string()
-    ' a member arrays and strings do not have is undefined, and calling it is an error, not a loop
+    ' a member arrays and strings do not have is undefined, and calling it is an error, not a loop;
+    ' a member of undefined is an error, as in JavaScript
     Dim eng As New ASF
     On Error GoTo TestFail
     actual = CStr(GetResult("return typeof ([1].nope);"))
     expected = "undefined"
     AssertEqual expected, actual
-    actual = CStr(GetResult("let a = [1]; return `${a.nope.x}|${'abc'.nope}`;"))
+    actual = CStr(GetResult("let a = [1]; return `${a.nope}|${'abc'.nope}`;"))
     expected = "|"
     AssertEqual expected, actual
     With eng
@@ -4738,6 +4750,8 @@ Private Sub unknown_member_of_array_or_string()
         AssertEqual "'nope' is not a method of an array", CStr(.LastError)
         AssertEqual "", CStr(.Run(.Compile("return 'abc'.Nope();")))
         AssertEqual "'nope' is not a method of a string", CStr(.LastError)
+        AssertEqual "", CStr(.Run(.Compile("let a = [1]; return a.nope.x;")))
+        AssertEqual "Cannot read properties of undefined (reading 'x')", CStr(.LastError)
     End With
 TestExit:
     Exit Sub
@@ -4793,7 +4807,7 @@ Private Sub typeof_operand()
     expected = "array|string!|number|string|number"
     AssertEqual expected, actual
     actual = CStr(GetResult("let o = {a: [1]}; return [typeof o.a[1], typeof (o).a, typeof ('abc').length, typeof(o.a), typeof (1) + '!', typeof o.a == 'array'].join('|');"))
-    expected = "number|array|number|array|number!|True"
+    expected = "number|array|number|array|number!|true"
     AssertEqual expected, actual
 TestExit:
     Exit Sub
@@ -4806,7 +4820,7 @@ Private Sub missing_property_is_undefined()
     Dim eng As New ASF
     On Error GoTo TestFail
     actual = CStr(GetResult("let o = {a: {b: 2}}; return `${typeof o.nope} ${o.nope == null} ${o.a.b + (o.c ?? 5)}`;"))
-    expected = "undefined True 7"
+    expected = "undefined true 7"
     AssertEqual expected, actual
     With eng
         actual = .Run(.Compile("let o = {a: 1}; return o.nope;"))
@@ -5036,6 +5050,205 @@ Private Sub module_system_export_fun()
     End With
     expected = "10 2.5"
     AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub chain_after_function_literal_in_block()
+    ' inside a block, a call that takes a function literal keeps the rest of its chain
+    Dim eng As New ASF
+    On Error GoTo TestFail
+    actual = CStr(GetResult("let s = ''; if (true) { s = [1, 2].map(fun(x) { return x * 2; }).join(', '); }; return s;"))
+    AssertEqual "2, 4", actual
+    actual = CStr(GetResult("let s = ''; for (let i = 1, i <= 2, i += 1) { s = s + [i].map(fun(x) { return x; }).length; }; return s;"))
+    AssertEqual "11", actual
+    actual = CStr(GetResult("fun f(a) { return a.filter(fun(x) { return x > 1; }).map(fun(x) { return x * 10; }).join('-'); }; return f([1, 2, 3]);"))
+    AssertEqual "20-30", actual
+    actual = CStr(GetResult("fun g() { let c = [fun(o) { return o + 1; }, fun(o) { return o * 2; }]; return c[2](5); }; return g();"))
+    AssertEqual "10", actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub strings_with_the_other_quote()
+    ' a string ends at the quote it starts with; the other quote is text
+    Dim eng As New ASF
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return ""it's"";"))
+    AssertEqual "it's", actual
+    actual = CStr(GetResult("return 'say ""hi""';"))
+    AssertEqual "say ""hi""", actual
+    actual = CStr(GetResult("return ""it\'s \""ok\"""" + '|' + 'it\'s';"))
+    AssertEqual "it's ""ok""|it's", actual
+    actual = CStr(GetResult("return `say ""${'hi'}"" and ${""it's""}`;"))
+    AssertEqual "say ""hi"" and it's", actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub missing_operand_is_compile_error()
+    ' an operator without its operand is a compile error, not undefined
+    Dim eng As New ASF
+    On Error GoTo TestFail
+    AssertEqual "9025 Expected an expression after +", CompileErrorOf("return 1 +;")
+    AssertEqual "9025 Expected an expression after &&", CompileErrorOf("let a = true; return (a &&);")
+    AssertEqual "9025 Expected an expression after *", CompileErrorOf("return 1 * * 2;")
+    AssertEqual "9025 Expected an expression after !", CompileErrorOf("return !;")
+    AssertEqual "9025 Expected an expression after :", CompileErrorOf("return 1 ? 2 :;")
+    AssertEqual "9025 Expected an expression after =", CompileErrorOf("let x = ; return x;")
+    AssertEqual "9025 Expected an expression after +=", CompileErrorOf("let x = 1; x += ; return x;")
+    actual = CStr(GetResult("return -1 + -(2) * 1 + (!(1 > 2) ? 0 : 1);"))
+    AssertEqual "-3", actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub throw_from_callbacks()
+    ' a throw in a callback of map, filter, forEach, sort or replace leaves the method at once
+    Dim eng As New ASF
+    On Error GoTo TestFail
+    actual = CStr(GetResult("try { [1, 2].map(fun(x) { if (x == 2) { throw 'in map'; }; return x; }); } catch (e) { return e; };"))
+    AssertEqual "in map", actual
+    actual = CStr(GetResult("let n = 0; try { [1, 2, 3].forEach(fun(x) { n += 1; if (x == 2) { throw 'stop'; }; }); } catch (e) { return `${n} ${e}`; };"))
+    AssertEqual "2 stop", actual
+    actual = CStr(GetResult("try { [3, 1, 2].sort(fun(a, b) { throw 'in sort'; }); } catch (e) { return e; };"))
+    AssertEqual "in sort", actual
+    actual = CStr(GetResult("try { 'a1'.replace(`/\d/g`, fun(m) { throw 'in replace'; }); } catch (e) { return e; };"))
+    AssertEqual "in replace", actual
+    actual = CStr(GetResult("fun f() { [1].filter(fun(x) { throw 'deep'; }); return 'after'; }; try { return f(); } catch (e) { return e; };"))
+    AssertEqual "deep", actual
+    With eng
+        AssertEqual "", CStr(.Run(.Compile("[1, 2].forEach(fun(x) { throw 'uncaught'; }); return 1;")))
+        AssertEqual "uncaught", CStr(.LastError)
+    End With
+    ' an error that is not a throw still makes the callback give undefined
+    actual = CStr(GetResult("let r = [1, 2].map(fun(x) { let y = null; return x + y.z; }); return r.length;"))
+    AssertEqual "2", actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub throw_from_methods_and_constructors()
+    ' a throw in a method or a constructor goes on to the caller
+    Dim eng As New ASF
+    On Error GoTo TestFail
+    actual = CStr(GetResult("class A { m() { throw 'from method'; } }; try { new A().m(); } catch (e) { return e; }; return 'lost';"))
+    AssertEqual "from method", actual
+    actual = CStr(GetResult("class A { constructor() { throw 'from constructor'; } }; try { let a = new A(); } catch (e) { return e; }; return 'lost';"))
+    AssertEqual "from constructor", actual
+    actual = CStr(GetResult("class B { check(v) { if (v < 0) { throw `negative: ${v}`; }; return v; } }; let b = new B(); try { b.check(1); b.check(-2); } catch (e) { return e; };"))
+    AssertEqual "negative: -2", actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub member_of_undefined_is_error()
+    ' a member of undefined or null is an error, as in JavaScript; a missing property is undefined
+    Dim eng As New ASF
+    On Error GoTo TestFail
+    actual = CStr(GetResult("let o = {a: 1}; try { o.b.c; } catch (e) { return e; };"))
+    AssertEqual "Cannot read properties of undefined (reading 'c')", actual
+    actual = CStr(GetResult("let o = {a: 1}; try { o.b.startsWith('x'); } catch (e) { return e; };"))
+    AssertEqual "Cannot read properties of undefined (reading 'startsWith')", actual
+    actual = CStr(GetResult("let x = null; try { return x.y; } catch (e) { return e; };"))
+    AssertEqual "Cannot read properties of null (reading 'y')", actual
+    actual = CStr(GetResult("let o = {a: {b: 2}}; return `${typeof o.missing} ${o.a.b}`;"))
+    AssertEqual "undefined 2", actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub number_methods()
+    ' toFixed as in JavaScript, always with a point; toString; other names are errors
+    Dim eng As New ASF
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return [(1.005).toFixed(2), (2.5).toFixed(0), (0.125).toFixed(2), (-1.5).toFixed(0), (1234.5678).toFixed(2), (3).toFixed(), (19.999).toFixed(2), (0.000001).toFixed(7)].join(' ');"))
+    AssertEqual "1.00 3 0.13 -2 1234.57 3 20.00 0.0000010", actual
+    actual = CStr(GetResult("let n = 5; return n.toString() + '|' + (2.5).toString();"))
+    AssertEqual "5|2.5", actual
+    With eng
+        AssertEqual "", CStr(.Run(.Compile("let n = 3; return n.toFixed(101);")))
+        AssertEqual "toFixed() digits argument must be between 0 and 100", CStr(.LastError)
+        AssertEqual "", CStr(.Run(.Compile("let n = 3; return n.nope();")))
+        AssertEqual "'nope' is not a method of a number", CStr(.LastError)
+    End With
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub booleans_in_arithmetic()
+    ' in arithmetic and comparisons true is 1 and false 0, as in JavaScript (VBA's True is -1)
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return [true + 1, true * 3, -true, true - false, true / 2, 2 ^ true, 5 % true, 1 << true].join(' ');"))
+    AssertEqual "2 3 -1 1 0.5 2 0 2", actual
+    actual = CStr(GetResult("return [true > 0 ? 'y' : 'n', false < true ? 'y' : 'n', true <= 0 ? 'y' : 'n'].join('');"))
+    AssertEqual "yyn", actual
+    actual = CStr(GetResult("let n = 0; for (let i = 1, i <= 3, i += 1) { n += i > 1; }; let c = true; c += 1; return n * 10 + c;"))
+    AssertEqual "22", actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub number_literals_with_exponent()
+    ' 1e3, 2.5E-3, 4e+2; a name like e after a number is still a name
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return [1e3, 2.5E-3, 4e+2, 1.5e1, 2e3 + 1].join(' ');"))
+    AssertEqual "1000 0.0025 400 15 2001", actual
+    actual = CStr(GetResult("let e = 3; let x = 2; return x * e + 1;"))
+    AssertEqual "7", actual
+    actual = CStr(GetResult("return 12.5 * 2 + 0.25;"))
+    AssertEqual "25.25", actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub values_as_text()
+    ' booleans and numbers become text as in JavaScript, with a point whatever the locale
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return 'x' + true + '|' + `${false}` + '|' + [true, false].join(',') + '|' + (true).toString();"))
+    AssertEqual "xtrue|false|true,false|true", actual
+    actual = CStr(GetResult("return [1e21, 1e15, 0.5, -0.25, 1e-7, -1.5e-7, 0.000001, 2.5e20, 123.456].join(' ');"))
+    AssertEqual "1e+21 1000000000000000 0.5 -0.25 1e-7 -1.5e-7 0.000001 250000000000000000000 123.456", actual
+    actual = CStr(GetResult("return `${1e21} ${1 / 4}` + '|' + (2.5).toString() + '|' + 1e21 + '|' + (1e21).toFixed(2);"))
+    AssertEqual "1e+21 0.25|2.5|1e+21|1e+21", actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub remainder_like_javascript()
+    ' % keeps the fraction and the sign of the dividend, also past VBA's Long range
+    Dim eng As New ASF
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return [5.5 % 2, 10 % 3, -7 % 3, 7 % -3, 2.5 % 1, 3000000000 % 7, 7.5 % -2].join(' ');"))
+    AssertEqual "1.5 1 -1 1 0.5 4 1.5", actual
+    actual = CStr(GetResult("let n = 0; for (let i = 1, i <= 9, i += 1) { if (i % 3 == 0) { n += 1; }; }; return n;"))
+    AssertEqual "3", actual
+    With eng
+        AssertEqual "", CStr(.Run(.Compile("return 5 % 0;")))
+        AssertEqual "Division by zero", CStr(.LastError)
+    End With
 TestExit:
     Exit Sub
 TestFail:

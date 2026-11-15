@@ -180,16 +180,19 @@ All numbers are floating-point:
 let integer = 42;
 let decimal = 3.14159;
 let negative = -100;
-let scientific = 1.5e10;
+let scientific = 1.5e10;   // also 2.5E-3, 4e+2
 ```
+
+The decimal separator of a number in a script is always a point, whatever the locale.
 
 #### String
 
-Strings are enclosed in single quotes:
+Strings are enclosed in single or double quotes; a string ends at the quote it starts with, so the other quote is plain text (`\'` and `\"` escape a quote of either kind):
 
 ```javascript
 let name = 'John Doe';
-let message = 'Hello, World!';
+let message = "it's ready";
+let quoted = 'say "hi"';
 let empty = '';
 ```
 
@@ -206,6 +209,15 @@ let arr = 'test1test2'.match(`/t(e)(st(\d?))/g`)
 ```javascript
 let isTrue = true;
 let isFalse = false;
+```
+
+In arithmetic and comparisons `true` counts as 1 and `false` as 0, as in JavaScript:
+
+```javascript
+let count = 0;
+count += 5 > 3;      // 1
+print(true + true);  // 2
+print(-true);        // -1
 ```
 
 #### Null

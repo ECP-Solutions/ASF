@@ -11,7 +11,7 @@ It is generated from the VBA sources in [`src/`](../src), which stay the single 
 
 ## Installation
 
-*Tools > Extension Manager > Add...* and pick `ASF.oxt`, or from a terminal:
+[`ASF.oxt`](ASF.oxt), in this folder, is the extension built from `src/`. Install it with *Tools > Extension Manager > Add...*, or from a terminal:
 
 ```sh
 unopkg add ASF.oxt
@@ -85,7 +85,7 @@ VBA Expressions 1.2.0 cannot evaluate expressions that contain variables on Libr
 python3 libreoffice/tools/build.py
 ```
 
-writes the library to `libreoffice/dist/ASF/` and the extension to `libreoffice/dist/ASF.oxt`.
+writes the library to `libreoffice/dist/ASF/` and the extension to `libreoffice/dist/ASF.oxt`; copy that file to `libreoffice/ASF.oxt` to publish a new build.
 
 Code in `src/` must not resize an array in a one-line `If` (`If n > UBound(a) Then ReDim Preserve a(...)`): LibreOffice then drops later writes to that array without an error. Use a block `If`.
 
