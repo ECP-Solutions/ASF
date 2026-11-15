@@ -1,6 +1,6 @@
 # Portable examples: one script, the whole office suite
 
-Six ASF scripts run unchanged in the six office applications: Excel, Word and PowerPoint, and LibreOffice Calc, Writer and Impress. The same `budget.vas` writes a sheet in Excel or Calc, a document with headings and a table in Word or Writer, and slides in PowerPoint or Impress. Until now no macro code ran in both suites: VBA does not run in LibreOffice, and LibreOffice Basic and its UNO API do not run in Microsoft Office. With ASF the logic is written once, in `.vas` files, and each suite only needs the engine and a host of a few lines.
+Seven ASF scripts run unchanged in the six office applications: Excel, Word and PowerPoint, and LibreOffice Calc, Writer and Impress. The same `budget.vas` writes a sheet in Excel or Calc, a document with headings and a table in Word or Writer, and slides in PowerPoint or Impress. Until now no macro code ran in both suites: VBA does not run in LibreOffice, and LibreOffice Basic and its UNO API do not run in Microsoft Office. With ASF the logic is written once, in `.vas` files, and each suite only needs the engine and a host of a few lines.
 
 | Script | Does | Reads (in a spreadsheet) |
 |---|---|---|
@@ -10,8 +10,9 @@ Six ASF scripts run unchanged in the six office applications: Excel, Word and Po
 | `price-revision.vas` | price revision with a polynomial formula: coefficient Kt, revised amount and adjustment of every period | `PriceIndices`: Period, Certified, Labour, Materials, Energy |
 | `workreports.vas` | checks of the daily work reports against the budget: bad codes, unknown items and units, quantities, crews, dates | `WorkReports` and `Budget` |
 | `cleanup.vas` | codes, units and descriptions of supplier item lists normalised with regular expressions | `Cleanup`: Code, Unit, Description |
+| `quality-report.vas` | quality checks of production readings, written as classes in a module (`lib/checks.vas`: a base class and three that extend it): bad batch codes, values out of range, missing inspectors | `Readings`: Batch, Line, Temperature, Pressure, Inspector |
 
-In a spreadsheet that has the sheet, a script reads it: change the numbers and run it again. Elsewhere (Word, Writer, PowerPoint, Impress, or an empty workbook) it uses the sample project of `scripts/data/project.vas`.
+In a spreadsheet that has the sheet, a script reads it: change the numbers and run it again. Elsewhere (Word, Writer, PowerPoint, Impress, or an empty workbook) it uses the sample data of `scripts/data/project.vas`.
 
 ## How it works
 
@@ -57,6 +58,7 @@ The scripts need ASF 3.3.2 or later (the classes of `src/`, or `ASF.oxt` 3.3.2).
 - Round with `roundTo` or `round2` of `lib/table.vas` when the result must match to the cent: `Math.round` rounds half to even, as VBA does, while these round half away from zero. Format with `show` and `dateText`, which do not depend on the locale.
 - Put what several scripts share in a module and `import` it: the hosts set the scripts folder as the working directory, so `./lib/office.vas` resolves in both suites.
 - A `let` inside a nested function assigns a variable of the same name in the enclosing function, as ASF functions share the scope they are written in: give inner variables their own names.
+- Inside a function literal, `this` is not the method's: a callback in a method reads the object through a variable (`let check = this;`), as in JavaScript's functions.
 - Keep scripts plain ASCII and write other characters as escapes (`²`), so that every host reads the files the same way.
 
 ## Checking the examples
@@ -70,8 +72,8 @@ python3 examples/portable/tools/run_lo.py      # runs every script in Calc, Writ
 
 ## Files
 
-- `scripts/`: the six scripts; `lib/office.vas` and `lib/table.vas`; `data/project.vas`, the sample project.
+- `scripts/`: the seven scripts; `lib/office.vas`, `lib/table.vas` and `lib/checks.vas`; `data/project.vas`, the sample data.
 - `hosts/`: `OfficeHost.bas` (Excel, Word, PowerPoint) and `LibreOfficeHost.bas` (Calc, Writer, Impress).
 - `data/`: the sample tables as CSV. `expected/`: what every script writes in Calc, Writer and Impress.
 - `portable-examples.ods`, `.odt`, `.odp`, `.xlsx`: the documents, built by `run_lo.py`.
-- `tools/`: `make_data.py` and `run_lo.py`.
+- `tools/`: `make_data.py`, `run_lo.py` and `expected.py` (an independent reference of the results, `expected/<sheet> result.csv`).

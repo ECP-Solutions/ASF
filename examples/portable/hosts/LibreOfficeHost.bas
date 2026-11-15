@@ -10,10 +10,11 @@ Sub RunProgress : RunScript "progress.vas" : End Sub
 Sub RunPriceRevision : RunScript "price-revision.vas" : End Sub
 Sub RunWorkReports : RunScript "workreports.vas" : End Sub
 Sub RunCleanup : RunScript "cleanup.vas" : End Sub
+Sub RunQualityReport : RunScript "quality-report.vas" : End Sub
 
 Sub RunAll
     Dim s As Variant, msg As String
-    For Each s In Array("hello.vas", "budget.vas", "progress.vas", "price-revision.vas", "workreports.vas", "cleanup.vas")
+    For Each s In Array("hello.vas", "budget.vas", "progress.vas", "price-revision.vas", "workreports.vas", "cleanup.vas", "quality-report.vas")
         msg = msg & RunScriptOn(ThisComponent, ScriptsFolder(ThisComponent), s) & Chr(10)
     Next s
     MsgBox msg, 64, "ASF"

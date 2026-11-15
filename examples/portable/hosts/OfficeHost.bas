@@ -11,10 +11,11 @@ Public Sub RunProgress():      RunScript "progress.vas":       End Sub
 Public Sub RunPriceRevision(): RunScript "price-revision.vas": End Sub
 Public Sub RunWorkReports():   RunScript "workreports.vas":    End Sub
 Public Sub RunCleanup():       RunScript "cleanup.vas":        End Sub
+Public Sub RunQualityReport(): RunScript "quality-report.vas": End Sub
 
 Public Sub RunAll()
     Dim s As Variant, msg As String
-    For Each s In Array("hello.vas", "budget.vas", "progress.vas", "price-revision.vas", "workreports.vas", "cleanup.vas")
+    For Each s In Array("hello.vas", "budget.vas", "progress.vas", "price-revision.vas", "workreports.vas", "cleanup.vas", "quality-report.vas")
         msg = msg & RunScriptOn(ActiveDoc(), CStr(s)) & vbLf
     Next s
     MsgBox msg, vbInformation, "ASF"

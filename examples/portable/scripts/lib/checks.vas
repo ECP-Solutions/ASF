@@ -1,0 +1,48 @@
+// Quality checks as classes: a check looks at one column of every record and returns the records
+// that fail it. run is written once, in Check; each subclass only says what failing means.
+class Check {
+    constructor(column, label) {
+        this.column = column;
+        this.label = label;
+    }
+    fails(value) {
+        return false;
+    }
+    run(records) {
+        // a function literal has its own this, as in JavaScript: the check goes in by a variable
+        let check = this;
+        return records.filter(fun(r) { return check.fails(r.get(check.column)); });
+    }
+};
+
+class RequiredCheck extends Check {
+    constructor(column) {
+        super(column, `${column} is missing`);
+    }
+    fails(value) {
+        return typeof value == 'undefined' || `${value}`.trim() == '';
+    }
+};
+
+class RangeCheck extends Check {
+    constructor(column, min, max) {
+        super(column, `${column} outside ${min} to ${max}`);
+        this.min = min;
+        this.max = max;
+    }
+    fails(value) {
+        return typeof value != 'number' || value < this.min || value > this.max;
+    }
+};
+
+class PatternCheck extends Check {
+    constructor(column, pattern, label) {
+        super(column, label);
+        this.re = regex(pattern);
+    }
+    fails(value) {
+        return !this.re.test(`${value}`);
+    }
+};
+
+export { Check, RequiredCheck, RangeCheck, PatternCheck };

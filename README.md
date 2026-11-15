@@ -32,7 +32,9 @@ VS Code Integration|![ASF-code](/docs/assets/img/ASF.gif)
 
 ASF also runs on LibreOffice as the `ASF.oxt` extension, generated from the same sources. Installation, usage and differences: [libreoffice/README.md](libreoffice/README.md).
 
-The same `.vas` scripts run in the whole of both suites: the six of [examples/portable](examples/portable/README.md) write a sheet in Excel or Calc, a document in Word or Writer and slides in PowerPoint or Impress, through one small host per suite.
+The same `.vas` scripts run in the whole of both suites: the seven of [examples/portable](examples/portable/README.md) write a sheet in Excel or Calc, a document in Word or Writer and slides in PowerPoint or Impress, through one small host per suite.
+
+[examples/use-cases](examples/use-cases/README.md) shows four ways to put ASF to work, each with code that runs and is checked: business rules that users edit in a sheet, regular expressions as worksheet functions in Excel (Windows and Mac) and Calc, data pipelines that read a sheet once and write it once, and JavaScript-style classes and modules across the office suites.
 
 ```vb
 GlobalScope.BasicLibraries.LoadLibrary "ASF"
