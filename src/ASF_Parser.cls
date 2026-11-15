@@ -37,7 +37,7 @@ Public Function Tokenize(src As String) As Collection
     Dim depthVB As Long
     Dim jvb As Long
     Dim j3 As Long
-    Dim j2 As Long
+    Dim j2 As Long, k2 As Long
     Dim nx As String
     Dim cj As String
     Dim sb As String
@@ -260,6 +260,19 @@ ContinueDo:
                     Do While j2 <= n And mid$(sourceCode, j2, 1) Like "[0-9.]"
                         j2 = j2 + 1
                     Loop
+                    ' an exponent: 1e21, 2.5E-3, 4e+2
+                    If j2 < n And LCase$(mid$(sourceCode, j2, 1)) = "e" Then
+                        k2 = j2 + 1
+                        If mid$(sourceCode, k2, 1) = "+" Or mid$(sourceCode, k2, 1) = "-" Then k2 = k2 + 1
+                        If k2 <= n Then
+                            If mid$(sourceCode, k2, 1) Like "[0-9]" Then
+                                Do While k2 <= n And mid$(sourceCode, k2, 1) Like "[0-9]"
+                                    k2 = k2 + 1
+                                Loop
+                                j2 = k2
+                            End If
+                        End If
+                    End If
                     toks.Add Array("NUMBER", mid$(sourceCode, i, j2 - i))
                     i = j2
                     GoTo Tokenize_SkipToLoopEnd

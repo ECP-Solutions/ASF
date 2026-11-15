@@ -46,6 +46,8 @@ This document describes the runtime API exposed by ASF scripts and the VM builti
 ## Value model
 
 - Core types: `Number`, `String`, `Boolean`, `Array` (Variant arrays), `Object` (`ASF_Map`), `Null` (`null` literal), `Closure` (map representing a function), `Empty`.
+- Number literals: `42`, `3.14`, `1.5e10`, `2.5E-3`; the decimal separator is always a point, whatever the locale.
+- In arithmetic and comparisons `true` is 1 and `false` is 0, as in JavaScript (VBA's `True` is -1): `true + 1` is 2, `-true` is -1, `n += x > 0` counts.
 - Arrays are Variant arrays with explicit LBound/UBound.
 - Objects are `ASF_Map` instances (Map-like behavior with `.GetValue` / `.SetValue`).
 

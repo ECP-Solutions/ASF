@@ -274,24 +274,47 @@ X8: ' ADD
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
 X9: ' SUB
-    stk_(sp - 1) = stk_(sp - 1) - stk_(sp)
+    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+        stk_(sp - 1) = NumOf(stk_(sp - 1)) - NumOf(stk_(sp))
+    Else
+        stk_(sp - 1) = stk_(sp - 1) - stk_(sp)
+    End If
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
 X10: ' MUL
-    stk_(sp - 1) = stk_(sp - 1) * stk_(sp)
+    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+        stk_(sp - 1) = NumOf(stk_(sp - 1)) * NumOf(stk_(sp))
+    Else
+        stk_(sp - 1) = stk_(sp - 1) * stk_(sp)
+    End If
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
 X11: ' DIV
+    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+        rv = NumOf(stk_(sp))
+        stk_(sp) = rv
+        rv = NumOf(stk_(sp - 1))
+        stk_(sp - 1) = rv
+        rv = Empty
+    End If
     If stk_(sp) = 0 Then Err.Raise vbObjectError + 2001, "VM.EvalExprNode", "Division by zero"
     stk_(sp - 1) = stk_(sp - 1) / stk_(sp)
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
 X12: ' MOD
-    stk_(sp - 1) = stk_(sp - 1) Mod stk_(sp)
+    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+        stk_(sp - 1) = NumOf(stk_(sp - 1)) Mod NumOf(stk_(sp))
+    Else
+        stk_(sp - 1) = stk_(sp - 1) Mod stk_(sp)
+    End If
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
 X13: ' POW
-    stk_(sp - 1) = stk_(sp - 1) ^ stk_(sp)
+    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+        stk_(sp - 1) = NumOf(stk_(sp - 1)) ^ NumOf(stk_(sp))
+    Else
+        stk_(sp - 1) = stk_(sp - 1) ^ stk_(sp)
+    End If
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
 X14: ' EQ
@@ -315,22 +338,38 @@ X15: ' NE
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
 X16: ' LT
-    t = (stk_(sp - 1) < stk_(sp))
+    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+        t = (NumOf(stk_(sp - 1)) < NumOf(stk_(sp)))
+    Else
+        t = (stk_(sp - 1) < stk_(sp))
+    End If
     stk_(sp - 1) = t
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
 X17: ' LE
-    t = (stk_(sp - 1) <= stk_(sp))
+    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+        t = (NumOf(stk_(sp - 1)) <= NumOf(stk_(sp)))
+    Else
+        t = (stk_(sp - 1) <= stk_(sp))
+    End If
     stk_(sp - 1) = t
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
 X18: ' GT
-    t = (stk_(sp - 1) > stk_(sp))
+    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+        t = (NumOf(stk_(sp - 1)) > NumOf(stk_(sp)))
+    Else
+        t = (stk_(sp - 1) > stk_(sp))
+    End If
     stk_(sp - 1) = t
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
 X19: ' GE
-    t = (stk_(sp - 1) >= stk_(sp))
+    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+        t = (NumOf(stk_(sp - 1)) >= NumOf(stk_(sp)))
+    Else
+        t = (stk_(sp - 1) >= stk_(sp))
+    End If
     stk_(sp - 1) = t
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
@@ -354,7 +393,11 @@ X23: ' NOT
     stk_(sp) = t
     pc = pc + 1: GoTo Dispatch
 X24: ' NEG
-    stk_(sp) = -CDbl(stk_(sp))
+    If VarType(stk_(sp)) = vbBoolean Then
+        stk_(sp) = -CDbl(NumOf(stk_(sp)))
+    Else
+        stk_(sp) = -CDbl(stk_(sp))
+    End If
     pc = pc + 1: GoTo Dispatch
 X25: ' TYPEOF
     rv = RT_.TypeOfValue(stk_(sp))
@@ -457,16 +500,32 @@ X39: ' INCG global a += constant b
     End If
     pc = pc + 1: GoTo Dispatch
 X40: ' JNLT
-    t = (stk_(sp - 1) < stk_(sp))
+    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+        t = (NumOf(stk_(sp - 1)) < NumOf(stk_(sp)))
+    Else
+        t = (stk_(sp - 1) < stk_(sp))
+    End If
     GoTo CompareJump
 X41: ' JNLE
-    t = (stk_(sp - 1) <= stk_(sp))
+    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+        t = (NumOf(stk_(sp - 1)) <= NumOf(stk_(sp)))
+    Else
+        t = (stk_(sp - 1) <= stk_(sp))
+    End If
     GoTo CompareJump
 X42: ' JNGT
-    t = (stk_(sp - 1) > stk_(sp))
+    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+        t = (NumOf(stk_(sp - 1)) > NumOf(stk_(sp)))
+    Else
+        t = (stk_(sp - 1) > stk_(sp))
+    End If
     GoTo CompareJump
 X43: ' JNGE
-    t = (stk_(sp - 1) >= stk_(sp))
+    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+        t = (NumOf(stk_(sp - 1)) >= NumOf(stk_(sp)))
+    Else
+        t = (stk_(sp - 1) >= stk_(sp))
+    End If
     GoTo CompareJump
 X44: ' JNEQ
     ' two numbers (Integer, Long, Single, Double: % gives a Long) compare directly
@@ -1938,7 +1997,10 @@ End Function
 Private Function AddValues(ByRef a As Variant, ByRef b As Variant) As Variant
     If Not IsObject(a) And Not IsObject(b) Then
         If VarType(a) <> vbString And VarType(b) <> vbString Then
-            If VarType(a) < vbArray And VarType(b) < vbArray Then AddValues = a + b: Exit Function
+            If VarType(a) < vbArray And VarType(b) < vbArray Then
+                If VarType(a) = vbBoolean Or VarType(b) = vbBoolean Then AddValues = NumOf(a) + NumOf(b) Else AddValues = a + b
+                Exit Function
+            End If
             RaiseOperandError "+", a, b
         End If
     ElseIf TypeName(a) <> "String" And TypeName(b) <> "String" Then
@@ -1946,6 +2008,17 @@ Private Function AddValues(ByRef a As Variant, ByRef b As Variant) As Variant
         AddValues = a + b: Exit Function
     End If
     AddValues = TextOf(a) & TextOf(b)
+End Function
+
+' A value in arithmetic: true is 1 and false 0, as in JavaScript (VBA's True is -1)
+Private Function NumOf(ByRef v As Variant) As Variant
+    If VarType(v) = vbBoolean Then
+        If v Then NumOf = 1# Else NumOf = 0#
+    ElseIf IsObject(v) Then
+        Set NumOf = v
+    Else
+        NumOf = v
+    End If
 End Function
 
 ' A side of + or & with a string: arrays and objects as a template prints them, null as nothing
@@ -1957,7 +2030,8 @@ Private Function TextOf(ByRef v As Variant) As String
     End If
 End Function
 
-Private Function ShiftValues(ByRef a As Variant, ByRef b As Variant, ByVal toLeft As Boolean) As Variant
+Private Function ShiftValues(ByVal a As Variant, ByVal b As Variant, ByVal toLeft As Boolean) As Variant
+    a = NumOf(a): b = NumOf(b)
     If IsNumeric(a) And IsNumeric(b) Then
         If toLeft Then
             ShiftValues = Floor(Floor(a) * (2 ^ Abs(Floor(b))))

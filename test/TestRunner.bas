@@ -56,6 +56,8 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("try_catch",                 "throw_from_methods_and_constructors") Then throw_from_methods_and_constructors: EndTest
     If StartTest("objects",                   "member_of_undefined_is_error") Then member_of_undefined_is_error: EndTest
     If StartTest("numbers",                   "number_methods") Then number_methods: EndTest
+    If StartTest("numbers",                   "booleans_in_arithmetic") Then booleans_in_arithmetic: EndTest
+    If StartTest("numbers",                   "number_literals_with_exponent") Then number_literals_with_exponent: EndTest
     If StartTest("for",                       "for_simple") Then for_simple: EndTest
     If StartTest("for",                       "for_break_continue") Then for_break_continue: EndTest
     If StartTest("while",                     "while_break_continue") Then while_break_continue: EndTest
@@ -5182,6 +5184,36 @@ Private Sub number_methods()
         AssertEqual "", CStr(.Run(.Compile("let n = 3; return n.nope();")))
         AssertEqual "'nope' is not a method of a number", CStr(.LastError)
     End With
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub booleans_in_arithmetic()
+    ' in arithmetic and comparisons true is 1 and false 0, as in JavaScript (VBA's True is -1)
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return [true + 1, true * 3, -true, true - false, true / 2, 2 ^ true, 5 % true, 1 << true].join(' ');"))
+    AssertEqual "2 3 -1 1 0.5 2 0 2", actual
+    actual = CStr(GetResult("return [true > 0 ? 'y' : 'n', false < true ? 'y' : 'n', true <= 0 ? 'y' : 'n'].join('');"))
+    AssertEqual "yyn", actual
+    actual = CStr(GetResult("let n = 0; for (let i = 1, i <= 3, i += 1) { n += i > 1; }; let c = true; c += 1; return n * 10 + c;"))
+    AssertEqual "22", actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub number_literals_with_exponent()
+    ' 1e3, 2.5E-3, 4e+2; a name like e after a number is still a name
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return [1e3, 2.5E-3, 4e+2, 1.5e1, 2e3 + 1].join(' ');"))
+    AssertEqual "1000 0.0025 400 15 2001", actual
+    actual = CStr(GetResult("let e = 3; let x = 2; return x * e + 1;"))
+    AssertEqual "7", actual
+    actual = CStr(GetResult("return 12.5 * 2 + 0.25;"))
+    AssertEqual "25.25", actual
 TestExit:
     Exit Sub
 TestFail:

@@ -2234,7 +2234,8 @@ Private Sub DPrimary()
     Dim c As Long
     Select Case tt_(p_)
         Case "NUMBER"
-            DPushK CDbl(tv_(p_))
+            ' Val reads a point as the decimal separator whatever the locale, and the exponent
+            DPushK Val(tv_(p_))
             p_ = p_ + 1
         Case "STRING"
             If Len(tv_(p_)) >= 2 And Left$(tv_(p_), 1) = "`" And Right$(tv_(p_), 1) = "`" Then

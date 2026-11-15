@@ -16,6 +16,8 @@ All notable changes for ASF. This file combines the release notes from the proje
     - **Strings with the other quote** — `"it's"` and `'say "hi"'`: a string now ends at the quote it starts with. Double quotes were turned into single quotes before reading the script, so `"it's"` ended after `it`. The content of `@(...)` still goes to VBA Expressions with single quotes.
     - **An operator without its operand** — `1 +`, `(a &&)`, `!`, `1 ? 2 :`, `let x = ;` compiled and gave `undefined` or `false`; they raise `Expected an expression after ...` from `Compile`.
     - **Members of `undefined` and `null`** — `o.missing.x` and `o.missing.trim()` gave `undefined`; they raise `Cannot read properties of undefined (reading 'x')`, as in JavaScript. A missing property is still `undefined`.
+    - **Booleans in arithmetic** — `true` counted as -1, VBA's value: `true + 1` gave 0 and `-(2) * !false` gave 2. In arithmetic, shifts and comparisons `true` is now 1 and `false` 0, as in JavaScript.
+    - **Number literals** — `1e21`, `2.5E-3` and `4e+2` are numbers (the exponent was read as a name), and literals are read with a point as the decimal separator whatever the locale (they went through `CDbl`, which follows the regional settings).
     - **`execAll` in the documentation** — it returns one array per match (the match and its groups), as the tests expect; `docs/API.md` said it returned the matched strings.
     - **`else if`** — `if (a) { } else if (b) { } else { }` is the same as `elseif`: each condition is tested. ASF 3 and 4.0 read `else if (b) { ... }` as `else { ... }`, without testing `b`, and dropped the `else` after it, with no error.
 
