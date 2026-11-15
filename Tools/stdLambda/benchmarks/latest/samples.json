@@ -1,0 +1,17 @@
+﻿{
+    "operating_system":  "Windows (64-bit) NT 10.00",
+    "description":  "Compile: fresh object + compile (stdLambda protInit, ASF New + Compile). Run: one call of the compiled object with the workload\u0027s arguments. Results checked before each timed cell.",
+    "target_batch_ms":  30,
+    "cpu":  "Intel(R) Core(TM) i7-4500U CPU @ 1.80GHz",
+    "measured_at_utc":  "2026-11-15T07:36:30.6058241+00:00",
+    "engines":  [
+                    "stdLambda",
+                    "ASF"
+                ],
+    "stdvba_commit":  "230aea3aef43cd4bb78a728e7a18f70e11b9a77b",
+    "benchmark_sha256":  "D284BDDA5F4A3690272C0D93975BFA300C1FC5CB7C5CCAF14A773AA11E13FF18",
+    "office":  "Excel 16.0 build 20228",
+    "asf_commit":  "a0428c80b1f4f8b71c7581bfa5a4b0224daba560",
+    "timer":  "QueryPerformanceCounter",
+    "samples":  5
+}
