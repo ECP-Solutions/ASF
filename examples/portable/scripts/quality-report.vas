@@ -1,0 +1,37 @@
+// Quality report of a production line: the checks of lib/checks.vas, classes that extend one
+// another, run over the readings. Reads the sheet Readings (Batch | Line | Temperature | Pressure |
+// Inspector) when the document is a spreadsheet that has it, and the sample readings otherwise.
+import { open } from './lib/office.vas';
+import { records } from './lib/table.vas';
+import { RequiredCheck, RangeCheck, PatternCheck } from './lib/checks.vas';
+import { readings } from './data/project.vas';
+
+let doc = open($1);
+let rows = records(doc.input('Readings', readings));
+let checks = [
+    new PatternCheck('Batch', `^B\d{4}-[A-Z]$`, 'Batch code is not B0000-X'),
+    new RangeCheck('Temperature', 180, 220),
+    new RangeCheck('Pressure', 1.5, 2.5),
+    new RequiredCheck('Inspector')
+];
+
+let results = [['Check', 'Failed', 'Rows']];
+let failures = 0;
+for (let check of checks) {
+    let bad = check.run(rows);
+    failures += bad.length;
+    results.push([check.label, bad.length, bad.map(fun(r) { return r.get('_row'); }).join(', ')]);
+};
+
+let out = doc.report('Quality check', `${rows.length} readings, ${checks.length} checks, ${failures} failures`);
+out.section('Checks');
+out.table(results);
+out.section('Verdict');
+if (failures == 0) {
+    out.line('Every reading passes every check.');
+} else if (failures <= 2) {
+    out.line('A few readings need a second look.');
+} else {
+    out.line('The line needs attention before the next batch.');
+};
+return out.done();

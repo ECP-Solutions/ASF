@@ -20,8 +20,9 @@ ROOT = os.path.dirname(os.path.dirname(BASE))
 sys.path.insert(0, os.path.join(ROOT, "libreoffice", "tools"))
 import build  # noqa: E402
 
-SCRIPTS = ["hello.vas", "budget.vas", "progress.vas", "price-revision.vas", "workreports.vas", "cleanup.vas"]
-SHEETS = ["Budget", "WorkReports", "Progress", "PriceIndices", "Cleanup"]
+SCRIPTS = ["hello.vas", "budget.vas", "progress.vas", "price-revision.vas", "workreports.vas", "cleanup.vas",
+           "quality-report.vas"]
+SHEETS = ["Budget", "WorkReports", "Progress", "PriceIndices", "Cleanup", "Readings"]
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 NUMBER = re.compile(r"-?\d+(\.\d+)?")
 
@@ -125,7 +126,8 @@ def dump_slides(doc):
 
 
 TITLES = {"hello.vas": "Hello from ASF", "budget.vas": "Budget summary", "progress.vas": "Progress certificate",
-          "price-revision.vas": "Price revision", "workreports.vas": "Work report checks", "cleanup.vas": "Item list cleanup"}
+          "price-revision.vas": "Price revision", "workreports.vas": "Work report checks", "cleanup.vas": "Item list cleanup",
+          "quality-report.vas": "Quality check"}
 
 
 def main(argv):

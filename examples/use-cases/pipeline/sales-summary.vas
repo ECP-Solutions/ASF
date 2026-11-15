@@ -1,0 +1,69 @@
+// Sales summary: one read of the Sales sheet, every calculation in ASF, one write.
+// $1: the Sales table as Range.Value2 gives it: region | product | month | units | price, with the
+// month as text (2026-01). Returns two tables for the host to write: revenue by region, with its
+// share and its best-selling product, and revenue by month, with the change on the month before.
+fun round2(x) {
+    return Math.floor(x * 100 + 0.5) / 100;
+};
+
+// the column of each name, so the columns can be in any order
+let header = $1[1];
+let col = {};
+for (let c = 1, c <= header.length, c += 1) {
+    col.set(header[c], c);
+};
+
+let regions = {};
+let months = {};
+let total = 0;
+for (let i = 2, i <= $1.length, i += 1) {
+    let row = $1[i];
+    let region = row[col.region];
+    let product = row[col.product];
+    let month = `${row[col.month]}`;
+    let revenue = row[col.units] * row[col.price];
+    total = total + revenue;
+    if (!regions.has(region)) {
+        regions.set(region, { units: 0, revenue: 0, products: {} });
+    };
+    let g = regions.get(region);
+    g.units = g.units + row[col.units];
+    g.revenue = g.revenue + revenue;
+    if (!g.products.has(product)) {
+        g.products.set(product, 0);
+    };
+    g.products.set(product, g.products.get(product) + revenue);
+    if (!months.has(month)) {
+        months.set(month, 0);
+    };
+    months.set(month, months.get(month) + revenue);
+};
+
+let topProduct = fun(products) {
+    let name = '';
+    let best = -1;
+    for (let p of products.keys()) {
+        if (products.get(p) > best) {
+            best = products.get(p);
+            name = p;
+        };
+    };
+    return name;
+};
+
+let byRegion = regions.keys().map(fun(r) {
+    let g = regions.get(r);
+    return [r, g.units, round2(g.revenue), round2(100 * g.revenue / total), topProduct(g.products)];
+});
+byRegion.sort(fun(a, b) { return b[3] - a[3]; });
+byRegion.unshift(['Region', 'Units', 'Revenue', 'Share %', 'Top product']);
+
+let byMonth = [['Month', 'Revenue', 'Change %']];
+let previous = 0;
+for (let m of months.keys().sort()) {
+    let revenue = months.get(m);
+    byMonth.push([m, round2(revenue), previous == 0 ? '' : round2(100 * (revenue - previous) / previous)]);
+    previous = revenue;
+};
+
+return [byRegion, byMonth];

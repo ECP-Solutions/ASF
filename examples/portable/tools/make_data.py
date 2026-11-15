@@ -11,7 +11,7 @@ import csv, datetime, os, re
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASE = os.path.dirname(HERE)
 TABLES = [("budget", "Budget"), ("workReports", "WorkReports"), ("progress", "Progress"),
-          ("priceIndices", "PriceIndices"), ("supplierItems", "Cleanup")]
+          ("priceIndices", "PriceIndices"), ("supplierItems", "Cleanup"), ("readings", "Readings")]
 
 
 def literal(v):
@@ -25,7 +25,7 @@ def literal(v):
 
 
 def main():
-    out = ["// Sample data of a building project, generated from data/*.csv by tools/make_data.py.",
+    out = ["// Sample data of the examples (a building project, readings of a production line), generated from data/*.csv by tools/make_data.py.",
            "// The scripts use it when the document has no sheet with the table: dates are serial numbers.", ""]
     for name, sheet in TABLES:
         with open(os.path.join(BASE, "data", sheet + ".csv"), encoding="utf-8", newline="") as f:

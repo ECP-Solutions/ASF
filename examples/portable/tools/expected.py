@@ -1,4 +1,4 @@
-"""Independent reference of the five examples: writes expected/<sheet> result.csv from data/*.csv.
+"""Independent reference of the examples: writes expected/<sheet> result.csv from data/*.csv.
 
     python3 examples/portable/tools/expected.py
 
@@ -146,8 +146,23 @@ def cleanup():
     return out
 
 
+def quality_report():
+    rows = load("Readings")
+    checks = [
+        ("Batch code is not B0000-X", lambda r: not re.fullmatch(r"B\d{4}-[A-Z]", str(r["Batch"]))),
+        ("Temperature outside 180 to 220", lambda r: not isinstance(r["Temperature"], float) or not 180 <= r["Temperature"] <= 220),
+        ("Pressure outside 1.5 to 2.5", lambda r: not isinstance(r["Pressure"], float) or not 1.5 <= r["Pressure"] <= 2.5),
+        ("Inspector is missing", lambda r: str(r.get("Inspector", "")).strip() == ""),
+    ]
+    out = [["Check", "Failed", "Rows"]]
+    for label, fails in checks:
+        bad = [r["_row"] for r in rows if fails(r)]
+        out.append([label, len(bad), ", ".join(str(b) for b in bad)])
+    return out
+
+
 EXAMPLES = {"Budget": budget, "WorkReports": workreports, "Progress": progress,
-            "PriceIndices": price_revision, "Cleanup": cleanup}
+            "PriceIndices": price_revision, "Cleanup": cleanup, "Readings": quality_report}
 
 
 def main():

@@ -1,0 +1,43 @@
+// Discounts from rules the users write in the Rules sheet (Name | When | Discount).
+// RulesHost.bas compiles the When column into `conditions`, one function per rule, in front of
+// this file. $1: the Orders table, $2: the Rules table, both as Range.Value2 gives them (first row:
+// column names). Returns one row per order: Order, the best discount that applies, and its rule.
+let header = $1[1];
+
+// every o.<name> of a rule must be a column of Orders: a misspelt column would make the rule
+// quietly false (o.qtty >= 100 is false, as in JavaScript)
+let fieldRef = regex(`\bo\.([A-Za-z_][A-Za-z0-9_]*)`);
+for (let r = 2, r <= $2.length, r += 1) {
+    for (let ref of fieldRef.execAll(`${$2[r][2]}`)) {
+        let field = ref[2];
+        if (!header.includes(field)) {
+            throw `Rule '${$2[r][1]}' uses o.${field}, but Orders has no column '${field}'`;
+        };
+    };
+};
+
+let out = [['Order', 'Discount', 'Rule']];
+for (let i = 2, i <= $1.length, i += 1) {
+    let o = {};
+    for (let c = 1, c <= header.length, c += 1) {
+        o.set(header[c], $1[i][c]);
+    };
+    let best = 0;
+    let why = '';
+    for (let r = 1, r <= conditions.length, r += 1) {
+        let name = $2[r + 1][1];
+        let discount = $2[r + 1][3];
+        let applies = false;
+        try {
+            applies = conditions[r](o);
+        } catch (e) {
+            throw `Rule '${name}' failed on order ${o.order}: ${e}`;
+        };
+        if (applies && discount > best) {
+            best = discount;
+            why = name;
+        };
+    };
+    out.push([o.order, best, why]);
+};
+return out;

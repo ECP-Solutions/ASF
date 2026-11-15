@@ -1,0 +1,11 @@
+result: Quality check: slides written in Impress
+== slide 1: Quality check
+  8 readings, 4 checks, 6 failures
+== slide 2: Checks
+  Check   |   Failed   |   Rows
+  Batch code is not B0000-X   |   2   |   5, 8
+  Temperature outside 180 to 220   |   2   |   4, 8
+  Pressure outside 1.5 to 2.5   |   1   |   6
+  Inspector is missing   |   1   |   6
+== slide 3: Verdict
+  The line needs attention before the next batch.
