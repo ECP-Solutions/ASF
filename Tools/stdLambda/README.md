@@ -1,6 +1,6 @@
 # stdLambda and ASF benchmark
 
-[stdLambda](https://github.com/sancarn/stdVBA/blob/master/docs/stdLambda.md), stdVBA's lambda expressions, against ASF in Excel (VBA), on direct expression evaluation: a short expression compiled once and called with arguments, as a callback is called. That is what stdLambda is made for, so the workloads are expressions, not programs; where a loop is needed, VBA runs it. stdLambda is taken from stdVBA at commit `230aea3` (MIT, Copyright (c) 2020 James Warren); ASF is the checkout's `src/`.
+[stdLambda](https://github.com/sancarn/stdVBA/blob/master/docs/stdLambda.md), stdVBA's lambda expressions, against ASF in Excel (VBA), on direct expression evaluation: a short expression compiled once and called with arguments, as a callback is called. That is what stdLambda is made for, so the workloads are expressions, not programs, except a small loop of 5 passes that both engines run. stdLambda is taken from stdVBA at commit `230aea3` (MIT, Copyright (c) 2020 James Warren); ASF is the checkout's `src/`.
 
 ## Workloads
 
@@ -11,16 +11,16 @@ Each workload is written once in each language and must give the same result, ch
 | Arithmetic | Instruction throughput | `($1 + $2) * 3 - $1 / 2` | 7, 5 | 32.5 |
 | Math operations | Built-in function dispatch | `abs($1) + sqr($2) + int($1 / 3)` (ASF: `Math.abs`, `Math.sqrt`, `Math.floor`) | -7, 16 | 8 |
 | Conditional branches | Jump performance | `if $1 > 5 then "big" else "small"` (ASF: `?:`) | 9 | big |
-| For/While loops | VM dispatch efficiency | `$1 * 2 + 1`, called 100 times from a VBA loop | 1..100 | 10200 |
+| For/While loops | VM dispatch efficiency | `let i = 0: let s = 0: do while i < 5 let i = i + 1 let s = s + i * $1 loop: s` (ASF: `while`), called 100 times from VBA | 1..100 | 75750 |
 | Function calls | Frame management | `fun sq(x) x * x end: sq($1) + sq($2)` | 3, 4 | 25 |
 | Fibonacci recursion | Recursive call overhead | `fib($1)` (177 calls) | 10 | 55 |
 | Array transformations | Callback and runtime overhead | `$1 * 2 + 1` per item (ASF: `$1.map(fun(x) {...})`) | 1..50 | 2600 (sum) |
 | Object property access | Object lookup performance | `$1.x * $1.y` on a Scripting.Dictionary (ASF: an ASF object) | `{x: 3, y: 4}` | 12 |
 | COM property access | Host integration overhead | `$1.Count + $1.Item(2)` | Collection 10, 20, 30 | 23 |
 
-The ASF sources are the same expressions with `return` (`Benchmark.bas`, `Configure`). Two workloads use VBA's loop:
+The ASF sources are the same expressions with `return` (`Benchmark.bas`, `Configure`). Two workloads are called from a VBA loop:
 
-- **For/While loops**: each engine's compiled expression is called 100 times from a VBA `For` loop: the cost of each call into the engine.
+- **For/While loops**: both engines run the same small `while` loop of 5 passes, and VBA calls it 100 times (with 1 to 100): the loop's dispatch plus the cost of each call into the engine.
 - **Array transformations**: each library as it is meant to be used: stdLambda is called once per item, as `stdArray.Map` calls it, and ASF is given the array and maps it with its own function. Both results are summed in VBA for the check.
 
 ## Method
