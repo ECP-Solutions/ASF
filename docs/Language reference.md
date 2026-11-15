@@ -490,6 +490,18 @@ if (x > 20) {
 };
 ```
 
+`else if` is the same as `elseif`, and both can be mixed in one chain:
+
+```javascript
+if (x > 20) {
+    print('Greater than 20');
+} else if (x > 10) {
+    print('Greater than 10');
+} else {
+    print('10 or less');
+};
+```
+
 ### Switch Statement
 
 ```javascript

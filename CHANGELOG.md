@@ -7,6 +7,11 @@ All notable changes for ASF. This file combines the release notes from the proje
 - **Changed**
     - **Faster calls into host objects** — a property or method of a host object raised and caught an error on every access, looking for a prototype in an empty collection; prototypes are now kept in one map and looked up only when a script registered one. `TypeName` is taken once per call, `Collection` is tested before the list of Office collections, and `obj.method(args)` on a host object that is not a collection goes from `ASF_VM` straight to `CallByName`, without copying its arguments into a `Collection` or going through the built-in methods. Results are unchanged; prototypes still take precedence over the object's own methods.
 
+## [Unreleased]
+
+- **Fixed**
+    - **`else if`** — `if (a) { } else if (b) { } else { }` is the same as `elseif`: each condition is tested. ASF 3 and 4.0 read `else if (b) { ... }` as `else { ... }`, without testing `b`, and dropped the `else` after it, with no error.
+
 ## [v4.0.0] - 2026-11-09
 https://github.com/ECP-Solutions/ASF/releases/tag/v4.0.0
 
