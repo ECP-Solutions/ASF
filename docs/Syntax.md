@@ -24,7 +24,7 @@ This document defines the concrete syntax supported by the Advanced Scripting Fr
 - Function literal: `fun (params...) { ... }`
 - Top-level function declaration: `fun name(params...) { ... }`
 - COM prototype method declaration: `prototype.COM.ObjectType methodName(params...) { ... }` (v3.1.2+)
-- Anonymous function values are closures with **shared-write** semantics (they capture the current runtime scope by reference).
+- Anonymous function values are closures with **shared-write** semantics: they share with the function that created them the variables they read or write.
 - Array literal: `[ elem1, elem2, ... ]`
 - Object literal: `{ key1: value1, key2: value2 }`
 - VBExpression block: `@(...)` — raw VBAexpressions block evaluated via the [VBA-Expressions](https://github.com/ECP-Solutions/VBA-Expressions) bridge.
@@ -249,9 +249,9 @@ VBA_EXPR         ::= any raw text until matching ')'
 ```
 
 Notes:
-- The parser also accepts top-level function declarations using the same `fun` syntax with a name: `fun name(params) { body }` — these are converted to program-level function definitions and stored in the global program table.
-- **Prototype methods**: `prototype.COM.ObjectType methodName(params) { body }` declarations are compiled into internal functions and registered for COM object method dispatch (v3.1.2+).
-- Collapsed identifiers like `o.a[2].b` are parsed into nested AST nodes (`Variable`/`Member`/`Index`) by the compiler helper `ParseCollapsedIdentToNode`.
+- The compiler also accepts function declarations using the same `fun` syntax with a name: `fun name(params) { body }`. A call to a named function is resolved when the script compiles; later scripts compiled by the same engine can call it too.
+- **Prototype methods**: `prototype.COM.ObjectType methodName(params) { body }` declarations are compiled into named functions and registered for COM object method dispatch when the declaration runs (v3.1.2+).
+- Chains like `o.a[2].b` compile to member and index instructions. As an assignment target (`o.a[2].b = 5`), the chain writes into the object or array it reads, not into a copy.
 - **Module imports/exports**: `import` and `export` statements enable code organization across multiple `.vas` files with caching and circular-dependency detection.
 - **Spread/rest operators**: The `...` operator expands arrays in literals/calls and collects remaining elements in destructuring/parameters.
 
@@ -398,8 +398,9 @@ result = eng.Execute(eng.JoinPath(ThisWorkbook.Path, "main.vas"))
 ## Functions & closures
 
 - `fun(x,y) { return x+y }` produces a closure value.
-- Top-level functions: `fun add(a,b) { return a + b }` — compiled into the global program table and callable by name.
-- Closures implement **shared-write** semantics: they capture the runtime scope by reference. Mutations to outer-scope variables are visible across all closures that share that scope.
+- Named functions: `fun add(a,b) { return a + b }` — callable by name; the compiler resolves each call to the function.
+- Closures implement **shared-write** semantics: they share with the function that created them the variables they read or write. Mutations to outer-scope variables are visible across all closures that share them.
+- Names are lexical: a function sees its own locals, the variables of the functions that enclose it (for function literals) and the globals. A named function does not see the locals of the function that calls it; pass them as arguments.
 
 ### Rest parameters
 
@@ -416,8 +417,8 @@ sum(1, 2, 3, 4);  // => 10
 
 ### Call semantics
 
-- `CallClosure(closureMap, argsCollection, thisVal)`:
-  - The runtime binds parameters in a new scope linked to the closure's environment.
+- Calling a function:
+  - Its parameters and locals get a new frame; the variables a closure captured are shared with the function that created it.
   - Callback functions receive `(value, index, array)` when called by array-methods.
   - `this` is supported when calling closures via bound method objects or when a `thisArg` is supplied.
 
@@ -476,7 +477,7 @@ chars = [...'hello'];  // => ['h', 'e', 'l', 'l', 'o']
 
 - Postfix chaining is supported for arbitrary primaries. Examples:
   - `a.b.c(d)[i].x()`
-  - Special-case: `.length` on an index or array is compiled into `.__len__` builtin call at compile-time.
+  - `.length` of arrays and strings is read by the VM directly.
 
 ---
 
@@ -487,24 +488,15 @@ chars = [...'hello'];  // => ['h', 'e', 'l', 'l', 'o']
 
 ---
 
-## AST node types (high level)
+## How a script runs
 
-ASF uses Map-based AST nodes internally. Common node `type` values include:
+ASF 4 does not build a syntax tree. A script goes through three classes:
 
-- `Literal` — { type: "Literal", value: ... }
-- `Variable` — { type: "Variable", name: "x" }
-- `Member` — { type: "Member", base: <node>, prop: "x" }
-- `Index` — { type: "Index", base: <node>, index: <node> }
-- `Call` — { type: "Call", callee: <node>, args: [<node>, ...] }
-- `FuncLiteral` — { type: "FuncLiteral", params: [...], body: <stmts> }
-- `Array` — { type: "Array", items: [<node>, ...] }
-- `Object` — { type: "Object", items: [ (key,node), ... ] }
-- `VBAexpr` — { type: "VBAexpr", expr: "..." }
-- `BuiltinMethod` — runtime-built map representing a bound method (when `a.map` is evaluated and `a` is an array)
-- `Import` — { type: "Import", source: "...", defaultImport?: "...", namespaceImport?: "...", namedImports?: [...] }
-- `Export` — { type: "Export", isDefault: bool, expression?: <node>, namedExports?: [...], declarationType?: "function", declarationName?: "..." }
-- `ArrayDestructuring` — { type: "ArrayDestructuring", targets: [...], restTarget?: "...", source: <node> }
-- `PrototypeDeclaration` — { type: "PrototypeDeclaration", objectType: "...", methodName: "...", params: [...], body: <stmts> }
+1. `ASF_Parser` splits the source into tokens.
+2. `ASF_Compiler` compiles the tokens to bytecode in one pass: every name is resolved to a local slot, a closure cell or a global slot, calls to named functions to their function, and constant expressions are folded.
+3. `ASF_VM` runs the bytecode in one dispatch loop; `ASF_Runtime` holds the methods of arrays, strings, objects, collections, Math and regex, printing, host objects and `@(...)`.
+
+A syntax error raises from `Compile`, before anything runs. [src/BYTECODE.md](/src/BYTECODE.md) describes the instructions and the design. ASF 3.2.1, the last engine that walked a syntax tree, is kept in `src/old/` with the suffix `_OLD`.
 
 ---
 
@@ -580,7 +572,7 @@ Notes & hints
 
 - null is a valid literal returned by expressions and used to represent absence of value.
 - Arrays in ASF are implemented as Variant arrays and honor __option_base (runtime option that sets the base index).
-- The compiler will attempt to expand collapsed identifiers like a.b[3].c into nested AST nodes so the VM can handle LValue semantics correctly.
+- Assignments through chains like `a.b[3].c = v` write into the containers the chain reads.
 - **Module caching**: Each `.vas` file executes once per session; `ClearModuleCache()` resets the cache.
 - **Working directory**: Use `scwd(path)` to set the base directory for relative imports before loading modules.
 - **Prototype methods**: COM object prototype extension requires `AppAccess = True` and `OverrideCollMethods = True` for collection integration (v3.1.2+).

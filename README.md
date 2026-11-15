@@ -223,10 +223,10 @@ End Sub
 
 ### VM Features
 
-- **Lexical Scoping:** Proper closure capture with environment chains
+- **Lexical Scoping:** Names resolved at compile time to local slots, closure cells or global slots; closures share cells with the function that created them
 - **Prototype Chain:** JavaScript-like prototype inheritance
-- **Call Stack Management:** Proper tail call handling and stack overflow protection  
-- **Memory Management:** Automatic garbage collection for ASF objects
+- **Call Stack Management:** Frames on arrays inside the dispatch loop: a call between script functions is not a VBA call
+- **Memory Management:** Cells and closure environments live in arrays of the VM, cleared at the end of each `Run` (those of loaded modules stay until `ClearModuleCache`), so closures do not form reference cycles
 - **Error Handling:** Contained exceptions with full stack traces
 
 ### Bytecode (ASF 4)
