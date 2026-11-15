@@ -2049,8 +2049,10 @@ Private Function ScalarText(ByRef v As Variant) As String
         Case vbString: ScalarText = v
         Case vbBoolean
             If v Then ScalarText = "true" Else ScalarText = "false"
-        Case vbDouble, vbLong, vbInteger, vbSingle, vbCurrency, vbDecimal, vbByte
-            ScalarText = RT_.NumberText(v)
+        Case vbLong, vbInteger, vbByte: ScalarText = CStr(v)
+        Case vbDouble, vbSingle, vbCurrency, vbDecimal
+            ' whole numbers below 1e15 have neither a decimal separator nor an exponent
+            If v = Fix(v) And v < 1E+15 And v > -1E+15 Then ScalarText = CStr(v) Else ScalarText = RT_.NumberText(v)
         Case Else: ScalarText = CStr(v)
     End Select
 End Function
