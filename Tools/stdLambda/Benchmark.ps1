@@ -8,6 +8,9 @@ param(
 # Benchmark.bas for every workload, operation and engine and writes samples.csv and samples.json
 # to OutputDirectory.
 $ErrorActionPreference = 'Stop'
+# a relative OutputDirectory is relative to the PowerShell location; .NET (GetFullPath, WriteAllText)
+# would take it from the process's working folder instead
+$OutputDirectory = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDirectory)
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $stdVbaCommit = '230aea3aef43cd4bb78a728e7a18f70e11b9a77b'
 $stdVbaRaw = "https://raw.githubusercontent.com/sancarn/stdVBA/$stdVbaCommit/src"

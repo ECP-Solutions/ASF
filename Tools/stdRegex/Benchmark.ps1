@@ -8,6 +8,9 @@ param(
 # separate Excel process, runs Benchmark.bas for every scenario, operation and engine and
 # writes samples.csv and samples.json to OutputDirectory.
 $ErrorActionPreference = 'Stop'
+# a relative OutputDirectory is relative to the PowerShell location; .NET (GetFullPath, WriteAllText)
+# would take it from the process's working folder instead
+$OutputDirectory = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDirectory)
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $stdVbaRaw = 'https://raw.githubusercontent.com/sancarn/stdVBA'
 $sihlfallCommit = '04e7d048482b0cdf0a3eb3480fc8cd0d3578dc9c'   # stdVBA: stdRegex on sihlfall/vba-regex 1619cd7
