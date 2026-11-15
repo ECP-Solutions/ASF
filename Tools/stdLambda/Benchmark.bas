@@ -1,10 +1,12 @@
 Attribute VB_Name = "LambdaBenchmark"
-' stdLambda (stdVBA) against ASF on the same workloads. Each workload is written once in each
-' language with the same result; "Compile" is a fresh object plus compiling the source (stdLambda's
-' protInit, bypassing the text cache of stdLambda.Create), "Run" is one call of the compiled object
-' with the workload's arguments, as a callback is called. "Callback over 300 items" is each library
-' used as it is meant to be: stdLambda called from VBA once per item (as stdArray.Map calls it),
-' ASF given the items and calling its own function once per item (forEach).
+' stdLambda (stdVBA) against ASF on the same workloads, one per part of an engine: arithmetic,
+' built-in functions, branches, loops, calls, recursion, callbacks over an array, properties of an
+' object of the script and of a host object. Each workload is written once in each language with
+' the same result; "Compile" is a fresh object plus compiling the source (stdLambda's protInit,
+' bypassing the text cache of stdLambda.Create), "Run" is one call of the compiled object with the
+' workload's arguments, as a callback is called. "Array transformations" is each library used as it
+' is meant to be: stdLambda called from VBA once per item (as stdArray.Map calls it), ASF given the
+' array and calling its own function once per item (map).
 ' Run it with Benchmark.ps1 (Excel) or BenchmarkLO.py (LibreOffice).
 Option Explicit
 
@@ -35,59 +37,65 @@ Private Sub Configure(ByVal workload As String)
     Dim numbers() As Variant, i As Long
     perItem = False
     Select Case workload
-        Case "Arithmetic expression"
-            If isAsf Then source = "return ($1 + $2) * 3 - $1 / 2;" Else source = "($1 + $2) * 3 - $1 / 2"
-            args = Array(7, 5)
-            expected = "32.5"
-        Case "Predicate"
-            If isAsf Then source = "return $1 % 3 == 0 && $1 > 10;" Else source = "$1 mod 3 = 0 and $1 > 10"
-            args = Array(12)
-            expected = "True"
-        Case "String functions"
-            If isAsf Then source = "return $1.trim().toUpperCase() + $1.length;" Else source = "ucase(trim($1)) & len($1)"
-            args = Array("  abc  ")
-            expected = "ABC7"
-        Case "Conditional"
-            If isAsf Then source = "return $1 > 5 ? 'big' : 'small';" Else source = "if $1 > 5 then ""big"" else ""small"""
-            args = Array(9)
-            expected = "big"
-        Case "Local variables"
-            If isAsf Then source = "let a = $1 * 2; let b = a + 3; return a * b;" Else source = "let a = $1 * 2: let b = a + 3: a * b"
-            args = Array(4)
-            expected = "88"
-        Case "Object members"
-            If isAsf Then source = "return $1.count + $1.item(2);" Else source = "$1.Count + $1.Item(2)"
-            Set items = New Collection
-            items.Add 10: items.Add 20: items.Add 30
-            args = Array(items)
-            expected = "23"
-        Case "Loop"
+        Case "Arithmetic"
+            ' instruction throughput: an expression of the loop counter, 1000 times
             If isAsf Then
-                source = "let s = 0; for (let i = 1, i <= 2000, i += 1) { s = s + i * 2 - 1; }; return s;"
+                source = "let s = 0; for (let i = 1, i <= 1000, i += 1) { s = s + (i * 3 - i / 2) * 2; }; return s;"
             Else
-                source = "let s = 0: for i = 1 to 2000 let s = s + i * 2 - 1 next: s"
+                source = "let s = 0: for i = 1 to 1000 let s = s + (i * 3 - i / 2) * 2 next: s"
             End If
             args = Array()
-            expected = "4000000"
-        Case "While and branches"
+            expected = "2502500"
+        Case "Math operations"
+            ' built-in function dispatch: three functions per pass, 500 passes
             If isAsf Then
-                source = "let i = 0; let n = 0; while (i < 1000) { if (i % 3 == 0) { n = n + 2; } else { n = n - 1; }; i += 1; }; return n;"
+                source = "let s = 0; for (let i = 1, i <= 500, i += 1) { s = s + Math.abs(-i) + Math.floor(i / 3) + Math.sqrt(i * i); }; return s;"
             Else
-                source = "let i = 0: let n = 0: do while i < 1000 if i mod 3 = 0 then let n = n + 2 else let n = n - 1 end let i = i + 1 loop: n"
+                source = "let s = 0: for i = 1 to 500 let s = s + abs(-i) + int(i / 3) + sqr(i * i) next: s"
             End If
             args = Array()
-            expected = "2"
-        Case "Recursion"
+            expected = "292083"
+        Case "Conditional branches"
+            ' jumps: two if/else per pass, 1000 passes
+            If isAsf Then
+                source = "let n = 0; for (let i = 1, i <= 1000, i += 1) { if (i % 3 == 0) { n = n + 2; } else { n = n - 1; }; if (i % 5 == 0) { n = n + 3; } else { n = n + 0; }; }; return n;"
+            Else
+                source = "let n = 0: for i = 1 to 1000 if i mod 3 = 0 then let n = n + 2 else let n = n - 1 end if i mod 5 = 0 then let n = n + 3 else let n = n + 0 end next: n"
+            End If
+            args = Array()
+            expected = "599"
+        Case "For/While loops"
+            ' dispatch of the loops themselves: a while inside a for, 1000 passes in all
+            If isAsf Then
+                source = "let n = 0; for (let i = 1, i <= 40, i += 1) { let j = 0; while (j < 25) { j = j + 1; n = n + 1; }; }; return n;"
+            Else
+                source = "let n = 0: for i = 1 to 40 let j = 0 do while j < 25 let j = j + 1 let n = n + 1 loop next: n"
+            End If
+            args = Array()
+            expected = "1000"
+        Case "Function calls"
+            ' frames: 500 calls of a two-argument function
+            If isAsf Then
+                source = "fun add(a, b) { return a + b; }; let s = 0; for (let i = 1, i <= 500, i += 1) { s = add(s, i); }; return s;"
+            Else
+                source = "fun add(a, b) a + b end: let s = 0: for i = 1 to 500 let s = add(s, i) next: s"
+            End If
+            args = Array()
+            expected = "125250"
+        Case "Fibonacci recursion"
+            ' recursive calls: fib(15), 1973 calls
             If isAsf Then
                 source = "fun fib(n) { if (n <= 1) { return n; }; return fib(n - 1) + fib(n - 2); }; return fib($1);"
             Else
                 source = "fun fib(n) if n <= 1 then n else fib(n - 1) + fib(n - 2) end end: fib($1)"
             End If
-            args = Array(14)
-            expected = "377"
-        Case "Callback over 300 items"
+            args = Array(15)
+            expected = "610"
+        Case "Array transformations"
+            ' callbacks: map over 300 items; stdLambda is called from VBA once per item, as
+            ' stdArray.Map calls it, ASF maps the array it is given
             If isAsf Then
-                source = "let s = 0; $1.forEach(fun(x) { s = s + x * 2 + 1; }); return s;"
+                source = "return $1.map(fun(x) { return x * 2 + 1; });"
             Else
                 source = "$1 * 2 + 1"
                 perItem = True
@@ -96,6 +104,26 @@ Private Sub Configure(ByVal workload As String)
             For i = 1 To 300: numbers(i) = i: Next i
             args = Array(numbers)
             expected = "90600"
+        Case "Object property access"
+            ' lookups in an object the script makes: two properties per pass, 500 passes
+            If isAsf Then
+                source = "let o = {x: 3, y: 4}; let s = 0; for (let i = 1, i <= 500, i += 1) { s = s + o.x * o.y; }; return s;"
+            Else
+                source = "let o = dict(""x"", 3, ""y"", 4): let s = 0: for i = 1 to 500 let s = s + o.x * o.y next: s"
+            End If
+            args = Array()
+            expected = "6000"
+        Case "COM property access"
+            ' a host object: Count once, then Item of each of 100 members of a Collection
+            If isAsf Then
+                source = "let n = $1.count; let s = 0; for (let i = 1, i <= n, i += 1) { s = s + $1.item(i); }; return s;"
+            Else
+                source = "let s = 0: for i = 1 to $1.Count let s = s + $1.Item(i) next: s"
+            End If
+            Set items = New Collection
+            For i = 1 To 100: items.Add i: Next i
+            args = Array(items)
+            expected = "5050"
         Case Else
             Err.Raise 5, "LambdaBenchmark", "Unknown workload: " & workload
     End Select
@@ -113,12 +141,15 @@ Private Sub CompileSource()
 End Sub
 
 Private Function RunOnce() As Variant
-    Dim r As Variant, i As Long
+    Dim r As Variant, i As Long, mapped() As Variant
     If perItem Then
-        r = 0
+        ' the mapped array, as stdArray.Map builds it, then its sum (as for ASF's below)
+        ReDim mapped(LBound(args(0)) To UBound(args(0)))
         For i = LBound(args(0)) To UBound(args(0))
-            r = r + lambda.Run(args(0)(i))
+            mapped(i) = lambda.Run(args(0)(i))
         Next i
+        RunOnce = SumOf(mapped)
+        Exit Function
     ElseIf engineName = "ASF" Then
         Select Case UBound(args)
             Case -1: r = asfEngine.Run(asfIndex)
@@ -132,7 +163,15 @@ Private Function RunOnce() As Variant
             Case 1: r = lambda.Run(args(0), args(1))
         End Select
     End If
+    If IsArray(r) Then r = SumOf(r)
     RunOnce = r
+End Function
+
+Private Function SumOf(ByRef values As Variant) As Double
+    Dim v As Variant
+    For Each v In values
+        SumOf = SumOf + v
+    Next v
 End Function
 
 Private Function Validate() As String
