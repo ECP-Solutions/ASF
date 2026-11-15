@@ -840,7 +840,9 @@ MethodCall:
     End If
     If Not t Then
         args = ArgsArray(sp - n + 1, n)
-        SetItem rv, RT_.CallMemberOn(stk_(sp - n), CStr(k_(oa_(pc))), args, wrote, rv2)
+        If Not RT_.TryCallHost(stk_(sp - n), CStr(k_(oa_(pc))), args, rv) Then
+            SetItem rv, RT_.CallMemberOn(stk_(sp - n), CStr(k_(oa_(pc))), args, wrote, rv2)
+        End If
     End If
     args = Empty
     For i = sp - n + 1 To sp
