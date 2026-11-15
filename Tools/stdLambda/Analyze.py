@@ -3,7 +3,8 @@
     python Tools/stdLambda/Analyze.py <run directory>
 
 Reads samples.csv and repeat/samples.csv, writes summary.json and summary.md (median of the ten
-per-call batch means of each cell, and the stdLambda/ASF ratio).
+per-call batch means of each cell, and the ASF/stdLambda ratio, with its geometric mean per category
+and over all workloads).
 """
 import csv
 import json
@@ -31,7 +32,8 @@ for key in order:
     measurements = groups[key]
     statuses = {m['status'] for m in measurements}
     status = next(iter(statuses)) if len(statuses) == 1 else 'inconsistent'
-    result = dict(workload=workload, operation=operation, engine=engine, status=status, runs=len(measurements),
+    result = dict(category=measurements[0].get('category', ''), workload=workload, operation=operation, engine=engine,
+                  status=status, runs=len(measurements),
                   notes=sorted({m['note'] for m in measurements if m['note']}))
     if status == 'ok':
         samples = [float(m[f'sample_{i}_us']) for m in measurements for i in range(1, 6)]
@@ -50,10 +52,11 @@ def fmt(us):
 
 
 cells = {(r['workload'], r['operation'], r['engine']): r for r in rows}
+category = {r['workload']: r['category'] for r in rows}
 lines = []
 for operation in ['Compile', 'Run']:
-    lines += [f'### {operation}', '', '| Workload | stdLambda | ASF | ASF / stdLambda |', '|---|---|---|---|']
-    logs = []
+    lines += [f'### {operation}', '', '| Category | Workload | stdLambda | ASF | ASF / stdLambda |', '|---|---|---|---|---|']
+    logs, by_category = [], defaultdict(list)
     for workload in dict.fromkeys(r['workload'] for r in rows):
         a, b = cells.get((workload, operation, 'stdLambda')), cells.get((workload, operation, 'ASF'))
         ta = fmt(a['median_us']) if a and a['status'] == 'ok' else (a['status'] if a else '-')
@@ -62,10 +65,14 @@ for operation in ['Compile', 'Run']:
         if a and b and a['status'] == b['status'] == 'ok':
             q = b['median_us'] / a['median_us']
             logs.append(math.log(q))
+            by_category[category[workload]].append(math.log(q))
             ratio = f'{q:.2f}×'
-        lines.append(f'| {workload} | {ta} | {tb} | {ratio} |')
+        lines.append(f'| {category[workload]} | {workload} | {ta} | {tb} | {ratio} |')
     if logs:
-        lines.append(f'| **Geometric mean** | | | **{math.exp(sum(logs) / len(logs)):.2f}×** |')
+        lines.append(f'| **All** | **Geometric mean** | | | **{math.exp(sum(logs) / len(logs)):.2f}×** |')
+    if by_category:
+        lines += ['', '| Category | ASF / stdLambda (geometric mean) |', '|---|---|']
+        lines += [f'| {c} | {math.exp(sum(v) / len(v)):.2f}× |' for c, v in by_category.items()]
     lines.append('')
 text = '\n'.join(lines)
 (directory / 'summary.md').write_text(text, encoding='utf-8')

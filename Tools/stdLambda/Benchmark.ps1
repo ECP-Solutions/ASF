@@ -100,10 +100,11 @@ public static class LambdaBenchmarkExcelWindow {
     $benchmarkModule = $book.VBProject.VBComponents.Import((Join-Path $PSScriptRoot 'Benchmark.bas'))
     Write-Output "Imported benchmark module $($benchmarkModule.Name): $($benchmarkModule.CodeModule.CountOfLines) lines."
 
-    $header = 'engine,workload,operation,status,note,iterations,sample_1_us,sample_2_us,sample_3_us,sample_4_us,sample_5_us'
+    $header = 'engine,category,workload,operation,status,note,iterations,sample_1_us,sample_2_us,sample_3_us,sample_4_us,sample_5_us'
     [IO.File]::WriteAllText($output, $header + "`n", [Text.UTF8Encoding]::new($false))
-    $workloads = @('Arithmetic', 'Math operations', 'Conditional branches', 'For/While loops', 'Function calls',
-                   'Fibonacci recursion', 'Array transformations', 'Object property access', 'COM property access')
+    # Benchmark.bas lists its workloads as category|workload lines
+    $list = $excel.Run("'" + $book.Name + "'!LambdaBenchmark.Workloads")
+    $workloads = @($list -split "`n" | Where-Object { $_ } | ForEach-Object { $_.Split('|', 2)[1] })
     $operations = @('Compile', 'Run')
     $cell = 0
     foreach ($workload in $workloads) {
@@ -127,7 +128,7 @@ public static class LambdaBenchmarkExcelWindow {
         stdvba_commit = $stdVbaCommit
         benchmark_sha256 = (Get-FileHash (Join-Path $PSScriptRoot 'Benchmark.bas')).Hash
         samples = 5; target_batch_ms = 30; timer = 'QueryPerformanceCounter'
-        description = 'Compile: fresh object + compile (stdLambda protInit, ASF New + Compile). Run: one call of the compiled object with the workload''s arguments. Results checked before each timed cell.'
+        description = 'Seven categories: simple expressions, math functions, script functions, COM objects, COM collections, short programs, long programs. Compile: fresh object + compile (stdLambda protInit, ASF New + Compile). Run: one call of the compiled object with the workload''s arguments. Results checked before each timed cell.'
     }
     $metadata | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath ([IO.Path]::ChangeExtension($output, '.json')) -Encoding utf8
     Write-Output "Benchmark samples saved to $output"
