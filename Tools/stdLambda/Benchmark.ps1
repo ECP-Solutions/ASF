@@ -99,8 +99,8 @@ public static class LambdaBenchmarkExcelWindow {
 
     $header = 'engine,workload,operation,status,note,iterations,sample_1_us,sample_2_us,sample_3_us,sample_4_us,sample_5_us'
     [IO.File]::WriteAllText($output, $header + "`n", [Text.UTF8Encoding]::new($false))
-    $workloads = @('Arithmetic expression', 'Predicate', 'String functions', 'Conditional', 'Local variables',
-                   'Object members', 'Loop', 'While and branches', 'Recursion', 'Callback over 300 items')
+    $workloads = @('Arithmetic', 'Math operations', 'Conditional branches', 'For/While loops', 'Function calls',
+                   'Fibonacci recursion', 'Array transformations', 'Object property access', 'COM property access')
     $operations = @('Compile', 'Run')
     $cell = 0
     foreach ($workload in $workloads) {
