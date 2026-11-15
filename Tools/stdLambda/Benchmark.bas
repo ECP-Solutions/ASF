@@ -4,7 +4,7 @@ Attribute VB_Name = "LambdaBenchmark"
 ' workload per part of an engine; each is written once in each language with the same result.
 ' "Compile" is a fresh object plus compiling the source (stdLambda's protInit, bypassing the text
 ' cache of stdLambda.Create), "Run" is one call of the compiled object with the workload's
-' arguments. "For/While loops" is a while loop of 5 passes in both engines, called 100 times from
+' arguments. "For/While loops" is a for loop of 5 passes in both engines, called 100 times from
 ' VBA; "Array transformations" calls stdLambda once per item (as stdArray.Map does) while ASF maps
 ' the array it is given.
 ' VBA only (Excel): run it with Benchmark.ps1.
@@ -54,11 +54,17 @@ Private Sub Configure(ByVal workload As String)
             args = Array(9)
             expected = "big"
         Case "For/While loops"
-            ' a while loop of 5 passes in each engine, called 100 times from VBA with 1 to 100
+            ' a for loop of 5 passes in each engine, called 100 times from VBA with 1 to 100; the
+            ' stdLambda lines are joined as stdLambda.CreateMultiline joins them
             If isAsf Then
-                source = "let i = 0; let s = 0; while (i < 5) { i = i + 1; s = s + i * $1; }; return s;"
+                source = "let s = 0; for (let i = 1, i <= 5, i += 1) { s = s + i * $1; }; return s;"
             Else
-                source = "let i = 0: let s = 0: do while i < 5 let i = i + 1 let s = s + i * $1 loop: s"
+                source = Join(Array( _
+                    "let s = 0", _
+                    "for i = 1 to 5", _
+                    "    let s = s + i * $1", _
+                    "next", _
+                    "let res = s"), " ")
             End If
             hostCalls = 100
             args = Array()

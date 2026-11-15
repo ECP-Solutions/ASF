@@ -11,7 +11,7 @@ Each workload is written once in each language and must give the same result, ch
 | Arithmetic | Instruction throughput | `($1 + $2) * 3 - $1 / 2` | 7, 5 | 32.5 |
 | Math operations | Built-in function dispatch | `abs($1) + sqr($2) + int($1 / 3)` (ASF: `Math.abs`, `Math.sqrt`, `Math.floor`) | -7, 16 | 8 |
 | Conditional branches | Jump performance | `if $1 > 5 then "big" else "small"` (ASF: `?:`) | 9 | big |
-| For/While loops | VM dispatch efficiency | `let i = 0: let s = 0: do while i < 5 let i = i + 1 let s = s + i * $1 loop: s` (ASF: `while`), called 100 times from VBA | 1..100 | 75750 |
+| For/While loops | VM dispatch efficiency | `let s = 0` / `for i = 1 to 5` / `let s = s + i * $1` / `next` / `let res = s` (ASF: `for`), called 100 times from VBA | 1..100 | 75750 |
 | Function calls | Frame management | `fun sq(x) x * x end: sq($1) + sq($2)` | 3, 4 | 25 |
 | Fibonacci recursion | Recursive call overhead | `fib($1)` (177 calls) | 10 | 55 |
 | Array transformations | Callback and runtime overhead | `$1 * 2 + 1` per item (ASF: `$1.map(fun(x) {...})`) | 1..50 | 2600 (sum) |
@@ -20,7 +20,7 @@ Each workload is written once in each language and must give the same result, ch
 
 The ASF sources are the same expressions with `return` (`Benchmark.bas`, `Configure`). Two workloads are called from a VBA loop:
 
-- **For/While loops**: both engines run the same small `while` loop of 5 passes, and VBA calls it 100 times (with 1 to 100): the loop's dispatch plus the cost of each call into the engine.
+- **For/While loops**: both engines run the same small `for` loop of 5 passes (the stdLambda lines joined as `stdLambda.CreateMultiline` joins them), and VBA calls it 100 times (with 1 to 100): the loop's dispatch plus the cost of each call into the engine.
 - **Array transformations**: each library as it is meant to be used: stdLambda is called once per item, as `stdArray.Map` calls it, and ASF is given the array and maps it with its own function. Both results are summed in VBA for the check.
 
 ## Method
