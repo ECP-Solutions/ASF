@@ -1458,7 +1458,7 @@ Private Function DPlanDestructuring(ByVal s As Long, ByVal a As Long, ByVal e As
     DPlanDestructuring = Array("destr", names, hasRest, rest, a + 1, e)
 End Function
 
-' if (c) { } elseif (c) { } else { }: parentheses and braces counted by kind
+' if (c) { } elseif (c) { } else { }, also else if (c) { }: parentheses and braces counted by kind
 Private Function DPlanIf(ByVal s As Long, ByVal e As Long) As Variant
     Dim c1 As Long, c2 As Long, b1 As Long, b2 As Long, pos As Long
     Dim conds As Collection, blocks As Collection, hasElse As Boolean, eS As Long, eE As Long
@@ -1474,7 +1474,7 @@ Private Function DPlanIf(ByVal s As Long, ByVal e As Long) As Variant
     pos = b2 + 1
     Dim x1 As Long, x2 As Long, y1 As Long, y2 As Long
     Do While pos < e
-        If IsWord(pos, "elseif") And tt_(pos) = "IDENT" Then
+        If (IsWord(pos, "elseif") And tt_(pos) = "IDENT") Or (IsWord(pos, "else") And tt_(pos) = "IDENT" And IsWord(pos + 1, "if")) Then
             x1 = FindTok(pos + 1, e, "PAREN", "(")
             If x1 >= e Then Exit Do
             x2 = CloseKind(x1, e)

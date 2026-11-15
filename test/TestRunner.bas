@@ -46,6 +46,9 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("compound_assignment",       "compound_assignment_plus_equals") Then compound_assignment_plus_equals: EndTest
     If StartTest("if",                        "if_chain_same_line") Then if_chain_same_line: EndTest
     If StartTest("if",                        "if_multiline") Then if_multiline: EndTest
+    If StartTest("if",                        "if_else_if") Then if_else_if: EndTest
+    If StartTest("if",                        "if_else_if_without_else") Then if_else_if_without_else: EndTest
+    If StartTest("if",                        "if_else_if_with_elseif") Then if_else_if_with_elseif: EndTest
     If StartTest("for",                       "for_simple") Then for_simple: EndTest
     If StartTest("for",                       "for_break_continue") Then for_break_continue: EndTest
     If StartTest("while",                     "while_break_continue") Then while_break_continue: EndTest
@@ -633,6 +636,50 @@ Private Sub if_multiline()
         actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:'three', PRINT:'end'"
+    AssertEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+Private Sub if_else_if()
+    ' else if is elseif: each condition is tested, the last else runs when none holds
+    On Error GoTo TestFail
+    actual = CStr(GetResult("fun g(s) { if (s >= 90) { return 'A'; } else if (s >= 75) { return 'B'; } else if (s >= 50) { return 'C'; } else { return 'D'; }; }; " & _
+                             "return g(95) + g(80) + g(60) + g(10);"))
+    expected = "ABCD"
+    AssertEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+Private Sub if_else_if_without_else()
+    ' an else if chain without else, followed by more statements
+    On Error GoTo TestFail
+    actual = CStr(GetResult("let r = ''; for (let x = -1, x <= 1, x += 1) { if (x > 0) { r = r + 'p'; } else if (x < 0) { r = r + 'n'; }; r = r + '.'; }; return r;"))
+    expected = "n..p."
+    AssertEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+Private Sub if_else_if_with_elseif()
+    ' else if and elseif in one chain, and an if nested in an else if
+    On Error GoTo TestFail
+    actual = CStr(GetResult("let r = ''; for (let i = 1, i <= 4, i += 1) { if (i == 1) { r = r + 'a'; } elseif (i == 2) { r = r + 'b'; } " & _
+                             "else if (i == 3) { if (r == 'ab') { r = r + 'c'; } else { r = r + 'x'; }; } else { r = r + 'd'; }; }; return r;"))
+    expected = "abcd"
     AssertEqual expected, actual
 
 TestExit:

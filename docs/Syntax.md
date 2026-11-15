@@ -63,7 +63,7 @@ This BNF uses a mixture of concrete tokens and non-terminals to show the languag
                    | <array-destructuring>
 
 <if-stmt>        ::= 'if' '(' <expr> ')' <block>
-                     ( 'elseif' '(' <expr> ')' <block> )*
+                     ( ( 'elseif' | 'else' 'if' ) '(' <expr> ')' <block> )*
                      [ 'else' <block> ]
 
 <for-stmt>       ::= 'for' '(' <expr> ',' <expr> ',' <expr> ')' <block>
