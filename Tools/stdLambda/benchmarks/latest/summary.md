@@ -2,72 +2,72 @@
 
 | Category | Workload | stdLambda | ASF | ASF / stdLambda |
 |---|---|---|---|---|
-| Simple expressions | Sum and product | 5.352 ms | 2.028 ms | 0.38× |
-| Simple expressions | Power and modulo | 6.716 ms | 2.279 ms | 0.34× |
-| Simple expressions | Comparison and logic | 7.620 ms | 2.654 ms | 0.35× |
-| Simple expressions | String concatenation | 5.078 ms | 1.766 ms | 0.35× |
-| Math functions | Rounding and roots | 9.344 ms | 2.660 ms | 0.28× |
-| Math functions | Trigonometry and logarithms | 9.593 ms | 3.189 ms | 0.33× |
-| Math functions | String functions | 8.989 ms | 3.148 ms | 0.35× |
-| Script functions | One function | 16.940 ms | 2.989 ms | 0.18× |
-| Script functions | Nested calls | 30.272 ms | 5.042 ms | 0.17× |
-| Script functions | Recursion | 17.565 ms | 3.581 ms | 0.20× |
-| COM objects | Range properties | 5.536 ms | 1.757 ms | 0.32× |
-| COM objects | Range methods | 6.664 ms | 2.303 ms | 0.35× |
-| COM objects | FileSystemObject methods | 10.060 ms | 2.518 ms | 0.25× |
-| COM collections | Collection items | 5.253 ms | 1.738 ms | 0.33× |
-| COM collections | Dictionary lookups | 6.282 ms | 1.524 ms | 0.24× |
-| COM collections | Collection loop | 9.000 ms | 2.179 ms | 0.24× |
-| Short programs | Variables and branch | 9.783 ms | 1.724 ms | 0.18× |
-| Short programs | Loop of 5, called 100 times | 8.894 ms | 2.027 ms | 0.23× |
-| Short programs | String building | 8.895 ms | 2.234 ms | 0.25× |
-| Long programs | Number theory | 56.444 ms | 12.260 ms | 0.22× |
-| Long programs | Text report | 43.404 ms | 8.684 ms | 0.20× |
-| **All** | **Geometric mean** | | | **0.26×** |
+| Simple expressions | Sum and product | 4.954 ms | 1.847 ms | 0.37× |
+| Simple expressions | Power and modulo | 5.770 ms | 1.590 ms | 0.28× |
+| Simple expressions | Comparison and logic | 7.293 ms | 1.948 ms | 0.27× |
+| Simple expressions | String concatenation | 7.813 ms | 1.208 ms | 0.15× |
+| Math functions | Rounding and roots | 6.816 ms | 1.786 ms | 0.26× |
+| Math functions | Trigonometry and logarithms | 9.753 ms | 3.409 ms | 0.35× |
+| Math functions | String functions | 7.564 ms | 1.707 ms | 0.23× |
+| Script functions | One function | 10.983 ms | 1.973 ms | 0.18× |
+| Script functions | Nested calls | 26.789 ms | 4.448 ms | 0.17× |
+| Script functions | Recursion | 16.944 ms | 1.993 ms | 0.12× |
+| COM objects | Range properties | 3.558 ms | 1.654 ms | 0.47× |
+| COM objects | Range methods | 6.051 ms | 2.163 ms | 0.36× |
+| COM objects | FileSystemObject methods | 9.359 ms | 1.821 ms | 0.19× |
+| COM collections | Collection items | 3.832 ms | 1.304 ms | 0.34× |
+| COM collections | Dictionary lookups | 5.432 ms | 1.856 ms | 0.34× |
+| COM collections | Collection loop | 9.727 ms | 2.714 ms | 0.28× |
+| Short programs | Variables and branch | 9.548 ms | 2.160 ms | 0.23× |
+| Short programs | Loop of 5, called 100 times | 8.263 ms | 2.360 ms | 0.29× |
+| Short programs | String building | 13.127 ms | 2.909 ms | 0.22× |
+| Long programs | Number theory | 68.847 ms | 18.708 ms | 0.27× |
+| Long programs | Text report | 85.041 ms | 12.863 ms | 0.15× |
+| **All** | **Geometric mean** | | | **0.25×** |
 
 | Category | ASF / stdLambda (geometric mean) |
 |---|---|
-| Simple expressions | 0.35× |
-| Math functions | 0.32× |
-| Script functions | 0.18× |
-| COM objects | 0.30× |
-| COM collections | 0.27× |
-| Short programs | 0.22× |
-| Long programs | 0.21× |
+| Simple expressions | 0.26× |
+| Math functions | 0.27× |
+| Script functions | 0.15× |
+| COM objects | 0.32× |
+| COM collections | 0.32× |
+| Short programs | 0.24× |
+| Long programs | 0.20× |
 
 ### Run
 
 | Category | Workload | stdLambda | ASF | ASF / stdLambda |
 |---|---|---|---|---|
-| Simple expressions | Sum and product | 32.5 µs | 67.2 µs | 2.06× |
-| Simple expressions | Power and modulo | 40.9 µs | 72.0 µs | 1.76× |
-| Simple expressions | Comparison and logic | 38.8 µs | 69.4 µs | 1.79× |
-| Simple expressions | String concatenation | 36.4 µs | 77.5 µs | 2.13× |
-| Math functions | Rounding and roots | 3.962 ms | 79.6 µs | 0.02× |
-| Math functions | Trigonometry and logarithms | 6.465 ms | 254.3 µs | 0.04× |
-| Math functions | String functions | 6.245 ms | 376.5 µs | 0.06× |
-| Script functions | One function | 45.1 µs | 73.2 µs | 1.62× |
-| Script functions | Nested calls | 75.2 µs | 69.8 µs | 0.93× |
-| Script functions | Recursion | 1.797 ms | 482.8 µs | 0.27× |
-| COM objects | Range properties | 91.9 µs | 139.4 µs | 1.52× |
-| COM objects | Range methods | 187.6 µs | 458.9 µs | 2.45× |
-| COM objects | FileSystemObject methods | 3.980 ms | 388.6 µs | 0.10× |
-| COM collections | Collection items | 65.1 µs | 116.4 µs | 1.79× |
-| COM collections | Dictionary lookups | 3.281 ms | 4.267 ms | 1.30× |
-| COM collections | Collection loop | 340.8 µs | 623.0 µs | 1.83× |
-| Short programs | Variables and branch | 23.1 µs | 35.8 µs | 1.54× |
-| Short programs | Loop of 5, called 100 times | 6.336 ms | 3.885 ms | 0.61× |
-| Short programs | String building | 71.9 µs | 62.4 µs | 0.87× |
-| Long programs | Number theory | 8.071 ms | 1.995 ms | 0.25× |
-| Long programs | Text report | 52.813 ms | 919.9 µs | 0.02× |
-| **All** | **Geometric mean** | | | **0.53×** |
+| Simple expressions | Sum and product | 26.9 µs | 59.7 µs | 2.22× |
+| Simple expressions | Power and modulo | 24.8 µs | 59.3 µs | 2.39× |
+| Simple expressions | Comparison and logic | 28.0 µs | 39.2 µs | 1.40× |
+| Simple expressions | String concatenation | 22.1 µs | 46.1 µs | 2.08× |
+| Math functions | Rounding and roots | 3.674 ms | 73.2 µs | 0.02× |
+| Math functions | Trigonometry and logarithms | 5.912 ms | 372.0 µs | 0.06× |
+| Math functions | String functions | 4.249 ms | 178.3 µs | 0.04× |
+| Script functions | One function | 29.4 µs | 61.3 µs | 2.09× |
+| Script functions | Nested calls | 58.9 µs | 54.6 µs | 0.93× |
+| Script functions | Recursion | 1.519 ms | 325.1 µs | 0.21× |
+| COM objects | Range properties | 112.7 µs | 149.6 µs | 1.33× |
+| COM objects | Range methods | 169.7 µs | 422.9 µs | 2.49× |
+| COM objects | FileSystemObject methods | 3.543 ms | 350.7 µs | 0.10× |
+| COM collections | Collection items | 50.3 µs | 112.9 µs | 2.24× |
+| COM collections | Dictionary lookups | 3.294 ms | 4.610 ms | 1.40× |
+| COM collections | Collection loop | 347.9 µs | 725.6 µs | 2.09× |
+| Short programs | Variables and branch | 24.7 µs | 59.2 µs | 2.40× |
+| Short programs | Loop of 5, called 100 times | 9.080 ms | 6.557 ms | 0.72× |
+| Short programs | String building | 116.1 µs | 100.4 µs | 0.87× |
+| Long programs | Number theory | 11.155 ms | 4.278 ms | 0.38× |
+| Long programs | Text report | 59.379 ms | 835.1 µs | 0.01× |
+| **All** | **Geometric mean** | | | **0.56×** |
 
 | Category | ASF / stdLambda (geometric mean) |
 |---|---|
-| Simple expressions | 1.93× |
+| Simple expressions | 1.98× |
 | Math functions | 0.04× |
-| Script functions | 0.74× |
-| COM objects | 0.71× |
-| COM collections | 1.62× |
-| Short programs | 0.94× |
+| Script functions | 0.75× |
+| COM objects | 0.69× |
+| COM collections | 1.87× |
+| Short programs | 1.14× |
 | Long programs | 0.07× |

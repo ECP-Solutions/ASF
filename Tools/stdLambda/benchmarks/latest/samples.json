@@ -3,15 +3,15 @@
     "description":  "Seven categories: simple expressions, math functions, script functions, COM objects, COM collections, short programs, long programs. Compile: fresh object + compile (stdLambda protInit, ASF New + Compile). Run: one call of the compiled object with the workload\u0027s arguments. Results checked before each timed cell.",
     "target_batch_ms":  30,
     "cpu":  "Intel(R) Core(TM) i7-4500U CPU @ 1.80GHz",
-    "measured_at_utc":  "2026-11-15T12:16:35.0606984+00:00",
+    "measured_at_utc":  "2026-11-15T20:37:31.2586915+00:00",
     "engines":  [
                     "stdLambda",
                     "ASF"
                 ],
     "stdvba_commit":  "230aea3aef43cd4bb78a728e7a18f70e11b9a77b",
     "benchmark_sha256":  "76AD98290B5ADB59E2AFA1DCE333E1E7B27C0F10C3239272F9F1795BB2C1299F",
-    "office":  "Excel 16.0 build 20228",
-    "asf_commit":  "c43c07b4d14e034c5d0ab63c406c0a8e80d978d6",
+    "office":  "Excel 16.0 build 20430",
+    "asf_commit":  "9ef85afe9070f46bcff0e2ebd6f952b1540d0556",
     "timer":  "QueryPerformanceCounter",
     "samples":  5
 }
