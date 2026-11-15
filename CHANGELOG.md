@@ -6,6 +6,7 @@ All notable changes for ASF. This file combines the release notes from the proje
 
 - **Changed**
     - **Faster calls into host objects** — a property or method of a host object raised and caught an error on every access, looking for a prototype in an empty collection; prototypes are now kept in one map and looked up only when a script registered one. `TypeName` is taken once per call, `Collection` is tested before the list of Office collections, and `obj.method(args)` on a host object that is not a collection goes from `ASF_VM` straight to `CallByName`, without copying its arguments into a `Collection` or going through the built-in methods. Results are unchanged; prototypes still take precedence over the object's own methods.
+    - **Faster in LibreOffice** — LibreOffice Basic looks up `vbString`, `vbDouble`... on every call of the procedure that uses them; `ASF_VM` and the helpers of `ASF_Runtime` that run for each value use constants of their own. In LibreOffice, string building and templates run about 2.5 times faster, `%` and array indexing about 2 times; nothing changes in VBA.
 
 - **Added**
     - **Number methods** — `n.toFixed(digits)`, rounded as JavaScript rounds and always with a decimal point whatever the locale, and `n.toString()`; numbers had no methods.

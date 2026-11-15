@@ -50,6 +50,17 @@ Private cell_() As Variant, nCell_ As Long
 Private env_() As Long, nEnv_ As Long
 Private Const ENV_SHIFT As Double = 1048576     ' a closure's "fn" holds function + environment * ENV_SHIFT
 Private Const METHOD_SHIFT As Long = 1024       ' b of CALLM...: arguments + METHOD_SHIFT * method number
+' VarType values: LibreOffice Basic looks vbString, vbDouble... up on every call of a procedure
+Private Const VT_INTEGER As Integer = 2
+Private Const VT_LONG As Integer = 3
+Private Const VT_SINGLE As Integer = 4
+Private Const VT_DOUBLE As Integer = 5
+Private Const VT_CURRENCY As Integer = 6
+Private Const VT_STRING As Integer = 8
+Private Const VT_BOOLEAN As Integer = 11
+Private Const VT_DECIMAL As Integer = 14
+Private Const VT_BYTE As Integer = 17
+Private Const VT_ARRAY As Integer = 8192
 
 Private stk_() As Variant, stkCap_ As Long, stkHigh_ As Long
 Private glob_() As Variant
@@ -262,8 +273,8 @@ X7: ' STOREG
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
 X8: ' ADD
-    If VarType(stk_(sp)) = vbDouble Then
-        If VarType(stk_(sp - 1)) = vbDouble Then
+    If VarType(stk_(sp)) = VT_DOUBLE Then
+        If VarType(stk_(sp - 1)) = VT_DOUBLE Then
             stk_(sp - 1) = stk_(sp - 1) + stk_(sp)
             sp = sp - 1
             pc = pc + 1: GoTo Dispatch
@@ -274,7 +285,7 @@ X8: ' ADD
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
 X9: ' SUB
-    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+    If VarType(stk_(sp)) = VT_BOOLEAN Or VarType(stk_(sp - 1)) = VT_BOOLEAN Then
         stk_(sp - 1) = NumOf(stk_(sp - 1)) - NumOf(stk_(sp))
     Else
         stk_(sp - 1) = stk_(sp - 1) - stk_(sp)
@@ -282,7 +293,7 @@ X9: ' SUB
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
 X10: ' MUL
-    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+    If VarType(stk_(sp)) = VT_BOOLEAN Or VarType(stk_(sp - 1)) = VT_BOOLEAN Then
         stk_(sp - 1) = NumOf(stk_(sp - 1)) * NumOf(stk_(sp))
     Else
         stk_(sp - 1) = stk_(sp - 1) * stk_(sp)
@@ -290,7 +301,7 @@ X10: ' MUL
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
 X11: ' DIV
-    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+    If VarType(stk_(sp)) = VT_BOOLEAN Or VarType(stk_(sp - 1)) = VT_BOOLEAN Then
         rv = NumOf(stk_(sp))
         stk_(sp) = rv
         rv = NumOf(stk_(sp - 1))
@@ -302,7 +313,7 @@ X11: ' DIV
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
 X12: ' MOD
-    If VarType(stk_(sp)) = vbDouble And VarType(stk_(sp - 1)) = vbDouble Then
+    If VarType(stk_(sp)) = VT_DOUBLE And VarType(stk_(sp - 1)) = VT_DOUBLE Then
         If stk_(sp) = 0 Then Err.Raise vbObjectError + 2001, "VM.EvalExprNode", "Division by zero"
         stk_(sp - 1) = stk_(sp - 1) - stk_(sp) * Fix(stk_(sp - 1) / stk_(sp))
     Else
@@ -313,7 +324,7 @@ X12: ' MOD
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
 X13: ' POW
-    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+    If VarType(stk_(sp)) = VT_BOOLEAN Or VarType(stk_(sp - 1)) = VT_BOOLEAN Then
         stk_(sp - 1) = NumOf(stk_(sp - 1)) ^ NumOf(stk_(sp))
     Else
         stk_(sp - 1) = stk_(sp - 1) ^ stk_(sp)
@@ -322,7 +333,7 @@ X13: ' POW
     pc = pc + 1: GoTo Dispatch
 X14: ' EQ
     ' two numbers (Integer, Long, Single, Double: % gives a Long) compare directly
-    If VarType(stk_(sp)) >= vbInteger And VarType(stk_(sp)) <= vbDouble And VarType(stk_(sp - 1)) >= vbInteger And VarType(stk_(sp - 1)) <= vbDouble Then
+    If VarType(stk_(sp)) >= VT_INTEGER And VarType(stk_(sp)) <= VT_DOUBLE And VarType(stk_(sp - 1)) >= VT_INTEGER And VarType(stk_(sp - 1)) <= VT_DOUBLE Then
         t = (stk_(sp - 1) = stk_(sp))
     Else
         t = SameValues(stk_(sp - 1), stk_(sp))
@@ -332,7 +343,7 @@ X14: ' EQ
     pc = pc + 1: GoTo Dispatch
 X15: ' NE
     ' two numbers (Integer, Long, Single, Double: % gives a Long) compare directly
-    If VarType(stk_(sp)) >= vbInteger And VarType(stk_(sp)) <= vbDouble And VarType(stk_(sp - 1)) >= vbInteger And VarType(stk_(sp - 1)) <= vbDouble Then
+    If VarType(stk_(sp)) >= VT_INTEGER And VarType(stk_(sp)) <= VT_DOUBLE And VarType(stk_(sp - 1)) >= VT_INTEGER And VarType(stk_(sp - 1)) <= VT_DOUBLE Then
         t = (stk_(sp - 1) <> stk_(sp))
     Else
         t = Not SameValues(stk_(sp - 1), stk_(sp))
@@ -341,7 +352,7 @@ X15: ' NE
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
 X16: ' LT
-    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+    If VarType(stk_(sp)) = VT_BOOLEAN Or VarType(stk_(sp - 1)) = VT_BOOLEAN Then
         t = (NumOf(stk_(sp - 1)) < NumOf(stk_(sp)))
     Else
         t = (stk_(sp - 1) < stk_(sp))
@@ -350,7 +361,7 @@ X16: ' LT
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
 X17: ' LE
-    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+    If VarType(stk_(sp)) = VT_BOOLEAN Or VarType(stk_(sp - 1)) = VT_BOOLEAN Then
         t = (NumOf(stk_(sp - 1)) <= NumOf(stk_(sp)))
     Else
         t = (stk_(sp - 1) <= stk_(sp))
@@ -359,7 +370,7 @@ X17: ' LE
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
 X18: ' GT
-    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+    If VarType(stk_(sp)) = VT_BOOLEAN Or VarType(stk_(sp - 1)) = VT_BOOLEAN Then
         t = (NumOf(stk_(sp - 1)) > NumOf(stk_(sp)))
     Else
         t = (stk_(sp - 1) > stk_(sp))
@@ -368,7 +379,7 @@ X18: ' GT
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
 X19: ' GE
-    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+    If VarType(stk_(sp)) = VT_BOOLEAN Or VarType(stk_(sp - 1)) = VT_BOOLEAN Then
         t = (NumOf(stk_(sp - 1)) >= NumOf(stk_(sp)))
     Else
         t = (stk_(sp - 1) >= stk_(sp))
@@ -396,7 +407,7 @@ X23: ' NOT
     stk_(sp) = t
     pc = pc + 1: GoTo Dispatch
 X24: ' NEG
-    If VarType(stk_(sp)) = vbBoolean Then
+    If VarType(stk_(sp)) = VT_BOOLEAN Then
         stk_(sp) = -CDbl(NumOf(stk_(sp)))
     Else
         stk_(sp) = -CDbl(stk_(sp))
@@ -410,7 +421,7 @@ X26: ' JMP
     pc = oa_(pc): GoTo Dispatch
 X27: ' JMPF
     vt = VarType(stk_(sp))
-    If vt = vbBoolean Then
+    If vt = VT_BOOLEAN Then
         t = stk_(sp)
     Else
         t = Truthy(stk_(sp))
@@ -420,7 +431,7 @@ X27: ' JMPF
     GoTo Dispatch
 X28: ' JMPT
     vt = VarType(stk_(sp))
-    If vt = vbBoolean Then
+    If vt = VT_BOOLEAN Then
         t = stk_(sp)
     Else
         t = Truthy(stk_(sp))
@@ -487,7 +498,7 @@ X37: ' PRINT a: arguments
     sp = sp - oa_(pc)
     pc = pc + 1: GoTo Dispatch
 X38: ' INCL local a += constant b
-    If VarType(stk_(fp + oa_(pc))) = vbDouble Then
+    If VarType(stk_(fp + oa_(pc))) = VT_DOUBLE Then
         stk_(fp + oa_(pc)) = stk_(fp + oa_(pc)) + k_(ob_(pc))
     Else
         rv = AddValues(stk_(fp + oa_(pc)), k_(ob_(pc)))
@@ -495,7 +506,7 @@ X38: ' INCL local a += constant b
     End If
     pc = pc + 1: GoTo Dispatch
 X39: ' INCG global a += constant b
-    If VarType(glob_(oa_(pc))) = vbDouble Then
+    If VarType(glob_(oa_(pc))) = VT_DOUBLE Then
         glob_(oa_(pc)) = glob_(oa_(pc)) + k_(ob_(pc))
     Else
         rv = AddValues(glob_(oa_(pc)), k_(ob_(pc)))
@@ -503,28 +514,28 @@ X39: ' INCG global a += constant b
     End If
     pc = pc + 1: GoTo Dispatch
 X40: ' JNLT
-    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+    If VarType(stk_(sp)) = VT_BOOLEAN Or VarType(stk_(sp - 1)) = VT_BOOLEAN Then
         t = (NumOf(stk_(sp - 1)) < NumOf(stk_(sp)))
     Else
         t = (stk_(sp - 1) < stk_(sp))
     End If
     GoTo CompareJump
 X41: ' JNLE
-    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+    If VarType(stk_(sp)) = VT_BOOLEAN Or VarType(stk_(sp - 1)) = VT_BOOLEAN Then
         t = (NumOf(stk_(sp - 1)) <= NumOf(stk_(sp)))
     Else
         t = (stk_(sp - 1) <= stk_(sp))
     End If
     GoTo CompareJump
 X42: ' JNGT
-    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+    If VarType(stk_(sp)) = VT_BOOLEAN Or VarType(stk_(sp - 1)) = VT_BOOLEAN Then
         t = (NumOf(stk_(sp - 1)) > NumOf(stk_(sp)))
     Else
         t = (stk_(sp - 1) > stk_(sp))
     End If
     GoTo CompareJump
 X43: ' JNGE
-    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
+    If VarType(stk_(sp)) = VT_BOOLEAN Or VarType(stk_(sp - 1)) = VT_BOOLEAN Then
         t = (NumOf(stk_(sp - 1)) >= NumOf(stk_(sp)))
     Else
         t = (stk_(sp - 1) >= stk_(sp))
@@ -532,7 +543,7 @@ X43: ' JNGE
     GoTo CompareJump
 X44: ' JNEQ
     ' two numbers (Integer, Long, Single, Double: % gives a Long) compare directly
-    If VarType(stk_(sp)) >= vbInteger And VarType(stk_(sp)) <= vbDouble And VarType(stk_(sp - 1)) >= vbInteger And VarType(stk_(sp - 1)) <= vbDouble Then
+    If VarType(stk_(sp)) >= VT_INTEGER And VarType(stk_(sp)) <= VT_DOUBLE And VarType(stk_(sp - 1)) >= VT_INTEGER And VarType(stk_(sp - 1)) <= VT_DOUBLE Then
         t = (stk_(sp - 1) = stk_(sp))
     Else
         t = SameValues(stk_(sp - 1), stk_(sp))
@@ -540,14 +551,14 @@ X44: ' JNEQ
     GoTo CompareJump
 X45: ' JNNE
     ' two numbers (Integer, Long, Single, Double: % gives a Long) compare directly
-    If VarType(stk_(sp)) >= vbInteger And VarType(stk_(sp)) <= vbDouble And VarType(stk_(sp - 1)) >= vbInteger And VarType(stk_(sp - 1)) <= vbDouble Then
+    If VarType(stk_(sp)) >= VT_INTEGER And VarType(stk_(sp)) <= VT_DOUBLE And VarType(stk_(sp - 1)) >= VT_INTEGER And VarType(stk_(sp - 1)) <= VT_DOUBLE Then
         t = (stk_(sp - 1) <> stk_(sp))
     Else
         t = Not SameValues(stk_(sp - 1), stk_(sp))
     End If
     GoTo CompareJump
 X46: ' ADDK top + constant a
-    If VarType(stk_(sp)) = vbDouble Then
+    If VarType(stk_(sp)) = VT_DOUBLE Then
         stk_(sp) = stk_(sp) + k_(oa_(pc))
     Else
         rv = AddValues(stk_(sp), k_(oa_(pc)))
@@ -1167,7 +1178,7 @@ Private Function ClosureCode(ByRef v As Variant, ByRef fn As Long, ByRef env As 
     Dim m As ASF_Map: Set m = v
     Dim code As Variant
     If Not m.TryGetValue("fn", code) Then Exit Function
-    If VarType(code) <> vbDouble Then Exit Function
+    If VarType(code) <> VT_DOUBLE Then Exit Function
     env = Int(code / ENV_SHIFT)
     fn = code - CDbl(env) * ENV_SHIFT
     ClosureCode = True
@@ -1335,7 +1346,7 @@ Private Function ClassCode(ByRef v As Variant, ByVal pc As Long, ByRef fn As Lon
     Select Case kind
         Case "BoundMethod", "Method"
             If Not m.TryGetValue("fn", code) Then Exit Function
-            If VarType(code) <> vbLong Then Exit Function
+            If VarType(code) <> VT_LONG Then Exit Function
             fn = code
             If kind = "BoundMethod" Then
                 hasThis = True
@@ -1384,7 +1395,7 @@ Private Function StaticMethod(cls As ASF_Map, ByVal name As String, ByVal pc As 
     For Each item In methods
         If item.GetValue("name") = name Then
             If item.TryGetValue("fn", code) Then
-                If VarType(code) = vbLong Then
+                If VarType(code) = VT_LONG Then
                     fn = code
                     StaticMethod = True
                 End If
@@ -1445,7 +1456,7 @@ Private Function NativeMethod(ByVal id As Long, ByVal recvAt As Long, ByVal n As
                 Case Else: Exit Function
             End Select
         Case 10 To 19
-            If VarType(recv) <> vbString Then Exit Function
+            If VarType(recv) <> VT_STRING Then Exit Function
             Select Case id
                 Case 10: result = UCase$(recv)
                 Case 11: result = LCase$(recv)
@@ -1685,7 +1696,7 @@ Private Function ExpandItems(ByVal first As Long, ByVal n As Long, ByVal flags A
     For i = 1 To n
         SetItem v, stk_(first + i - 1)
         If Mid$(flags, i, 1) = "1" And Not IsObject(v) Then
-            If VarType(v) = vbString Then
+            If VarType(v) = VT_STRING Then
                 For j = 1 To Len(v)
                     items.Add Mid$(v, j, 1)
                 Next j
@@ -1718,6 +1729,8 @@ Private Function TemplateText(ByVal first As Long, ByVal n As Long) As String
             out = out & RT_.FormatValue(stk_(i))
         ElseIf IsNull(stk_(i)) Then
             out = out & "null"
+        ElseIf VarType(stk_(i)) = VT_STRING Then
+            out = out & stk_(i)
         ElseIf Not IsEmpty(stk_(i)) Then
             out = out & ScalarText(stk_(i))
         End If
@@ -1734,7 +1747,7 @@ Private Function NewArraySpread(ByVal first As Long, ByVal n As Long, ByVal flag
         If Mid$(flags, i, 1) = "1" Then
             If IsObject(v) Then
                 items.Add v
-            ElseIf VarType(v) = vbString Then
+            ElseIf VarType(v) = VT_STRING Then
                 For j = 1 To Len(v)
                     items.Add Mid$(v, j, 1)
                 Next j
@@ -1772,7 +1785,7 @@ Private Function IterList(ByRef v As Variant, ByVal keys As Long) As Variant
         For i = LBound(v) To UBound(v)
             If keys = 1 Then items.Add CLng(1 + i - LBound(v)) Else items.Add v(i)
         Next i
-    ElseIf VarType(v) = vbString Then
+    ElseIf VarType(v) = VT_STRING Then
         For i = 1 To Len(v)
             If keys = 1 Then items.Add i Else items.Add Mid$(v, i, 1)
         Next i
@@ -1864,7 +1877,7 @@ Private Function NewObject(ByVal first As Long, ByVal n As Long) As ASF_Map
                 For j = LBound(src) To UBound(src)
                     m.SetValue CStr(j - LBound(src) + 1), src(j)
                 Next j
-            ElseIf VarType(src) = vbString Then
+            ElseIf VarType(src) = VT_STRING Then
                 For j = 1 To Len(src)
                     m.SetValue CStr(j), Mid$(src, j, 1)
                 Next j
@@ -1958,7 +1971,7 @@ Private Function PropertyValue(ByRef obj As Variant, ByVal key As String, ByRef 
             If UBound(obj) = -1 Then PropertyValue = 0 Else PropertyValue = UBound(obj) - LBound(obj) + 1
             Exit Function
         End If
-        If VarType(obj) = vbString Then
+        If VarType(obj) = VT_STRING Then
             PropertyValue = Len(obj)
             Exit Function
         End If
@@ -1983,9 +1996,9 @@ Private Function Truthy(ByRef v As Variant) As Boolean
     If IsObject(v) Then Truthy = Not v Is Nothing: Exit Function
     If IsNull(v) Then Exit Function
     If IsEmpty(v) Then Exit Function
-    If VarType(v) = vbBoolean Then Truthy = v: Exit Function
+    If VarType(v) = VT_BOOLEAN Then Truthy = v: Exit Function
     If IsNumeric(v) Then Truthy = (CDbl(v) <> 0): Exit Function
-    If VarType(v) = vbString Then
+    If VarType(v) = VT_STRING Then
         Select Case LCase$(v)
             Case "true": Truthy = True
             Case "false": Truthy = False
@@ -1999,9 +2012,9 @@ End Function
 ' +: numbers add, a string on either side concatenates
 Private Function AddValues(ByRef a As Variant, ByRef b As Variant) As Variant
     If Not IsObject(a) And Not IsObject(b) Then
-        If VarType(a) <> vbString And VarType(b) <> vbString Then
-            If VarType(a) < vbArray And VarType(b) < vbArray Then
-                If VarType(a) = vbBoolean Or VarType(b) = vbBoolean Then AddValues = NumOf(a) + NumOf(b) Else AddValues = a + b
+        If VarType(a) <> VT_STRING And VarType(b) <> VT_STRING Then
+            If VarType(a) < VT_ARRAY And VarType(b) < VT_ARRAY Then
+                If VarType(a) = VT_BOOLEAN Or VarType(b) = VT_BOOLEAN Then AddValues = NumOf(a) + NumOf(b) Else AddValues = a + b
                 Exit Function
             End If
             RaiseOperandError "+", a, b
@@ -2017,15 +2030,15 @@ End Function
 ' fractions and overflows past the Long range; a - b * Fix(a / b) is exact for whole numbers (their
 ' quotient cannot round across an integer)
 Private Function ModValues(ByVal a As Variant, ByVal b As Variant) As Variant
-    If VarType(a) = vbBoolean Then a = NumOf(a)
-    If VarType(b) = vbBoolean Then b = NumOf(b)
+    If VarType(a) = VT_BOOLEAN Then a = NumOf(a)
+    If VarType(b) = VT_BOOLEAN Then b = NumOf(b)
     If b = 0 Then Err.Raise vbObjectError + 2001, "VM.EvalExprNode", "Division by zero"
     ModValues = a - b * Fix(a / b)
 End Function
 
 ' A value in arithmetic: true is 1 and false 0, as in JavaScript (VBA's True is -1)
 Private Function NumOf(ByRef v As Variant) As Variant
-    If VarType(v) = vbBoolean Then
+    If VarType(v) = VT_BOOLEAN Then
         If v Then NumOf = 1# Else NumOf = 0#
     ElseIf IsObject(v) Then
         Set NumOf = v
@@ -2036,7 +2049,9 @@ End Function
 
 ' A side of + or & with a string: arrays and objects as a template prints them, null as nothing
 Private Function TextOf(ByRef v As Variant) As String
-    If IsArray(v) Or IsMapValue(v) Then
+    If VarType(v) = VT_STRING Then
+        TextOf = v
+    ElseIf IsArray(v) Or IsMapValue(v) Then
         TextOf = RT_.FormatValue(v)
     ElseIf Not IsNull(v) Then
         TextOf = ScalarText(v)
@@ -2046,11 +2061,11 @@ End Function
 ' A string, number or boolean as text, as JavaScript writes it: true, 1e+21, 0.5 (whatever the locale)
 Private Function ScalarText(ByRef v As Variant) As String
     Select Case VarType(v)
-        Case vbString: ScalarText = v
-        Case vbBoolean
+        Case VT_STRING: ScalarText = v
+        Case VT_BOOLEAN
             If v Then ScalarText = "true" Else ScalarText = "false"
-        Case vbLong, vbInteger, vbByte: ScalarText = CStr(v)
-        Case vbDouble, vbSingle, vbCurrency, vbDecimal
+        Case VT_LONG, VT_INTEGER, VT_BYTE: ScalarText = CStr(v)
+        Case VT_DOUBLE, VT_SINGLE, VT_CURRENCY, VT_DECIMAL
             ' whole numbers below 1e15 have neither a decimal separator nor an exponent
             If v = Fix(v) And v < 1E+15 And v > -1E+15 Then ScalarText = CStr(v) Else ScalarText = RT_.NumberText(v)
         Case Else: ScalarText = CStr(v)
@@ -2083,14 +2098,14 @@ End Function
 ' ==: same objects, arrays with the same items, null as undefined
 Private Function IsNumberType(ByRef v As Variant) As Boolean
     Select Case VarType(v)
-        Case vbInteger, vbLong, vbSingle, vbDouble, vbCurrency, vbDecimal, vbByte: IsNumberType = True
+        Case VT_INTEGER, VT_LONG, VT_SINGLE, VT_DOUBLE, VT_CURRENCY, VT_DECIMAL, VT_BYTE: IsNumberType = True
     End Select
 End Function
 
 Private Function SameValues(ByRef a As Variant, ByRef b As Variant) As Boolean
     If VarType(a) = VarType(b) Then
         Select Case VarType(a)
-            Case vbString, vbDate, vbBoolean
+            Case VT_STRING, vbDate, VT_BOOLEAN
                 SameValues = (a = b)
                 Exit Function
         End Select
@@ -2106,11 +2121,11 @@ Private Function SameValues(ByRef a As Variant, ByRef b As Variant) As Boolean
     End If
     ' a numeric text equals its number ('1' == 1), as LibreOffice Basic compares them; VBA would
     ' put every number before every text
-    If VarType(a) = vbString And IsNumberType(b) Then
+    If VarType(a) = VT_STRING And IsNumberType(b) Then
         If IsNumeric(a) Then SameValues = (CDbl(a) = CDbl(b))
         Exit Function
     End If
-    If VarType(b) = vbString And IsNumberType(a) Then
+    If VarType(b) = VT_STRING And IsNumberType(a) Then
         If IsNumeric(b) Then SameValues = (CDbl(a) = CDbl(b))
         Exit Function
     End If
@@ -2144,7 +2159,7 @@ Private Function OperandText(ByRef v As Variant) As String
         OperandText = "null"
     ElseIf IsEmpty(v) Then
         OperandText = "undefined"
-    ElseIf VarType(v) = vbString Then
+    ElseIf VarType(v) = VT_STRING Then
         If Len(v) > 20 Then OperandText = "'" & Left$(v, 17) & "...'" Else OperandText = "'" & v & "'"
     Else
         OperandText = CStr(v)

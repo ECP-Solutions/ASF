@@ -28,6 +28,16 @@ Private COM_PROTOTYPES_ As ASF_Map   ' prototypes of host objects' methods, by C
 Private COLLECTIONS_METHOD_OVERRIDE_ As Boolean
 Private MathObj As Collection
 Private RANDOMIZED_ As Boolean
+' VarType values: LibreOffice Basic looks vbString, vbDouble... up on every call of a procedure
+Private Const VT_INTEGER As Integer = 2
+Private Const VT_LONG As Integer = 3
+Private Const VT_SINGLE As Integer = 4
+Private Const VT_DOUBLE As Integer = 5
+Private Const VT_CURRENCY As Integer = 6
+Private Const VT_STRING As Integer = 8
+Private Const VT_BOOLEAN As Integer = 11
+Private Const VT_DECIMAL As Integer = 14
+Private Const VT_BYTE As Integer = 17
 
 Public Property Set Globals(aGlobals As ASF_Globals)
     Set GLOBALS_ = aGlobals
@@ -771,7 +781,7 @@ Private Function DispatchMethod(evaluated As Collection, ByRef propN As String, 
         DispatchMethod = CollectionMethod(evaluated, propN, baseValLocal, origBaseVal, tmpResult, isMath)
     ElseIf IsNumberValue(baseValLocal) Then
         DispatchMethod = NumberMethod(evaluated, propN, baseValLocal, tmpResult)
-    ElseIf VarType(baseValLocal) = vbBoolean Then
+    ElseIf VarType(baseValLocal) = VT_BOOLEAN Then
         If propN <> "tostring" Then err.Raise vbObjectError + 5012, "VM.EvalCall", "'" & propN & "' is not a method of a boolean"
         If baseValLocal Then tmpResult = "true" Else tmpResult = "false"
         DispatchMethod = True
@@ -783,7 +793,7 @@ End Function
 Private Function IsNumberValue(ByRef v As Variant) As Boolean
     If Not IsObject(v) Then
         Select Case VarType(v)
-            Case vbInteger, vbLong, vbSingle, vbDouble, vbCurrency, vbDecimal, vbByte: IsNumberValue = True
+            Case VT_INTEGER, VT_LONG, VT_SINGLE, VT_DOUBLE, VT_CURRENCY, VT_DECIMAL, VT_BYTE: IsNumberValue = True
         End Select
     End If
 End Function
@@ -1561,7 +1571,7 @@ Private Function ArrTostring(evaluated As Collection, ByRef propN As String, ByR
         vAssignment valj, baseValLocal(lb_val + ii_j)
         If IsArray(valj) Or (IsObject(valj) And typeName(valj) = "ASF_Map") Then
             parts(ii_j + 1) = ValueToStringForPrint(valj)
-        ElseIf VarType(valj) = vbBoolean Then
+        ElseIf VarType(valj) = VT_BOOLEAN Then
             If valj Then parts(ii_j + 1) = "true" Else parts(ii_j + 1) = "false"
         ElseIf IsNumberValue(valj) Then
             parts(ii_j + 1) = NumberText(valj)
@@ -3703,10 +3713,10 @@ Private Function ValueToStringWithCtx(v As Variant, visited As Collection, depth
     End If
 
     ' Scalars
-    If VarType(v) = vbString Then
+    If VarType(v) = VT_STRING Then
         ValueToStringWithCtx = "'" & CStr(v) & "'": Exit Function
     End If
-    If VarType(v) = vbBoolean Then
+    If VarType(v) = VT_BOOLEAN Then
         If CBool(v) Then ValueToStringWithCtx = "true" Else ValueToStringWithCtx = "false"
         Exit Function
     End If
