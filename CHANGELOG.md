@@ -7,7 +7,16 @@ All notable changes for ASF. This file combines the release notes from the proje
 - **Changed**
     - **Faster calls into host objects** — a property or method of a host object raised and caught an error on every access, looking for a prototype in an empty collection; prototypes are now kept in one map and looked up only when a script registered one. `TypeName` is taken once per call, `Collection` is tested before the list of Office collections, and `obj.method(args)` on a host object that is not a collection goes from `ASF_VM` straight to `CallByName`, without copying its arguments into a `Collection` or going through the built-in methods. Results are unchanged; prototypes still take precedence over the object's own methods.
 
+- **Added**
+    - **Number methods** — `n.toFixed(digits)`, rounded as JavaScript rounds and always with a decimal point whatever the locale, and `n.toString()`; numbers had no methods.
+
 - **Fixed**
+    - **A call that takes a function literal, inside a block** — in an `if`, a loop or a function body, `s = a.map(fun(x) { ... }).join(', ')` stopped at the `}` of the function literal: the rest of the chain was lost and `s` got the array. The `}` of a function literal inside `(` or `[` no longer ends the statement.
+    - **`throw` in callbacks, methods and constructors** — a `throw` inside a callback of a built-in method (`map`, `filter`, `forEach`, `reduce`, `sort`, `replace`...) or inside a class method or constructor was lost: no `catch` saw it. It now goes up to the nearest `catch`, or ends the script with the value in `LastError`, and the built-in method stops at once. An error that is not a `throw` still makes its function give `undefined`.
+    - **Strings with the other quote** — `"it's"` and `'say "hi"'`: a string now ends at the quote it starts with. Double quotes were turned into single quotes before reading the script, so `"it's"` ended after `it`. The content of `@(...)` still goes to VBA Expressions with single quotes.
+    - **An operator without its operand** — `1 +`, `(a &&)`, `!`, `1 ? 2 :`, `let x = ;` compiled and gave `undefined` or `false`; they raise `Expected an expression after ...` from `Compile`.
+    - **Members of `undefined` and `null`** — `o.missing.x` and `o.missing.trim()` gave `undefined`; they raise `Cannot read properties of undefined (reading 'x')`, as in JavaScript. A missing property is still `undefined`.
+    - **`execAll` in the documentation** — it returns one array per match (the match and its groups), as the tests expect; `docs/API.md` said it returned the matched strings.
     - **`else if`** — `if (a) { } else if (b) { } else { }` is the same as `elseif`: each condition is tested. ASF 3 and 4.0 read `else if (b) { ... }` as `else { ... }`, without testing `b`, and dropped the `else` after it, with no error.
 
 ## [v4.0.0] - 2026-11-09

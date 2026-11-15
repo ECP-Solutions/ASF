@@ -185,11 +185,12 @@ let scientific = 1.5e10;
 
 #### String
 
-Strings are enclosed in single quotes:
+Strings are enclosed in single or double quotes; a string ends at the quote it starts with, so the other quote is plain text (`\'` and `\"` escape a quote of either kind):
 
 ```javascript
 let name = 'John Doe';
-let message = 'Hello, World!';
+let message = "it's ready";
+let quoted = 'say "hi"';
 let empty = '';
 ```
 

@@ -801,6 +801,9 @@ X88: ' SUPER a: 0 the fields and methods, 1 the constructor, of a module's class
 MethodCall:
     ' receiver.name(n arguments): an object's own function is called here with this; anything
     ' else (built-in methods, host objects) goes to ASF_Runtime
+    If Not IsObject(stk_(sp - n)) Then
+        If IsEmpty(stk_(sp - n)) Or IsNull(stk_(sp - n)) Then NoMembers stk_(sp - n), CStr(k_(oa_(pc)))
+    End If
     If IsObject(stk_(sp - n)) Then
         If TypeOf stk_(sp - n) Is ASF_Map Then
             Set m = stk_(sp - n)
@@ -845,6 +848,7 @@ MethodCall:
         End If
     End If
     args = Empty
+    If throwing_ Then GoTo Recover
     For i = sp - n + 1 To sp
         stk_(i) = Empty
     Next i
@@ -867,6 +871,7 @@ BuiltinCall:
     topSp_ = sp: topFt_ = ft
     SetItem rv, RT_.CallBuiltin(CStr(k_(oa_(pc))), args)
     args = Empty
+    If throwing_ Then GoTo Recover
     For i = sp - n + 1 To sp
         stk_(i) = Empty
     Next i
@@ -1006,11 +1011,10 @@ Unwind:
     If ft = 0 Then GoTo Finished
     If trace_ Then RT_.TraceError TraceName(frFn_(ft)), errDesc
     If RT_.verbose Then GLOBALS_.gRuntimeLog.Add "InvokeClosure error: Error during closure execution"
-    ' a constructor that fails still gives its instance, as its statements stop there;
-    ' methods and constructors keep a throw to themselves
+    ' a constructor that fails still gives its instance, as its statements stop there; a throw
+    ' goes on to the caller, from functions, methods and constructors alike
     rv = Empty
     If fnKind_(frFn_(ft)) = 2 Then SetItem rv, stk_(fp + fnThis_(frFn_(ft)))
-    If fnKind_(frFn_(ft)) > 0 Then throwing_ = False
     For i = frRes_(ft) To sp
         stk_(i) = Empty
     Next i
@@ -1024,10 +1028,11 @@ Unwind:
     pc = frRet_(ft): fp = frFp_(ft): env = frEnv_(ft)
     ft = ft - 1
     If ft = stopFt Then
-        ' a call from a built-in method gives undefined, the throw stops there
-        throwing_ = False
+        ' a call from a built-in method (map, forEach, sort...): an error gives undefined, a throw
+        ' leaves the method and goes on in the code that called it
         SetItem result, rv
         rv = Empty
+        If throwing_ Then GoTo Rethrow
         GoTo Finished
     End If
     rv = Empty
@@ -1040,6 +1045,11 @@ Unwind:
 Finished:
     If sp > stkHigh_ Then stkHigh_ = sp
     If IsObject(result) Then Set Execute = result Else Execute = result
+    Exit Function
+Rethrow:
+    If sp > stkHigh_ Then stkHigh_ = sp
+    On Error GoTo 0
+    Err.Raise vbObjectError + 5101, "ASF", "throw" ' a throw leaving a callback, for the code that called it
 End Function
 
 Private Sub GrowStack(ByVal need As Long)
@@ -1453,10 +1463,16 @@ Private Function Callback(ByVal fn As Long, ByVal env As Long, ByRef thisV As Va
     If n >= 2 Then SetItem stk_(first + 2), a2
     If n >= 3 Then SetItem stk_(first + 3), a3
     Dim r As Variant
+    On Error GoTo Thrown
     SetItem r, Execute(0, first + n, 1, topFt_, 0, topFt_, fn, n, env, True, thisV)
     stk_(first) = Empty
     topSp_ = savedSp: topFt_ = savedFt
     If IsObject(r) Then Set Callback = r Else Callback = r
+    Exit Function
+Thrown:
+    stk_(first) = Empty
+    topSp_ = savedSp: topFt_ = savedFt
+    Err.Raise Err.Number, Err.Source, Err.Description
 End Function
 
 ' map: each item (inside nested arrays too) through the function
@@ -1546,6 +1562,8 @@ End Function
 Public Function CallFromRuntime(closure As ASF_Map, args As Collection, ByVal hasThis As Boolean, ByRef thisVal As Variant) As Variant
     Dim fn As Long, env As Long, i As Long, n As Long, first As Long
     If Not ClosureCode(closure, fn, env) Then Exit Function
+    ' a callback threw and the built-in that called it went on: the rest of its calls are not run
+    If throwing_ Then Exit Function
     Dim savedSp As Long, savedFt As Long
     savedSp = topSp_: savedFt = topFt_
     first = topSp_ + 1
@@ -1556,10 +1574,16 @@ Public Function CallFromRuntime(closure As ASF_Map, args As Collection, ByVal ha
         SetItem stk_(first + i), args(i)
     Next i
     Dim r As Variant
+    On Error GoTo Thrown
     SetItem r, Execute(0, first + n, 1, topFt_, 0, topFt_, fn, n, env, hasThis, thisVal)
     stk_(first) = Empty
     topSp_ = savedSp: topFt_ = savedFt
     If IsObject(r) Then Set CallFromRuntime = r Else CallFromRuntime = r
+    Exit Function
+Thrown:
+    stk_(first) = Empty
+    topSp_ = savedSp: topFt_ = savedFt
+    Err.Raise Err.Number, Err.Source, Err.Description
 End Function
 
 Private Function ArgsArray(ByVal first As Long, ByVal n As Long) As Variant
@@ -1847,7 +1871,15 @@ Private Function WithIndex(ByRef c As Variant, ByRef k As Variant, ByRef v As Va
 End Function
 
 ' obj.key; hint is the instruction's cache
+' undefined.x and null.x are errors, as in JavaScript
+Private Sub NoMembers(ByRef v As Variant, ByVal key As String)
+    Err.Raise vbObjectError + 5102, "ASF", "Cannot read properties of " & IIf(IsNull(v), "null", "undefined") & " (reading '" & key & "')"
+End Sub
+
 Private Function PropertyValue(ByRef obj As Variant, ByVal key As String, ByRef hint As Long) As Variant
+    If Not IsObject(obj) Then
+        If IsEmpty(obj) Or IsNull(obj) Then NoMembers obj, key
+    End If
     If IsObject(obj) Then
         If TypeOf obj Is ASF_Map Then
             Dim m As ASF_Map: Set m = obj

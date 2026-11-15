@@ -49,6 +49,13 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("if",                        "if_else_if") Then if_else_if: EndTest
     If StartTest("if",                        "if_else_if_without_else") Then if_else_if_without_else: EndTest
     If StartTest("if",                        "if_else_if_with_elseif") Then if_else_if_with_elseif: EndTest
+    If StartTest("syntax",                    "chain_after_function_literal_in_block") Then chain_after_function_literal_in_block: EndTest
+    If StartTest("syntax",                    "strings_with_the_other_quote") Then strings_with_the_other_quote: EndTest
+    If StartTest("syntax",                    "missing_operand_is_compile_error") Then missing_operand_is_compile_error: EndTest
+    If StartTest("try_catch",                 "throw_from_callbacks") Then throw_from_callbacks: EndTest
+    If StartTest("try_catch",                 "throw_from_methods_and_constructors") Then throw_from_methods_and_constructors: EndTest
+    If StartTest("objects",                   "member_of_undefined_is_error") Then member_of_undefined_is_error: EndTest
+    If StartTest("numbers",                   "number_methods") Then number_methods: EndTest
     If StartTest("for",                       "for_simple") Then for_simple: EndTest
     If StartTest("for",                       "for_break_continue") Then for_break_continue: EndTest
     If StartTest("while",                     "while_break_continue") Then while_break_continue: EndTest
@@ -4724,13 +4731,14 @@ TestFail:
     Resume TestExit
 End Sub
 Private Sub unknown_member_of_array_or_string()
-    ' a member arrays and strings do not have is undefined, and calling it is an error, not a loop
+    ' a member arrays and strings do not have is undefined, and calling it is an error, not a loop;
+    ' a member of undefined is an error, as in JavaScript
     Dim eng As New ASF
     On Error GoTo TestFail
     actual = CStr(GetResult("return typeof ([1].nope);"))
     expected = "undefined"
     AssertEqual expected, actual
-    actual = CStr(GetResult("let a = [1]; return `${a.nope.x}|${'abc'.nope}`;"))
+    actual = CStr(GetResult("let a = [1]; return `${a.nope}|${'abc'.nope}`;"))
     expected = "|"
     AssertEqual expected, actual
     With eng
@@ -4738,6 +4746,8 @@ Private Sub unknown_member_of_array_or_string()
         AssertEqual "'nope' is not a method of an array", CStr(.LastError)
         AssertEqual "", CStr(.Run(.Compile("return 'abc'.Nope();")))
         AssertEqual "'nope' is not a method of a string", CStr(.LastError)
+        AssertEqual "", CStr(.Run(.Compile("let a = [1]; return a.nope.x;")))
+        AssertEqual "Cannot read properties of undefined (reading 'x')", CStr(.LastError)
     End With
 TestExit:
     Exit Sub
@@ -5036,6 +5046,142 @@ Private Sub module_system_export_fun()
     End With
     expected = "10 2.5"
     AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub chain_after_function_literal_in_block()
+    ' inside a block, a call that takes a function literal keeps the rest of its chain
+    Dim eng As New ASF
+    On Error GoTo TestFail
+    actual = CStr(GetResult("let s = ''; if (true) { s = [1, 2].map(fun(x) { return x * 2; }).join(', '); }; return s;"))
+    AssertEqual "2, 4", actual
+    actual = CStr(GetResult("let s = ''; for (let i = 1, i <= 2, i += 1) { s = s + [i].map(fun(x) { return x; }).length; }; return s;"))
+    AssertEqual "11", actual
+    actual = CStr(GetResult("fun f(a) { return a.filter(fun(x) { return x > 1; }).map(fun(x) { return x * 10; }).join('-'); }; return f([1, 2, 3]);"))
+    AssertEqual "20-30", actual
+    actual = CStr(GetResult("fun g() { let c = [fun(o) { return o + 1; }, fun(o) { return o * 2; }]; return c[2](5); }; return g();"))
+    AssertEqual "10", actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub strings_with_the_other_quote()
+    ' a string ends at the quote it starts with; the other quote is text
+    Dim eng As New ASF
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return ""it's"";"))
+    AssertEqual "it's", actual
+    actual = CStr(GetResult("return 'say ""hi""';"))
+    AssertEqual "say ""hi""", actual
+    actual = CStr(GetResult("return ""it\'s \""ok\"""" + '|' + 'it\'s';"))
+    AssertEqual "it's ""ok""|it's", actual
+    actual = CStr(GetResult("return `say ""${'hi'}"" and ${""it's""}`;"))
+    AssertEqual "say ""hi"" and it's", actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub missing_operand_is_compile_error()
+    ' an operator without its operand is a compile error, not undefined
+    Dim eng As New ASF
+    On Error GoTo TestFail
+    AssertEqual "9025 Expected an expression after +", CompileErrorOf("return 1 +;")
+    AssertEqual "9025 Expected an expression after &&", CompileErrorOf("let a = true; return (a &&);")
+    AssertEqual "9025 Expected an expression after *", CompileErrorOf("return 1 * * 2;")
+    AssertEqual "9025 Expected an expression after !", CompileErrorOf("return !;")
+    AssertEqual "9025 Expected an expression after :", CompileErrorOf("return 1 ? 2 :;")
+    AssertEqual "9025 Expected an expression after =", CompileErrorOf("let x = ; return x;")
+    AssertEqual "9025 Expected an expression after +=", CompileErrorOf("let x = 1; x += ; return x;")
+    actual = CStr(GetResult("return -1 + -(2) * 1 + (!(1 > 2) ? 0 : 1);"))
+    AssertEqual "-3", actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub throw_from_callbacks()
+    ' a throw in a callback of map, filter, forEach, sort or replace leaves the method at once
+    Dim eng As New ASF
+    On Error GoTo TestFail
+    actual = CStr(GetResult("try { [1, 2].map(fun(x) { if (x == 2) { throw 'in map'; }; return x; }); } catch (e) { return e; };"))
+    AssertEqual "in map", actual
+    actual = CStr(GetResult("let n = 0; try { [1, 2, 3].forEach(fun(x) { n += 1; if (x == 2) { throw 'stop'; }; }); } catch (e) { return `${n} ${e}`; };"))
+    AssertEqual "2 stop", actual
+    actual = CStr(GetResult("try { [3, 1, 2].sort(fun(a, b) { throw 'in sort'; }); } catch (e) { return e; };"))
+    AssertEqual "in sort", actual
+    actual = CStr(GetResult("try { 'a1'.replace(`/\d/g`, fun(m) { throw 'in replace'; }); } catch (e) { return e; };"))
+    AssertEqual "in replace", actual
+    actual = CStr(GetResult("fun f() { [1].filter(fun(x) { throw 'deep'; }); return 'after'; }; try { return f(); } catch (e) { return e; };"))
+    AssertEqual "deep", actual
+    With eng
+        AssertEqual "", CStr(.Run(.Compile("[1, 2].forEach(fun(x) { throw 'uncaught'; }); return 1;")))
+        AssertEqual "uncaught", CStr(.LastError)
+    End With
+    ' an error that is not a throw still makes the callback give undefined
+    actual = CStr(GetResult("let r = [1, 2].map(fun(x) { let y = null; return x + y.z; }); return r.length;"))
+    AssertEqual "2", actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub throw_from_methods_and_constructors()
+    ' a throw in a method or a constructor goes on to the caller
+    Dim eng As New ASF
+    On Error GoTo TestFail
+    actual = CStr(GetResult("class A { m() { throw 'from method'; } }; try { new A().m(); } catch (e) { return e; }; return 'lost';"))
+    AssertEqual "from method", actual
+    actual = CStr(GetResult("class A { constructor() { throw 'from constructor'; } }; try { let a = new A(); } catch (e) { return e; }; return 'lost';"))
+    AssertEqual "from constructor", actual
+    actual = CStr(GetResult("class B { check(v) { if (v < 0) { throw `negative: ${v}`; }; return v; } }; let b = new B(); try { b.check(1); b.check(-2); } catch (e) { return e; };"))
+    AssertEqual "negative: -2", actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub member_of_undefined_is_error()
+    ' a member of undefined or null is an error, as in JavaScript; a missing property is undefined
+    Dim eng As New ASF
+    On Error GoTo TestFail
+    actual = CStr(GetResult("let o = {a: 1}; try { o.b.c; } catch (e) { return e; };"))
+    AssertEqual "Cannot read properties of undefined (reading 'c')", actual
+    actual = CStr(GetResult("let o = {a: 1}; try { o.b.startsWith('x'); } catch (e) { return e; };"))
+    AssertEqual "Cannot read properties of undefined (reading 'startsWith')", actual
+    actual = CStr(GetResult("let x = null; try { return x.y; } catch (e) { return e; };"))
+    AssertEqual "Cannot read properties of null (reading 'y')", actual
+    actual = CStr(GetResult("let o = {a: {b: 2}}; return `${typeof o.missing} ${o.a.b}`;"))
+    AssertEqual "undefined 2", actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub number_methods()
+    ' toFixed as in JavaScript, always with a point; toString; other names are errors
+    Dim eng As New ASF
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return [(1.005).toFixed(2), (2.5).toFixed(0), (0.125).toFixed(2), (-1.5).toFixed(0), (1234.5678).toFixed(2), (3).toFixed(), (19.999).toFixed(2), (0.000001).toFixed(7)].join(' ');"))
+    AssertEqual "1.00 3 0.13 -2 1234.57 3 20.00 0.0000010", actual
+    actual = CStr(GetResult("let n = 5; return n.toString() + '|' + (2.5).toString();"))
+    AssertEqual "5|2.5", actual
+    With eng
+        AssertEqual "", CStr(.Run(.Compile("let n = 3; return n.toFixed(101);")))
+        AssertEqual "toFixed() digits argument must be between 0 and 100", CStr(.LastError)
+        AssertEqual "", CStr(.Run(.Compile("let n = 3; return n.nope();")))
+        AssertEqual "'nope' is not a method of a number", CStr(.LastError)
+    End With
 TestExit:
     Exit Sub
 TestFail:

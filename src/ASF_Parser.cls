@@ -16,6 +16,7 @@ Private GLOBALS_ As ASF_Globals
 Public Sub SetGlobals(ByRef aGlobals As ASF_Globals)
     Set GLOBALS_ = aGlobals
 End Sub
+' The content of @(...) goes to VBA Expressions with its double quotes as single quotes
 Private Function ReplaceDQuotes(src As String) As String
     ReplaceDQuotes = Replace(src, ChrW$(34), "'")
 End Function
@@ -27,7 +28,7 @@ Public Function Tokenize(src As String) As Collection
     Dim nxt As String
     Dim tmpIdent As String
     Dim j As Long, jC As Long, jB As Long
-    Dim sourceCode As String: sourceCode = ReplaceDQuotes(src)
+    Dim sourceCode As String: sourceCode = src
     Dim tk As Variant
     Dim idx As Long
     Dim out As New Collection
@@ -213,7 +214,8 @@ ContinueTemplateLoop:
                 End If
             Case ":"
                 toks.Add Array("OP", ch): i = i + 1: GoTo Tokenize_SkipToLoopEnd
-            Case "'"
+            Case "'", ChrW$(34)
+                ' a string ends at the quote it starts with: "it's", 'say "hi"'
                 j = i + 1
                 sb = vbNullString
                 Do While j <= n
@@ -222,7 +224,7 @@ ContinueTemplateLoop:
                         If j + 1 <= n Then
                             nx = mid$(sourceCode, j + 1, 1)
                             Select Case nx
-                                Case "'": sb = sb & "'": j = j + 2: GoTo ContinueDo
+                                Case "'", ChrW$(34): sb = sb & nx: j = j + 2: GoTo ContinueDo
                                 Case "\": sb = sb & "\": j = j + 2: GoTo ContinueDo
                                 Case "n": sb = sb & vbLf: j = j + 2: GoTo ContinueDo
                                 Case "r": sb = sb & vbCr: j = j + 2: GoTo ContinueDo
@@ -234,7 +236,7 @@ ContinueTemplateLoop:
                             j = j + 1
                             GoTo ContinueDo
                         End If
-                    ElseIf cj = "'" Then
+                    ElseIf cj = ch Then
                         Exit Do
                     Else
                         sb = sb & cj
@@ -242,7 +244,7 @@ ContinueTemplateLoop:
                     End If
 ContinueDo:
                 Loop
-                If j <= n And mid$(sourceCode, j, 1) = "'" Then
+                If j <= n And mid$(sourceCode, j, 1) = ch Then
                     toks.Add Array("STRING", sb)
                     i = j + 1
                     GoTo Tokenize_SkipToLoopEnd
@@ -309,7 +311,7 @@ ContinueDo:
                         End If
                     Loop
                     ' vbContent now contains inner characters between parentheses
-                    toks.Add Array("VBEXPR", vbContent)
+                    toks.Add Array("VBEXPR", ReplaceDQuotes(vbContent))
                     i = jvb + 1  ' position after ')'
                     GoTo Tokenize_SkipToLoopEnd
                 Else

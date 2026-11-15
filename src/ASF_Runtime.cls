@@ -769,10 +769,65 @@ Private Function DispatchMethod(evaluated As Collection, ByRef propN As String, 
         DispatchMethod = MapMethod(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
     ElseIf baseType = "Collection" Then
         DispatchMethod = CollectionMethod(evaluated, propN, baseValLocal, origBaseVal, tmpResult, isMath)
+    ElseIf IsNumberValue(baseValLocal) Then
+        DispatchMethod = NumberMethod(evaluated, propN, baseValLocal, tmpResult)
     Else
         vAssignment tmpResult, CallObjectMethod(baseValLocal, propN, evaluated)
         DispatchMethod = True
     End If
+End Function
+Private Function IsNumberValue(ByRef v As Variant) As Boolean
+    If Not IsObject(v) Then
+        Select Case VarType(v)
+            Case vbInteger, vbLong, vbSingle, vbDouble, vbCurrency, vbDecimal, vbByte: IsNumberValue = True
+        End Select
+    End If
+End Function
+' Methods of numbers: toFixed(digits) and toString()
+Private Function NumberMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef tmpResult As Variant) As Boolean
+    Select Case propN
+        Case "tofixed"
+            If evaluated.Count = 0 Then
+                tmpResult = NumberToFixed(CDbl(baseValLocal), 0)
+            ElseIf IsEmpty(evaluated(1)) Then
+                tmpResult = NumberToFixed(CDbl(baseValLocal), 0)
+            Else
+                tmpResult = NumberToFixed(CDbl(baseValLocal), evaluated(1))
+            End If
+        Case "tostring"
+            tmpResult = CStr(baseValLocal)
+        Case Else
+            err.Raise vbObjectError + 5012, "VM.EvalCall", "'" & propN & "' is not a method of a number"
+    End Select
+    NumberMethod = True
+End Function
+' x with digits decimals, as JavaScript's toFixed: the nearer of the two candidates, the larger on a
+' tie (in VBA's exact arithmetic; LibreOffice Basic rounds near ties); always with a point,
+' whatever the locale. Past 15 decimals the rest are zeros.
+Private Function NumberToFixed(ByVal x As Double, ByVal digits As Variant) As String
+    Dim f As Long: f = Fix(CDbl(digits))
+    If f < 0 Or f > 100 Then err.Raise vbObjectError + 5012, "VM.EvalCall", "toFixed() digits argument must be between 0 and 100"
+    If Abs(x) >= 1E+21 Then
+        NumberToFixed = CStr(x)
+        Exit Function
+    End If
+    Dim sign As String
+    If x < 0 Then
+        sign = "-"
+        x = -x
+    End If
+    Dim g As Long: g = f
+    If g > 15 Then g = 15
+    Dim scale_ As Double: scale_ = 10 ^ g
+    Dim n As Double: n = Fix(x * scale_)
+    If Abs((n + 1) / scale_ - x) <= Abs(x - n / scale_) Then n = n + 1
+    Dim text As String: text = Format$(n, "0")
+    If g > 0 Then
+        If Len(text) <= g Then text = String$(g - Len(text) + 1, "0") & text
+        text = Left$(text, Len(text) - g) & "." & Right$(text, g)
+    End If
+    If f > g Then text = text & String$(f - g, "0")
+    NumberToFixed = sign & text
 End Function
 ' A method that changes its receiver gives the new array to the caller, which writes it back
 Private Sub WriteBack(ByRef value As Variant)
