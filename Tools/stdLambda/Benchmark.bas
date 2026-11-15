@@ -7,7 +7,7 @@ Attribute VB_Name = "LambdaBenchmark"
 ' workload's arguments, as a callback is called. "Array transformations" is each library used as it
 ' is meant to be: stdLambda called from VBA once per item (as stdArray.Map calls it), ASF given the
 ' array and calling its own function once per item (map).
-' Run it with Benchmark.ps1 (Excel) or BenchmarkLO.py (LibreOffice).
+' VBA only (Excel): run it with Benchmark.ps1.
 Option Explicit
 
 #If VBA7 Then
