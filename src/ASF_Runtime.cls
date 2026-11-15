@@ -771,6 +771,10 @@ Private Function DispatchMethod(evaluated As Collection, ByRef propN As String, 
         DispatchMethod = CollectionMethod(evaluated, propN, baseValLocal, origBaseVal, tmpResult, isMath)
     ElseIf IsNumberValue(baseValLocal) Then
         DispatchMethod = NumberMethod(evaluated, propN, baseValLocal, tmpResult)
+    ElseIf VarType(baseValLocal) = vbBoolean Then
+        If propN <> "tostring" Then err.Raise vbObjectError + 5012, "VM.EvalCall", "'" & propN & "' is not a method of a boolean"
+        If baseValLocal Then tmpResult = "true" Else tmpResult = "false"
+        DispatchMethod = True
     Else
         vAssignment tmpResult, CallObjectMethod(baseValLocal, propN, evaluated)
         DispatchMethod = True
@@ -782,6 +786,54 @@ Private Function IsNumberValue(ByRef v As Variant) As Boolean
             Case vbInteger, vbLong, vbSingle, vbDouble, vbCurrency, vbDecimal, vbByte: IsNumberValue = True
         End Select
     End If
+End Function
+' A number as text, as JavaScript's String(x): no exponent from 1e-6 to 1e21 (1e+21, 1e-7 out of
+' it), a point whatever the locale; up to 15 significant digits, as VBA writes numbers
+Public Function NumberText(ByVal v As Variant) As String
+    Dim x As Double: x = CDbl(v)
+    If x = Fix(x) And Abs(x) < 1E+15 Then
+        NumberText = CStr(x)
+        Exit Function
+    End If
+    Dim s As String, sign As String, mant As String, e As Long, p As Long, digits As String, k As Long, n As Long
+    If x < 0 Then sign = "-": x = -x
+    ' CStr gives VBA's 15 digits; its decimal separator follows the locale
+    s = Replace(CStr(x), Mid$(CStr(0.5), 2, 1), ".")
+    p = InStr(1, s, "E", vbTextCompare)
+    If p > 0 Then
+        mant = Left$(s, p - 1)
+        e = CLng(Mid$(s, p + 1))
+    Else
+        mant = s
+    End If
+    ' digits without the point; n: where the point goes, counted from the first digit
+    p = InStr(mant, ".")
+    If p > 0 Then
+        digits = Left$(mant, p - 1) & Mid$(mant, p + 1)
+        n = p - 1 + e
+    Else
+        digits = mant
+        n = Len(mant) + e
+    End If
+    Do While Left$(digits, 1) = "0" And Len(digits) > 1
+        digits = Mid$(digits, 2)
+        n = n - 1
+    Loop
+    Do While Right$(digits, 1) = "0" And Len(digits) > 1
+        digits = Left$(digits, Len(digits) - 1)
+    Loop
+    k = Len(digits)
+    If k <= n And n <= 21 Then
+        s = digits & String$(n - k, "0")
+    ElseIf 0 < n And n <= 21 Then
+        s = Left$(digits, n) & "." & Mid$(digits, n + 1)
+    ElseIf -6 < n And n <= 0 Then
+        s = "0." & String$(-n, "0") & digits
+    Else
+        If k = 1 Then s = digits Else s = Left$(digits, 1) & "." & Mid$(digits, 2)
+        If n - 1 < 0 Then s = s & "e-" & CStr(1 - n) Else s = s & "e+" & CStr(n - 1)
+    End If
+    NumberText = sign & s
 End Function
 ' Methods of numbers: toFixed(digits) and toString()
 Private Function NumberMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef tmpResult As Variant) As Boolean
@@ -795,7 +847,7 @@ Private Function NumberMethod(evaluated As Collection, ByRef propN As String, By
                 tmpResult = NumberToFixed(CDbl(baseValLocal), evaluated(1))
             End If
         Case "tostring"
-            tmpResult = CStr(baseValLocal)
+            tmpResult = NumberText(baseValLocal)
         Case Else
             err.Raise vbObjectError + 5012, "VM.EvalCall", "'" & propN & "' is not a method of a number"
     End Select
@@ -808,7 +860,7 @@ Private Function NumberToFixed(ByVal x As Double, ByVal digits As Variant) As St
     Dim f As Long: f = Fix(CDbl(digits))
     If f < 0 Or f > 100 Then err.Raise vbObjectError + 5012, "VM.EvalCall", "toFixed() digits argument must be between 0 and 100"
     If Abs(x) >= 1E+21 Then
-        NumberToFixed = CStr(x)
+        NumberToFixed = NumberText(x)
         Exit Function
     End If
     Dim sign As String
@@ -1509,6 +1561,10 @@ Private Function ArrTostring(evaluated As Collection, ByRef propN As String, ByR
         vAssignment valj, baseValLocal(lb_val + ii_j)
         If IsArray(valj) Or (IsObject(valj) And typeName(valj) = "ASF_Map") Then
             parts(ii_j + 1) = ValueToStringForPrint(valj)
+        ElseIf VarType(valj) = vbBoolean Then
+            If valj Then parts(ii_j + 1) = "true" Else parts(ii_j + 1) = "false"
+        ElseIf IsNumberValue(valj) Then
+            parts(ii_j + 1) = NumberText(valj)
         Else
             parts(ii_j + 1) = CStr(valj)
         End If
@@ -3651,11 +3707,11 @@ Private Function ValueToStringWithCtx(v As Variant, visited As Collection, depth
         ValueToStringWithCtx = "'" & CStr(v) & "'": Exit Function
     End If
     If VarType(v) = vbBoolean Then
-        If CBool(v) Then ValueToStringWithCtx = "True" Else ValueToStringWithCtx = "False"
+        If CBool(v) Then ValueToStringWithCtx = "true" Else ValueToStringWithCtx = "false"
         Exit Function
     End If
     If IsNumeric(v) Then
-        ValueToStringWithCtx = CStr(v): Exit Function
+        ValueToStringWithCtx = NumberText(v): Exit Function
     End If
 
     ' Arrays (native VBA arrays)

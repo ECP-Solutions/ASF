@@ -58,6 +58,8 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("numbers",                   "number_methods") Then number_methods: EndTest
     If StartTest("numbers",                   "booleans_in_arithmetic") Then booleans_in_arithmetic: EndTest
     If StartTest("numbers",                   "number_literals_with_exponent") Then number_literals_with_exponent: EndTest
+    If StartTest("numbers",                   "values_as_text") Then values_as_text: EndTest
+    If StartTest("numbers",                   "remainder_like_javascript") Then remainder_like_javascript: EndTest
     If StartTest("for",                       "for_simple") Then for_simple: EndTest
     If StartTest("for",                       "for_break_continue") Then for_break_continue: EndTest
     If StartTest("while",                     "while_break_continue") Then while_break_continue: EndTest
@@ -500,7 +502,7 @@ Private Sub negation_unary()
     With Globals
         actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
-    expected = "PRINT:-2, True, False"
+    expected = "PRINT:-2, true, false"
     AssertEqual expected, actual
 
 TestExit:
@@ -1960,7 +1962,7 @@ Private Sub array_includes_indexOf_lastIndexOf()
     On Error GoTo TestFail
     actual = CStr(GetResult("a=[1,2,3,2]; inc = a.includes(2); idx = a.indexOf(2);" & _
                             "lidx = a.lastIndexOf(2); return(inc & '|' & idx & '|' & lidx);"))
-    expected = "True|2|4"
+    expected = "true|2|4"
     AssertEqual expected, actual
 TestExit:
     Exit Sub
@@ -2073,7 +2075,7 @@ Private Sub array_entries_and_every_find_combo()
     With Globals
         actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
-    expected = "PRINT:True, PRINT:6"
+    expected = "PRINT:true, PRINT:6"
     AssertEqual expected, actual
 TestExit:
     Exit Sub
@@ -2091,7 +2093,7 @@ Private Sub array_includes_and_index_checks_with_objects()
         actual = CStr(.gRuntimeLog(.gRuntimeLog.Count - 1)) & ", " & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     ' indexOf returns first occurrence using deep equality; option base is 1
-    expected = "PRINT:1, PRINT:True"
+    expected = "PRINT:1, PRINT:true"
     AssertEqual expected, actual
 TestExit:
     Exit Sub
@@ -4556,7 +4558,7 @@ Private Sub regex_local_match()
     On Error GoTo TestFail
     
     actual = CStr(GetResult("let r = regex(`,`, false, false, false, false); return(r.replace('a,b,c', ';') + '|' + `${r.split('a,b,c')}` + '|' + r.getglobal());"))
-    expected = "a;b,c|[ 'a', 'b,c' ]|False"
+    expected = "a;b,c|[ 'a', 'b,c' ]|false"
     AssertEqual expected, actual
     actual = CStr(GetResult("let r = regex(`,`); r.setglobal(false); let one = r.replace('a,b,c', ';'); r.setglobal(true); return(one + '|' + r.replace('a,b,c', ';'));"))
     expected = "a;b,c|a;b;c"
@@ -4606,10 +4608,10 @@ Private Sub class_methods_named_like_builtins()
     
     actual = CStr(GetResult("class S { constructor() { this.n = 0; } set(x) { this.n = x; } get(d) { return this.n + d; } has(x) { return x == this.n; } }; " & _
                             "let s = new S(); s.set(5); return(`${s.get(1)}|${s.has(5)}|${s.n}`);"))
-    expected = "6|True|5"
+    expected = "6|true|5"
     AssertEqual expected, actual
     actual = CStr(GetResult("let o = { a: 1 }; o.set('b', 2); return(`${o.get('b')}|${o.has('a')}`);"))
-    expected = "2|True"
+    expected = "2|true"
     AssertEqual expected, actual
 
 TestExit:
@@ -4654,7 +4656,7 @@ Private Sub equality_with_arrays_and_objects()
     On Error GoTo TestFail
     actual = CStr(GetResult("let m = [1, 2]; let o = { a: 1 }; let p = o; " & _
                             "return [m == null, m != null, o == null, o == p, o == { a: 1 }, [1, [2]] == [1, [2]], [1] != [2], 'a' == 1, '1' == 1].join('|');"))
-    expected = Join(Array(CStr(False), CStr(True), CStr(False), CStr(True), CStr(False), CStr(True), CStr(True), CStr(False), CStr(True)), "|")
+    expected = "false|true|false|true|false|true|true|false|true"
     AssertEqual expected, actual
     actual = CStr(GetResult("let f = fun(m) { if (m == null) { return 'none'; }; return m.length; }; return `${f(null)} ${f([5, 6])}`;"))
     expected = "none 2"
@@ -4805,7 +4807,7 @@ Private Sub typeof_operand()
     expected = "array|string!|number|string|number"
     AssertEqual expected, actual
     actual = CStr(GetResult("let o = {a: [1]}; return [typeof o.a[1], typeof (o).a, typeof ('abc').length, typeof(o.a), typeof (1) + '!', typeof o.a == 'array'].join('|');"))
-    expected = "number|array|number|array|number!|True"
+    expected = "number|array|number|array|number!|true"
     AssertEqual expected, actual
 TestExit:
     Exit Sub
@@ -4818,7 +4820,7 @@ Private Sub missing_property_is_undefined()
     Dim eng As New ASF
     On Error GoTo TestFail
     actual = CStr(GetResult("let o = {a: {b: 2}}; return `${typeof o.nope} ${o.nope == null} ${o.a.b + (o.c ?? 5)}`;"))
-    expected = "undefined True 7"
+    expected = "undefined true 7"
     AssertEqual expected, actual
     With eng
         actual = .Run(.Compile("let o = {a: 1}; return o.nope;"))
@@ -5214,6 +5216,39 @@ Private Sub number_literals_with_exponent()
     AssertEqual "7", actual
     actual = CStr(GetResult("return 12.5 * 2 + 0.25;"))
     AssertEqual "25.25", actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub values_as_text()
+    ' booleans and numbers become text as in JavaScript, with a point whatever the locale
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return 'x' + true + '|' + `${false}` + '|' + [true, false].join(',') + '|' + (true).toString();"))
+    AssertEqual "xtrue|false|true,false|true", actual
+    actual = CStr(GetResult("return [1e21, 1e15, 0.5, -0.25, 1e-7, -1.5e-7, 0.000001, 2.5e20, 123.456].join(' ');"))
+    AssertEqual "1e+21 1000000000000000 0.5 -0.25 1e-7 -1.5e-7 0.000001 250000000000000000000 123.456", actual
+    actual = CStr(GetResult("return `${1e21} ${1 / 4}` + '|' + (2.5).toString() + '|' + 1e21 + '|' + (1e21).toFixed(2);"))
+    AssertEqual "1e+21 0.25|2.5|1e+21|1e+21", actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub remainder_like_javascript()
+    ' % keeps the fraction and the sign of the dividend, also past VBA's Long range
+    Dim eng As New ASF
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return [5.5 % 2, 10 % 3, -7 % 3, 7 % -3, 2.5 % 1, 3000000000 % 7, 7.5 % -2].join(' ');"))
+    AssertEqual "1.5 1 -1 1 0.5 4 1.5", actual
+    actual = CStr(GetResult("let n = 0; for (let i = 1, i <= 9, i += 1) { if (i % 3 == 0) { n += 1; }; }; return n;"))
+    AssertEqual "3", actual
+    With eng
+        AssertEqual "", CStr(.Run(.Compile("return 5 % 0;")))
+        AssertEqual "Division by zero", CStr(.LastError)
+    End With
 TestExit:
     Exit Sub
 TestFail:

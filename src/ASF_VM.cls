@@ -302,10 +302,13 @@ X11: ' DIV
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
 X12: ' MOD
-    If VarType(stk_(sp)) = vbBoolean Or VarType(stk_(sp - 1)) = vbBoolean Then
-        stk_(sp - 1) = NumOf(stk_(sp - 1)) Mod NumOf(stk_(sp))
+    If VarType(stk_(sp)) = vbDouble And VarType(stk_(sp - 1)) = vbDouble Then
+        If stk_(sp) = 0 Then Err.Raise vbObjectError + 2001, "VM.EvalExprNode", "Division by zero"
+        stk_(sp - 1) = stk_(sp - 1) - stk_(sp) * Fix(stk_(sp - 1) / stk_(sp))
     Else
-        stk_(sp - 1) = stk_(sp - 1) Mod stk_(sp)
+        rv = ModValues(stk_(sp - 1), stk_(sp))
+        stk_(sp - 1) = rv
+        rv = Empty
     End If
     sp = sp - 1
     pc = pc + 1: GoTo Dispatch
@@ -1716,7 +1719,7 @@ Private Function TemplateText(ByVal first As Long, ByVal n As Long) As String
         ElseIf IsNull(stk_(i)) Then
             out = out & "null"
         ElseIf Not IsEmpty(stk_(i)) Then
-            out = out & CStr(stk_(i))
+            out = out & ScalarText(stk_(i))
         End If
     Next i
     TemplateText = out
@@ -2010,6 +2013,16 @@ Private Function AddValues(ByRef a As Variant, ByRef b As Variant) As Variant
     AddValues = TextOf(a) & TextOf(b)
 End Function
 
+' a % b as in JavaScript: the sign of a, and the fraction kept (5.5 % 2 is 1.5). VBA's Mod rounds
+' fractions and overflows past the Long range; a - b * Fix(a / b) is exact for whole numbers (their
+' quotient cannot round across an integer)
+Private Function ModValues(ByVal a As Variant, ByVal b As Variant) As Variant
+    If VarType(a) = vbBoolean Then a = NumOf(a)
+    If VarType(b) = vbBoolean Then b = NumOf(b)
+    If b = 0 Then Err.Raise vbObjectError + 2001, "VM.EvalExprNode", "Division by zero"
+    ModValues = a - b * Fix(a / b)
+End Function
+
 ' A value in arithmetic: true is 1 and false 0, as in JavaScript (VBA's True is -1)
 Private Function NumOf(ByRef v As Variant) As Variant
     If VarType(v) = vbBoolean Then
@@ -2026,8 +2039,20 @@ Private Function TextOf(ByRef v As Variant) As String
     If IsArray(v) Or IsMapValue(v) Then
         TextOf = RT_.FormatValue(v)
     ElseIf Not IsNull(v) Then
-        TextOf = CStr(v)
+        TextOf = ScalarText(v)
     End If
+End Function
+
+' A string, number or boolean as text, as JavaScript writes it: true, 1e+21, 0.5 (whatever the locale)
+Private Function ScalarText(ByRef v As Variant) As String
+    Select Case VarType(v)
+        Case vbString: ScalarText = v
+        Case vbBoolean
+            If v Then ScalarText = "true" Else ScalarText = "false"
+        Case vbDouble, vbLong, vbInteger, vbSingle, vbCurrency, vbDecimal, vbByte
+            ScalarText = RT_.NumberText(v)
+        Case Else: ScalarText = CStr(v)
+    End Select
 End Function
 
 Private Function ShiftValues(ByVal a As Variant, ByVal b As Variant, ByVal toLeft As Boolean) As Variant

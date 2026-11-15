@@ -48,6 +48,8 @@ This document describes the runtime API exposed by ASF scripts and the VM builti
 - Core types: `Number`, `String`, `Boolean`, `Array` (Variant arrays), `Object` (`ASF_Map`), `Null` (`null` literal), `Closure` (map representing a function), `Empty`.
 - Number literals: `42`, `3.14`, `1.5e10`, `2.5E-3`; the decimal separator is always a point, whatever the locale.
 - In arithmetic and comparisons `true` is 1 and `false` is 0, as in JavaScript (VBA's `True` is -1): `true + 1` is 2, `-true` is -1, `n += x > 0` counts.
+- `%` is JavaScript's remainder: the sign of the dividend and the fraction kept (`5.5 % 2` is 1.5, `-7 % 3` is -1), also past VBA's Long range.
+- As text (`+` with a string, templates, `join`, `toString`, `print`), booleans are `true` and `false`, and numbers are written as JavaScript writes them, with a point whatever the locale: `0.5`, `1000000000000000`, `1e+21`, `1e-7`. Numbers keep up to 15 significant digits, VBA's precision (JavaScript shows up to 17).
 - Arrays are Variant arrays with explicit LBound/UBound.
 - Objects are `ASF_Map` instances (Map-like behavior with `.GetValue` / `.SetValue`).
 
