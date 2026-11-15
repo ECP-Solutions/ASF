@@ -24,7 +24,7 @@ Private ENABLE_CALL_TRACE_ As Boolean
 Private CAST_INJECTED_VARIABLES_ As Boolean
 Private APPLICATION_ACCESS_ As Boolean
 Private tmpVar As Variant
-Private COM_PROTOTYPES_ As Collection ' COM Prototype storage for monkey patching
+Private COM_PROTOTYPES_ As ASF_Map   ' prototypes of host objects' methods, by COMPrototypeKey
 Private COLLECTIONS_METHOD_OVERRIDE_ As Boolean
 Private MathObj As Collection
 Private RANDOMIZED_ As Boolean
@@ -50,28 +50,11 @@ Public Sub InjectVariable(varName As String, VarValue As Variant)
     End If
 End Sub
 Private Sub InitializeCOMPrototypes()
-    If COM_PROTOTYPES_ Is Nothing Then
-        Set COM_PROTOTYPES_ = New Collection
-    End If
+    If COM_PROTOTYPES_ Is Nothing Then Set COM_PROTOTYPES_ = New ASF_Map
 End Sub
 ' Register a prototype method for a COM class type
 Public Sub RegisterCOMPrototype(classType As String, methodName As String, funcIndex As Long, params As Collection, Optional ByVal closure As Variant)
     InitializeCOMPrototypes
-    
-    Dim classKey As String: classKey = UCase$(classType)
-    Dim prototypeMethods As Collection
-    
-    ' Get or create methods collection for this class type
-    On Error Resume Next
-    Set prototypeMethods = COM_PROTOTYPES_(classKey)
-    On Error GoTo 0
-    
-    If prototypeMethods Is Nothing Then
-        Set prototypeMethods = New Collection
-        COM_PROTOTYPES_.Add prototypeMethods, classKey
-    End If
-    
-    ' Store method info
     Dim methodInfo As ASF_Map: Set methodInfo = New ASF_Map
     methodInfo.SetValue "funcIndex", funcIndex
     methodInfo.SetValue "params", params
@@ -79,60 +62,21 @@ Public Sub RegisterCOMPrototype(classType As String, methodName As String, funcI
     If Not IsMissing(closure) Then
         If IsObject(closure) Then methodInfo.SetValue "closure", closure
     End If
-    
-    ' Remove existing method if present
-    On Error Resume Next
-    prototypeMethods.Remove UCase$(methodName)
-    On Error GoTo 0
-    
-    prototypeMethods.Add methodInfo, UCase$(methodName)
+    COM_PROTOTYPES_.SetValue COMPrototypeKey(classType, methodName), methodInfo
 End Sub
-' Check if a prototype method exists for a COM object type and method name
+Private Function COMPrototypeKey(ByVal classType As String, ByVal methodName As String) As String
+    COMPrototypeKey = UCase$(classType) & "." & UCase$(methodName)
+End Function
+' The prototype of a host object's method, or Nothing; with none registered it costs one test
+Private Function COMPrototypeOf(obj As Variant, ByVal methodName As String) As ASF_Map
+    If COM_PROTOTYPES_ Is Nothing Then Exit Function
+    If COM_PROTOTYPES_.Count = 0 Then Exit Function
+    If Not IsObject(obj) Then Exit Function
+    Dim info As Variant
+    If COM_PROTOTYPES_.TryGetValue(COMPrototypeKey(typeName(obj), methodName), info) Then Set COMPrototypeOf = info
+End Function
 Private Function HasCOMPrototype(obj As Variant, methodName As String) As Boolean
-    InitializeCOMPrototypes
-    
-    On Error GoTo NoPrototype
-    
-    Dim objectType As String: objectType = GetCOMObjectType(obj)
-    If objectType = vbNullString Then GoTo NoPrototype
-    
-    Dim prototypeMethods As Collection
-    Set prototypeMethods = COM_PROTOTYPES_(UCase$(objectType))
-    
-    Dim methodInfo As ASF_Map
-    Set methodInfo = prototypeMethods(UCase$(methodName))
-    
-    HasCOMPrototype = True
-    Exit Function
-    
-NoPrototype:
-    HasCOMPrototype = False
-End Function
-' Get prototype method info for a COM object type and method name
-Private Function GetCOMPrototype(obj As Variant, methodName As String) As ASF_Map
-    InitializeCOMPrototypes
-    
-    On Error GoTo NoPrototype
-    
-    Dim objectType As String: objectType = GetCOMObjectType(obj)
-    If objectType = vbNullString Then GoTo NoPrototype
-    
-    Dim prototypeMethods As Collection
-    Set prototypeMethods = COM_PROTOTYPES_(UCase$(objectType))
-    
-    Set GetCOMPrototype = prototypeMethods(UCase$(methodName))
-    Exit Function
-    
-NoPrototype:
-    Set GetCOMPrototype = Nothing
-End Function
-' Determine COM object type using TypeName
-Private Function GetCOMObjectType(obj As Variant) As String
-    If IsObject(obj) Then
-        GetCOMObjectType = typeName(obj)
-    Else
-        GetCOMObjectType = vbNullString
-    End If
+    HasCOMPrototype = Not COMPrototypeOf(obj, methodName) Is Nothing
 End Function
 Public Property Get EnableCallTrace() As Boolean
     EnableCallTrace = ENABLE_CALL_TRACE_
@@ -529,18 +473,15 @@ Private Function MemberValue(ByRef baseVal As Variant, ByVal prop As String) As 
         End If
         Exit Function
     End If
-    If typeName(baseVal) = "String" Or IsArray(baseVal) Then
-        If IsObject(baseVal) Then
-            vAssignment MemberValue, CallObjectMethod(baseVal, prop)
-        Else
+    If Not IsObject(baseVal) Then
+        If VarType(baseVal) = vbString Or IsArray(baseVal) Then
             ' the member can be a method called without parentheses
             Dim wrote As Boolean, written As Variant
             vAssignment MemberValue, MethodCallValue(baseVal, prop, New Collection, False, wrote, written)
+            Exit Function
         End If
-        Exit Function
-    End If
-    ' Math.PI and the other constants are read as properties
-    If IsObject(baseVal) Then
+    Else
+        ' Math.PI and the other constants are read as properties
         If baseVal Is MathObj Then
             Dim constVal As Variant
             If MathConstant(prop, constVal) Then
@@ -805,7 +746,8 @@ End Function
 ' False when it has none of that name. A method that changes its array calls WriteBack with it
 Private Function DispatchMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant, ByVal isMath As Boolean) As Boolean
     vAssignment origBaseVal, baseValLocal
-    If IsVBAcollection(baseValLocal) Then
+    Dim baseType As String: baseType = typeName(baseValLocal)
+    If IsCollectionType(baseType) Then
         If COLLECTIONS_METHOD_OVERRIDE_ Then
             If BinarySearch(GLOBALS_.builtinArrayMethods, propN) = -1 Then
                 DispatchMethod = CollectionMethod(evaluated, propN, baseValLocal, origBaseVal, tmpResult, isMath)
@@ -814,9 +756,9 @@ Private Function DispatchMethod(evaluated As Collection, ByRef propN As String, 
         End If
         If Not isMath And Not APPLICATION_ACCESS_ Then
             baseValLocal = CollToASF(baseValLocal, False)
+            baseType = typeName(baseValLocal)
         End If
     End If
-    Dim baseType As String: baseType = typeName(baseValLocal)
     If IsArray(baseValLocal) Then
         DispatchMethod = ArrayMethod(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
     ElseIf baseType = "ASF_RegexEngine" Then
@@ -4759,102 +4701,22 @@ Private Sub SetObjectProperty(obj As Variant, propName As Variant, propValue As 
     PopCallTrace CStr(propName), vbaParam
 End Sub
 Private Function CallObjectMethod(obj As Variant, methodName As Variant, Optional args As Collection) As Variant
-    Dim tmpResult As Variant
-    If HasCOMPrototype(obj, CStr(methodName)) Then
-        Dim prototypeInfo As ASF_Map: Set prototypeInfo = GetCOMPrototype(obj, CStr(methodName))
-        If Not prototypeInfo Is Nothing Then
-            Dim funcIdx As Long: funcIdx = prototypeInfo.GetValue("funcIndex")
-            Dim prototypeArgs As Collection
-            If Not IsMissing(args) And Not args Is Nothing Then
-                Set prototypeArgs = args
-            Else
-                Set prototypeArgs = New Collection
-            End If
-            ' Trace: Push call
-            PushCallTrace CStr(methodName), prototypeArgs
-            Dim protoClosure As Variant
-            If prototypeInfo.TryGetValue("closure", protoClosure) Then vAssignment tmpResult, CallClosure(protoClosure, prototypeArgs, obj)
-        End If
-    Else
-        PushCallTrace CStr(methodName), args
-        If args Is Nothing Then
-            vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod)
-        Else
-            Dim nArgs As Long: nArgs = args.Count
-            If nArgs = 1 Then
-                If IsEmpty(args(1)) Then nArgs = nArgs - 1
-            End If
-            With args
-                'A lengthy and visually overwhelming implementation.
-                Select Case nArgs
-                    Case 0
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod)
-                    Case 1
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)))
-                    Case 2
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)))
-                    Case 3
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)))
-                    Case 4
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)))
-                    Case 5
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)))
-                    Case 6
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)))
-                    Case 7
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)))
-                    Case 8
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)))
-                    Case 9
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)))
-                    Case 10
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)))
-                    Case 11
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)))
-                    Case 12
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)))
-                    Case 13
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)))
-                    Case 14
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)))
-                    Case 15
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)))
-                    Case 16
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)))
-                    Case 17
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)))
-                    Case 18
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)))
-                    Case 19
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)))
-                    Case 20
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)), CastVBAparam(.Item(20)))
-                    Case 21
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)), CastVBAparam(.Item(20)), CastVBAparam(.Item(21)))
-                    Case 22
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)), CastVBAparam(.Item(20)), CastVBAparam(.Item(21)), CastVBAparam(.Item(22)))
-                    Case 23
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)), CastVBAparam(.Item(20)), CastVBAparam(.Item(21)), CastVBAparam(.Item(22)), CastVBAparam(.Item(23)))
-                    Case 24
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)), CastVBAparam(.Item(20)), CastVBAparam(.Item(21)), CastVBAparam(.Item(22)), CastVBAparam(.Item(23)), CastVBAparam(.Item(24)))
-                    Case 25
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)), CastVBAparam(.Item(20)), CastVBAparam(.Item(21)), CastVBAparam(.Item(22)), CastVBAparam(.Item(23)), CastVBAparam(.Item(24)), CastVBAparam(.Item(25)))
-                    Case 26
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)), CastVBAparam(.Item(20)), CastVBAparam(.Item(21)), CastVBAparam(.Item(22)), CastVBAparam(.Item(23)), CastVBAparam(.Item(24)), CastVBAparam(.Item(25)), CastVBAparam(.Item(26)))
-                    Case 27
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)), CastVBAparam(.Item(20)), CastVBAparam(.Item(21)), CastVBAparam(.Item(22)), CastVBAparam(.Item(23)), CastVBAparam(.Item(24)), CastVBAparam(.Item(25)), CastVBAparam(.Item(26)), CastVBAparam(.Item(27)))
-                    Case 28
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)), CastVBAparam(.Item(20)), CastVBAparam(.Item(21)), CastVBAparam(.Item(22)), CastVBAparam(.Item(23)), CastVBAparam(.Item(24)), CastVBAparam(.Item(25)), CastVBAparam(.Item(26)), CastVBAparam(.Item(27)), CastVBAparam(.Item(28)))
-                    Case 29
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)), CastVBAparam(.Item(20)), CastVBAparam(.Item(21)), CastVBAparam(.Item(22)), CastVBAparam(.Item(23)), CastVBAparam(.Item(24)), CastVBAparam(.Item(25)), CastVBAparam(.Item(26)), CastVBAparam(.Item(27)), CastVBAparam(.Item(28)), CastVBAparam(.Item(29)))
-                    Case 30
-                        vAssignment tmpResult, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(.Item(1)), CastVBAparam(.Item(2)), CastVBAparam(.Item(3)), CastVBAparam(.Item(4)), CastVBAparam(.Item(5)), CastVBAparam(.Item(6)), CastVBAparam(.Item(7)), CastVBAparam(.Item(8)), CastVBAparam(.Item(9)), CastVBAparam(.Item(10)), CastVBAparam(.Item(11)), CastVBAparam(.Item(12)), CastVBAparam(.Item(13)), CastVBAparam(.Item(14)), CastVBAparam(.Item(15)), CastVBAparam(.Item(16)), CastVBAparam(.Item(17)), CastVBAparam(.Item(18)), CastVBAparam(.Item(19)), CastVBAparam(.Item(20)), CastVBAparam(.Item(21)), CastVBAparam(.Item(22)), CastVBAparam(.Item(23)), CastVBAparam(.Item(24)), CastVBAparam(.Item(25)), CastVBAparam(.Item(26)), CastVBAparam(.Item(27)), CastVBAparam(.Item(28)), CastVBAparam(.Item(29)), CastVBAparam(.Item(30)))
-                    Case Else
-                        err.Raise vbObjectError + 513, "CallObjectMethod", "Too many arguments: maximum supported is 30."
-                End Select
-            End With
-        End If
+    Dim prototypeInfo As ASF_Map: Set prototypeInfo = COMPrototypeOf(obj, CStr(methodName))
+    If prototypeInfo Is Nothing Then
+        vAssignment CallObjectMethod, CallHostOn(obj, methodName, CollectionToArray(args), args)
+        Exit Function
     End If
+    Dim tmpResult As Variant
+    Dim prototypeArgs As Collection
+    If Not IsMissing(args) And Not args Is Nothing Then
+        Set prototypeArgs = args
+    Else
+        Set prototypeArgs = New Collection
+    End If
+    ' Trace: Push call
+    PushCallTrace CStr(methodName), prototypeArgs
+    Dim protoClosure As Variant
+    If prototypeInfo.TryGetValue("closure", protoClosure) Then vAssignment tmpResult, CallClosure(protoClosure, prototypeArgs, obj)
     If IsArray(tmpResult) And Not IsObject(tmpResult) Then
         CallObjectMethod = ArrayToASF2(tmpResult)
     Else
@@ -4863,7 +4725,126 @@ Private Function CallObjectMethod(obj As Variant, methodName As Variant, Optiona
     ' Trace: Pop call with return value
     PopCallTrace CStr(methodName), CallObjectMethod
 End Function
-
+' obj.methodName(args) on a host object, args an array (or Empty); traceArgs: the same as a
+' Collection, when the caller has it
+Private Function CallHostOn(obj As Variant, methodName As Variant, ByRef args As Variant, Optional traceArgs As Collection) As Variant
+    If ENABLE_CALL_TRACE_ Then
+        If traceArgs Is Nothing Then Set traceArgs = ArrayToCollection(args)
+        PushCallTrace CStr(methodName), traceArgs
+    End If
+    Dim tmpResult As Variant
+    vAssignment tmpResult, InvokeHost(obj, methodName, args)
+    If IsArray(tmpResult) And Not IsObject(tmpResult) Then
+        CallHostOn = ArrayToASF2(tmpResult)
+    Else
+        vAssignment CallHostOn, tmpResult
+    End If
+    ' Trace: Pop call with return value
+    PopCallTrace CStr(methodName), CallHostOn
+End Function
+' receiver.name(args...) straight from ASF_VM when the receiver is a host object with no
+' ASF methods of its own (not a collection, regex, Math or ASF object, no prototype for name)
+Public Function TryCallHost(ByRef target As Variant, ByVal name As String, ByRef args As Variant, ByRef result As Variant) As Boolean
+    If Not IsObject(target) Then Exit Function
+    If target Is MathObj Then Exit Function
+    Dim typeN As String: typeN = typeName(target)
+    If typeN = "ASF_Map" Or typeN = "ASF_RegexEngine" Then Exit Function
+    If IsCollectionType(typeN) Then Exit Function
+    If HasCOMPrototype(target, name) Then Exit Function
+    ' an object whose default value is an array (a Range of several cells) has the array methods
+    If IsArray(target) Then Exit Function
+    vAssignment result, CallHostOn(target, LCase$(name), args)
+    TryCallHost = True
+End Function
+Private Function CollectionToArray(args As Collection) As Variant
+    If args Is Nothing Then Exit Function
+    If args.Count = 0 Then Exit Function
+    Dim a() As Variant, i As Long, v As Variant
+    ReDim a(0 To args.Count - 1)
+    For Each v In args
+        If IsObject(v) Then Set a(i) = v Else a(i) = v
+        i = i + 1
+    Next v
+    CollectionToArray = a
+End Function
+' CallByName with the arguments of a (an array, or Empty for none); one Empty argument is none
+Private Function InvokeHost(obj As Variant, methodName As Variant, ByRef a As Variant) As Variant
+    Dim n As Long, b As Long
+    If IsArray(a) Then
+        b = LBound(a)
+        n = UBound(a) - b + 1
+        If n = 1 Then
+            If IsEmpty(a(b)) Then n = 0
+        End If
+    End If
+    'A lengthy and visually overwhelming implementation.
+    Select Case n
+        Case 0
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod)
+        Case 1
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)))
+        Case 2
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)))
+        Case 3
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)))
+        Case 4
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)))
+        Case 5
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)))
+        Case 6
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)))
+        Case 7
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)))
+        Case 8
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)))
+        Case 9
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)), CastVBAparam(a(b + 8)))
+        Case 10
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)), CastVBAparam(a(b + 8)), CastVBAparam(a(b + 9)))
+        Case 11
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)), CastVBAparam(a(b + 8)), CastVBAparam(a(b + 9)), CastVBAparam(a(b + 10)))
+        Case 12
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)), CastVBAparam(a(b + 8)), CastVBAparam(a(b + 9)), CastVBAparam(a(b + 10)), CastVBAparam(a(b + 11)))
+        Case 13
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)), CastVBAparam(a(b + 8)), CastVBAparam(a(b + 9)), CastVBAparam(a(b + 10)), CastVBAparam(a(b + 11)), CastVBAparam(a(b + 12)))
+        Case 14
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)), CastVBAparam(a(b + 8)), CastVBAparam(a(b + 9)), CastVBAparam(a(b + 10)), CastVBAparam(a(b + 11)), CastVBAparam(a(b + 12)), CastVBAparam(a(b + 13)))
+        Case 15
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)), CastVBAparam(a(b + 8)), CastVBAparam(a(b + 9)), CastVBAparam(a(b + 10)), CastVBAparam(a(b + 11)), CastVBAparam(a(b + 12)), CastVBAparam(a(b + 13)), CastVBAparam(a(b + 14)))
+        Case 16
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)), CastVBAparam(a(b + 8)), CastVBAparam(a(b + 9)), CastVBAparam(a(b + 10)), CastVBAparam(a(b + 11)), CastVBAparam(a(b + 12)), CastVBAparam(a(b + 13)), CastVBAparam(a(b + 14)), CastVBAparam(a(b + 15)))
+        Case 17
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)), CastVBAparam(a(b + 8)), CastVBAparam(a(b + 9)), CastVBAparam(a(b + 10)), CastVBAparam(a(b + 11)), CastVBAparam(a(b + 12)), CastVBAparam(a(b + 13)), CastVBAparam(a(b + 14)), CastVBAparam(a(b + 15)), CastVBAparam(a(b + 16)))
+        Case 18
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)), CastVBAparam(a(b + 8)), CastVBAparam(a(b + 9)), CastVBAparam(a(b + 10)), CastVBAparam(a(b + 11)), CastVBAparam(a(b + 12)), CastVBAparam(a(b + 13)), CastVBAparam(a(b + 14)), CastVBAparam(a(b + 15)), CastVBAparam(a(b + 16)), CastVBAparam(a(b + 17)))
+        Case 19
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)), CastVBAparam(a(b + 8)), CastVBAparam(a(b + 9)), CastVBAparam(a(b + 10)), CastVBAparam(a(b + 11)), CastVBAparam(a(b + 12)), CastVBAparam(a(b + 13)), CastVBAparam(a(b + 14)), CastVBAparam(a(b + 15)), CastVBAparam(a(b + 16)), CastVBAparam(a(b + 17)), CastVBAparam(a(b + 18)))
+        Case 20
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)), CastVBAparam(a(b + 8)), CastVBAparam(a(b + 9)), CastVBAparam(a(b + 10)), CastVBAparam(a(b + 11)), CastVBAparam(a(b + 12)), CastVBAparam(a(b + 13)), CastVBAparam(a(b + 14)), CastVBAparam(a(b + 15)), CastVBAparam(a(b + 16)), CastVBAparam(a(b + 17)), CastVBAparam(a(b + 18)), CastVBAparam(a(b + 19)))
+        Case 21
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)), CastVBAparam(a(b + 8)), CastVBAparam(a(b + 9)), CastVBAparam(a(b + 10)), CastVBAparam(a(b + 11)), CastVBAparam(a(b + 12)), CastVBAparam(a(b + 13)), CastVBAparam(a(b + 14)), CastVBAparam(a(b + 15)), CastVBAparam(a(b + 16)), CastVBAparam(a(b + 17)), CastVBAparam(a(b + 18)), CastVBAparam(a(b + 19)), CastVBAparam(a(b + 20)))
+        Case 22
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)), CastVBAparam(a(b + 8)), CastVBAparam(a(b + 9)), CastVBAparam(a(b + 10)), CastVBAparam(a(b + 11)), CastVBAparam(a(b + 12)), CastVBAparam(a(b + 13)), CastVBAparam(a(b + 14)), CastVBAparam(a(b + 15)), CastVBAparam(a(b + 16)), CastVBAparam(a(b + 17)), CastVBAparam(a(b + 18)), CastVBAparam(a(b + 19)), CastVBAparam(a(b + 20)), CastVBAparam(a(b + 21)))
+        Case 23
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)), CastVBAparam(a(b + 8)), CastVBAparam(a(b + 9)), CastVBAparam(a(b + 10)), CastVBAparam(a(b + 11)), CastVBAparam(a(b + 12)), CastVBAparam(a(b + 13)), CastVBAparam(a(b + 14)), CastVBAparam(a(b + 15)), CastVBAparam(a(b + 16)), CastVBAparam(a(b + 17)), CastVBAparam(a(b + 18)), CastVBAparam(a(b + 19)), CastVBAparam(a(b + 20)), CastVBAparam(a(b + 21)), CastVBAparam(a(b + 22)))
+        Case 24
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)), CastVBAparam(a(b + 8)), CastVBAparam(a(b + 9)), CastVBAparam(a(b + 10)), CastVBAparam(a(b + 11)), CastVBAparam(a(b + 12)), CastVBAparam(a(b + 13)), CastVBAparam(a(b + 14)), CastVBAparam(a(b + 15)), CastVBAparam(a(b + 16)), CastVBAparam(a(b + 17)), CastVBAparam(a(b + 18)), CastVBAparam(a(b + 19)), CastVBAparam(a(b + 20)), CastVBAparam(a(b + 21)), CastVBAparam(a(b + 22)), CastVBAparam(a(b + 23)))
+        Case 25
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)), CastVBAparam(a(b + 8)), CastVBAparam(a(b + 9)), CastVBAparam(a(b + 10)), CastVBAparam(a(b + 11)), CastVBAparam(a(b + 12)), CastVBAparam(a(b + 13)), CastVBAparam(a(b + 14)), CastVBAparam(a(b + 15)), CastVBAparam(a(b + 16)), CastVBAparam(a(b + 17)), CastVBAparam(a(b + 18)), CastVBAparam(a(b + 19)), CastVBAparam(a(b + 20)), CastVBAparam(a(b + 21)), CastVBAparam(a(b + 22)), CastVBAparam(a(b + 23)), CastVBAparam(a(b + 24)))
+        Case 26
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)), CastVBAparam(a(b + 8)), CastVBAparam(a(b + 9)), CastVBAparam(a(b + 10)), CastVBAparam(a(b + 11)), CastVBAparam(a(b + 12)), CastVBAparam(a(b + 13)), CastVBAparam(a(b + 14)), CastVBAparam(a(b + 15)), CastVBAparam(a(b + 16)), CastVBAparam(a(b + 17)), CastVBAparam(a(b + 18)), CastVBAparam(a(b + 19)), CastVBAparam(a(b + 20)), CastVBAparam(a(b + 21)), CastVBAparam(a(b + 22)), CastVBAparam(a(b + 23)), CastVBAparam(a(b + 24)), CastVBAparam(a(b + 25)))
+        Case 27
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)), CastVBAparam(a(b + 8)), CastVBAparam(a(b + 9)), CastVBAparam(a(b + 10)), CastVBAparam(a(b + 11)), CastVBAparam(a(b + 12)), CastVBAparam(a(b + 13)), CastVBAparam(a(b + 14)), CastVBAparam(a(b + 15)), CastVBAparam(a(b + 16)), CastVBAparam(a(b + 17)), CastVBAparam(a(b + 18)), CastVBAparam(a(b + 19)), CastVBAparam(a(b + 20)), CastVBAparam(a(b + 21)), CastVBAparam(a(b + 22)), CastVBAparam(a(b + 23)), CastVBAparam(a(b + 24)), CastVBAparam(a(b + 25)), CastVBAparam(a(b + 26)))
+        Case 28
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)), CastVBAparam(a(b + 8)), CastVBAparam(a(b + 9)), CastVBAparam(a(b + 10)), CastVBAparam(a(b + 11)), CastVBAparam(a(b + 12)), CastVBAparam(a(b + 13)), CastVBAparam(a(b + 14)), CastVBAparam(a(b + 15)), CastVBAparam(a(b + 16)), CastVBAparam(a(b + 17)), CastVBAparam(a(b + 18)), CastVBAparam(a(b + 19)), CastVBAparam(a(b + 20)), CastVBAparam(a(b + 21)), CastVBAparam(a(b + 22)), CastVBAparam(a(b + 23)), CastVBAparam(a(b + 24)), CastVBAparam(a(b + 25)), CastVBAparam(a(b + 26)), CastVBAparam(a(b + 27)))
+        Case 29
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)), CastVBAparam(a(b + 8)), CastVBAparam(a(b + 9)), CastVBAparam(a(b + 10)), CastVBAparam(a(b + 11)), CastVBAparam(a(b + 12)), CastVBAparam(a(b + 13)), CastVBAparam(a(b + 14)), CastVBAparam(a(b + 15)), CastVBAparam(a(b + 16)), CastVBAparam(a(b + 17)), CastVBAparam(a(b + 18)), CastVBAparam(a(b + 19)), CastVBAparam(a(b + 20)), CastVBAparam(a(b + 21)), CastVBAparam(a(b + 22)), CastVBAparam(a(b + 23)), CastVBAparam(a(b + 24)), CastVBAparam(a(b + 25)), CastVBAparam(a(b + 26)), CastVBAparam(a(b + 27)), CastVBAparam(a(b + 28)))
+        Case 30
+            vAssignment InvokeHost, CallByName(obj, methodName, VbGet Or VbMethod, CastVBAparam(a(b + 0)), CastVBAparam(a(b + 1)), CastVBAparam(a(b + 2)), CastVBAparam(a(b + 3)), CastVBAparam(a(b + 4)), CastVBAparam(a(b + 5)), CastVBAparam(a(b + 6)), CastVBAparam(a(b + 7)), CastVBAparam(a(b + 8)), CastVBAparam(a(b + 9)), CastVBAparam(a(b + 10)), CastVBAparam(a(b + 11)), CastVBAparam(a(b + 12)), CastVBAparam(a(b + 13)), CastVBAparam(a(b + 14)), CastVBAparam(a(b + 15)), CastVBAparam(a(b + 16)), CastVBAparam(a(b + 17)), CastVBAparam(a(b + 18)), CastVBAparam(a(b + 19)), CastVBAparam(a(b + 20)), CastVBAparam(a(b + 21)), CastVBAparam(a(b + 22)), CastVBAparam(a(b + 23)), CastVBAparam(a(b + 24)), CastVBAparam(a(b + 25)), CastVBAparam(a(b + 26)), CastVBAparam(a(b + 27)), CastVBAparam(a(b + 28)), CastVBAparam(a(b + 29)))
+        Case Else
+            err.Raise vbObjectError + 513, "CallObjectMethod", "Too many arguments: maximum supported is 30."
+    End Select
+End Function
 Private Function CastVBAparam(aValue As Variant) As Variant
     If IsArray(aValue) And Not IsObject(aValue) Then
         CastVBAparam = ASFto2Darray(aValue)
@@ -4872,8 +4853,14 @@ Private Function CastVBAparam(aValue As Variant) As Variant
     End If
 End Function
 Private Function IsVBAcollection(obj As Variant) As Boolean
-    Dim typeN As String: typeN = typeName(obj)
-    IsVBAcollection = (BinarySearch(GLOBALS_.knownMSOcollections, typeN) <> -1)
+    IsVBAcollection = IsCollectionType(typeName(obj))
+End Function
+Private Function IsCollectionType(ByRef typeN As String) As Boolean
+    If typeN = "Collection" Then
+        IsCollectionType = True
+    Else
+        IsCollectionType = (BinarySearch(GLOBALS_.knownMSOcollections, typeN) <> -1)
+    End If
 End Function
 
 ' Searches for an item in an 1D array. Returns
