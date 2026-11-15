@@ -35,11 +35,11 @@ This document describes the runtime API exposed by ASF scripts and the VM builti
 
 - **Program**: a script compiled to bytecode, which the VM executes. The ASF host exposes `.Compile(script)` → programIndex and `.Run(programIndex)` to run. The `Run` method returns the result of the program being executed.
 - **AppAccess**: Boolean property controlling Office object access (default: `False`). When `True`, scripts can access Office objects passed as runtime parameters (`$1`, `$2`, etc.). Always disable when not needed for security.
-- **Scope / closures**: closures capture the environment by reference (shared-write semantics). That means nested functions can mutate outer-scope variables and see changes across closures.
+- **Scope / closures**: names are lexical and resolved at compile time. Closures share with the function that created them the variables they read or write (shared-write semantics): nested functions can mutate outer-scope variables and see changes across closures. A named function does not see the locals of its caller.
 - **Indexing base**: arrays honor `__option_base` set in runtime globals (commonly 0 or 1). All array helpers and methods handle this consistently.
 - **Call signature for array callbacks**:
   - Callback receives `(value, index, array)` where `index` respects `__option_base`.
-  - `this` can be supplied when calling `CallClosure` or via bound method objects (property-style access returns bound method with `baseVal` as `this`).
+  - `this` is the object a function is called on: in `o.m()`, `this` is `o`.
 
 ---
 
@@ -111,16 +111,16 @@ Below is a compact table (name — signature — brief behavior — example):
   - Non-mutating subarray selection. Respects negative indexes and `__option_base`.
 
 - `push(...items)`  
-  - Mutates array by appending items; returns new length. Writes back to LValue container.
+  - Mutates array by appending items; returns new length. Writes the array back to the variable or property it was read from.
 
 - `pop()`  
-  - Mutates array removing last element; returns popped element. Writes back to LValue.
+  - Mutates array removing last element; returns popped element. Writes the array back to the variable or property it was read from.
 
 - `shift()`  
-  - Mutates array removing first element; returns popped element. Writes back to LValue.
+  - Mutates array removing first element; returns popped element. Writes the array back to the variable or property it was read from.
 
 - `unshift(...items)`  
-  - Mutates array prepending items; returns new length. Writes back to LValue.
+  - Mutates array prepending items; returns new length. Writes the array back to the variable or property it was read from.
 
 - `concat(...itemsOrArrays)`  
   - Returns a new array concatenating the base and provided items/arrays.
@@ -150,7 +150,7 @@ Below is a compact table (name — signature — brief behavior — example):
   - Returns element at index (supports negative indexing relative to end). Index respects `__option_base`.
 
 - `copyWithin(target, start=0, end=len)`  
-  - Mutates array by copying a slice to another location. Writes back to LValue.
+  - Mutates array by copying a slice to another location. Writes the array back to the variable or property it was read from.
 
 - `entries()`  
   - Returns array of `[index, value]` pairs starting at `__option_base`.
@@ -431,19 +431,17 @@ Regex objects are **mutable** and configurable at runtime.
 
 - Objects are maps: `{ k: 1, nested: { x: 2 } }`.
 - Member read: `o.x` resolves the property on the object (if base is `ASF_Map`) or if the base is an array and property matches a builtin array method name, it returns a bound builtin method (see "method/property semantics" above).
-- Member write semantics use `ResolveProp` helper to ensure property writes mutate the real container (works with nested `parentObj` chains created by the compiler when producing LValue metadata).
+- Member writes (`o.x = v`, `o.a[2].b = v`) and mutating methods called through a member (`o.items.push(v)`) change the object or array the chain reads, not a copy.
 
 ---
 
 ## Builtin method dispatch rules
 
-- When evaluating a `Member` node, the VM:
-  1. Evaluates the `base` expression.
-  2. If `base` evaluates to an `ASF_Map` (object), property lookup returns stored value (function/map/primitive).
-  3. If `base` evaluates to an array and `prop` is the name of an array-method, the VM returns a `BuiltinMethod` map: `{ type: "BuiltinMethod", method: "<name>", baseVal: <array> }`.
-  4. When a `Call` has a callee that is `BuiltinMethod`, the VM routes the call into the unified array-method dispatch block and executes the method with `baseValLocal` pre-bound.
-
-This design allows `a.map(fn)` and `f = a.map; f(fn)` to behave consistently.
+- For `base.name(args)`, the VM evaluates `base` and then:
+  1. If `base` is an ASF object holding a function under `name`, calls it with `this` bound to `base`.
+  2. If `base` is an array, a string, `Math` or a regex object, runs the built-in method (`push`, `map`, `toUpperCase`, `max`...); the most used ones run inside the VM.
+  3. If `base` is a host object (Office or COM), calls a prototype registered for its type and `name`, or else the object's own method through `CallByName`.
+- Built-in methods are called with their receiver: `a.map(fn)`. Reading `a.map` without calling it gives `undefined`; to pass a method around, wrap it: `f = fun(fn) { return a.map(fn); };`.
 
 ---
 
@@ -668,11 +666,10 @@ Prototype methods can be defined for any Office COM object type:
 
 ### Implementation Notes
 
-- **Compilation**: Prototype methods are compiled into internal functions with name prefix `__PROTOTYPE_<OBJECTTYPE>_<METHODNAME>`
-- **Registration**: Method mappings stored in `GLOBALS_.gCOMPrototypes` dictionary
-- **Invocation**: `CallObjectMethod` checks for prototype methods before falling back to native COM methods
-- **Scope**: Prototype methods create new function scope with `this` bound to the COM object
-- **Performance**: ~15% overhead compared to native COM method calls
+- **Compilation**: Prototype methods are compiled into named functions called `__PROTOTYPE_<OBJECTTYPE>_<METHODNAME>`
+- **Registration**: When the declaration runs, its function is registered with `ASF_Runtime` under the object type (as `TypeName` gives it) and the method name
+- **Invocation**: A method call on a host object checks for a prototype before calling the object's own method through `CallByName`
+- **Scope**: Prototype methods run in their own frame with `this` bound to the COM object
 
 ### Error Handling
 

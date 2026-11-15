@@ -94,7 +94,7 @@ Below is a single-file reference describing the **ASF** scripting language featu
   f = fun(x, y) { return x + y};
   ```
 
-- **Closures** capture the runtime scope by reference (shared-write semantics). Mutations inside closures reflect in the outer scope.
+- **Closures** share with the function that created them the variables they read or write (shared-write semantics). Mutations inside closures reflect in the outer scope. Names are lexical: a named function does not see the locals of its caller.
 
 - **Replace callback signature**:
   `function replacer(match, p1, p2, ..., offset, originalString)`
@@ -159,8 +159,8 @@ Below is a single-file reference describing the **ASF** scripting language featu
   - Outside `${...}`: a backslash `\` escapes only: ``\` ``, `\/`, `\\`.
   - Inside `${...}`: **also** — escapes `$`, `{`, `}`.
   - Nested `${...}` is supported. The tokenizer emits a sequence of `LITERAL` and `EXPR` parts; nested placeholders appear as additional `EXPR` parts (split behavior).
-- Compile-time: each `EXPR` part is parsed into an AST; each `LITERAL` is stored as a string node.
-- VM-time: parts are evaluated left-to-right and concatenated.
+- Compile-time: each `EXPR` part is compiled to bytecode like any expression; each `LITERAL` is a string constant.
+- VM-time: parts are evaluated left-to-right and concatenated by one instruction.
 
 ### String methods
 - `.replace(searchValue, replaceValue)` — replaces the **first** occurrence.

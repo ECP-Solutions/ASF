@@ -671,6 +671,8 @@ print(counter());  // 2
 print(counter());  // 3
 ```
 
+Names are lexical: a function sees its own locals, the variables of the functions that enclose it and the globals. A named function does not see the locals of the function that calls it; pass them as arguments.
+
 ### Higher-Order Functions
 
 Functions that accept or return other functions:
