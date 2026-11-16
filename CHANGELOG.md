@@ -2,6 +2,16 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [Unreleased]
+
+- **Changed**
+    - **Arguments as arrays** — methods, built-in functions, host calls and closures called by the runtime take their arguments as an array from 1, as `ASF_VM` keeps them on its stack. They were copied into a `Collection` for each call, and back into an array for `CallByName`; `CollectionToArray` and `ArrayToCollection` are gone.
+    - **Callbacks get only the parameters they declare** — `map`, `filter`, `forEach`, `some`, `every`, `find`, `reduce`, `sort`, `replace` and the ones of maps pass a callback as many arguments as it declares (all of them to a rest parameter), so the array is no longer copied for each item unless the callback takes it as its third parameter, and it is copied into `this` only for a callback that reads `this`. `this` is bound as before. In LibreOffice, `forEach` and `filter` run about 20% faster and `map` about 10%.
+    - **`push` in place** — `x.push(...)` on a variable appends to the array the variable holds; the array was copied about five times per call, so filling an array with `push` in a loop took quadratic time. In LibreOffice, 1,600 pushes went from 5.9 s to 0.3 s and 6,400 from 85.6 s to 2.2 s. `push` on anything else (`o.items.push(...)`, a host object, a method of an object) takes the usual path.
+
+- **Fixed**
+    - **`push` on an empty array** returned one more than the new length: `[].push(5)` gave 2.
+
 ## [v4.0.1] - 2026-11-15
 https://github.com/ECP-Solutions/ASF/releases/tag/v4.0.1
 
