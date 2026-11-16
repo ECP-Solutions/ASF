@@ -798,8 +798,31 @@ X82: ' IMPORT a: the import -> the values it binds
     Next i
     rv = Empty
     pc = pc + 1: GoTo Dispatch
-X83: ' (unused)
+X83: ' PUSHIN a: variable, b: arguments (+ METHOD_SHIFT: a global)
+    n = ob_(pc) Mod METHOD_SHIFT
+    If ob_(pc) >= METHOD_SHIFT Then
+        If AppendInPlace(glob_(oa_(pc)), sp - n + 1, n, rv) Then GoTo PushedInPlace
+        SetItem rv, glob_(oa_(pc))
+    Else
+        If AppendInPlace(stk_(fp + oa_(pc)), sp - n + 1, n, rv) Then GoTo PushedInPlace
+        SetItem rv, stk_(fp + oa_(pc))
+    End If
+    ' not an array: the receiver goes under the arguments, for the CALLMW and the store that follow
+    For i = sp To sp - n + 1 Step -1
+        If IsObject(stk_(i)) Then Set stk_(i + 1) = stk_(i) Else stk_(i + 1) = stk_(i)
+    Next i
+    If IsObject(rv) Then Set stk_(sp - n + 1) = rv Else stk_(sp - n + 1) = rv
+    sp = sp + 1
+    rv = Empty
     pc = pc + 1: GoTo Dispatch
+PushedInPlace:
+    For i = sp - n + 1 To sp
+        stk_(i) = Empty
+    Next i
+    sp = sp - n + 1
+    stk_(sp) = rv
+    rv = Empty
+    pc = pc + 3: GoTo Dispatch
 X84: ' VBAEXPR a: the expression, b: the names of the values on the stack
     If Len(k_(ob_(pc))) = 0 Then n = 0 Else n = UBound(Split(CStr(k_(ob_(pc))), vbLf)) + 1
     args = ArgsArray(sp - n + 1, n)
@@ -1504,6 +1527,29 @@ Private Function NativeMethod(ByVal id As Long, ByVal recvAt As Long, ByVal n As
     NativeMethod = True
 End Function
 
+' push on the array held by a variable, in place: False when it holds no array
+Private Function AppendInPlace(ByRef arr As Variant, ByVal first As Long, ByVal n As Long, ByRef length As Variant) As Boolean
+    If IsObject(arr) Then Exit Function
+    If Not IsArray(arr) Then Exit Function
+    Dim lb As Long, ub As Long, i As Long
+    ub = UBound(arr)
+    If ub = -1 Then
+        lb = 1: ub = 0
+        If n > 0 Then ReDim arr(1 To n)
+    Else
+        lb = LBound(arr)
+        If n > 0 Then ReDim Preserve arr(lb To ub + n)
+    End If
+    For i = 1 To n
+        If IsObject(stk_(first + i - 1)) Then Set arr(ub + i) = stk_(first + i - 1) Else arr(ub + i) = stk_(first + i - 1)
+    Next i
+    ' LibreOffice keeps an item written through ByRef tied to the variable, and a copy of the array
+    ' loses it when the variable changes; resizing again detaches it (in VBA, a resize to the same size)
+    If n > 0 Then ReDim Preserve arr(lb To ub + n)
+    length = CDbl(ub - lb + 1 + n)
+    AppendInPlace = True
+End Function
+
 ' push: a new array with the items added, and its length
 Private Function ArrayPush(ByRef arr As Variant, ByVal first As Long, ByVal n As Long, ByRef newArr As Variant) As Long
     Dim offs As Long, lb As Long, oldLen As Long, i As Long, out() As Variant
@@ -1522,7 +1568,7 @@ Private Function ArrayPush(ByRef arr As Variant, ByVal first As Long, ByVal n As
         If IsObject(stk_(first + i - 1)) Then Set out(lb + oldLen + i - 1 - offs) = stk_(first + i - 1) Else out(lb + oldLen + i - 1 - offs) = stk_(first + i - 1)
     Next i
     newArr = out
-    ArrayPush = oldLen + n
+    ArrayPush = oldLen + n - offs
 End Function
 
 ' f(args) for a closure of this VM, called by a built-in method; this is the array it works on

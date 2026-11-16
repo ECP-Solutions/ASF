@@ -1337,7 +1337,7 @@ Private Function ArrPush(evaluated As Variant, ByRef propN As String, ByRef base
     Next zz
     ' write back to original container via ResolvePath
     WriteBack newArr
-    vAssignment tmpResult, newLen
+    vAssignment tmpResult, newLen - offs
     GoTo exitfun
     Exit Function
 exitfun:

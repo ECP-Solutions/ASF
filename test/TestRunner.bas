@@ -100,6 +100,7 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("slice",                     "slice_start_end") Then slice_start_end: EndTest
     If StartTest("pop_push",                  "pop_push") Then pop_push: EndTest
     If StartTest("pop_push",                  "push_nested_member") Then push_nested_member: EndTest
+    If StartTest("pop_push",                  "push_in_place") Then push_in_place: EndTest
     If StartTest("range",                     "range_default") Then range_default: EndTest
     If StartTest("range",                     "range_custom") Then range_custom: EndTest
     If StartTest("range",                     "range_with_step") Then range_with_step: EndTest
@@ -1387,6 +1388,25 @@ Private Sub pop_push()
                     & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, 2, 3 ], PRINT:4"
+    AssertEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+Private Sub push_in_place()
+    On Error GoTo TestFail
+    Dim Globals As ASF_Globals
+    GetResult "a = []; n = a.push(5); fun f() { let b = []; let m = b.push(1, 2); return m + b.length; }; " & _
+              "o = { items: [], push: fun(x) { return 9; } }; print(n + ',' + f() + ',' + o.push(1) + ',' + o.items.push(4) + ',' + a.length);", True
+    Set Globals = scriptEngine.GetGlobals
+    With Globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
+    End With
+    expected = "PRINT:'1,4,9,1,1'"
     AssertEqual expected, actual
 
 TestExit:
