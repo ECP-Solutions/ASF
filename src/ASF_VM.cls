@@ -51,6 +51,8 @@ Private env_() As Long, nEnv_ As Long
 Private Const ENV_SHIFT As Double = 1048576     ' a closure's "fn" holds function + environment * ENV_SHIFT
 Private Const METHOD_SHIFT As Long = 1024       ' b of CALLM...: arguments + METHOD_SHIFT * method number
 ' VarType values: LibreOffice Basic looks vbString, vbDouble... up on every call of a procedure
+Private Const VT_EMPTY As Integer = 0
+Private Const VT_NULL As Integer = 1
 Private Const VT_INTEGER As Integer = 2
 Private Const VT_LONG As Integer = 3
 Private Const VT_SINGLE As Integer = 4
@@ -60,13 +62,17 @@ Private Const VT_STRING As Integer = 8
 Private Const VT_BOOLEAN As Integer = 11
 Private Const VT_DECIMAL As Integer = 14
 Private Const VT_BYTE As Integer = 17
+Private Const VT_LONGLONG As Integer = 20
 Private Const VT_ARRAY As Integer = 8192
 
 Private stk_() As Variant, stkCap_ As Long, stkHigh_ As Long
 Private glob_() As Variant
 Private frRet_() As Long, frFp_() As Long, frRes_() As Long, frFn_() As Long, frEnv_() As Long, frCap_ As Long
 Private frKind_() As Long, frRecv_() As Variant ' kind 1: a method call whose receiver is written back after it
-Private math_ As Object
+Private math_ As Object, mathKeep_ As Object
+' program number -> its function, first global slot, what each slot binds, the names of its slots
+Private pFn_() As Long, pBase_() As Long, pBind_() As Variant, pNames_() As Variant, pCap_ As Long
+Private globTotal_ As Long ' the global slots in use
 Private topSp_ As Long, topFt_ As Long  ' the stack and frames in use when ASF_Runtime is called
 
 Private OUTPUT__ As Variant
@@ -118,13 +124,25 @@ Public Property Get LastError() As Variant
 End Property
 
 ' ---------------------------------------------------------------- running a program
-Public Sub Run(ByVal idx As Long, params As Variant)
+' Runs program idx: False when there is no such program
+Public Function Run(ByVal idx As Long, params As Variant) As Boolean
     If version_ <> BC_.Version Then LoadCode
+    If idx < 1 Then Exit Function
+    If idx > pCap_ Then
+        pCap_ = idx + 16
+        ReDim Preserve pFn_(1 To pCap_): ReDim Preserve pBase_(1 To pCap_)
+        ReDim Preserve pBind_(1 To pCap_): ReDim Preserve pNames_(1 To pCap_)
+    End If
+    If pFn_(idx) = 0 Then
+        If Not BC_.Prepare(idx) Then Exit Function
+        PlanProgram idx
+    End If
+    Run = True
     LAST_ERROR_ = Empty
     throwing_ = False
     trace_ = RT_.EnableCallTrace
-    BindGlobals idx, params, False
-    Dim mainFn As Long: mainFn = BC_.ProgramFunction(idx)
+    BindProgram idx, params
+    Dim mainFn As Long: mainFn = pFn_(idx)
     mainFn_ = mainFn
     If fnMaxStack_(mainFn) >= stkCap_ Then GrowStack fnMaxStack_(mainFn)
     stkHigh_ = fnMaxStack_(mainFn)
@@ -133,6 +151,71 @@ Public Sub Run(ByVal idx As Long, params As Variant)
     Execute fnEntry_(mainFn), 0, 1, 0, 0, -1, 0, 0, 0, False, none
     RT_.SetHost Nothing
     ReleaseValues
+End Function
+
+' What a run of program idx binds, worked out on its first run: its function, its global slots, and
+' for each slot Math (-1), argument k (k) or nothing (0)
+Private Sub PlanProgram(ByVal idx As Long)
+    Dim names As Variant: names = BC_.ProgramGlobals(idx)
+    Dim n As Long: n = UBound(names)
+    Dim bind() As Long, i As Long, nm As String
+    ReDim bind(0 To n)
+    For i = 1 To n
+        nm = names(i)
+        If nm = "Math" Then
+            bind(i) = -1
+        ElseIf Left$(nm, 1) = "$" Then
+            If IsNumeric(Mid$(nm, 2)) Then bind(i) = CLng(Mid$(nm, 2))
+        End If
+    Next i
+    pNames_(idx) = names
+    pBind_(idx) = bind
+    pBase_(idx) = BC_.ProgramGlobalBase(idx)
+    pFn_(idx) = BC_.ProgramFunction(idx)
+End Sub
+
+' The global slots of program idx: Math, $1, $2... and the injected variables by name
+Private Sub BindProgram(ByVal idx As Long, params As Variant)
+    Dim bind As Variant: bind = pBind_(idx)
+    Dim gBase As Long: gBase = pBase_(idx)
+    Dim i As Long, k As Long, lb As Long, nArgs As Long
+    If IsArray(params) Then lb = LBound(params): nArgs = UBound(params) - lb + 1
+    For i = 1 To UBound(bind)
+        k = bind(i)
+        glob_(gBase + i) = Empty
+        globKeep_(gBase + i) = False
+        If k = -1 Then
+            If mathKeep_ Is Nothing Then Set mathKeep_ = RT_.MathObject
+            Set math_ = mathKeep_
+            Set glob_(gBase + i) = math_
+        ElseIf k > 0 Then
+            If k <= nArgs Then BindParam glob_(gBase + i), params(lb + k - 1)
+        End If
+    Next i
+    Dim injected As Collection: Set injected = RT_.InjectedVariables
+    If injected Is Nothing Then Exit Sub
+    If injected.Count = 0 Then Exit Sub
+    Dim names As Variant: names = pNames_(idx)
+    Dim item As Variant
+    For i = 1 To UBound(names)
+        For Each item In injected
+            If CStr(item(LBound(item))) = names(i) Then SetItem glob_(gBase + i), item(UBound(item))
+        Next item
+    Next i
+End Sub
+
+' An argument of Run: numbers as doubles, which the fast paths of the operators take; objects,
+' arrays and dates as ASF_Runtime prepares them
+Private Sub BindParam(ByRef dst As Variant, ByRef v As Variant)
+    If IsObject(v) Then
+        SetItem dst, RT_.PrepareParam(v)
+        Exit Sub
+    End If
+    Select Case VarType(v)
+        Case VT_DOUBLE, VT_STRING, VT_BOOLEAN, VT_EMPTY, VT_NULL: dst = v
+        Case VT_INTEGER, VT_LONG, VT_SINGLE, VT_CURRENCY, VT_BYTE, VT_LONGLONG: dst = CDbl(v)
+        Case Else: SetItem dst, RT_.PrepareParam(v)
+    End Select
 End Sub
 
 Private Sub LoadCode()
@@ -164,37 +247,21 @@ Private Sub LoadCode()
         globCap_ = 2 * BC_.GlobalCount
     End If
     ReDim hint_(1 To UBound(op_))
+    globTotal_ = BC_.GlobalCount
     version_ = BC_.Version
 End Sub
 
-' The global slots of program idx: Math, $1, $2... and the injected variables by name; a module
-' has Math only
-Private Sub BindGlobals(ByVal idx As Long, params As Variant, ByVal isModule As Boolean)
+' The global slots of a module: they stay after the run; Math is its only binding
+Private Sub BindModule(ByVal idx As Long)
     Dim names As Variant: names = BC_.ProgramGlobals(idx)
     Dim gBase As Long: gBase = BC_.ProgramGlobalBase(idx)
-    Dim n As Long: n = UBound(names)
-    Dim injected As Collection
-    If Not isModule Then Set injected = RT_.InjectedVariables
-    Dim i As Long, k As Long, item As Variant, nm As String
-    For i = 1 To n
+    Dim i As Long
+    For i = 1 To UBound(names)
         glob_(gBase + i) = Empty
-        globKeep_(gBase + i) = isModule
-        nm = names(i)
-        If nm = "Math" Then
+        globKeep_(gBase + i) = True
+        If names(i) = "Math" Then
             Set math_ = RT_.MathObject
             Set glob_(gBase + i) = math_
-        ElseIf Left$(nm, 1) = "$" And Not isModule Then
-            If IsNumeric(Mid$(nm, 2)) And IsArray(params) Then
-                k = CLng(Mid$(nm, 2))
-                If k >= 1 And k <= UBound(params) - LBound(params) + 1 Then
-                    SetItem glob_(gBase + i), RT_.PrepareParam(params(LBound(params) + k - 1))
-                End If
-            End If
-        End If
-        If Not injected Is Nothing Then
-            For Each item In injected
-                If CStr(item(LBound(item))) = nm Then SetItem glob_(gBase + i), item(UBound(item))
-            Next item
         End If
     Next i
 End Sub
@@ -207,7 +274,7 @@ Private Sub ReleaseValues()
         stk_(i) = Empty
     Next i
     stkHigh_ = 0
-    For i = 1 To globCap_
+    For i = 1 To globTotal_
         If Not globKeep_(i) Then glob_(i) = Empty
     Next i
     For i = keepCell_ + 1 To nCell_
@@ -215,7 +282,7 @@ Private Sub ReleaseValues()
     Next i
     nCell_ = keepCell_
     nEnv_ = keepEnv_
-    For i = 1 To clsCap_
+    For i = 1 To nCls_
         If Not clsKeep_(i) Then clsMap_(i) = Empty
     Next i
     Set math_ = Nothing
@@ -1287,7 +1354,7 @@ Private Function LoadModule(ByVal path As String) As ASF_Map
     GLOBALS_.CURRENT_MODULE_PATH = path
     Dim previousExports As ASF_Map: Set previousExports = curExports_
     Set curExports_ = exportsMap
-    BindGlobals idx, Empty, True
+    BindModule idx
     ' the module's code runs as a call: an error or a throw in it stops it
     Dim savedSp As Long, savedFt As Long, first As Long, none As Variant, mainFn As Long
     mainFn = BC_.ProgramFunction(idx)

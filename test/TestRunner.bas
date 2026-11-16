@@ -253,6 +253,7 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("polymorphism",              "polymorphism_method_delegation") Then polymorphism_method_delegation: EndTest
     If StartTest("sort",                      "sort_chain_on_objects") Then sort_chain_on_objects: EndTest
     If StartTest("injecting",                 "injecting_asf_objects") Then injecting_asf_objects: EndTest
+    If StartTest("injecting",                 "run_arguments") Then run_arguments: EndTest
     If StartTest("spread",                    "spread_simple") Then spread_simple: EndTest
     If StartTest("spread",                    "spread_multiple") Then spread_multiple: EndTest
     If StartTest("spread",                    "spread_with_empty") Then spread_with_empty: EndTest
@@ -4895,6 +4896,27 @@ Private Sub math_basic()
     expected = "9"
     AssertEqual expected, actual
 
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+Private Sub run_arguments()
+    On Error GoTo TestFail
+    Dim eng As ASF, idx As Long, appAccess As Variant, src As String
+    src = "return `${typeof $1} ${($1 + $2) * 3 - $1 / 2} ${$1 % 4} ${$1 == 7} ${typeof $2}`;"
+    For Each appAccess In Array(False, True)
+        Set eng = New ASF
+        eng.AppAccess = appAccess
+        idx = eng.Compile(src)
+        actual = CStr(eng.Run(idx, CInt(7), CLng(5)))
+        AssertEqual "number 32.5 3 true number", actual
+        ' a later run with fewer arguments: $2 is undefined again
+        actual = CStr(eng.Run(idx, CByte(7)))
+        AssertEqual "undefined", Mid$(actual, InStrRev(actual, " ") + 1)
+    Next appAccess
 TestExit:
     Exit Sub
 TestFail:
