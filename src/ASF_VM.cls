@@ -238,7 +238,8 @@ Private Function Execute(ByVal pc As Long, ByVal sp As Long, ByVal fp As Long, B
     On Error GoTo Failed
     If enterFn > 0 Then
         fn = enterFn: n = enterN: newEnv = enterEnv: res = sp - n
-        SetItem thisVal, thisV
+        ' the receiver is copied only for a function that reads this (a callback's array is large)
+        If fnThis_(fn) >= 0 Then SetItem thisVal, thisV
         GoTo CallSetup
     End If
 Dispatch:
@@ -1532,6 +1533,8 @@ Private Function Callback(ByVal fn As Long, ByVal env As Long, ByRef thisV As Va
     first = topSp_ + 1
     If first + n + fnNLocals_(fn) + fnMaxStack_(fn) + 8 >= stkCap_ Then GrowStack first + n + fnNLocals_(fn) + fnMaxStack_(fn) + 8
     stk_(first) = Empty
+    ' only the arguments the function declares: forEach's third one, the array, is copied only when asked for
+    If fnRest_(fn) < 0 And n > fnNParams_(fn) Then n = fnNParams_(fn)
     If n >= 1 Then SetItem stk_(first + 1), a1
     If n >= 2 Then SetItem stk_(first + 2), a2
     If n >= 3 Then SetItem stk_(first + 3), a3
@@ -1632,7 +1635,7 @@ End Function
 ' ---------------------------------------------------------------- calls from the runtime
 ' closure(args) for ASF_Runtime: a built-in method it runs (map, sort...) calls back a closure of
 ' this VM; the frame goes above the values in use, and the call ends when that frame returns
-Public Function CallFromRuntime(closure As ASF_Map, args As Collection, ByVal hasThis As Boolean, ByRef thisVal As Variant) As Variant
+Public Function CallFromRuntime(closure As ASF_Map, ByRef args As Variant, ByVal hasThis As Boolean, ByRef thisVal As Variant) As Variant
     Dim fn As Long, env As Long, i As Long, n As Long, first As Long
     If Not ClosureCode(closure, fn, env) Then Exit Function
     ' a callback threw and the built-in that called it went on: the rest of its calls are not run
@@ -1640,11 +1643,13 @@ Public Function CallFromRuntime(closure As ASF_Map, args As Collection, ByVal ha
     Dim savedSp As Long, savedFt As Long
     savedSp = topSp_: savedFt = topFt_
     first = topSp_ + 1
-    n = args.Count
+    ' args: an array from 1 (or empty); only the arguments the function declares are copied
+    If IsArray(args) Then n = UBound(args) - LBound(args) + 1
+    If fnRest_(fn) < 0 And n > fnNParams_(fn) Then n = fnNParams_(fn)
     If first + n + fnNLocals_(fn) + fnMaxStack_(fn) + 8 >= stkCap_ Then GrowStack first + n + fnNLocals_(fn) + fnMaxStack_(fn) + 8
     stk_(first) = Empty
     For i = 1 To n
-        SetItem stk_(first + i), args(i)
+        SetItem stk_(first + i), args(LBound(args) + i - 1)
     Next i
     Dim r As Variant
     On Error GoTo Thrown
@@ -1659,15 +1664,23 @@ Thrown:
     Err.Raise Err.Number, Err.Source, Err.Description
 End Function
 
+' The arguments a closure takes: the count of its parameters, or a large number with a rest one
+Public Function ParamCount(closure As ASF_Map) As Long
+    Dim fn As Long, env As Long
+    If Not ClosureCode(closure, fn, env) Then Exit Function
+    If fnRest_(fn) >= 0 Then ParamCount = 1000 Else ParamCount = fnNParams_(fn)
+End Function
+
+' The n arguments from first on, as the runtime takes them: an array from 1 (Array() for none)
 Private Function ArgsArray(ByVal first As Long, ByVal n As Long) As Variant
     Dim a() As Variant, i As Long
     If n = 0 Then
         ArgsArray = Array()
         Exit Function
     End If
-    ReDim a(0 To n - 1)
-    For i = 0 To n - 1
-        If IsObject(stk_(first + i)) Then Set a(i) = stk_(first + i) Else a(i) = stk_(first + i)
+    ReDim a(1 To n)
+    For i = 1 To n
+        If IsObject(stk_(first + i - 1)) Then Set a(i) = stk_(first + i - 1) Else a(i) = stk_(first + i - 1)
     Next i
     ArgsArray = a
 End Function

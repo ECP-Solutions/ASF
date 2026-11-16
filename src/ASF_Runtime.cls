@@ -407,24 +407,14 @@ Public Function CallMemberOn(ByRef target As Variant, ByVal name As String, ByRe
                              ByRef wrote As Boolean, ByRef written As Variant) As Variant
     Dim isMath As Boolean
     If IsObject(target) Then isMath = (target Is MathObj)
-    vAssignment CallMemberOn, MethodCallValue(target, name, ArrayToCollection(args), isMath, wrote, written)
+    vAssignment CallMemberOn, MethodCallValue(target, name, args, isMath, wrote, written)
 End Function
 ' A built-in function (range, flatten, clone, isArray, isNumeric, forEach, regex, cwd, scwd)
 Public Function CallBuiltin(ByVal name As String, ByRef args As Variant) As Variant
     Dim result As Variant
-    If EvalNamedBuiltin(name, ArrayToCollection(args), result) Then
+    If EvalNamedBuiltin(name, args, result) Then
         vAssignment CallBuiltin, result
     End If
-End Function
-Private Function ArrayToCollection(ByRef args As Variant) As Collection
-    Dim out As Collection: Set out = New Collection
-    Dim i As Long
-    If IsArray(args) Then
-        For i = LBound(args) To UBound(args)
-            out.Add args(i)
-        Next i
-    End If
-    Set ArrayToCollection = out
 End Function
 ' The Math object, shared with ASF_VM so that members of Math resolve alike
 Public Property Get MathObject() As Collection
@@ -449,7 +439,7 @@ Public Function VBAExpression(ByVal expr As String, ByVal names As Variant, ByVa
         Next elm
     End If
     For i = LBound(names) To UBound(names)
-        vars.SetValue CStr(names(i)), values(i)
+        vars.SetValue CStr(names(i)), values(LBound(values) + i - LBound(names))
     Next i
     vAssignment VBAExpression, EvalVBExpressionWithScope(expr, vars)
 End Function
@@ -487,7 +477,7 @@ Private Function MemberValue(ByRef baseVal As Variant, ByVal prop As String) As 
         If VarType(baseVal) = vbString Or IsArray(baseVal) Then
             ' the member can be a method called without parentheses
             Dim wrote As Boolean, written As Variant
-            vAssignment MemberValue, MethodCallValue(baseVal, prop, New Collection, False, wrote, written)
+            vAssignment MemberValue, MethodCallValue(baseVal, prop, Array(), False, wrote, written)
             Exit Function
         End If
     Else
@@ -513,7 +503,7 @@ End Function
 ' target.name(args) on values: a built-in method, a prototype of a host
 ' object, or a function the object holds, called with this; wrote and written: the array a method
 ' changed, for the caller to write back
-Private Function MethodCallValue(ByRef target As Variant, ByVal name As String, evaluated As Collection, ByVal isMath As Boolean, _
+Private Function MethodCallValue(ByRef target As Variant, ByVal name As String, evaluated As Variant, ByVal isMath As Boolean, _
                                  ByRef wrote As Boolean, ByRef written As Variant) As Variant
     Dim propN As String, baseValLocal As Variant, origBaseVal As Variant, tmpResult As Variant
     vAssignment baseValLocal, target
@@ -550,12 +540,12 @@ Private Sub vAssignment(ByRef var As Variant, ByRef vValue As Variant)
     End If
 End Sub
 
-Private Function EvalNamedBuiltin(ByVal fname As String, evaluated As Collection, ByRef tmpResult As Variant) As Boolean
+Private Function EvalNamedBuiltin(ByVal fname As String, evaluated As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     Dim nameLcase As String: nameLcase = LCase$(fname)
     If nameLcase = "range" Then
         ' range([start,] end[, step]) -> returns an array (python-style range semantics)
-        Dim rcount As Long: rcount = evaluated.Count
+        Dim rcount As Long: rcount = ArgCount(evaluated)
         Dim rs As Double, re As Double, rstep As Double
         Dim optionBase_local As Long: optionBase_local = 1
         If rcount = 1 Then
@@ -602,11 +592,11 @@ Private Function EvalNamedBuiltin(ByVal fname As String, evaluated As Collection
         GoTo exitfun
     End If
     If nameLcase = "flatten" Then
-        If evaluated.Count = 0 Then
+        If ArgCount(evaluated) = 0 Then
             vAssignment tmpResult, Empty
             GoTo exitfun
         End If
-        If evaluated.Count = 1 Then
+        If ArgCount(evaluated) = 1 Then
             vAssignment tmpResult, builtin_flatten(evaluated(1))
         Else
             vAssignment tmpResult, builtin_flatten(evaluated(1), evaluated(2))
@@ -614,7 +604,7 @@ Private Function EvalNamedBuiltin(ByVal fname As String, evaluated As Collection
         GoTo exitfun
     End If
     If nameLcase = "clone" Then
-        If evaluated.Count = 0 Then
+        If ArgCount(evaluated) = 0 Then
             vAssignment tmpResult, Empty
             GoTo exitfun
         End If
@@ -622,7 +612,7 @@ Private Function EvalNamedBuiltin(ByVal fname As String, evaluated As Collection
         GoTo exitfun
     End If
     If nameLcase = "isarray" Then
-        If evaluated.Count = 0 Then
+        If ArgCount(evaluated) = 0 Then
             vAssignment tmpResult, False
         Else
             Dim v0 As Variant: v0 = evaluated(1)
@@ -637,7 +627,7 @@ Private Function EvalNamedBuiltin(ByVal fname As String, evaluated As Collection
         GoTo exitfun
     End If
     If nameLcase = "isnumeric" Then
-        If evaluated.Count = 0 Then
+        If ArgCount(evaluated) = 0 Then
             vAssignment tmpResult, False
         Else
             Dim v1 As Variant: v1 = evaluated(1)
@@ -661,7 +651,7 @@ Private Function EvalNamedBuiltin(ByVal fname As String, evaluated As Collection
     End If
     If nameLcase = "foreach" Then
         ' foreach(arr, fn) | foreach(obj, fn) -> same behavior as method-style forEach
-        If evaluated.Count < 2 Then
+        If ArgCount(evaluated) < 2 Then
             vAssignment tmpResult, Empty
             GoTo exitfun
         End If
@@ -682,14 +672,14 @@ Private Function EvalNamedBuiltin(ByVal fname As String, evaluated As Collection
         If typeName(feTmpVal) = "ASF_Map" Then
             Dim foreachKeys2 As Collection: Set foreachKeys2 = feTmpVal.keys()
             Dim fk2 As Variant
-            Dim args_obj2 As Collection
+            Dim args_obj2() As Variant
             Dim tmpRes_obj2 As Variant
 
             For Each fk2 In foreachKeys2
-                Set args_obj2 = New Collection
-                args_obj2.Add feTmpVal.GetValue(CStr(fk2))
-                args_obj2.Add CStr(fk2)
-                args_obj2.Add feTmpVal
+                ReDim args_obj2(1 To 3)
+                vAssignment args_obj2(1), feTmpVal.GetValue(CStr(fk2))
+                vAssignment args_obj2(2), CStr(fk2)
+                If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_obj2(3), feTmpVal
                 vAssignment tmpMapObj, cbFn
                 vAssignment tmpRes_obj2, CallClosure(tmpMapObj, args_obj2, feTmpVal)
             Next fk2
@@ -699,12 +689,12 @@ Private Function EvalNamedBuiltin(ByVal fname As String, evaluated As Collection
             Dim optBase2 As Long: optBase2 = 1
             Dim idx2 As Long: idx2 = 0
             Dim j As Long
-            Dim callArgs2 As Collection
+            Dim callArgs2() As Variant
             For j = lb2 To ub2
-                Set callArgs2 = New Collection
-                callArgs2.Add feTmpVal(j)
-                callArgs2.Add (optBase2 + idx2)
-                callArgs2.Add feTmpVal
+                ReDim callArgs2(1 To 3)
+                vAssignment callArgs2(1), feTmpVal(j)
+                vAssignment callArgs2(2), (optBase2 + idx2)
+                If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment callArgs2(3), feTmpVal
                 Dim tmpRc As Variant
                 vAssignment tmpMapObj, cbFn
                 vAssignment tmpRc, CallClosure(tmpMapObj, callArgs2, feTmpVal)
@@ -718,7 +708,7 @@ Private Function EvalNamedBuiltin(ByVal fname As String, evaluated As Collection
     If nameLcase = "regex" Then
         Set tmpResult = New ASF_RegexEngine
         Set tmpResult.SharedCache = GLOBALS_.regexCache
-        Select Case evaluated.Count
+        Select Case ArgCount(evaluated)
             Case 1
                 ' pattern
                 tmpResult.Init CStr(evaluated(1))
@@ -754,7 +744,7 @@ End Function
 
 ' The built-in methods of a value (arrays, strings, objects, collections, Math, regex, host objects):
 ' False when it has none of that name. A method that changes its array calls WriteBack with it
-Private Function DispatchMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant, ByVal isMath As Boolean) As Boolean
+Private Function DispatchMethod(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant, ByVal isMath As Boolean) As Boolean
     vAssignment origBaseVal, baseValLocal
     Dim baseType As String: baseType = typeName(baseValLocal)
     If IsCollectionType(baseType) Then
@@ -789,6 +779,10 @@ Private Function DispatchMethod(evaluated As Collection, ByRef propN As String, 
         vAssignment tmpResult, CallObjectMethod(baseValLocal, propN, evaluated)
         DispatchMethod = True
     End If
+End Function
+' The count of the arguments of a call: an array from 1, Array() for none
+Private Function ArgCount(ByRef evaluated As Variant) As Long
+    If IsArray(evaluated) Then ArgCount = UBound(evaluated) - LBound(evaluated) + 1
 End Function
 Private Function IsNumberValue(ByRef v As Variant) As Boolean
     If Not IsObject(v) Then
@@ -846,10 +840,10 @@ Public Function NumberText(ByVal v As Variant) As String
     NumberText = sign & s
 End Function
 ' Methods of numbers: toFixed(digits) and toString()
-Private Function NumberMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function NumberMethod(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef tmpResult As Variant) As Boolean
     Select Case propN
         Case "tofixed"
-            If evaluated.Count = 0 Then
+            If ArgCount(evaluated) = 0 Then
                 tmpResult = NumberToFixed(CDbl(baseValLocal), 0)
             ElseIf IsEmpty(evaluated(1)) Then
                 tmpResult = NumberToFixed(CDbl(baseValLocal), 0)
@@ -898,7 +892,7 @@ Private Sub WriteBack(ByRef value As Variant)
 End Sub
 
 ' Array methods
-Private Function ArrayMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrayMethod(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim optBase_sp As Long, len_sp As Long
     Dim optBase_u2 As Long
     Dim len_base As Long
@@ -947,7 +941,7 @@ Private Function ArrayMethod(evaluated As Collection, ByRef propN As String, ByR
             lb_b = LBound(baseValLocal)
             ub_b = UBound(baseValLocal)
             len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
-            insertCount = evaluated.Count
+            insertCount = ArgCount(evaluated)
             newSize = len_base + insertCount
             If newSize <= 0 Then
                 ReDim outArr(optBase_u2 To optBase_u2)
@@ -955,7 +949,7 @@ Private Function ArrayMethod(evaluated As Collection, ByRef propN As String, ByR
                 ReDim newTemp(0 To newSize - 1)
                 cur = 0
                 ' copy inserted args (in order)
-                For j_sp = 1 To evaluated.Count
+                For j_sp = 1 To ArgCount(evaluated)
                     vAssignment insertedItem, evaluated(j_sp)
                     newTemp(cur) = insertedItem
                     cur = cur + 1
@@ -977,7 +971,7 @@ Private Function ArrayMethod(evaluated As Collection, ByRef propN As String, ByR
             GoTo exitfun
         Case "delete"
             ' delete(index): remove element at index (user-space) and return true/false
-            If Not IsArray(baseValLocal) Or evaluated.Count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
+            If Not IsArray(baseValLocal) Or ArgCount(evaluated) = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
             optBase_u2 = 1
             lb_b = LBound(baseValLocal)
             ub_b = UBound(baseValLocal)
@@ -1023,7 +1017,7 @@ Private Function ArrayMethod(evaluated As Collection, ByRef propN As String, ByR
             ArrayMethod = ArrSplice(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "tospliced"
             ' toSpliced(start, deleteCount?, ...items) -> non-mutating version of splice
-            If Not IsArray(baseValLocal) Or evaluated.Count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
+            If Not IsArray(baseValLocal) Or ArgCount(evaluated) = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
             optBase_sp = 1
             lb_b = LBound(baseValLocal)
             ub_b = UBound(baseValLocal)
@@ -1031,7 +1025,7 @@ Private Function ArrayMethod(evaluated As Collection, ByRef propN As String, ByR
 
             startRaw_sp = CLng(evaluated(1))
             startN_sp = NormalizeIndex(startRaw_sp, len_sp, optBase_sp) ' zero-based offset within logical array
-            If evaluated.Count >= 2 Then
+            If ArgCount(evaluated) >= 2 Then
                 deleteCount_sp = CLng(evaluated(2))
                 If deleteCount_sp < 0 Then deleteCount_sp = 0
             Else
@@ -1047,7 +1041,7 @@ Private Function ArrayMethod(evaluated As Collection, ByRef propN As String, ByR
                 ReDim tempIn(0 To -1)
             End If
             ' build newTemp: prefix, inserted items, suffix
-            insertCount = IIf(evaluated.Count > 2, evaluated.Count - 2, 0)
+            insertCount = IIf(ArgCount(evaluated) > 2, ArgCount(evaluated) - 2, 0)
             newSize = len_sp - deleteCount_sp + insertCount
             If newSize > 0 Then ReDim newTemp(0 To newSize - 1) Else ReDim newTemp(0 To -1)
             cur = 0
@@ -1059,7 +1053,7 @@ Private Function ArrayMethod(evaluated As Collection, ByRef propN As String, ByR
                 End If
             Next i_sp
             ' insert new items (in order)
-            For i_sp = 3 To evaluated.Count
+            For i_sp = 3 To ArgCount(evaluated)
                 vAssignment insertedItem, evaluated(i_sp)
                 vAssignment newTemp(cur), insertedItem
                 cur = cur + 1
@@ -1116,12 +1110,12 @@ exitfun:
     ArrayMethod = True
 End Function
 
-Private Function ArrMap(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrMap(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     Dim ii As Long
     Dim outArr() As Variant
     ' map(fn) -> return new array with fn applied to each element (recursively tolerates nested arrays)
-    If evaluated.Count < 1 Then vAssignment tmpResult, Empty: GoTo exitfun
+    If ArgCount(evaluated) < 1 Then vAssignment tmpResult, Empty: GoTo exitfun
     Dim mapper As Variant: vAssignment mapper, evaluated(1)
     If typeName(mapper) <> "ASF_Map" Or mapper.GetValue("type") <> "Closure" Then
         vAssignment tmpResult, Empty: GoTo exitfun
@@ -1164,10 +1158,10 @@ exitfun:
     ArrMap = True
 End Function
 
-Private Function ArrFilter(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrFilter(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     ' filter(fn) -> return new array with elements where fn(elem) truthy
-    If evaluated.Count < 1 Then vAssignment tmpResult, Empty: GoTo exitfun
+    If ArgCount(evaluated) < 1 Then vAssignment tmpResult, Empty: GoTo exitfun
     Dim pred As Variant: vAssignment pred, evaluated(1)
     If typeName(pred) <> "ASF_Map" Or pred.GetValue("type") <> "Closure" Then
         vAssignment tmpResult, Empty: GoTo exitfun
@@ -1176,10 +1170,10 @@ Private Function ArrFilter(evaluated As Collection, ByRef propN As String, ByRef
     Dim tmpCol As New Collection
     Dim jj As Long
     Dim keep As Variant
-    Dim ca As Collection
+    Dim ca() As Variant
     For jj = LBound(baseValLocal) To UBound(baseValLocal)
-        Set ca = New Collection
-        ca.Add baseValLocal(jj)
+        ReDim ca(1 To 1)
+        vAssignment ca(1), baseValLocal(jj)
         vAssignment tmpMapObj, pred
         vAssignment keep, CallClosure(tmpMapObj, ca, baseValLocal)
         If IsTruthy(keep) Then tmpCol.Add baseValLocal(jj)
@@ -1202,10 +1196,10 @@ exitfun:
     ArrFilter = True
 End Function
 
-Private Function ArrReduce(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrReduce(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     ' reduce(fn, initial?) -> apply reduction
-    If evaluated.Count < 1 Then vAssignment tmpResult, Empty: GoTo exitfun
+    If ArgCount(evaluated) < 1 Then vAssignment tmpResult, Empty: GoTo exitfun
     Dim rfn As Variant: vAssignment rfn, evaluated(1)
     If typeName(rfn) <> "ASF_Map" Or rfn.GetValue("type") <> "Closure" Then
         vAssignment tmpResult, Empty: GoTo exitfun
@@ -1213,7 +1207,7 @@ Private Function ArrReduce(evaluated As Collection, ByRef propN As String, ByRef
     If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
     Dim acc As Variant
     Dim startIdx As Long
-    If evaluated.Count >= 2 Then
+    If ArgCount(evaluated) >= 2 Then
         vAssignment acc, evaluated(2)
         startIdx = LBound(baseValLocal)
     Else
@@ -1222,11 +1216,11 @@ Private Function ArrReduce(evaluated As Collection, ByRef propN As String, ByRef
         startIdx = LBound(baseValLocal) + 1
     End If
     Dim kk As Long
-    Dim carr As Collection
+    Dim carr() As Variant
     For kk = startIdx To UBound(baseValLocal)
-        Set carr = New Collection
-        carr.Add acc
-        carr.Add baseValLocal(kk)
+        ReDim carr(1 To 2)
+        vAssignment carr(1), acc
+        vAssignment carr(2), baseValLocal(kk)
         vAssignment tmpMapObj, rfn
         vAssignment acc, CallClosure(tmpMapObj, carr, baseValLocal)
     Next kk
@@ -1237,7 +1231,7 @@ exitfun:
     ArrReduce = True
 End Function
 
-Private Function ArrSlice(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrSlice(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim optBase As Long
     Dim si As Long
     ' slice(start, end) -> non-mutating, respects __option_base
@@ -1254,10 +1248,10 @@ Private Function ArrSlice(evaluated As Collection, ByRef propN As String, ByRef 
     Dim sRaw As Long, eRaw As Long
 
     ' Interpret arguments in the user's indexing space (option base)
-    If evaluated.Count = 0 Then
+    If ArgCount(evaluated) = 0 Then
         ' default: full slice
         s = 0: e = lenA
-    ElseIf evaluated.Count = 1 Then
+    ElseIf ArgCount(evaluated) = 1 Then
         sRaw = CLng(evaluated(1))
         ' convert start to zero-based offset (and support negative indices)
         If sRaw < 0 Then
@@ -1314,7 +1308,7 @@ exitfun:
     ArrSlice = True
 End Function
 
-Private Function ArrPush(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrPush(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim insertCount As Long
     ' push(...values) -> mutates array, returns new length
     Dim offs As Long
@@ -1327,7 +1321,7 @@ Private Function ArrPush(evaluated As Collection, ByRef propN As String, ByRef b
     Else
         offs = 0
     End If
-    insertCount = evaluated.Count
+    insertCount = ArgCount(evaluated)
     Dim oldLB As Long: oldLB = LBound(baseValLocal)
     Dim oldUB As Long: oldUB = UBound(baseValLocal)
     Dim oldLen As Long: oldLen = oldUB - oldLB + 1
@@ -1350,7 +1344,7 @@ exitfun:
     ArrPush = True
 End Function
 
-Private Function ArrPop(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrPop(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' pop() -> remove last element, return it
     If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
     Dim lbp As Long: lbp = LBound(baseValLocal)
@@ -1373,12 +1367,12 @@ exitfun:
     ArrPop = True
 End Function
 
-Private Function ArrForeach(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrForeach(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     Dim optBase As Long
     Dim ii As Long
     ' forEach(fn) -> invoke fn(value, index, array) for each element; returns the original array
-    If evaluated.Count = 0 Then
+    If ArgCount(evaluated) = 0 Then
         vAssignment tmpResult, Empty
         GoTo exitfun
     End If
@@ -1399,15 +1393,15 @@ Private Function ArrForeach(evaluated As Collection, ByRef propN As String, ByRe
     Dim ub As Long: ub = UBound(baseValLocal)
     optBase = 1
     Dim idxLocal As Long: idxLocal = 0
-    Dim callArgs As Collection
+    Dim callArgs() As Variant
     For ii = lb To ub
-        Set callArgs = New Collection
+        ReDim callArgs(1 To 3)
         ' value
-        callArgs.Add baseValLocal(ii)
+        vAssignment callArgs(1), baseValLocal(ii)
         ' index in user-space (respect option base)
-        callArgs.Add (optBase + idxLocal)
+        vAssignment callArgs(2), (optBase + idxLocal)
         ' array reference as third arg
-        callArgs.Add baseValLocal
+        If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment callArgs(3), baseValLocal
         ' call closure with this = base array (so callback can use this)
         Dim tmpResCall As Variant
         vAssignment tmpMapObj, cb
@@ -1424,7 +1418,7 @@ exitfun:
     ArrForeach = True
 End Function
 
-Private Function ArrUnique(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrUnique(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim k As Long
     Dim outArr() As Variant
     If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
@@ -1475,7 +1469,7 @@ exitfun:
     ArrUnique = True
 End Function
 
-Private Function ArrConcat(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrConcat(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim alb As Long, aub As Long
     Dim len_base As Long, totalCount As Long
     Dim outArr() As Variant, writeIdx As Long
@@ -1488,7 +1482,7 @@ Private Function ArrConcat(evaluated As Collection, ByRef propN As String, ByRef
     ub_b = UBound(baseValLocal)
     If ub_b >= lb_b Then len_base = ub_b - lb_b + 1 Else len_base = 0
 
-    Dim argc As Long: argc = evaluated.Count
+    Dim argc As Long: argc = ArgCount(evaluated)
     Dim p As Long
     totalCount = len_base
 
@@ -1545,7 +1539,7 @@ exitfun:
     ArrConcat = True
 End Function
 
-Private Function ArrTostring(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrTostring(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim sep As String
     Dim lb_val As Long, ub_val As Long, len_val As Long
     Dim parts() As String
@@ -1555,7 +1549,7 @@ Private Function ArrTostring(evaluated As Collection, ByRef propN As String, ByR
     If Not IsArray(baseValLocal) Then vAssignment tmpResult, Empty: GoTo exitfun
     sep = ", "
     ' join() passes one empty argument: the default separator, as join(undefined) in JavaScript
-    If evaluated.Count >= 1 Then
+    If ArgCount(evaluated) >= 1 Then
         If Not IsEmpty(evaluated(1)) Then sep = CStr(evaluated(1))
     End If
     lb_val = LBound(baseValLocal)
@@ -1590,7 +1584,7 @@ exitfun:
     ArrTostring = True
 End Function
 
-Private Function ArrShift(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrShift(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim popped2 As Variant
     Dim newA_s() As Variant
     Dim idx_s As Long, k_s As Long
@@ -1625,7 +1619,7 @@ exitfun:
     ArrShift = True
 End Function
 
-Private Function ArrSplice(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrSplice(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim outArr() As Variant
     Dim lb_b As Long, ub_b As Long
     Dim startRaw_sp As Long, startN_sp As Long, deleteCount_sp As Long
@@ -1636,14 +1630,14 @@ Private Function ArrSplice(evaluated As Collection, ByRef propN As String, ByRef
     Dim insertedItem As Variant
     Dim removedOut() As Variant
     ' splice(start, deleteCount?, ...items): mutating splice - returns array of deleted elements
-    If Not IsArray(baseValLocal) Or evaluated.Count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
+    If Not IsArray(baseValLocal) Or ArgCount(evaluated) = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
     Dim optBase_sp As Long: optBase_sp = 1
     lb_b = LBound(baseValLocal)
     ub_b = UBound(baseValLocal)
     Dim len_sp As Long: len_sp = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
     startRaw_sp = CLng(evaluated(1))
     startN_sp = NormalizeIndex(startRaw_sp, len_sp, optBase_sp) ' zero-based offset
-    If evaluated.Count >= 2 Then
+    If ArgCount(evaluated) >= 2 Then
         deleteCount_sp = CLng(evaluated(2))
         If deleteCount_sp < 0 Then deleteCount_sp = 0
     Else
@@ -1670,7 +1664,7 @@ Private Function ArrSplice(evaluated As Collection, ByRef propN As String, ByRef
         ReDim removedArr(0 To -1)
     End If
     ' insertion count
-    insertCount = IIf(evaluated.Count > 2, evaluated.Count - 2, 0)
+    insertCount = IIf(ArgCount(evaluated) > 2, ArgCount(evaluated) - 2, 0)
     newSize = len_sp - removedCount + insertCount
     If newSize > 0 Then
         ReDim newTemp(0 To newSize - 1)
@@ -1686,7 +1680,7 @@ Private Function ArrSplice(evaluated As Collection, ByRef propN As String, ByRef
         End If
     Next i_sp
     ' inserted items
-    For j_sp = 3 To evaluated.Count
+    For j_sp = 3 To ArgCount(evaluated)
         vAssignment insertedItem, evaluated(j_sp)
         vAssignment newTemp(cur), insertedItem
         cur = cur + 1
@@ -1726,11 +1720,11 @@ exitfun:
     ArrSplice = True
 End Function
 
-Private Function ArrAt(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrAt(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim optBase_u2 As Long
     Dim len_base As Long
     Dim lb_b As Long, ub_b As Long
-    If Not IsArray(baseValLocal) Or evaluated.Count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
+    If Not IsArray(baseValLocal) Or ArgCount(evaluated) = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
     optBase_u2 = 1
     lb_b = LBound(baseValLocal)
     ub_b = UBound(baseValLocal)
@@ -1745,7 +1739,7 @@ exitfun:
     ArrAt = True
 End Function
 
-Private Function ArrCopywithin(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrCopywithin(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim outArr() As Variant
     Dim lb_b As Long, ub_b As Long
     Dim tempIn() As Variant
@@ -1755,9 +1749,9 @@ Private Function ArrCopywithin(evaluated As Collection, ByRef propN As String, B
     ub_b = UBound(baseValLocal)
     Dim len_cw As Long: len_cw = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
 
-    Dim targetRaw_cw As Long: targetRaw_cw = CLng(IIf(evaluated.Count >= 1, evaluated(1), optBase_cw))
-    Dim startRaw_cw As Long: startRaw_cw = CLng(IIf(evaluated.Count >= 2, evaluated(2), optBase_cw))
-    Dim endRaw_cw As Long: endRaw_cw = CLng(IIf(evaluated.Count >= 3, evaluated(3), optBase_cw + len_cw))
+    Dim targetRaw_cw As Long: targetRaw_cw = CLng(IIf(ArgCount(evaluated) >= 1, evaluated(1), optBase_cw))
+    Dim startRaw_cw As Long: startRaw_cw = CLng(IIf(ArgCount(evaluated) >= 2, evaluated(2), optBase_cw))
+    Dim endRaw_cw As Long: endRaw_cw = CLng(IIf(ArgCount(evaluated) >= 3, evaluated(3), optBase_cw + len_cw))
 
     Dim targN As Long: targN = NormalizeIndex(targetRaw_cw, len_cw, optBase_cw)
     Dim startN_cw As Long: startN_cw = NormalizeIndex(startRaw_cw, len_cw, optBase_cw)
@@ -1815,7 +1809,7 @@ exitfun:
     ArrCopywithin = True
 End Function
 
-Private Function ArrEntries(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrEntries(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim len_base As Long
     Dim outArr() As Variant
     Dim lb_b As Long, ub_b As Long
@@ -1850,11 +1844,11 @@ exitfun:
     ArrEntries = True
 End Function
 
-Private Function ArrEvery(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrEvery(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     Dim len_base As Long
     Dim lb_b As Long, ub_b As Long
-    If Not IsArray(baseValLocal) Or evaluated.Count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
+    If Not IsArray(baseValLocal) Or ArgCount(evaluated) = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
     Dim cb_every As Variant: vAssignment cb_every, evaluated(1)
     If typeName(cb_every) <> "ASF_Map" Or cb_every.GetValue("type") <> "Closure" Then vAssignment tmpResult, Empty: GoTo exitfun
     lb_b = LBound(baseValLocal)
@@ -1863,13 +1857,13 @@ Private Function ArrEvery(evaluated As Collection, ByRef propN As String, ByRef 
     Dim ob_ev As Long: ob_ev = 1
     Dim idx_ev As Long
     Dim i_ev As Long
-    Dim args_ev As Collection
+    Dim args_ev() As Variant
     Dim res_ev As Variant
     For i_ev = 0 To len_base - 1
-        Set args_ev = New Collection
-        args_ev.Add baseValLocal(lb_b + i_ev)
-        args_ev.Add (ob_ev + idx_ev)
-        args_ev.Add baseValLocal
+        ReDim args_ev(1 To 3)
+        vAssignment args_ev(1), baseValLocal(lb_b + i_ev)
+        vAssignment args_ev(2), (ob_ev + idx_ev)
+        If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_ev(3), baseValLocal
         vAssignment tmpMapObj, cb_every
         vAssignment res_ev, CallClosure(tmpMapObj, args_ev, baseValLocal)
         If Not IsTruthy(res_ev) Then
@@ -1884,11 +1878,11 @@ exitfun:
     ArrEvery = True
 End Function
 
-Private Function ArrFind(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrFind(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     Dim len_base As Long
     Dim lb_b As Long, ub_b As Long
-    If Not IsArray(baseValLocal) Or evaluated.Count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
+    If Not IsArray(baseValLocal) Or ArgCount(evaluated) = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
     Dim cb_find As Variant: vAssignment cb_find, evaluated(1)
     If typeName(cb_find) <> "ASF_Map" Or cb_find.GetValue("type") <> "Closure" Then vAssignment tmpResult, Empty: GoTo exitfun
     Dim ob_f As Long: ob_f = 1
@@ -1898,13 +1892,13 @@ Private Function ArrFind(evaluated As Collection, ByRef propN As String, ByRef b
 
     If propN = "findlast" Or propN = "findlastindex" Then
         Dim i_f As Long
-        Dim args_f As Collection
+        Dim args_f() As Variant
         Dim res_f As Variant
         For i_f = len_base - 1 To 0 Step -1
-            Set args_f = New Collection
-            args_f.Add baseValLocal(lb_b + i_f)
-            args_f.Add (ob_f + i_f)
-            args_f.Add baseValLocal
+            ReDim args_f(1 To 3)
+            vAssignment args_f(1), baseValLocal(lb_b + i_f)
+            vAssignment args_f(2), (ob_f + i_f)
+            If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_f(3), baseValLocal
             vAssignment tmpMapObj, cb_find
             vAssignment res_f, CallClosure(tmpMapObj, args_f, baseValLocal)
             If IsTruthy(res_f) Then
@@ -1915,13 +1909,13 @@ Private Function ArrFind(evaluated As Collection, ByRef propN As String, ByRef b
         If propN = "findlast" Then vAssignment tmpResult, Empty Else vAssignment tmpResult, -1
         GoTo exitfun
     Else
-        Dim args_f2 As Collection
+        Dim args_f2() As Variant
         Dim res_f2 As Variant
         For i_f = 0 To len_base - 1
-            Set args_f2 = New Collection
-            args_f2.Add baseValLocal(lb_b + i_f)
-            args_f2.Add (ob_f + i_f)
-            args_f2.Add baseValLocal
+            ReDim args_f2(1 To 3)
+            vAssignment args_f2(1), baseValLocal(lb_b + i_f)
+            vAssignment args_f2(2), (ob_f + i_f)
+            If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_f2(3), baseValLocal
             vAssignment tmpMapObj, cb_find
             vAssignment res_f2, CallClosure(tmpMapObj, args_f2, baseValLocal)
             If IsTruthy(res_f2) Then
@@ -1937,8 +1931,8 @@ exitfun:
     ArrFind = True
 End Function
 
-Private Function ArrFrom(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
-    Dim argColl As Collection
+Private Function ArrFrom(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+    Dim argColl() As Variant
     Dim tmpMapObj As ASF_Map
     Dim thisVal As Variant
     Dim outArr() As Variant
@@ -1946,7 +1940,7 @@ Private Function ArrFrom(evaluated As Collection, ByRef propN As String, ByRef b
     Dim tempIn() As Variant
     Dim newSize As Long
     Dim i_sp As Long
-    If evaluated.Count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
+    If ArgCount(evaluated) = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
     Dim val_from As Variant: vAssignment val_from, evaluated(1)
     Dim opt_from As Long: opt_from = 1
 
@@ -1995,8 +1989,8 @@ Private Function ArrFrom(evaluated As Collection, ByRef propN As String, ByRef b
 
     ' optional mapping closure (mapFn) and optional thisArg
     Dim comp As Variant
-    If evaluated.Count >= 2 Then vAssignment comp, evaluated(2)
-    If evaluated.Count >= 3 Then vAssignment thisVal, evaluated(3)
+    If ArgCount(evaluated) >= 2 Then vAssignment comp, evaluated(2)
+    If ArgCount(evaluated) >= 3 Then vAssignment thisVal, evaluated(3)
 
     ' If mapping function is a closure, apply it; otherwise just copy
     If newSize <= 0 Then
@@ -2013,10 +2007,10 @@ Private Function ArrFrom(evaluated As Collection, ByRef propN As String, ByRef b
         If typeName(comp) = "ASF_Map" Then
             If comp.Exists("type") And CStr(comp.GetValue("type")) = "Closure" Then
                 For i_sp = 0 To newSize - 1
-                    Set argColl = New Collection
-                    argColl.Add tempIn(i_sp)
-                    argColl.Add (opt_from + i_sp)
-                    argColl.Add srcArrOption
+                    ReDim argColl(1 To 3)
+                    vAssignment argColl(1), tempIn(i_sp)
+                    vAssignment argColl(2), (opt_from + i_sp)
+                    If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment argColl(3), srcArrOption
                     vAssignment tmpMapObj, comp
                     vAssignment mapResult, CallClosure(tmpMapObj, argColl, thisVal)
                     outArr(opt_from + i_sp) = mapResult
@@ -2038,11 +2032,11 @@ exitfun:
     ArrFrom = True
 End Function
 
-Private Function ArrIncludes(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrIncludes(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim len_base As Long
     Dim lb_b As Long, ub_b As Long
     Dim foundIdx As Long
-    If Not IsArray(baseValLocal) Or evaluated.Count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
+    If Not IsArray(baseValLocal) Or ArgCount(evaluated) = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
     Dim needle As Variant: vAssignment needle, evaluated(1)
     Dim optBase_in As Long: optBase_in = 1
     lb_b = LBound(baseValLocal)
@@ -2076,17 +2070,17 @@ exitfun:
     ArrIncludes = True
 End Function
 
-Private Function ArrOf(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrOf(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim outArr() As Variant
     Dim newSize As Long
     Dim i_sp As Long
     Dim optBase_of As Long: optBase_of = 1
-    newSize = evaluated.Count
+    newSize = ArgCount(evaluated)
     If newSize <= 0 Then
         ReDim outArr(optBase_of To optBase_of)
     Else
         ReDim outArr(optBase_of To optBase_of + newSize - 1)
-        For i_sp = 1 To evaluated.Count
+        For i_sp = 1 To ArgCount(evaluated)
             vAssignment outArr(optBase_of + i_sp - 1), evaluated(i_sp)
         Next i_sp
     End If
@@ -2097,7 +2091,7 @@ exitfun:
     ArrOf = True
 End Function
 
-Private Function ArrReverse(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrReverse(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim len_base As Long
     Dim outArr() As Variant
     Dim lb_b As Long, ub_b As Long
@@ -2131,7 +2125,7 @@ exitfun:
     ArrReverse = True
 End Function
 
-Private Function ArrToreversed(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrToreversed(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim len_base As Long
     Dim outArr() As Variant
     Dim lb_b As Long, ub_b As Long
@@ -2162,11 +2156,11 @@ exitfun:
     ArrToreversed = True
 End Function
 
-Private Function ArrSome(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrSome(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     Dim len_base As Long
     Dim lb_b As Long, ub_b As Long
-    If Not IsArray(baseValLocal) Or evaluated.Count = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
+    If Not IsArray(baseValLocal) Or ArgCount(evaluated) = 0 Then vAssignment tmpResult, Empty: GoTo exitfun
     Dim cb_some As Variant: vAssignment cb_some, evaluated(1)
     If typeName(cb_some) <> "ASF_Map" Or cb_some.GetValue("type") <> "Closure" Then vAssignment tmpResult, Empty: GoTo exitfun
     lb_b = LBound(baseValLocal)
@@ -2174,13 +2168,13 @@ Private Function ArrSome(evaluated As Collection, ByRef propN As String, ByRef b
     len_base = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
     Dim ob_som As Long: ob_som = 1
     Dim i_som As Long
-    Dim args_s As Collection
+    Dim args_s() As Variant
     Dim res_s As Variant
     For i_som = 0 To len_base - 1
-        Set args_s = New Collection
-        args_s.Add baseValLocal(lb_b + i_som)
-        args_s.Add (ob_som + i_som)
-        args_s.Add baseValLocal
+        ReDim args_s(1 To 3)
+        vAssignment args_s(1), baseValLocal(lb_b + i_som)
+        vAssignment args_s(2), (ob_som + i_som)
+        If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_s(3), baseValLocal
         vAssignment tmpMapObj, cb_some
         vAssignment res_s, CallClosure(tmpMapObj, args_s, baseValLocal)
         If IsTruthy(res_s) Then
@@ -2194,9 +2188,9 @@ exitfun:
     ArrSome = True
 End Function
 
-Private Function ArrWith(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrWith(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim lb_b As Long, ub_b As Long
-    If Not IsArray(baseValLocal) Or evaluated.Count < 2 Then vAssignment tmpResult, Empty: GoTo exitfun
+    If Not IsArray(baseValLocal) Or ArgCount(evaluated) < 2 Then vAssignment tmpResult, Empty: GoTo exitfun
     Dim optBase_w As Long: optBase_w = 1
     lb_b = LBound(baseValLocal)
     ub_b = UBound(baseValLocal)
@@ -2213,7 +2207,7 @@ exitfun:
     ArrWith = True
 End Function
 
-Private Function ArrSort(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function ArrSort(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim comp As Variant
     Dim thisVal As Variant
     Dim outArr() As Variant
@@ -2227,7 +2221,7 @@ Private Function ArrSort(evaluated As Collection, ByRef propN As String, ByRef b
     Dim n_s As Long: n_s = IIf(ub_b >= lb_b, ub_b - lb_b + 1, 0)
 
     ' get comparator if any
-    If evaluated.Count >= 1 Then vAssignment comp, evaluated(1) Else comp = Empty
+    If ArgCount(evaluated) >= 1 Then vAssignment comp, evaluated(1) Else comp = Empty
 
     If n_s <= 1 Then
         If propN = "sort" Then
@@ -2280,7 +2274,7 @@ End Function
 
 
 ' Regex methods
-Private Function RegexMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function RegexMethod(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' Expose regex module methods with the Regex object
     Select Case propN
         Case "escape"
@@ -2297,7 +2291,7 @@ Private Function RegexMethod(evaluated As Collection, ByRef propN As String, ByR
             GoTo exitfun
         Case "init"
             On Error GoTo init_Error_Handler
-            Select Case evaluated.Count
+            Select Case ArgCount(evaluated)
                 Case 1
                     ' pattern
                     baseValLocal.Init CStr(evaluated(1))
@@ -2372,7 +2366,7 @@ exitfun:
 End Function
 
 ' String methods
-Private Function StringMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StringMethod(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim nidx As Long
     Dim eidx As Long
     Dim strOB As Long
@@ -2382,7 +2376,7 @@ Private Function StringMethod(evaluated As Collection, ByRef propN As String, By
             tmpResult = Len(baseValLocal)
             GoTo exitfun
         Case "at"
-            If evaluated.Count Then
+            If ArgCount(evaluated) Then
                 nidx = NormalizeIndex(CLng(evaluated(1)), Len(baseValLocal), strOB) + 1
             Else
                 nidx = 1
@@ -2390,7 +2384,7 @@ Private Function StringMethod(evaluated As Collection, ByRef propN As String, By
             tmpResult = mid(CStr(baseValLocal), nidx, 1)
             GoTo exitfun
         Case "charat"
-            If evaluated.Count Then
+            If ArgCount(evaluated) Then
                 nidx = CLng(evaluated(1)) + 1
             Else
                 nidx = 1
@@ -2398,7 +2392,7 @@ Private Function StringMethod(evaluated As Collection, ByRef propN As String, By
             tmpResult = mid(CStr(baseValLocal), nidx, 1)
             GoTo exitfun
         Case "charcodeat"
-            If evaluated.Count Then
+            If ArgCount(evaluated) Then
                 nidx = CLng(evaluated(1)) + 1
             Else
                 nidx = 1
@@ -2434,7 +2428,7 @@ Private Function StringMethod(evaluated As Collection, ByRef propN As String, By
             StringMethod = StrReplace(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "slice"
             nidx = NormalizeIndex(CLng(evaluated(1)), Len(baseValLocal), strOB) + 1
-            Select Case evaluated.Count
+            Select Case ArgCount(evaluated)
                 Case 1
                     tmpResult = mid(CStr(baseValLocal), nidx)
                 Case 2
@@ -2472,10 +2466,10 @@ exitfun:
     StringMethod = True
 End Function
 
-Private Function StrConcat(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrConcat(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim concChr As String
     Dim ccElm As Variant
-    If evaluated.Count > 1 Then
+    If ArgCount(evaluated) > 1 Then
         concChr = evaluated(1)
     Else
         concChr = vbNullString
@@ -2492,7 +2486,7 @@ exitfun:
     StrConcat = True
 End Function
 
-Private Function StrEndswith(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrEndswith(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim endStr As String
     Dim ewComStr As String
     ewComStr = CStr(evaluated(1))
@@ -2504,9 +2498,9 @@ exitfun:
     StrEndswith = True
 End Function
 
-Private Function StrIncludes(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrIncludes(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim icStartPos As Long
-    If evaluated.Count > 1 Then
+    If ArgCount(evaluated) > 1 Then
         icStartPos = CLng(evaluated(2)) + 1
     Else
         icStartPos = 1
@@ -2518,9 +2512,9 @@ exitfun:
     StrIncludes = True
 End Function
 
-Private Function StrIndexof(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrIndexof(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim ioStartPos As Long
-    If evaluated.Count > 1 Then
+    If ArgCount(evaluated) > 1 Then
         ioStartPos = CLng(evaluated(2)) + 1
     Else
         ioStartPos = 1
@@ -2532,11 +2526,11 @@ exitfun:
     StrIndexof = True
 End Function
 
-Private Function StrLastindexof(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrLastindexof(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim lioStartPos As Long
     Dim tmpLIOres As Long
     Dim LIOprev As Long
-    If evaluated.Count > 1 Then
+    If ArgCount(evaluated) > 1 Then
         lioStartPos = CLng(evaluated(2)) + 1
     Else
         lioStartPos = 1
@@ -2553,7 +2547,7 @@ exitfun:
     StrLastindexof = True
 End Function
 
-Private Function StrMatch(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrMatch(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim foundIdx As Long
     Dim sourceStr As String: sourceStr = CStr(baseValLocal)
     Dim searchArg As Variant: searchArg = evaluated(1)
@@ -2708,11 +2702,11 @@ exitfun:
     StrMatch = True
 End Function
 
-Private Function StrPadend(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrPadend(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim pePadStr As String
     Dim tpeLen As Long
     Dim cpeLen As Long
-    If evaluated.Count > 1 Then
+    If ArgCount(evaluated) > 1 Then
         pePadStr = CStr(evaluated(2))
     Else
         pePadStr = " "
@@ -2730,11 +2724,11 @@ exitfun:
     StrPadend = True
 End Function
 
-Private Function StrPadstart(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrPadstart(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim psPadStr As String
     Dim tpsLen As Long
     Dim cpsLen As Long
-    If evaluated.Count > 1 Then
+    If ArgCount(evaluated) > 1 Then
         psPadStr = CStr(evaluated(2))
     Else
         psPadStr = " "
@@ -2752,7 +2746,7 @@ exitfun:
     StrPadstart = True
 End Function
 
-Private Function StrRepeat(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrRepeat(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim repCount As Long
     Dim repStr As String
     Dim rpI As Long
@@ -2767,12 +2761,12 @@ exitfun:
     StrRepeat = True
 End Function
 
-Private Function StrReplace(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
-    Dim argColl As Collection
+Private Function StrReplace(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+    Dim argColl() As Variant
     Dim tmpMapObj As ASF_Map
     ' replace(searchValue, replaceValue)  -> first occurrence
     ' replaceAll(searchValue, replaceValue) -> all occurrences
-    If evaluated.Count = 0 Then
+    If ArgCount(evaluated) = 0 Then
         tmpResult = CStr(baseValLocal)
         GoTo exitfun
     End If
@@ -2782,7 +2776,7 @@ Private Function StrReplace(evaluated As Collection, ByRef propN As String, ByRe
 
     Dim src As String: src = CStr(baseValLocal)
     Dim replRaw As Variant
-    If evaluated.Count >= 2 Then vAssignment replRaw, evaluated(2) Else replRaw = Empty
+    If ArgCount(evaluated) >= 2 Then vAssignment replRaw, evaluated(2) Else replRaw = Empty
 
     Dim isGlobal As Boolean: isGlobal = (propN = "replaceall")
 
@@ -2839,15 +2833,15 @@ Private Function StrReplace(evaluated As Collection, ByRef propN As String, ByRe
 
                     ' --- replacement is a function/closure? ---
                     If Not IsEmpty(replRaw) And (IsObject(replRaw) Or typeName(replRaw) = "ASF_Map") Then
-                        Set argColl = New Collection
-                        argColl.Add fullMatch
+                        ReDim argColl(1 To caps.Count + 2)
+                        argColl(1) = fullMatch
                         Dim gi As Long
                         For gi = 2 To caps.Count
-                            argColl.Add CStr(caps.Item(gi))
+                            argColl(gi) = CStr(caps.Item(gi))
                         Next gi
                         ' offset - JS uses zero-based
-                        argColl.Add (matchStart - 1)
-                        argColl.Add src
+                        argColl(caps.Count + 1) = matchStart - 1
+                        argColl(caps.Count + 2) = src
                         vAssignment tmpMapObj, replRaw
                         Dim cbRes As Variant
                         vAssignment cbRes, CallClosure(tmpMapObj, argColl)
@@ -2940,9 +2934,9 @@ exitfun:
     StrReplace = True
 End Function
 
-Private Function StrSplit(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrSplit(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim spSepStr As String
-    If evaluated.Count = 2 Then
+    If ArgCount(evaluated) = 2 Then
         Dim spLimit As Long
         spLimit = CLng(evaluated(2))
     Else
@@ -2980,7 +2974,7 @@ exitfun:
     StrSplit = True
 End Function
 
-Private Function StrStartswith(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrStartswith(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim startStr As String
     Dim swComStr As String
     swComStr = CStr(evaluated(1))
@@ -2992,11 +2986,11 @@ exitfun:
     StrStartswith = True
 End Function
 
-Private Function StrSubstring(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function StrSubstring(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim nidx As Long
     Dim eidx As Long
     nidx = CLng(evaluated(1)) + 1
-    If evaluated.Count = 2 Then
+    If ArgCount(evaluated) = 2 Then
         eidx = CLng(evaluated(2))
         If eidx < nidx Then
             Dim tmpSv As Long
@@ -3021,7 +3015,7 @@ End Function
 
 
 ' Map methods
-Private Function MapMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapMethod(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' an object's own function member wins over the builtin method of the same name, as in
     ' JavaScript: class methods such as set(), get() or has() are called, not shadowed
     If HasOwnFunction(baseValLocal, METHOD_NAME_) Then Exit Function
@@ -3040,7 +3034,7 @@ Private Function MapMethod(evaluated As Collection, ByRef propN As String, ByRef
 
         Case "haskey", "has"
             ' Check if object has a specific key
-            If evaluated.Count = 0 Then
+            If ArgCount(evaluated) = 0 Then
                 tmpResult = False
             Else
                 tmpResult = baseValLocal.Exists(CStr(evaluated(1)))
@@ -3051,7 +3045,7 @@ Private Function MapMethod(evaluated As Collection, ByRef propN As String, ByRef
             MapMethod = MapGet(evaluated, propN, baseValLocal, origBaseVal, tmpResult)
         Case "set"
             ' Set key-value pair and return the object (for chaining)
-            If evaluated.Count >= 2 Then
+            If ArgCount(evaluated) >= 2 Then
                 baseValLocal.SetValue CStr(evaluated(1)), evaluated(2)
             End If
             vAssignment tmpResult, baseValLocal
@@ -3095,7 +3089,7 @@ exitfun:
     MapMethod = True
 End Function
 
-Private Function MapKeysMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapKeysMethod(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' Return array of object keys
     Dim keysCol As Collection: Set keysCol = baseValLocal.keys()
     Dim keysArr() As Variant
@@ -3117,7 +3111,7 @@ exitfun:
     MapKeysMethod = True
 End Function
 
-Private Function MapValues(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapValues(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' Return array of object values
     Dim itemsCol As Collection: Set itemsCol = baseValLocal.items()
     Dim valsArr() As Variant
@@ -3139,7 +3133,7 @@ exitfun:
     MapValues = True
 End Function
 
-Private Function MapEntries(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapEntries(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' Return array of [key, value] pairs
     Dim entriesKeys As Collection: Set entriesKeys = baseValLocal.keys()
     Dim entriesItems As Collection: Set entriesItems = baseValLocal.items()
@@ -3166,9 +3160,9 @@ exitfun:
     MapEntries = True
 End Function
 
-Private Function MapGet(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapGet(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' Get value for key with optional default
-    If evaluated.Count = 0 Then
+    If ArgCount(evaluated) = 0 Then
         tmpResult = Empty
     Else
         Dim getKey As String: getKey = CStr(evaluated(1))
@@ -3176,7 +3170,7 @@ Private Function MapGet(evaluated As Collection, ByRef propN As String, ByRef ba
             vAssignment tmpResult, baseValLocal.GetValue(getKey)
         Else
             ' Return default value if provided, otherwise Empty
-            If evaluated.Count >= 2 Then
+            If ArgCount(evaluated) >= 2 Then
                 vAssignment tmpResult, evaluated(2)
             Else
                 tmpResult = Empty
@@ -3190,9 +3184,9 @@ exitfun:
     MapGet = True
 End Function
 
-Private Function MapDelete(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapDelete(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' Remove a key and return true/false
-    If evaluated.Count = 0 Then
+    If ArgCount(evaluated) = 0 Then
         tmpResult = False
     Else
         Dim delKey As String: delKey = CStr(evaluated(1))
@@ -3210,9 +3204,9 @@ exitfun:
     MapDelete = True
 End Function
 
-Private Function MapMerge(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapMerge(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' Merge another object into this one
-    If evaluated.Count = 0 Then
+    If ArgCount(evaluated) = 0 Then
         vAssignment tmpResult, baseValLocal
     Else
         Dim mergeObj As Variant: vAssignment mergeObj, evaluated(1)
@@ -3232,10 +3226,10 @@ exitfun:
     MapMerge = True
 End Function
 
-Private Function MapForeach(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapForeach(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     ' Iterate over entries with callback(value, key, object)
-    If evaluated.Count = 0 Then
+    If ArgCount(evaluated) = 0 Then
         vAssignment tmpResult, Empty
         GoTo exitfun
     End If
@@ -3248,13 +3242,13 @@ Private Function MapForeach(evaluated As Collection, ByRef propN As String, ByRe
 
     Dim foreachKeys As Collection: Set foreachKeys = baseValLocal.keys()
     Dim fk As Variant
-    Dim args_obj As Collection
+    Dim args_obj() As Variant
     Dim tmpRes_obj As Variant
     For Each fk In foreachKeys
-        Set args_obj = New Collection
-        args_obj.Add baseValLocal.GetValue(CStr(fk))
-        args_obj.Add CStr(fk)
-        args_obj.Add baseValLocal
+        ReDim args_obj(1 To 3)
+        vAssignment args_obj(1), baseValLocal.GetValue(CStr(fk))
+        vAssignment args_obj(2), CStr(fk)
+        If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_obj(3), baseValLocal
         vAssignment tmpMapObj, cb_obj
         vAssignment tmpRes_obj, CallClosure(tmpMapObj, args_obj, baseValLocal)
     Next fk
@@ -3267,10 +3261,10 @@ exitfun:
     MapForeach = True
 End Function
 
-Private Function MapMap(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapMap(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     ' Map over entries, return new object with transformed values
-    If evaluated.Count = 0 Then
+    If ArgCount(evaluated) = 0 Then
         vAssignment tmpResult, Empty
         GoTo exitfun
     End If
@@ -3284,12 +3278,12 @@ Private Function MapMap(evaluated As Collection, ByRef propN As String, ByRef ba
     Dim newMap As New ASF_Map
     Dim mapKeys As Collection: Set mapKeys = baseValLocal.keys()
     Dim mapk As Variant
-    Dim args_map As Collection
+    Dim args_map() As Variant
     For Each mapk In mapKeys
-        Set args_map = New Collection
-        args_map.Add baseValLocal.GetValue(CStr(mapk))
-        args_map.Add CStr(mapk)
-        args_map.Add baseValLocal
+        ReDim args_map(1 To 3)
+        vAssignment args_map(1), baseValLocal.GetValue(CStr(mapk))
+        vAssignment args_map(2), CStr(mapk)
+        If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_map(3), baseValLocal
         vAssignment tmpMapObj, cb_map
         Dim mapRes As Variant
         vAssignment mapRes, CallClosure(tmpMapObj, args_map, baseValLocal)
@@ -3304,10 +3298,10 @@ exitfun:
     MapMap = True
 End Function
 
-Private Function MapFilter(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapFilter(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     ' Filter entries, return new object with entries that pass test
-    If evaluated.Count = 0 Then
+    If ArgCount(evaluated) = 0 Then
         vAssignment tmpResult, Empty
         GoTo exitfun
     End If
@@ -3321,13 +3315,13 @@ Private Function MapFilter(evaluated As Collection, ByRef propN As String, ByRef
     Dim filteredMap As New ASF_Map
     Dim filterKeys As Collection: Set filterKeys = baseValLocal.keys()
     Dim filterk As Variant
-    Dim args_filter As Collection
+    Dim args_filter() As Variant
     Dim filterRes As Variant
     For Each filterk In filterKeys
-        Set args_filter = New Collection
-        args_filter.Add baseValLocal.GetValue(CStr(filterk))
-        args_filter.Add CStr(filterk)
-        args_filter.Add baseValLocal
+        ReDim args_filter(1 To 3)
+        vAssignment args_filter(1), baseValLocal.GetValue(CStr(filterk))
+        vAssignment args_filter(2), CStr(filterk)
+        If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_filter(3), baseValLocal
         vAssignment tmpMapObj, cb_filter
         vAssignment filterRes, CallClosure(tmpMapObj, args_filter, baseValLocal)
         If IsTruthy(filterRes) Then
@@ -3343,10 +3337,10 @@ exitfun:
     MapFilter = True
 End Function
 
-Private Function MapSome(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapSome(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     ' Test if at least one entry passes test
-    If evaluated.Count = 0 Then
+    If ArgCount(evaluated) = 0 Then
         tmpResult = False
         GoTo exitfun
     End If
@@ -3359,12 +3353,12 @@ Private Function MapSome(evaluated As Collection, ByRef propN As String, ByRef b
 
     Dim someKeys As Collection: Set someKeys = baseValLocal.keys()
     Dim somek As Variant
-    Dim args_some As Collection
+    Dim args_some() As Variant
     For Each somek In someKeys
-        Set args_some = New Collection
-        args_some.Add baseValLocal.GetValue(CStr(somek))
-        args_some.Add CStr(somek)
-        args_some.Add baseValLocal
+        ReDim args_some(1 To 3)
+        vAssignment args_some(1), baseValLocal.GetValue(CStr(somek))
+        vAssignment args_some(2), CStr(somek)
+        If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_some(3), baseValLocal
         vAssignment tmpMapObj, cb_some_obj
         Dim someRes As Variant
         vAssignment someRes, CallClosure(tmpMapObj, args_some, baseValLocal)
@@ -3382,10 +3376,10 @@ exitfun:
     MapSome = True
 End Function
 
-Private Function MapEvery(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
+Private Function MapEvery(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     Dim tmpMapObj As ASF_Map
     ' Test if all entries pass test
-    If evaluated.Count = 0 Then
+    If ArgCount(evaluated) = 0 Then
         tmpResult = True
         GoTo exitfun
     End If
@@ -3398,12 +3392,12 @@ Private Function MapEvery(evaluated As Collection, ByRef propN As String, ByRef 
 
     Dim everyKeys As Collection: Set everyKeys = baseValLocal.keys()
     Dim everyk As Variant
-    Dim args_every As Collection
+    Dim args_every() As Variant
     For Each everyk In everyKeys
-        Set args_every = New Collection
-        args_every.Add baseValLocal.GetValue(CStr(everyk))
-        args_every.Add CStr(everyk)
-        args_every.Add baseValLocal
+        ReDim args_every(1 To 3)
+        vAssignment args_every(1), baseValLocal.GetValue(CStr(everyk))
+        vAssignment args_every(2), CStr(everyk)
+        If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_every(3), baseValLocal
         vAssignment tmpMapObj, cb_every_obj
         Dim everyRes As Variant
         vAssignment everyRes, CallClosure(tmpMapObj, args_every, baseValLocal)
@@ -3423,7 +3417,7 @@ End Function
 
 
 ' Collection methods
-Private Function CollectionMethod(evaluated As Collection, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant, ByVal isMath As Boolean) As Boolean
+Private Function CollectionMethod(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant, ByVal isMath As Boolean) As Boolean
     If isMath Then
         If isMath Then
             If MathConstant(propN, tmpResult) Then GoTo exitfun
@@ -3560,7 +3554,7 @@ Private Function CollectionMethod(evaluated As Collection, ByRef propN As String
                     ' no arguments give Empty, as other built-ins called without their arguments do
                     Dim maxEl As Variant
                     tmpResult = Empty
-                    If evaluated.Count > 0 Then
+                    If ArgCount(evaluated) > 0 Then
                         tmpResult = evaluated(1)
                         For Each maxEl In evaluated
                             If maxEl > tmpResult Then
@@ -3572,7 +3566,7 @@ Private Function CollectionMethod(evaluated As Collection, ByRef propN As String
                 Case "min"
                     Dim minEl As Variant
                     tmpResult = Empty
-                    If evaluated.Count > 0 Then
+                    If ArgCount(evaluated) > 0 Then
                         tmpResult = evaluated(1)
                         For Each minEl In evaluated
                             If minEl < tmpResult Then
@@ -3988,7 +3982,7 @@ End Function
 ' ---------------------
 ' Closures: a callback (map, sort...) calls a closure of ASF_VM, {type: 'Closure', fn, env}
 ' ---------------------
-Private Function CallClosure(ByVal closureMap As ASF_Map, ByVal evaluatedArgs As Collection, Optional thisVal As Variant) As Variant
+Private Function CallClosure(ByVal closureMap As ASF_Map, ByRef evaluatedArgs As Variant, Optional thisVal As Variant) As Variant
     ' a closure of ASF_VM: a function number and an environment
     If VM_ Is Nothing Then Exit Function
     If Not closureMap.Exists("fn") Then Exit Function
@@ -4165,8 +4159,8 @@ Private Function map_apply_recursive(value As Variant, mapper As ASF_Map, _
     End If
 
     ' If not an array, call the mapper closure with the value as single argument.
-    Dim args As New Collection
-    args.Add value
+    Dim args() As Variant: ReDim args(1 To 1)
+    vAssignment args(1), value
     Dim result As Variant
     vAssignment result, CallClosure(mapper, args, parentThis)
     args.Remove args.Count
@@ -4353,9 +4347,9 @@ Private Function QS_Compare(ByVal a As Variant, ByVal b As Variant, ByVal comp A
     Dim tmpMapObj As ASF_Map
     
     If hasComp Then
-        Dim args_cmp As New Collection
-        args_cmp.Add a
-        args_cmp.Add b
+        Dim args_cmp() As Variant: ReDim args_cmp(1 To 2)
+        vAssignment args_cmp(1), a
+        vAssignment args_cmp(2), b
         vAssignment tmpMapObj, comp
         vAssignment cres, CallClosure(tmpMapObj, args_cmp, thisVal)
         If IsNumeric(cres) Then
@@ -4447,10 +4441,10 @@ Private Function VM_StringReplacementText(ByVal replRaw As Variant, ByVal matchS
 
     If Not IsEmpty(replRaw) And typeName(replRaw) = "ASF_Map" Then
         If replRaw.Exists("type") And CStr(replRaw.GetValue("type")) = "Closure" Then
-            Dim callArgsR As New Collection
-            callArgsR.Add matchStr
-            callArgsR.Add matchIndexZeroBased
-            callArgsR.Add originalString
+            Dim callArgsR() As Variant: ReDim callArgsR(1 To 3)
+            vAssignment callArgsR(1), matchStr
+            vAssignment callArgsR(2), matchIndexZeroBased
+            vAssignment callArgsR(3), originalString
             Dim callRes As Variant
             Dim tmpMapObj As ASF_Map
             vAssignment tmpMapObj, replRaw
@@ -4666,7 +4660,7 @@ Private Function RegexMatchesToVariantArray(ByVal matches As Collection) As Vari
 End Function
 
 ' Push a call onto the call stack trace
-Public Sub PushCallTrace(funcName As String, args As Collection)
+Public Sub PushCallTrace(funcName As String, args As Variant)
     If Not ENABLE_CALL_TRACE_ Then Exit Sub
     
     Dim trace As New ASF_Map
@@ -4676,11 +4670,18 @@ Public Sub PushCallTrace(funcName As String, args As Collection)
     
     ' Store arguments
     Dim argsList As New Collection
-    If Not args Is Nothing Then
-        Dim i As Long
-        For i = 1 To args.Count
-            argsList.Add ValueToStringForPrint(args(i))
-        Next i
+    ' args: an array, a Collection or nothing
+    Dim a As Variant
+    If IsArray(args) Then
+        For Each a In args
+            argsList.Add ValueToStringForPrint(a)
+        Next a
+    ElseIf IsObject(args) Then
+        If Not args Is Nothing Then
+            For Each a In args
+                argsList.Add ValueToStringForPrint(a)
+            Next a
+        End If
     End If
     trace.SetValue "args", argsList
     
@@ -4821,19 +4822,15 @@ Private Sub SetObjectProperty(obj As Variant, propName As Variant, propValue As 
     ' Trace: Pop call with return value
     PopCallTrace CStr(propName), vbaParam
 End Sub
-Private Function CallObjectMethod(obj As Variant, methodName As Variant, Optional args As Collection) As Variant
+Private Function CallObjectMethod(obj As Variant, methodName As Variant, Optional args As Variant) As Variant
     Dim prototypeInfo As ASF_Map: Set prototypeInfo = COMPrototypeOf(obj, CStr(methodName))
     If prototypeInfo Is Nothing Then
-        vAssignment CallObjectMethod, CallHostOn(obj, methodName, CollectionToArray(args), args)
+        vAssignment CallObjectMethod, CallHostOn(obj, methodName, args)
         Exit Function
     End If
     Dim tmpResult As Variant
-    Dim prototypeArgs As Collection
-    If Not IsMissing(args) And Not args Is Nothing Then
-        Set prototypeArgs = args
-    Else
-        Set prototypeArgs = New Collection
-    End If
+    Dim prototypeArgs As Variant
+    If IsArray(args) Then prototypeArgs = args Else prototypeArgs = Array()
     ' Trace: Push call
     PushCallTrace CStr(methodName), prototypeArgs
     Dim protoClosure As Variant
@@ -4846,13 +4843,9 @@ Private Function CallObjectMethod(obj As Variant, methodName As Variant, Optiona
     ' Trace: Pop call with return value
     PopCallTrace CStr(methodName), CallObjectMethod
 End Function
-' obj.methodName(args) on a host object, args an array (or Empty); traceArgs: the same as a
-' Collection, when the caller has it
-Private Function CallHostOn(obj As Variant, methodName As Variant, ByRef args As Variant, Optional traceArgs As Collection) As Variant
-    If ENABLE_CALL_TRACE_ Then
-        If traceArgs Is Nothing Then Set traceArgs = ArrayToCollection(args)
-        PushCallTrace CStr(methodName), traceArgs
-    End If
+' obj.methodName(args) on a host object, args an array (or Empty)
+Private Function CallHostOn(obj As Variant, methodName As Variant, ByRef args As Variant) As Variant
+    If ENABLE_CALL_TRACE_ Then PushCallTrace CStr(methodName), args
     Dim tmpResult As Variant
     vAssignment tmpResult, InvokeHost(obj, methodName, args)
     If IsArray(tmpResult) And Not IsObject(tmpResult) Then
@@ -4876,17 +4869,6 @@ Public Function TryCallHost(ByRef target As Variant, ByVal name As String, ByRef
     If IsArray(target) Then Exit Function
     vAssignment result, CallHostOn(target, LCase$(name), args)
     TryCallHost = True
-End Function
-Private Function CollectionToArray(args As Collection) As Variant
-    If args Is Nothing Then Exit Function
-    If args.Count = 0 Then Exit Function
-    Dim a() As Variant, i As Long, v As Variant
-    ReDim a(0 To args.Count - 1)
-    For Each v In args
-        If IsObject(v) Then Set a(i) = v Else a(i) = v
-        i = i + 1
-    Next v
-    CollectionToArray = a
 End Function
 ' CallByName with the arguments of a (an array, or Empty for none); one Empty argument is none
 Private Function InvokeHost(obj As Variant, methodName As Variant, ByRef a As Variant) As Variant
