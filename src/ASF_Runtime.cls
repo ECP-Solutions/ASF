@@ -23,6 +23,7 @@ Private METHOD_WRITTEN_ As Variant
 Private ENABLE_CALL_TRACE_ As Boolean
 Private CAST_INJECTED_VARIABLES_ As Boolean
 Private APPLICATION_ACCESS_ As Boolean
+Private IMPORT_ROOT_ As String          ' the folder imports are limited to; empty: any path
 Private tmpVar As Variant
 Private COM_PROTOTYPES_ As ASF_Map   ' prototypes of host objects' methods, by COMPrototypeKey
 Private COLLECTIONS_METHOD_OVERRIDE_ As Boolean
@@ -4781,6 +4782,11 @@ End Function
 
 Public Function ReadModuleSource(modulePath As String) As String
     Dim filePath As String: filePath = ResolveModulePath(modulePath)
+    If LenB(IMPORT_ROOT_) > 0 Then
+        If Not InsideFolder(filePath, IMPORT_ROOT_) Then
+            err.Raise vbObjectError + 9014, "VM.ReadModuleSource", "Import outside the import folder: " & modulePath
+        End If
+    End If
     
     ' Add .vas extension if not present
     If Not FileExists(filePath) Then
@@ -4808,6 +4814,59 @@ Public Function ReadTextFile(filePath As String) As String
         ReadTextFile = OutputStr
         OutputStr = vbNullString
     End If
+End Function
+Public Property Get ImportRoot() As String
+    ImportRoot = IMPORT_ROOT_
+End Property
+Public Property Let ImportRoot(ByVal aValue As String)
+    IMPORT_ROOT_ = aValue
+End Property
+' True when path is folder or lies inside it, both made absolute and without . and .. steps
+Private Function InsideFolder(ByVal path As String, ByVal folder As String) As Boolean
+    Dim p As String: p = LCase$(NormalPath(path))
+    Dim f As String: f = LCase$(NormalPath(folder))
+    If LenB(p) = 0 Or LenB(f) = 0 Then Exit Function
+    If right$(f, 1) <> "/" Then f = f & "/"
+    If right$(p, 1) <> "/" Then p = p & "/"
+    InsideFolder = (left$(p, Len(f)) = f)
+End Function
+' path with / as separator, absolute (a relative one from the current folder) and without empty,
+' . and .. steps; empty when a .. would leave the root
+Private Function NormalPath(ByVal path As String) As String
+    Dim p As String: p = Replace(path, "\", "/")
+    Dim lead As String
+    If left$(p, 2) = "//" Then
+        lead = "//": p = mid$(p, 3)
+    ElseIf mid$(p, 2, 1) = ":" Then
+        lead = left$(p, 2) & "/": p = mid$(p, 3)
+    ElseIf left$(p, 1) = "/" Then
+        lead = "/": p = mid$(p, 2)
+    Else
+        Dim cur As String: cur = Replace(CurDir$, "\", "/")
+        If left$(cur, 1) <> "/" And mid$(cur, 2, 1) <> ":" Then Exit Function
+        NormalPath = NormalPath(cur & "/" & p)
+        Exit Function
+    End If
+    Dim parts() As String, i As Long, n As Long, out As String
+    parts = Split(p, "/")
+    Dim kept() As String
+    ReDim kept(0 To UBound(parts) + 1)
+    For i = 0 To UBound(parts)
+        Select Case parts(i)
+            Case vbNullString, "."
+            Case ".."
+                If n = 0 Then Exit Function
+                n = n - 1
+            Case Else
+                kept(n) = parts(i)
+                n = n + 1
+        End Select
+    Next i
+    For i = 0 To n - 1
+        If i > 0 Then out = out & "/"
+        out = out & kept(i)
+    Next i
+    NormalPath = lead & out
 End Function
 Private Function FileExists(ByVal filePath As String) As Boolean
     FileExists = CBool(LenB(Dir(filePath, vbHidden + vbNormal + vbSystem + vbReadOnly + vbArchive)))

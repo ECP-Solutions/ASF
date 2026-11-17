@@ -100,6 +100,8 @@ A `throw` goes up through named functions and function literals; class methods, 
 the callbacks of built-in methods keep it to themselves (they return `undefined`). `break` and
 `continue` directly inside a `try` or a `catch`, or outside a loop, do nothing.
 
+With `MaxSteps` set, the jumps back to the top of a loop (`LOOP`, which `continue` also uses) and the calls count down the run's steps. When none are left, the run stops as a `throw` that no `catch` takes: it goes up through callbacks and built-in methods as a `throw` does, and leaves `Step limit reached` in `LastError`.
+
 ### Classes
 
 Instances are objects (`type: 'Instance'`, `className`, the fields, a bound method per method), so

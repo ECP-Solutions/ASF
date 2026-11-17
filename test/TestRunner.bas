@@ -286,6 +286,8 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("module_system",             "module_system_working_directory") Then module_system_working_directory: EndTest
     If StartTest("module_system",             "module_system_working_dir_before_compile") Then module_system_working_dir_before_compile: EndTest
     If StartTest("module_system",             "path_separator") Then path_separator: EndTest
+    If StartTest("module_system",             "import_root") Then import_root: EndTest
+    If StartTest("max_steps",                 "max_steps") Then max_steps: EndTest
     If StartTest("module_system",             "module_system_named_exports_imports") Then module_system_named_exports_imports: EndTest
     If StartTest("module_system",             "module_system_default_export") Then module_system_default_export: EndTest
     If StartTest("objects",                   "object_literal_semicolon_rejected") Then object_literal_semicolon_rejected: EndTest
@@ -4333,6 +4335,64 @@ Private Sub path_separator()
     End With
     expected = "\/:|1|1|C:\a\b.vas|/a/b.vas|b.vas"
     AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub import_root()
+    On Error GoTo TestFail
+    Dim eng As New ASF, outside As String
+    With eng
+        .WorkingDir = ThisWorkbook.path
+        .ImportRoot = UCase$(ThisWorkbook.path) & .PathSeparator(ThisWorkbook.path)
+        actual = CStr(.Run(.Compile("import { add } from './math.vas'; return add(2, 3);")))
+        AssertEqual "5", actual
+        ' a relative path that leaves the folder, and an absolute one outside it
+        actual = CStr(.Run(.Compile("import { x } from '../README.md'; return 1;")))
+        AssertEqual "", actual
+        AssertEqual "Import outside the import folder", IIf(InStr(CStr(.LastError), "Import outside the import folder") > 0, "Import outside the import folder", CStr(.LastError))
+        outside = Replace(.JoinPath(ThisWorkbook.path, "../README.md"), "\", "/")
+        actual = CStr(.Run(.Compile("import { x } from '" & outside & "'; return 1;")))
+        AssertEqual "", actual
+        AssertEqual "Import outside the import folder", IIf(InStr(CStr(.LastError), "Import outside the import folder") > 0, "Import outside the import folder", CStr(.LastError))
+        ' no root: any path, as before
+        .ImportRoot = vbNullString
+        actual = CStr(.Run(.Compile("import { add } from './math.vas'; return add(1, 1);")))
+        AssertEqual "2", actual
+    End With
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub max_steps()
+    On Error GoTo TestFail
+    Dim eng As New ASF, src As Variant
+    With eng
+        .MaxSteps = 1000
+        ' loops, continue, recursion and callbacks are counted; no catch takes the stop
+        For Each src In Array("let n = 0; while (true) { n += 1; }; return n;", _
+                              "let i = 0; while (true) { i += 1; continue; }; return i;", _
+                              "for (let i = 1, i > 0, i += 1) { }; return 1;", _
+                              "fun f(n) { return f(n + 1); }; return f(0);", _
+                              "return [1, 2, 3].map(fun(x) { while (true) { } });", _
+                              "try { while (true) { } } catch (e) { return 'caught'; }; return 'after';")
+            actual = CStr(.Run(.Compile(CStr(src))))
+            AssertEqual "", actual
+            AssertEqual "Step limit reached", IIf(InStr(CStr(.LastError), "Step limit reached") > 0, "Step limit reached", CStr(.LastError))
+        Next src
+        ' within the limit, and the engine runs again after a stop
+        actual = CStr(.Run(.Compile("let n = 0; for (let i = 1, i <= 100, i += 1) { n += i; }; return n;")))
+        AssertEqual "5050", actual
+        AssertEqual "", CStr(.LastError)
+        ' 0: no limit
+        .MaxSteps = 0
+        actual = CStr(.Run(.Compile("let n = 0; for (let i = 1, i <= 3000, i += 1) { n += 1; }; return n;")))
+        AssertEqual "3000", actual
+    End With
 TestExit:
     Exit Sub
 TestFail:
