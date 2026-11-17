@@ -28,6 +28,10 @@ VS Code Integration|![ASF-code](/docs/assets/img/ASF.gif)
 
 ---
 
+## Excel add-in
+
+`excel/ASF.xlam` installs ASF once for every workbook: the worksheet functions `ASF_RUN` and `ASF_CALL` run scripts in plain `.xlsx` files, with the regex functions `RX_TEST`, `RX_EXTRACT`, `RX_REPLACE` and `RX_COUNT`, and macros of other workbooks get an engine from it. Build, installation and the security model: [excel/README.md](excel/README.md).
+
 ## LibreOffice
 
 ASF also runs on LibreOffice as the `ASF.oxt` extension, generated from the same sources. Installation, usage and differences: [libreoffice/README.md](libreoffice/README.md).
