@@ -128,7 +128,7 @@ End Sub
 Private Sub RunIndex(idx As Long, params As Variant)
     PrepareCode
     If Not VM_.Run(idx, params) Then Err.Raise vbObjectError + 9026, "ASF.Run", "No program " & idx & " was compiled with these globals"
-    vAssignment OUTPUT__, VM_.OUTPUT_
+    vAssignment OUTPUT__, VM_.RunOutput()
     If RT_.verbose Then
         Debug.Print "=== Runtime Log ==="
         Dim elm As Variant
@@ -149,13 +149,15 @@ Private Sub INIT_()
     Set RT_.Globals = GLOBALS_
 End Sub
 ' The value of the last throw that no catch took, or the message of the last error, of the last Run
-Public Property Get LastError() As Variant
-    If VM_ Is Nothing Then Exit Property
+' LastError and OUTPUT_ are functions: LibreOffice keeps the value of a Property Get between calls,
+' and fails to replace an array there
+Public Function LastError() As Variant
+    If VM_ Is Nothing Then Exit Function
     vAssignment LastError, VM_.LastError
-End Property
-Public Property Get OUTPUT_() As Variant
+End Function
+Public Function OUTPUT_() As Variant
     vAssignment OUTPUT_, OUTPUT__
-End Property
+End Function
 Public Function Execute(scriptPath As String, ParamArray params() As Variant) As Variant
     If Not GLOBALS_ Is Nothing Then
         Dim params_ As Variant
@@ -175,6 +177,14 @@ Public Function Run(idx As Long, ParamArray params() As Variant) As Variant
         If Not IsMissing(params) Then params_ = params
         RunIndex idx, params_
         vAssignment Run, OUTPUT__
+    End If
+End Function
+' Run with the arguments in an array ($1 is its first item), for hosts that pass a varying number of
+' them; Empty for none
+Public Function RunArgs(idx As Long, args As Variant) As Variant
+    If Not GLOBALS_ Is Nothing Then
+        RunIndex idx, args
+        vAssignment RunArgs, OUTPUT__
     End If
 End Function
 Private Sub vAssignment(ByRef var As Variant, ByRef vValue As Variant)

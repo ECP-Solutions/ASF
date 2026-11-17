@@ -118,13 +118,15 @@ Public Sub SetHost(aGlobals As ASF_Globals, aRuntime As ASF_Runtime, aCompiler A
     Set BC_ = aCompiler
 End Sub
 
-Public Property Get OUTPUT_() As Variant
-    If IsObject(OUTPUT__) Then Set OUTPUT_ = OUTPUT__ Else OUTPUT_ = OUTPUT__
-End Property
+' The value of the last run (a function: LibreOffice keeps the value of a Property Get between calls,
+' and fails to replace an array there)
+Public Function RunOutput() As Variant
+    If IsObject(OUTPUT__) Then Set RunOutput = OUTPUT__ Else RunOutput = OUTPUT__
+End Function
 
-Public Property Get LastError() As Variant
+Public Function LastError() As Variant
     If IsObject(LAST_ERROR_) Then Set LastError = LAST_ERROR_ Else LastError = LAST_ERROR_
-End Property
+End Function
 
 ' ---------------------------------------------------------------- running a program
 ' Runs program idx: False when there is no such program

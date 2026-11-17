@@ -255,6 +255,7 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("sort",                      "sort_chain_on_objects") Then sort_chain_on_objects: EndTest
     If StartTest("injecting",                 "injecting_asf_objects") Then injecting_asf_objects: EndTest
     If StartTest("injecting",                 "run_arguments") Then run_arguments: EndTest
+    If StartTest("injecting",                 "run_after_an_array_result") Then run_after_an_array_result: EndTest
     If StartTest("spread",                    "spread_simple") Then spread_simple: EndTest
     If StartTest("spread",                    "spread_multiple") Then spread_multiple: EndTest
     If StartTest("spread",                    "spread_with_empty") Then spread_with_empty: EndTest
@@ -4976,6 +4977,29 @@ Private Sub math_basic()
     expected = "9"
     AssertEqual expected, actual
 
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+' one engine: a run, and the reads of OUTPUT_ and LastError, after a run that gave an array
+Private Sub run_after_an_array_result()
+    On Error GoTo TestFail
+    Dim eng As New ASF, v As Variant, add As Long
+    With eng
+        add = .Compile("return $1 + 1;")
+        actual = CStr(.Run(add, 1))
+        v = .Run(.Compile("return [2, 3];"))
+        v = .OUTPUT_
+        actual = actual & "|" & CStr(UBound(v) - LBound(v) + 1)
+        actual = actual & "|" & CStr(.Run(add, 4)) & "|" & CStr(.OUTPUT_)
+        .Run .Compile("throw [1, 2];")
+        .Run .Compile("throw 'x';")
+        actual = actual & "|" & CStr(.LastError)
+    End With
+    AssertEqual "2|2|5|5|x", actual
 TestExit:
     Exit Sub
 TestFail:
