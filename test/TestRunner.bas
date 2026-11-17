@@ -142,6 +142,7 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("array",                     "array_sort_and_toSorted") Then array_sort_and_toSorted: EndTest
     If StartTest("array",                     "array_toSpliced_and_join") Then array_toSpliced_and_join: EndTest
     If StartTest("array",                     "array_entries_and_every_find_combo") Then array_entries_and_every_find_combo: EndTest
+    If StartTest("array",                     "callbacks_get_the_collection_from_the_first_item") Then callbacks_get_the_collection_from_the_first_item: EndTest
     If StartTest("array",                     "array_includes_and_index_checks_with_objects") Then array_includes_and_index_checks_with_objects: EndTest
     If StartTest("array",                     "array_complex_splice_and_copyWithin") Then array_complex_splice_and_copyWithin: EndTest
     If StartTest("deeply_nested",             "deeply_nested_Arrays") Then deeply_nested_Arrays: EndTest
@@ -2088,6 +2089,25 @@ TestFail:
     Resume TestExit
 End Sub
 
+
+' a callback that declares a third parameter gets the array or object on every call, the first included
+Private Sub callbacks_get_the_collection_from_the_first_item()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("a = [2, 4, 6]; o = {x: 1, y: 2}; " & _
+        "return [a.every(fun(v, i, arr) { return arr.length == 3; }), " & _
+        "a.some(fun(v, i, arr) { return i == 1 && arr.length == 3; }), " & _
+        "a.find(fun(v, i, arr) { return arr[1] == v; }), " & _
+        "o.every(fun(v, k, obj) { return obj.has(k); }), " & _
+        "o.some(fun(v, k, obj) { return k == 'x' && obj.has(k); }), " & _
+        "o.filter(fun(v, k, obj) { return obj.has(k); }).size()].join('|');"))
+    expected = "true|true|2|true|true|2"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
 
 Private Sub array_entries_and_every_find_combo()
     On Error GoTo TestFail
