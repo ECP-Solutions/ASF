@@ -73,6 +73,9 @@ Private math_ As Object, mathKeep_ As Object
 ' program number -> its function, first global slot, what each slot binds, the names of its slots
 Private pFn_() As Long, pBase_() As Long, pBind_() As Variant, pNames_() As Variant, pCap_ As Long
 Private globTotal_ As Long ' the global slots in use
+' MaxSteps: the loop iterations and calls a run may make (0: no limit); aborting_: the run stops, past any catch
+Private maxSteps_ As Long, stepsLeft_ As Long, aborting_ As Boolean
+Private Const STEPS_UNLIMITED As Long = 2000000000
 Private topSp_ As Long, topFt_ As Long  ' the stack and frames in use when ASF_Runtime is called
 
 Private OUTPUT__ As Variant
@@ -138,8 +141,9 @@ Public Function Run(ByVal idx As Long, params As Variant) As Boolean
         PlanProgram idx
     End If
     Run = True
-    LAST_ERROR_ = Empty
-    throwing_ = False
+    LAST_ERROR_ = Empty: OUTPUT__ = Empty
+    throwing_ = False: aborting_ = False
+    If maxSteps_ > 0 Then stepsLeft_ = maxSteps_ Else stepsLeft_ = STEPS_UNLIMITED
     trace_ = RT_.EnableCallTrace
     BindProgram idx, params
     Dim mainFn As Long: mainFn = pFn_(idx)
@@ -313,7 +317,7 @@ Dispatch:
     On op_(pc) GoTo X1, X2, X3, X4, X5, X6, X7, X8, X9, X10, X11, X12, X13, X14, X15, X16, X17, X18, X19, X20, _
         X21, X22, X23, X24, X25, X26, X27, X28, X29, X30, X31, X32, X33, X34, X35, X36, X37, X38, X39, X40, _
         X41, X42, X43, X44, X45, X46, X47, X48, X49, X50, X51, X52, X53, X54, X55, X56, X57, X58, X59, X60, X61, _
-        X62, X63, X64, X65, X66, X67, X68, X69, X70, X71, X72, X73, X74, X75, X76, X77, X78, X79, X80, X81, X82, X83, X84, X85, X86, X87, X88
+        X62, X63, X64, X65, X66, X67, X68, X69, X70, X71, X72, X73, X74, X75, X76, X77, X78, X79, X80, X81, X82, X83, X84, X85, X86, X87, X88, X89
 X1: ' HALT
     GoTo Finished
 X2: ' PUSHK
@@ -1044,6 +1048,11 @@ BuiltinCall:
     rv = Empty
     pc = pc + 1: GoTo Dispatch
 
+X89: ' LOOP a: target
+    stepsLeft_ = stepsLeft_ - 1
+    If stepsLeft_ < 0 Then StepsSpent
+    pc = oa_(pc): GoTo Dispatch
+
 DynamicCall:
     ' n arguments, under them the callee: a closure, or anything else, which gives undefined
     If Not ClosureCode(stk_(sp - n), fn, newEnv) Then
@@ -1066,6 +1075,8 @@ DynamicCall:
 CallSetup:
     ' fn with n arguments on top of the stack; res: where its value goes; newEnv: its environment;
     ' hasThis and thisVal: the receiver of a method call; callKind 1: write the receiver back after
+    stepsLeft_ = stepsLeft_ - 1
+    If stepsLeft_ < 0 Then StepsSpent
     If sp + n + fnNLocals_(fn) + fnMaxStack_(fn) >= stkCap_ Then GrowStack sp + n + fnNLocals_(fn) + fnMaxStack_(fn)
     If fnRest_(fn) >= 0 Then
         rv = RestArgs(sp - n + 1 + fnNParams_(fn), n - fnNParams_(fn))
@@ -1157,8 +1168,9 @@ Recover:
     End If
     If RT_.verbose Then GLOBALS_.gRuntimeLog.Add "VM statement error: " & errDesc
 Unwind:
-    ' the innermost try around pc takes the error: the stack back to its depth, the value for the catch
-    h = TryAt(pc)
+    ' the innermost try around pc takes the error: the stack back to its depth, the value for the catch;
+    ' a run that reached MaxSteps stops, whatever catch there is
+    If aborting_ Then h = 0 Else h = TryAt(pc)
     If h > 0 Then
         If ft = 0 Then fn = mainFn_ Else fn = frFn_(ft)
         n = fp - 1 + fnNLocals_(fn) + tryDepth_(h)
@@ -1215,6 +1227,27 @@ Rethrow:
     On Error GoTo 0
     Err.Raise vbObjectError + 5101, "ASF", "throw" ' a throw leaving a callback, for the code that called it
 End Function
+
+' The steps of the run are spent: with no limit, a new count; else the run stops as a throw that no
+' catch takes, with the message in LastError
+Private Sub StepsSpent()
+    If maxSteps_ <= 0 Then
+        stepsLeft_ = STEPS_UNLIMITED
+        Exit Sub
+    End If
+    aborting_ = True: throwing_ = True
+    LAST_ERROR_ = "Step limit reached: the script made more than " & maxSteps_ & " loop iterations and calls"
+    Err.Raise vbObjectError + 9030, "ASF", LAST_ERROR_
+End Sub
+
+' The loop iterations and calls a run may make; 0 (the default) for no limit
+Public Property Get MaxSteps() As Long
+    MaxSteps = maxSteps_
+End Property
+Public Property Let MaxSteps(ByVal aValue As Long)
+    If aValue < 0 Then aValue = 0
+    maxSteps_ = aValue
+End Property
 
 Private Sub GrowStack(ByVal need As Long)
     Do While stkCap_ <= need
@@ -1338,13 +1371,13 @@ Private Function LoadModule(ByVal path As String) As ASF_Map
         If loading_(k) = path Then Err.Raise vbObjectError + 9010, "VM.LoadModule", "Circular dependency detected: " & path
     Next k
     Dim src As String
+    Dim errNum As Long, errDesc As String
     On Error Resume Next
     src = RT_.ReadModuleSource(path)
-    If Err.Number <> 0 Then
-        On Error GoTo 0
-        Err.Raise vbObjectError + 9011, "VM.LoadModule", "Failed to load module: " & path
-    End If
+    errNum = Err.Number: errDesc = Err.Description
     On Error GoTo 0
+    If errNum = vbObjectError + 9014 Then Err.Raise errNum, "VM.LoadModule", errDesc
+    If errNum <> 0 Then Err.Raise vbObjectError + 9011, "VM.LoadModule", "Failed to load module: " & path
     Dim idx As Long: idx = BC_.CompileSource(src, "@module:" & path)
     If version_ <> BC_.Version Then LoadCode
     loading_.Add path

@@ -16,6 +16,7 @@ Private RT_ As ASF_Runtime
 Private CP_ As ASF_Compiler
 Private VM_ As ASF_VM
 Private CP_GLOBALS_ As ASF_Globals      ' the globals the compiler and the VM belong to
+Private MAX_STEPS_ As Long              ' MaxSteps, kept for a VM made later
 Private OUTPUT__ As Variant
 Private EVALUATOR_ As VBAexpressions
 
@@ -61,6 +62,24 @@ End Property
 Public Property Let AppAccess(aValue As Boolean)
     RT_.AppAccess = aValue
 End Property
+' The folder imports are limited to: an import that resolves outside it raises. Empty (the default):
+' imports may read any path
+Public Property Get ImportRoot() As String
+    ImportRoot = RT_.ImportRoot
+End Property
+Public Property Let ImportRoot(aValue As String)
+    RT_.ImportRoot = aValue
+End Property
+' The loop iterations and calls a run may make before it stops with "Step limit reached" in
+' LastError, which no catch takes. 0 (the default): no limit
+Public Property Get MaxSteps() As Long
+    MaxSteps = MAX_STEPS_
+End Property
+Public Property Let MaxSteps(aValue As Long)
+    If aValue < 0 Then aValue = 0
+    MAX_STEPS_ = aValue
+    If Not VM_ Is Nothing Then VM_.MaxSteps = aValue
+End Property
 Public Property Get OverrideCollMethods() As Boolean
     OverrideCollMethods = RT_.OverrideCollMethods
 End Property
@@ -102,6 +121,7 @@ Private Sub PrepareCode()
         Set CP_GLOBALS_ = GLOBALS_
         Set VM_ = New ASF_VM
         VM_.SetHost GLOBALS_, RT_, CP_
+        VM_.MaxSteps = MAX_STEPS_
     End If
     Set RT_.Globals = GLOBALS_
 End Sub

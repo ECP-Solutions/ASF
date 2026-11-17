@@ -35,6 +35,8 @@ This document describes the runtime API exposed by ASF scripts and the VM builti
 
 - **Program**: a script compiled to bytecode, which the VM executes. The ASF host exposes `.Compile(script)` → programIndex and `.Run(programIndex)` to run. The `Run` method returns the result of the program being executed.
 - **AppAccess**: Boolean property controlling Office object access (default: `False`). When `True`, scripts can access Office objects passed as runtime parameters (`$1`, `$2`, etc.). Always disable when not needed for security.
+- **ImportRoot**: String property, the folder `import` is limited to (default: empty, any path). An import that resolves outside it, by `../` steps or an absolute path, raises `Import outside the import folder`. Paths are compared without regard to case; links inside the folder that point outside it are not detected. Set it when scripts come from users or documents.
+- **MaxSteps**: Long property, the loop iterations and function calls a run may make (default: 0, no limit). Past it the run stops with `Step limit reached` in `LastError`, and no `catch` takes it. Work done inside built-in methods (a long `repeat`, a regex) is not counted.
 - **Scope / closures**: names are lexical and resolved at compile time. Closures share with the function that created them the variables they read or write (shared-write semantics): nested functions can mutate outer-scope variables and see changes across closures. A named function does not see the locals of its caller.
 - **Indexing base**: arrays honor `__option_base` set in runtime globals (commonly 0 or 1). All array helpers and methods handle this consistently.
 - **Call signature for array callbacks**:
