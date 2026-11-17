@@ -4965,18 +4965,18 @@ End Sub
 
 Private Sub run_arguments()
     On Error GoTo TestFail
-    Dim eng As ASF, idx As Long, appAccess As Variant, src As String
+    Dim eng As ASF, idx As Long, withAccess As Variant, src As String
     src = "return `${typeof $1} ${($1 + $2) * 3 - $1 / 2} ${$1 % 4} ${$1 == 7} ${typeof $2}`;"
-    For Each appAccess In Array(False, True)
+    For Each withAccess In Array(False, True)
         Set eng = New ASF
-        eng.AppAccess = appAccess
+        eng.AppAccess = withAccess
         idx = eng.Compile(src)
         actual = CStr(eng.Run(idx, CInt(7), CLng(5)))
         AssertEqual "number 32.5 3 true number", actual
         ' a later run with fewer arguments: $2 is undefined again
         actual = CStr(eng.Run(idx, CByte(7)))
         AssertEqual "undefined", Mid$(actual, InStrRev(actual, " ") + 1)
-    Next appAccess
+    Next withAccess
 TestExit:
     Exit Sub
 TestFail:
