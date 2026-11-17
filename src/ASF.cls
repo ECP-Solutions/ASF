@@ -107,8 +107,7 @@ Private Sub PrepareCode()
 End Sub
 Private Sub RunIndex(idx As Long, params As Variant)
     PrepareCode
-    If Not CP_.Prepare(idx) Then Err.Raise vbObjectError + 9026, "ASF.Run", "No program " & idx & " was compiled with these globals"
-    VM_.Run idx, params
+    If Not VM_.Run(idx, params) Then Err.Raise vbObjectError + 9026, "ASF.Run", "No program " & idx & " was compiled with these globals"
     vAssignment OUTPUT__, VM_.OUTPUT_
     If RT_.verbose Then
         Debug.Print "=== Runtime Log ==="

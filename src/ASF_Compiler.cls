@@ -94,7 +94,7 @@ Private Const OP_BINDM As Long = 79     ' a: method name, b: its function; pops 
 Private Const OP_CALLFT As Long = 80    ' a: function, b: arguments, under them this
 Private Const OP_THROW As Long = 81     ' pops the value thrown
 Private Const OP_IMPORT As Long = 82    ' a: the import (source, defaultImport, namespaceImport, named) -> the values it binds
-Private Const OP_UNUSED83 As Long = 83
+Private Const OP_PUSHIN As Long = 83    ' a: variable, b: arguments (+ METHOD_SHIFT: a global); push in place, else CALLMW follows
 Private Const OP_VBAEXPR As Long = 84   ' a: the VBA expression, b: the names of the values under it, one per line
 Private Const OP_PROTO As Long = 85     ' a: the prototype (classType, methodName, funcIndex, params); pops its function
 Private Const OP_EXPORT As Long = 86    ' a: exported name; pops the value (a module being loaded keeps it)
@@ -327,7 +327,7 @@ Public Function Disassemble(ByVal idx As Long) As String
                   "NOT NEG TYPEOF JMP JMPF JMPT ANDJ ORJ TOBOOL NULLJ POP CALLF RET RET0 PRINT INCL INCG " & _
                   "JNLT JNLE JNGT JNGE JNEQ JNNE ADDK DUP LOADC STOREC LOADE STOREE MKCLOS MKFUNC CALL NEWARR NEWOBJ " & _
                   "GETIDX GETIDXW SETIDXR GETPROP SETPROPV CALLM CALLMW EXPAND CALLFV CALLV CALLMV CALLMWV CALLB CALLBV TPL " & _
-                  "NEWARRS JNSW ITERLIST FORNEXT UNPACK CLASS NEWINST BINDM CALLFT THROW IMPORT TREESTMT VBAEXPR PROTO EXPORT EXPORTPROTO SUPER", " ")
+                  "NEWARRS JNSW ITERLIST FORNEXT UNPACK CLASS NEWINST BINDM CALLFT THROW IMPORT PUSHIN VBAEXPR PROTO EXPORT EXPORTPROTO SUPER", " ")
     Dim out As String, i As Long, fn As Long, k As Variant
     If Not Prepare(idx) Then
         Disassemble = "not taken: " & reason_
@@ -2445,9 +2445,23 @@ Private Sub DMethodCall(ByVal recvS As Long, ByVal recvE As Long, ByVal name As 
                 writes = DIsWritable(recvS, recvE)
         End Select
     End If
+    Dim inPlace As Long, inGlobal As Long: inPlace = -1
+    If writes And recvE = recvS + 1 Then
+        If LCase$(name) = "push" And nOp_ > 0 Then
+            If (op_(nOp_) = OP_LOADL Or op_(nOp_) = OP_LOADG) And Not DSpreadArgs() Then
+                ' x.push(...): the variable is not read onto the stack; PUSHIN appends to it in place
+                inPlace = a_(nOp_)
+                If op_(nOp_) = OP_LOADG Then inGlobal = METHOD_SHIFT
+                pendingAdj_ = adj_(nOp_)
+                depth_ = depth_ - dl_(nOp_)
+                nOp_ = nOp_ - 1
+            End If
+        End If
+    End If
     DArgs n, spread
     If mode_ <> 0 Then Exit Sub
     Dim id As Long: id = METHOD_SHIFT * MethodId(name)
+    If inPlace >= 0 Then Emit OP_PUSHIN, inPlace, n + inGlobal, 1
     If writes Then
         If spread Then Emit OP_CALLMWV, Constant(name), id, -n Else Emit OP_CALLMW, Constant(name), n + id, 1 - n
         DStoreTarget recvS, recvE
@@ -2455,6 +2469,18 @@ Private Sub DMethodCall(ByVal recvS As Long, ByVal recvE As Long, ByVal name As 
         If spread Then Emit OP_CALLMV, Constant(name), id, -n - 1 Else Emit OP_CALLM, Constant(name), n + id, -n
     End If
 End Sub
+
+' True when the arguments from the ( at p_ hold a spread
+Private Function DSpreadArgs() As Boolean
+    Dim j As Long, c As Long
+    c = CloseKind(p_, lim_)
+    For j = p_ + 1 To c - 1
+        If tt_(j) = "SPREAD" Or (tt_(j) = "OP" And tv_(j) = "...") Then
+            DSpreadArgs = True
+            Exit Function
+        End If
+    Next j
+End Function
 
 Private Sub DArrayLiteral()
     Dim c As Long, s As Long, d As Long, n As Long, isSpread As Boolean, flags As String, spread As Boolean

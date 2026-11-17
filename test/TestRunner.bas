@@ -100,6 +100,7 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("slice",                     "slice_start_end") Then slice_start_end: EndTest
     If StartTest("pop_push",                  "pop_push") Then pop_push: EndTest
     If StartTest("pop_push",                  "push_nested_member") Then push_nested_member: EndTest
+    If StartTest("pop_push",                  "push_in_place") Then push_in_place: EndTest
     If StartTest("range",                     "range_default") Then range_default: EndTest
     If StartTest("range",                     "range_custom") Then range_custom: EndTest
     If StartTest("range",                     "range_with_step") Then range_with_step: EndTest
@@ -252,6 +253,7 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("polymorphism",              "polymorphism_method_delegation") Then polymorphism_method_delegation: EndTest
     If StartTest("sort",                      "sort_chain_on_objects") Then sort_chain_on_objects: EndTest
     If StartTest("injecting",                 "injecting_asf_objects") Then injecting_asf_objects: EndTest
+    If StartTest("injecting",                 "run_arguments") Then run_arguments: EndTest
     If StartTest("spread",                    "spread_simple") Then spread_simple: EndTest
     If StartTest("spread",                    "spread_multiple") Then spread_multiple: EndTest
     If StartTest("spread",                    "spread_with_empty") Then spread_with_empty: EndTest
@@ -1387,6 +1389,25 @@ Private Sub pop_push()
                     & CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
     expected = "PRINT:[ 1, 2, 3 ], PRINT:4"
+    AssertEqual expected, actual
+
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+Private Sub push_in_place()
+    On Error GoTo TestFail
+    Dim Globals As ASF_Globals
+    GetResult "a = []; n = a.push(5); fun f() { let b = []; let m = b.push(1, 2); return m + b.length; }; " & _
+              "o = { items: [], push: fun(x) { return 9; } }; print(n + ',' + f() + ',' + o.push(1) + ',' + o.items.push(4) + ',' + a.length);", True
+    Set Globals = scriptEngine.GetGlobals
+    With Globals
+        actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
+    End With
+    expected = "PRINT:'1,4,9,1,1'"
     AssertEqual expected, actual
 
 TestExit:
@@ -4875,6 +4896,27 @@ Private Sub math_basic()
     expected = "9"
     AssertEqual expected, actual
 
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+Private Sub run_arguments()
+    On Error GoTo TestFail
+    Dim eng As ASF, idx As Long, appAccess As Variant, src As String
+    src = "return `${typeof $1} ${($1 + $2) * 3 - $1 / 2} ${$1 % 4} ${$1 == 7} ${typeof $2}`;"
+    For Each appAccess In Array(False, True)
+        Set eng = New ASF
+        eng.AppAccess = appAccess
+        idx = eng.Compile(src)
+        actual = CStr(eng.Run(idx, CInt(7), CLng(5)))
+        AssertEqual "number 32.5 3 true number", actual
+        ' a later run with fewer arguments: $2 is undefined again
+        actual = CStr(eng.Run(idx, CByte(7)))
+        AssertEqual "undefined", Mid$(actual, InStrRev(actual, " ") + 1)
+    Next appAccess
 TestExit:
     Exit Sub
 TestFail:
