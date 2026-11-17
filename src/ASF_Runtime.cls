@@ -4164,7 +4164,6 @@ Private Function map_apply_recursive(value As Variant, mapper As ASF_Map, _
     vAssignment args(1), value
     Dim result As Variant
     vAssignment result, CallClosure(mapper, args, parentThis)
-    args.Remove args.Count
     vAssignment map_apply_recursive, result
     Exit Function
 
