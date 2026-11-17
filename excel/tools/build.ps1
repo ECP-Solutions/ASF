@@ -7,7 +7,8 @@ param(
 #     (VB_Exposed = True: PublicNotCreatable; NewEngine makes them);
 #   - the modules of excel/addin and the regex worksheet functions of the use cases;
 #   - the descriptions of the functions (ASFRegister.RegisterFunctions);
-#   - project name ASFAddIn, saved as an Excel add-in (.xlam).
+#   - project name ASFAddIn, saved as an Excel add-in (.xlam);
+#   - the ASF tab of the ribbon (excel/customUI/customUI14.xml), added to the saved package.
 # Excel must trust access to the VBA project object model (Trust Center > Macro Settings), or run
 # with -TemporaryTrustAccess, which turns it on for the build and back as it was.
 $ErrorActionPreference = 'Stop'
@@ -35,6 +36,41 @@ foreach ($file in $basFiles) {
     $modules += $path
 }
 
+# The ribbon: customUI/customUI14.xml in the add-in's package, and its relationship in _rels/.rels
+function Add-Ribbon([string]$package, [string]$ribbonXml) {
+    Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    $zip = [IO.Compression.ZipFile]::Open($package, [IO.Compression.ZipArchiveMode]::Update)
+    try {
+        $part = $zip.CreateEntry('customUI/customUI14.xml')
+        $writer = New-Object IO.StreamWriter($part.Open(), $utf8)
+        $writer.Write([IO.File]::ReadAllText($ribbonXml, $utf8))
+        $writer.Close()
+        $relsEntry = $zip.GetEntry('_rels/.rels')
+        $reader = New-Object IO.StreamReader($relsEntry.Open())
+        $rels = $reader.ReadToEnd()
+        $reader.Close()
+        $relsEntry.Delete()
+        $rel = '<Relationship Id="asfRibbon" Type="http://schemas.microsoft.com/office/2007/relationships/ui/extensibility" Target="customUI/customUI14.xml"/>'
+        $writer = New-Object IO.StreamWriter($zip.CreateEntry('_rels/.rels').Open(), $utf8)
+        $writer.Write($rels.Replace('</Relationships>', $rel + '</Relationships>'))
+        $writer.Close()
+        # the part is XML: Excel's packages declare the extension already; add it when one does not
+        $typesEntry = $zip.GetEntry('[Content_Types].xml')
+        $reader = New-Object IO.StreamReader($typesEntry.Open())
+        $types = $reader.ReadToEnd()
+        $reader.Close()
+        if ($types -notmatch 'Extension="xml"') {
+            $typesEntry.Delete()
+            $writer = New-Object IO.StreamWriter($zip.CreateEntry('[Content_Types].xml').Open(), $utf8)
+            $writer.Write($types.Replace('</Types>', '<Default Extension="xml" ContentType="application/xml"/></Types>'))
+            $writer.Close()
+        }
+    } finally {
+        $zip.Dispose()
+    }
+}
+
 $securityKey = 'HKCU:\Software\Microsoft\Office\16.0\Excel\Security'
 $previousTrust = Get-ItemProperty -Path $securityKey -Name AccessVBOM -ErrorAction SilentlyContinue
 $excel = $null
@@ -60,7 +96,10 @@ try {
     $book.Subject = 'ASF scripts in Excel: ASF_RUN, ASF_CALL and the RX_ regex functions'
     if (Test-Path $Output) { Remove-Item $Output }
     $book.SaveAs($Output, 55)   # xlOpenXMLAddIn
-    Write-Output "Saved $Output"
+    $book.Close($false)
+    $book = $null
+    Add-Ribbon $Output (Join-Path $root 'excel/customUI/customUI14.xml')
+    Write-Output "Saved $Output, with the ASF tab"
 } finally {
     try {
         if ($null -ne $book) { $book.Close($false) }

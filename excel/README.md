@@ -71,6 +71,32 @@ Application.Run "ASF.xlam!ASFSettings.ChangeSetting", "RunEnabled", "0"
 
 The worksheet functions keep one engine and its compiled scripts for the whole session. A library script is read again when its file changes. Scripts are read as ANSI text, so save them as ASCII or Windows-1252.
 
+## The ASF tab
+
+| Button | What it does |
+|---|---|
+| **Run script** | Lists the scripts of the library folder (the first 30) and runs the one you pick, then shows its result or why it stopped |
+| **Library folder** | Opens the library folder, made first when it is missing |
+| **Why this error?** | Calculates the active cell again and shows why its `ASF_RUN` or `ASF_CALL` gave `#VALUE!` (with several calls in one formula, the message of the last one) |
+| **Reset engine** | Drops the engine of the worksheet functions and their compiled scripts; the next formula reads the settings again |
+| **Help** | Opens this page |
+
+A library script may start with a header of comment lines. It says how **Run script** lists and runs it; the worksheet functions ignore it.
+
+```
+// @asf name: Apply discount rules
+// @asf appAccess: true
+// @asf args: selection
+```
+
+| Key | Meaning |
+|---|---|
+| `name` | The name the list shows; the file name when there is none |
+| `appAccess` | `true`: the script may use Office objects. Default `false` |
+| `args` | `selection`: `$1` is the selected range. Default: no arguments |
+
+With `appAccess: true` and `args: selection`, `$1` is the `Range` itself, so the script can write cells, format them or reach the workbook. Without `appAccess`, `$1` holds the range's values, as in a formula. Only library scripts can ask for Office access: the library holds what the user installed.
+
 ## Security
 
 A workbook's formulas run when it recalculates, with no macro warning: the add-in is trusted, and the scripts are only data. So every script the functions run is limited, wherever it comes from:
@@ -81,6 +107,7 @@ A workbook's formulas run when it recalculates, with no macro warning: the add-i
 - **`ASF_CALL` only runs installed scripts.** It only takes bare script names, so a received workbook can only run scripts the user installed in the library.
 - **Scripts are never stored inside workbooks.**
 - **`ASF_RUN` can be turned off** in the settings, leaving only library scripts.
+- **Office access only for library scripts run from the ribbon,** and only when their header asks for it.
 
 ## Macros in other workbooks
 
@@ -122,6 +149,7 @@ The script:
 2. Imports the modules of `excel/addin` and `examples/use-cases/regex/RegexFunctions.bas`.
 3. Names the project `ASFAddIn` and registers the function descriptions (category ASF in Insert Function).
 4. Saves `excel/ASF.xlam`.
+5. Adds the ASF tab, `excel/customUI/customUI14.xml`, to the saved file.
 
 Excel must trust access to the VBA project object model. `-TemporaryTrustAccess` turns it on for the build and back as it was.
 
@@ -132,12 +160,20 @@ Excel must trust access to the VBA project object model. `-TemporaryTrustAccess`
 | `ASFCells` | the conversions between cells and ASF values |
 | `ASFSettings` | the settings |
 | `ASFRegister` | the function descriptions |
+| `ASFLibrary` | the scripts of the library and their headers, run as the ribbon runs them |
+| `ASFRibbon` | the callbacks of the ASF tab |
 
-All but `ASFFunctions` are `Option Private Module`, so their functions don't show up as worksheet functions.
+`ASFFunctions` and `ASFRibbon` are the only modules other code reaches. The rest are `Option Private Module`, so their functions don't show up as worksheet functions. `ASFRibbon` holds only Subs, which never do.
 
 ## Tests
 
-- **`python3 excel/tools/run_lo.py`** runs every case of `excel/tools/cases.py` in LibreOffice, headless. It calls the add-in's modules from Basic, with a temporary library folder and a low step limit. It needs LibreOffice and `python3-uno`.
+- **`python3 excel/tools/run_lo.py`** runs every case of `excel/tools/cases.py` in LibreOffice, headless. It calls the add-in's modules from Basic, with a temporary library folder and a low step limit. It also checks:
+  - the library as **Run script** lists and runs it;
+  - the script headers;
+  - that every button of the ribbon calls a Sub of `ASFRibbon`.
+
+  It needs LibreOffice and `python3-uno`.
+- **The buttons themselves** need Excel: try each once after a build.
 - **`excel/test/AddinTests.xlsx`** holds the same cases as formulas, except those that need the library folder or a low step limit. Open it with the add-in loaded: B1 says whether every check passes. Array results are array formulas, as Excel 2016 enters them.
 - **Spilling** in Microsoft 365 is checked by hand: `=ASF_RUN("return [[1, 2], [3, 4]];")` in one cell should fill two by two.
 - **`python3 excel/tools/make_workbook.py`** writes the workbook again after the cases change. It needs `openpyxl`.

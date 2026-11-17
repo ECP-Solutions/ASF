@@ -35,7 +35,36 @@ LIBRARY = {
     "double.vas": "return $1 * 2;",
     "util.vas": "fun twice(x) { return x * 2; };\nexport { twice };",
     "uses_util.vas": "import { twice } from './util.vas';\nreturn twice($1) + 1;",
+    # scripts with a header, for the ribbon
+    "report.vas": "// @asf name: A report\n// @asf args: selection\nreturn $1.length;",
+    "bad.vas": "// @asf name: Bad\nthrow 'nope';",
+    "nothing.vas": "let x = 1;",
+    "typeof.vas": "return typeof $1;",
+    "obj.vas": "// a comment before the header ends nothing\n// @asf name: Object\nreturn {n: 2};",
 }
+
+# the library as the ribbon lists it: header names, else file names, sorted without case
+RIBBON_NAMES = "A report|Bad|double|nothing|Object|typeof|uses_util|util|"
+
+# (script file, selection, the message of Run script)
+RIBBON_RUNS = [
+    ("report.vas", Range([[1], [2], [3]]), "Result: 3"),
+    ("report.vas", None, "The script stopped: Cannot read properties of undefined (reading 'length')"),
+    ("bad.vas", None, "The script stopped: nope"),
+    ("nothing.vas", None, "Done."),
+    ("obj.vas", None, "Result: { n: 2 }"),
+    ("typeof.vas", Range([[5]]), "Result: undefined"),   # no args header: no $1
+    ("no_such.vas", None, None),
+]
+
+# (source, key, the header value)
+HEADERS = [
+    ("// @asf name: X\n// @asf ARGS: Selection\nreturn 1;", "args", "Selection"),
+    ("// @asf name: X\n// @asf ARGS: Selection\nreturn 1;", "appAccess", ""),
+    ("\n// @asf appAccess:  true \r\nreturn 1;", "appaccess", "true"),
+    ("return 1;\n// @asf name: late", "name", ""),
+    ("//@asf name: no space", "name", "no space"),
+]
 
 CASES = [
     # values in, values out

@@ -55,6 +55,7 @@ End Sub
 ' The text of a value as a template writes it: objects and nested arrays in cells
 Public Function ValueText(ByRef v As Variant) As String
     On Error GoTo Failed
+    Ready
     If textOf_ = 0 Then textOf_ = engine_.Compile("return `${$1}`;")
     ValueText = CStr(engine_.RunArgs(textOf_, Array(v)))
     Exit Function

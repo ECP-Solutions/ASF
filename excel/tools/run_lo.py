@@ -19,7 +19,9 @@ sys.path.insert(0, os.path.join(ROOT, "Tools", "stdRegex"))
 sys.path.insert(0, HERE)
 import build  # noqa: E402
 from BenchmarkLO import start_office  # noqa: E402
-from cases import CASES, LIBRARY, Error, Range, shape  # noqa: E402
+from cases import CASES, HEADERS, LIBRARY, RIBBON_NAMES, RIBBON_RUNS, Error, Range, shape  # noqa: E402
+import re  # noqa: E402
+import xml.etree.ElementTree as ET  # noqa: E402
 
 CHECK = '''Option VBASupport 1
 ' an argument from Python: "#ERR:2042" is an error value, a tuple of tuples a range
@@ -71,6 +73,25 @@ End Function
 Function LastMessage() As String
     LastMessage = ASFEngine.LastErrorMessage()
 End Function
+' the ribbon's library: the names it lists, a header value, a run of Run script
+Function ScriptNames() As String
+    Dim s As Variant, i As Long, item As Variant
+    s = ASFLibrary.LibraryScripts()
+    If IsEmpty(s) Then Exit Function
+    For i = LBound(s) To UBound(s)
+        item = s(i)
+        ScriptNames = ScriptNames & item(1) & "|"
+    Next i
+End Function
+Function Header(source As String, key As String) As String
+    Header = ASFLibrary.HeaderValue(source, key)
+End Function
+Function RibbonRun(file As String, sel As Variant) As String
+    RibbonRun = ASFLibrary.RunForRibbon(ASFSettings.LibraryFolder() & "/" & file, Arg(sel))
+End Function
+Function MakeFolder(path As String) As Boolean
+    MakeFolder = ASFLibrary.EnsureFolder(path)
+End Function
 '''
 
 
@@ -111,13 +132,44 @@ def table(v):
     return norm(v)
 
 
+def ribbon_problems():
+    """The ribbon XML against ASFRibbon.bas: every onAction a Sub there, ids unique."""
+    ns = "{http://schemas.microsoft.com/office/2009/07/customui}"
+    tree = ET.parse(os.path.join(ROOT, "excel", "customUI", "customUI14.xml"))
+    with open(os.path.join(ROOT, "excel", "addin", "ASFRibbon.bas"), encoding="utf-8") as f:
+        subs = set(re.findall(r"(?m)^Public Sub (\w+)\(control As Object\)", f.read()))
+    problems, ids = [], set()
+    if tree.getroot().tag != ns + "customUI":
+        problems.append("the root is not customUI of the 2009/07 schema")
+    for el in tree.iter():
+        i = el.get("id")
+        if i is not None:
+            if i in ids:
+                problems.append(f"id {i} twice")
+            ids.add(i)
+        action = el.get("onAction")
+        if action and (not action.startswith("ASFRibbon.") or action.split(".", 1)[1] not in subs):
+            problems.append(f"onAction {action} is not a Sub of ASFRibbon")
+    return problems
+
+
 def main():
+    failures = 0
+
+    def check(what, got, expected):
+        nonlocal failures
+        ok = got == expected
+        failures += not ok
+        print(f"{'ok' if ok else 'DIFFERS':8s} {what}")
+        if not ok:
+            print(f"         expected {expected!r}\n         got      {got!r}")
+
+    check("ribbon: callbacks and ids", ribbon_problems(), [])
     ctx, proc, work = start_office()
     library = tempfile.mkdtemp(prefix="asf-addin-library-")
     for name, text in LIBRARY.items():
         with open(os.path.join(library, name), "w", encoding="utf-8") as f:
             f.write(text)
-    failures = 0
     try:
         smgr = ctx.ServiceManager
         libs = smgr.createInstanceWithContext("com.sun.star.script.ApplicationScriptLibraryContainer", ctx)
@@ -140,6 +192,18 @@ def main():
             print(f"{'ok' if ok else 'DIFFERS':8s} {case['fn']}: {case['name']}")
             if not ok:
                 print(f"         expected {table(case['expected'])}\n         got      {table(got)}   ({call('LastMessage')})")
+        # the library as the ribbon uses it
+        check("ribbon: the scripts listed", call("ScriptNames"), RIBBON_NAMES)
+        for source, key, value in HEADERS:
+            check(f"header {key} of {source!r}", call("Header", source, key), value)
+        for file, sel, message in RIBBON_RUNS:
+            got = call("RibbonRun", file, to_basic(sel) if sel is not None else None)
+            if message is None:
+                check(f"Run script {file}: not there", got.startswith("No script"), True)
+            else:
+                check(f"Run script {file} with {to_basic(sel)}", got, message)
+        nested = os.path.join(library, "made", "by", "EnsureFolder")
+        check("the library folder made with its parents", (call("MakeFolder", nested), os.path.isdir(nested)), (True, True))
     finally:
         try:
             ctx.ServiceManager.createInstanceWithContext("com.sun.star.frame.Desktop", ctx).terminate()
