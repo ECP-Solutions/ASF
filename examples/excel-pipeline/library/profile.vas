@@ -1,0 +1,49 @@
+// @asf name: Profile the columns
+// profile.vas: what a table holds, column by column, before trusting it. =ASF_CALL("profile", Raw!A1:H200)
+// $1: a table with its header. One row per column: how many cells are filled and empty, how many
+// different values, how many are numbers and how many text that reads as a number, the smallest
+// and largest number, and the most frequent value with its count.
+import { trimTable, text, isBlank, toNumber } from './tables.vas';
+
+let table = trimTable($1);
+let out = [['Column', 'Filled', 'Empty', 'Distinct', 'Numbers', 'Numeric text', 'Min', 'Max', 'Most frequent', 'Times']];
+for (let c = 1, c <= table[1].length, c += 1) {
+    let filled = 0;
+    let numbers = 0;
+    let numericText = 0;
+    let min = '';
+    let max = '';
+    // per value: [times, the value as first written]; one get and one set per cell (the map
+    // searches its keys one by one)
+    let counts = {};
+    for (let r = 2, r <= table.length, r += 1) {
+        let v = table[r][c];
+        if (!isBlank(v)) {
+            filled = filled + 1;
+            if (typeof v == 'number') {
+                numbers = numbers + 1;
+                if (min == '' || v < min) { min = v; };
+                if (max == '' || v > max) { max = v; };
+            } elseif (typeof toNumber(v) != 'undefined') {
+                numericText = numericText + 1;
+            };
+            let key = text(v).trim().toLowerCase();
+            let seen = counts.get(key);
+            if (typeof seen == 'undefined') {
+                counts.set(key, [1, text(v).trim()]);
+            } else {
+                counts.set(key, [seen[1] + 1, seen[2]]);
+            };
+        };
+    };
+    let top = '';
+    let times = 0;
+    for (let entry of counts.values()) {
+        if (entry[1] > times) {
+            times = entry[1];
+            top = entry[2];
+        };
+    };
+    out.push([table[1][c], filled, table.length - 1 - filled, counts.keys().length, numbers, numericText, min, max, top, times]);
+};
+return out;

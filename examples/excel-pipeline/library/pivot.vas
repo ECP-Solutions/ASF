@@ -1,0 +1,80 @@
+// @asf name: Cross-tab
+// pivot.vas: rows by one column, columns by another, with totals.
+//   =ASF_CALL("pivot", Sales!A1:M200, "Region", "Product", "sum:Amount")
+// $1: a table with its header. $2: the column whose values become rows. $3: the column whose values
+// become columns. $4 (optional): the measure, sum:Column, avg:Column or count (the default). Rows
+// and columns are sorted; an empty value shows as (blank); a cell with no rows stays empty.
+import { trimTable, columnIndex, column, text, isBlank } from './tables.vas';
+
+let table = trimTable($1);
+let index = columnIndex(table);
+let rowCol = column(index, $2);
+let colCol = column(index, $3);
+let spec = text($4).trim();
+let kind = 'count';
+let valueCol = 0;
+if (spec != '' && spec.toLowerCase() != 'count') {
+    let p = spec.indexOf(':');
+    if (p < 0) { throw `'${spec}' is not sum:Column, avg:Column or count`; };
+    kind = spec.slice(0, p).trim().toLowerCase();
+    if (kind != 'sum' && kind != 'avg') { throw `Unknown measure '${kind}': sum, avg or count`; };
+    valueCol = column(index, spec.slice(p + 1));
+};
+
+fun keyOf(v) {
+    if (isBlank(v)) { return '(blank)'; };
+    return text(v).trim();
+};
+
+// per "row|column": [sum, count]; the labels in the order first seen
+let cells = {};
+let rowLabels = {};
+let colLabels = {};
+for (let r = 2, r <= table.length, r += 1) {
+    let rk = keyOf(table[r][rowCol]);
+    let ck = keyOf(table[r][colCol]);
+    rowLabels.set(rk.toLowerCase(), rk);
+    colLabels.set(ck.toLowerCase(), ck);
+    for (let key of [`${rk.toLowerCase()}|${ck.toLowerCase()}`, `${rk.toLowerCase()}|`, `|${ck.toLowerCase()}`, '|']) {
+        let acc = cells.has(key) ? cells.get(key) : [0, 0];
+        if (kind == 'count') {
+            acc[2] = acc[2] + 1;
+        } else {
+            let v = table[r][valueCol];
+            if (typeof v == 'number') {
+                acc[1] = acc[1] + v;
+                acc[2] = acc[2] + 1;
+            };
+        };
+        cells.set(key, acc);
+    };
+};
+
+fun valueOf(key) {
+    if (!cells.has(key)) { return ''; };
+    let acc = cells.get(key);
+    if (kind == 'count') { return acc[2]; };
+    if (kind == 'avg') { return acc[2] == 0 ? '' : Math.round(acc[1] / acc[2] * 1000000) / 1000000; };
+    return Math.round(acc[1] * 1000000) / 1000000;
+};
+
+let rows = rowLabels.keys();
+rows.sort(fun(a, b) { return a.localeCompare(b); });
+let cols = colLabels.keys();
+cols.sort(fun(a, b) { return a.localeCompare(b); });
+
+let header = [`${table[1][rowCol]} / ${table[1][colCol]}`];
+for (let c of cols) { header.push(colLabels.get(c)); };
+header.push('Total');
+let out = [header];
+for (let r of rows) {
+    let line = [rowLabels.get(r)];
+    for (let c of cols) { line.push(valueOf(`${r}|${c}`)); };
+    line.push(valueOf(`${r}|`));
+    out.push(line);
+};
+let total = ['Total'];
+for (let c of cols) { total.push(valueOf(`|${c}`)); };
+total.push(valueOf('|'));
+out.push(total);
+return out;
