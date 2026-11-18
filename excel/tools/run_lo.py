@@ -242,6 +242,12 @@ def main():
                 check(f"Run script {file} with {to_basic(sel)}", got, message)
         nested = os.path.join(library, "made", "by", "EnsureFolder")
         check("the library folder made with its parents", (call("MakeFolder", nested), os.path.isdir(nested)), (True, True))
+        # a hidden folder on the way, as AppData is on Windows. Here it is a folder whose name starts with
+        # a dot, which LibreOffice on Linux lists anyway: this checks the walk, not Windows' hidden flag
+        os.makedirs(os.path.join(library, ".hidden"))
+        under_hidden = os.path.join(library, ".hidden", "ASF", "scripts")
+        check("the library folder made under a hidden folder", (call("MakeFolder", under_hidden), os.path.isdir(under_hidden)), (True, True))
+        check("a hidden folder that is there already", call("MakeFolder", os.path.join(library, ".hidden")), True)
         check("registration: every function with its arguments", registration_problems(call("Registered")), [])
     finally:
         try:
