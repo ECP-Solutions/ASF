@@ -91,6 +91,7 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("map",                       "map_closure_capture") Then map_closure_capture: EndTest
     If StartTest("map",                       "map_returning_nested_array") Then map_returning_nested_array: EndTest
     If StartTest("map",                       "map_returning_objects_and_arrays") Then map_returning_objects_and_arrays: EndTest
+    If StartTest("map",                       "callbacks_like_javascript") Then callbacks_like_javascript: EndTest
     If StartTest("mapping",                   "mapping_mixed_types") Then mapping_mixed_types: EndTest
     If StartTest("filter",                    "filter_simple") Then filter_simple: EndTest
     If StartTest("filter",                    "filter_nested_arrays") Then filter_nested_arrays: EndTest
@@ -140,6 +141,7 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("array",                     "array_some") Then array_some: EndTest
     If StartTest("array",                     "array_with_non_mutating") Then array_with_non_mutating: EndTest
     If StartTest("array",                     "array_sort_and_toSorted") Then array_sort_and_toSorted: EndTest
+    If StartTest("array",                     "sort_stable_and_safe") Then sort_stable_and_safe: EndTest
     If StartTest("array",                     "array_toSpliced_and_join") Then array_toSpliced_and_join: EndTest
     If StartTest("array",                     "array_entries_and_every_find_combo") Then array_entries_and_every_find_combo: EndTest
     If StartTest("array",                     "callbacks_get_the_collection_from_the_first_item") Then callbacks_get_the_collection_from_the_first_item: EndTest
@@ -153,6 +155,7 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("for_in_of",                 "for_in_with_array_indices") Then for_in_with_array_indices: EndTest
     If StartTest("for_in_of",                 "for_of_with_string") Then for_of_with_string: EndTest
     If StartTest("for_in_of",                 "for_in_with_object_properties") Then for_in_with_object_properties: EndTest
+    If StartTest("for_in_of",                 "for_of_and_in_on_empty_arrays") Then for_of_and_in_on_empty_arrays: EndTest
     If StartTest("string",                    "string_at") Then string_at: EndTest
     If StartTest("string",                    "string_at_negative_index") Then string_at_negative_index: EndTest
     If StartTest("string",                    "string_at_default_index") Then string_at_default_index: EndTest
@@ -256,6 +259,7 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("injecting",                 "injecting_asf_objects") Then injecting_asf_objects: EndTest
     If StartTest("injecting",                 "run_arguments") Then run_arguments: EndTest
     If StartTest("injecting",                 "run_after_an_array_result") Then run_after_an_array_result: EndTest
+    If StartTest("injecting",                 "empty_items_stay_undefined") Then empty_items_stay_undefined: EndTest
     If StartTest("spread",                    "spread_simple") Then spread_simple: EndTest
     If StartTest("spread",                    "spread_multiple") Then spread_multiple: EndTest
     If StartTest("spread",                    "spread_with_empty") Then spread_with_empty: EndTest
@@ -1163,15 +1167,55 @@ TestFail:
     Resume TestExit
 End Sub
 
+' map, filter, reduce and forEach: (value, index, array), an inner array as one item, nothing on []
+Private Sub callbacks_like_javascript()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return [[1, 2], [3, 4]].map(fun(r) { return r[1] + r[2]; }).join(',');"))
+    AssertEqual "3,7", actual
+    actual = CStr(GetResult("return [10, 20].map(fun(v, i, a) { return v + i + a.length; }).join(',');"))
+    AssertEqual "13,24", actual
+    actual = CStr(GetResult("return [5, 6, 7].filter(fun(v, i) { return i != 2; }).join(',');"))
+    AssertEqual "5,7", actual
+    actual = CStr(GetResult("let n = 0; let f = fun(x) { n += 1; return true; }; " & _
+                            "let a = [].map(f); let b = [].filter(f); [].forEach(f); " & _
+                            "return `${a.length},${b.length},${[].reduce(fun(s, x) { return s + x; }, 5)},${n}`;"))
+    AssertEqual "0,0,5,0", actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+' sort: stable, safe with any comparator, true as 1
+Private Sub sort_stable_and_safe()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("return ['b', 'a', 'c', 'a'].sort(fun(a, b) { return a < b ? -1 : 1; }).join(',');"))
+    AssertEqual "a,a,b,c", actual
+    actual = CStr(GetResult("let r = [[2, 'x'], [1, 'y'], [2, 'z'], [1, 'w']]; r.sort(fun(a, b) { return a[1] - b[1]; }); " & _
+                            "return r.map(fun(p) { return p[2]; }).join(',');"))
+    AssertEqual "y,w,x,z", actual
+    actual = CStr(GetResult("return [3, 1, 2].sort(fun(a, b) { return a > b; }).join(',');"))
+    AssertEqual "1,2,3", actual
+    actual = CStr(GetResult("return [10, 9, 1].sort().join(',') + '|' + [3, 1, 2].toSorted(fun(a, b) { return b - a; }).join(',');"))
+    AssertEqual "1,9,10|3,2,1", actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
 Private Sub map_nested_array()
     On Error GoTo TestFail
     Dim Globals As ASF_Globals
-    GetResult "a = [1,[2,[3,[4]]]]; b = a.map(fun(x) { return x * 10 }); print(b);", True
+    ' an inner array is one item, as in JavaScript: map does not go into it
+    GetResult "a = [1,[2,[3,[4]]]]; b = a.map(fun(x) { return IsArray(x) ? x.length : x * 10 }); print(b);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
         actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
-    expected = "PRINT:[ 10, [ 20, [ 30, [ 40 ] ] ] ]"
+    expected = "PRINT:[ 10, 2 ]"
     AssertEqual expected, actual
 
 TestExit:
@@ -1184,14 +1228,14 @@ End Sub
 Private Sub map_array_of_objects()
     On Error GoTo TestFail
     Dim Globals As ASF_Globals
-    GetResult "a = [{ k: 1, arr: [10,20] }, { k: 2, arr: [30,[40,50]] }];" & _
+    GetResult "a = [{ k: 1, arr: [10,20] }, { k: 2, arr: [30,40,50] }];" & _
                         "b = a.map(fun(o){return { k: o.k * 2, arr: o.arr.map(fun(x){ return x + 1 })}; });" & _
                         "print(b);", True
     Set Globals = scriptEngine.GetGlobals
     With Globals
         actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
-    expected = "PRINT:[ { k: 2, arr: [ 11, 21 ] }, { k: 4, arr: [ 31, [ 41, 51 ] ] } ]"
+    expected = "PRINT:[ { k: 2, arr: [ 11, 21 ] }, { k: 4, arr: [ 31, 41, 51 ] } ]"
     AssertEqual expected, actual
 
 TestExit:
@@ -1269,7 +1313,7 @@ Private Sub mapping_mixed_types()
     With Globals
         actual = CStr(.gRuntimeLog(.gRuntimeLog.Count))
     End With
-    expected = "PRINT:[ 3, 'x', [ 6, 'y', [ 9 ] ] ]"
+    expected = "PRINT:[ 3, 'x', [ 2, 'y', [ 3 ] ] ]"
     AssertEqual expected, actual
 
 TestExit:
@@ -2269,6 +2313,19 @@ Private Sub for_of_with_string()
     actual = CStr(GetResult("s='ab'; out=''; for (ch of s) { out = out + ch }; return(out);"))
     expected = "ab"
     AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+Private Sub for_of_and_in_on_empty_arrays()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("let n = 0; for (let x of []) { n += 1; }; let a = []; for (let i in a) { n += 10; }; " & _
+                            "fun none() { let out = []; return out; }; for (let x of none()) { n += 100; }; " & _
+                            "for (let x of [7]) { n += x; }; return n;"))
+    AssertEqual "7", actual
 TestExit:
     Exit Sub
 TestFail:
@@ -4977,6 +5034,22 @@ Private Sub math_basic()
     expected = "9"
     AssertEqual expected, actual
 
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+' an empty item of an array given to Run (an empty cell of a range) is undefined, not 0
+Private Sub empty_items_stay_undefined()
+    On Error GoTo TestFail
+    Dim eng As New ASF, cells(1 To 2, 1 To 2) As Variant
+    cells(1, 1) = "a": cells(1, 2) = 0
+    With eng
+        actual = CStr(.Run(.Compile("return `${typeof $1[2][1]},${typeof $1[1][2]},${$1[1][2]}`;"), cells))
+    End With
+    AssertEqual "undefined,number,0", actual
 TestExit:
     Exit Sub
 TestFail:

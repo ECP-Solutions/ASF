@@ -1700,61 +1700,78 @@ Thrown:
 End Function
 
 ' map: each item (inside nested arrays too) through the function
+' map, filter, reduce and forEach as JavaScript runs them: the callback gets (value, index, array),
+' as many of them as it declares, once per item; an inner array is one item. An empty array is
+' (-1 To -1) or Array(): no items
+Private Function ItemCount(ByRef arr As Variant) As Long
+    If UBound(arr) = -1 Or UBound(arr) < LBound(arr) Then Exit Function
+    ItemCount = UBound(arr) - LBound(arr) + 1
+End Function
+
+Private Function EmptyArray() As Variant
+    Dim out() As Variant
+    ReDim out(-1 To -1)
+    EmptyArray = out
+End Function
+
 Private Function ArrayMap(ByRef arr As Variant, ByVal fn As Long, ByVal env As Long) As Variant
     Dim cnt As Long, i As Long, out() As Variant
-    cnt = UBound(arr) - LBound(arr) + 1
-    If cnt < 0 Then cnt = 0
+    cnt = ItemCount(arr)
     If cnt = 0 Then
-        ReDim out(1 To 1)
-    Else
-        ReDim out(1 To cnt)
+        ArrayMap = EmptyArray()
+        Exit Function
     End If
+    ReDim out(1 To cnt)
     For i = 0 To cnt - 1
-        If IsArray(arr(LBound(arr) + i)) Then
-            out(1 + i) = ArrayMap(arr(LBound(arr) + i), fn, env)
-        Else
-            SetItem out(1 + i), Callback(fn, env, arr, 1, arr(LBound(arr) + i), Empty, Empty)
-        End If
+        SetItem out(1 + i), Callback(fn, env, arr, 3, arr(LBound(arr) + i), CDbl(1 + i), arr)
+        If throwing_ Then Exit For
     Next i
     ArrayMap = out
 End Function
 
 Private Function ArrayFilter(ByRef arr As Variant, ByVal fn As Long, ByVal env As Long) As Variant
     Dim kept As Collection: Set kept = New Collection
-    Dim i As Long, out() As Variant
-    For i = LBound(arr) To UBound(arr)
-        If Truthy(Callback(fn, env, arr, 1, arr(i), Empty, Empty)) Then kept.Add arr(i)
+    Dim i As Long, cnt As Long, out() As Variant
+    cnt = ItemCount(arr)
+    For i = 0 To cnt - 1
+        If Truthy(Callback(fn, env, arr, 3, arr(LBound(arr) + i), CDbl(1 + i), arr)) Then kept.Add arr(LBound(arr) + i)
+        If throwing_ Then Exit For
     Next i
     If kept.Count = 0 Then
-        ReDim out(1 To 1)
-    Else
-        ReDim out(1 To kept.Count)
-        For i = 1 To kept.Count
-            If IsObject(kept(i)) Then Set out(i) = kept(i) Else out(i) = kept(i)
-        Next i
+        ArrayFilter = EmptyArray()
+        Exit Function
     End If
+    ReDim out(1 To kept.Count)
+    For i = 1 To kept.Count
+        If IsObject(kept(i)) Then Set out(i) = kept(i) Else out(i) = kept(i)
+    Next i
     ArrayFilter = out
 End Function
 
 Private Function ArrayReduce(ByRef arr As Variant, ByVal fn As Long, ByVal env As Long, ByVal hasInit As Boolean, ByRef init As Variant) As Variant
-    Dim acc As Variant, i As Long, start As Long
+    Dim acc As Variant, i As Long, start As Long, cnt As Long
+    cnt = ItemCount(arr)
     If hasInit Then
         SetItem acc, init
-        start = LBound(arr)
+        start = 0
+    ElseIf cnt = 0 Then
+        Exit Function
     Else
         SetItem acc, arr(LBound(arr))
-        start = LBound(arr) + 1
+        start = 1
     End If
-    For i = start To UBound(arr)
-        SetItem acc, Callback(fn, env, arr, 2, acc, arr(i), Empty)
+    For i = start To cnt - 1
+        SetItem acc, Callback(fn, env, arr, 2, acc, arr(LBound(arr) + i), Empty)
+        If throwing_ Then Exit For
     Next i
     If IsObject(acc) Then Set ArrayReduce = acc Else ArrayReduce = acc
 End Function
 
 Private Sub ArrayForEach(ByRef arr As Variant, ByVal fn As Long, ByVal env As Long)
     Dim i As Long, r As Variant
-    For i = LBound(arr) To UBound(arr)
-        SetItem r, Callback(fn, env, arr, 3, arr(i), CLng(1 + i - LBound(arr)), arr)
+    For i = 0 To ItemCount(arr) - 1
+        SetItem r, Callback(fn, env, arr, 3, arr(LBound(arr) + i), CDbl(1 + i), arr)
+        If throwing_ Then Exit For
     Next i
 End Sub
 
@@ -1943,9 +1960,12 @@ Private Function IterList(ByRef v As Variant, ByVal keys As Long) As Variant
     Dim items As Collection: Set items = New Collection
     Dim i As Long, k As Variant
     If IsArray(v) Then
-        For i = LBound(v) To UBound(v)
-            If keys = 1 Then items.Add CLng(1 + i - LBound(v)) Else items.Add v(i)
-        Next i
+        ' an empty array is (-1 To -1) or Array(): no items
+        If UBound(v) >= LBound(v) And UBound(v) <> -1 Then
+            For i = LBound(v) To UBound(v)
+                If keys = 1 Then items.Add CLng(1 + i - LBound(v)) Else items.Add v(i)
+            Next i
+        End If
     ElseIf VarType(v) = VT_STRING Then
         For i = 1 To Len(v)
             If keys = 1 Then items.Add i Else items.Add Mid$(v, i, 1)

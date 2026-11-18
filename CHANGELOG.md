@@ -19,6 +19,12 @@ All notable changes for ASF. This file combines the release notes from the proje
     - **`push` in place** — `x.push(...)` on a variable appends to the array the variable holds; the array was copied about five times per call, so filling an array with `push` in a loop took quadratic time. In LibreOffice, 1,600 pushes went from 5.9 s to 0.3 s and 6,400 from 85.6 s to 2.2 s. `push` on anything else (`o.items.push(...)`, a host object, a method of an object) takes the usual path.
 
 - **Fixed**
+    - **`map` went into inner arrays** — `[[1, 2], [3, 4]].map(fun(r) { ... })` called the callback on 1, 2, 3 and 4 instead of on the two rows. `map` calls it once per element, an inner array being one element, as in JavaScript. Scripts that relied on the old way map the inner arrays themselves.
+    - **`map` and `filter` callbacks got only the value** — they get `(value, index, array)`, as the documentation said and `forEach` did.
+    - **`map`, `filter`, `reduce` and `forEach` on an empty array** called the callback once with `undefined`, and `map` and `filter` gave a one-item array. They call nothing and give an empty array.
+    - **`sort` with a comparator that never returns 0** (`a < b ? -1 : 1`) failed with "Index out of defined range", and a comparator returning a boolean sorted backwards (`true` counted as -1). `sort` and `toSorted` are a merge sort now: stable, as in JavaScript, and safe with any comparator; `true` counts as 1.
+    - **`for…of` and `for…in` on an empty array ran once** — the body ran with `undefined` (or the key 1), as the empty array's placeholder was taken for an item. They don't run now.
+    - **Empty items of arrays given to a script were 0** — an empty cell of a range given to `Run` (or to `ASF_RUN` and `ASF_CALL`) arrived as `0`, as VBA's `IsNumeric(Empty)` is true; it is `undefined`, as a single empty cell already was.
     - **LibreOffice: a run after a run that gave an array** — the next `Run`, or a read of `OUTPUT_` or `LastError`, raised error 91. LibreOffice keeps the value of a `Property Get` between calls and fails to replace an array there; `OUTPUT_` and `LastError` are functions now, read as before.
     - **`Run` after an error gave the previous result** — a run that ended in an error or an uncaught `throw` returned what the run before it had returned, instead of `Empty`.
     - **`push` on an empty array** returned one more than the new length: `[].push(5)` gave 2.
