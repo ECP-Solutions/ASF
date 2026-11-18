@@ -98,25 +98,35 @@ Failed:
     RunForRibbon = "The script could not run: " & Err.Description
 End Function
 
-' The folder, made when it is missing (with its parents); False when it cannot be made
+' The folder, made when it is missing (with its parents); False when it can't be made. Folders are
+' looked up with GetAttr, which sees hidden ones too: Dir(path, vbDirectory) doesn't, and AppData,
+' on the way to the default library folder on Windows, is hidden
 Public Function EnsureFolder(ByVal folder As String) As Boolean
     Dim sep As String, parts As Variant, path As String, i As Long
-    sep = PathSeparatorOf(folder)
-    On Error GoTo Failed
-    If LenB(Dir(folder, vbDirectory)) > 0 Then
+    If FolderExists(folder) Then
         EnsureFolder = True
         Exit Function
     End If
+    sep = PathSeparatorOf(folder)
     parts = Split(folder, sep)
     For i = LBound(parts) To UBound(parts)
         If i = LBound(parts) Then path = parts(i) Else path = path & sep & parts(i)
         If LenB(parts(i)) > 0 And InStr(parts(i), ":") = 0 Then
-            If LenB(Dir(path, vbDirectory)) = 0 Then MkDir path
+            If Not FolderExists(path) Then
+                ' a level that can't be made (a share's root, no rights) shows in the check at the end
+                On Error Resume Next
+                MkDir path
+                On Error GoTo 0
+            End If
         End If
     Next i
-    EnsureFolder = True
-    Exit Function
-Failed:
+    EnsureFolder = FolderExists(folder)
+End Function
+
+Private Function FolderExists(ByVal path As String) As Boolean
+    On Error GoTo Missing
+    FolderExists = ((GetAttr(path) And vbDirectory) = vbDirectory)
+Missing:
 End Function
 
 Private Function ScriptName(ByVal path As String, ByVal fileName As String) As String
