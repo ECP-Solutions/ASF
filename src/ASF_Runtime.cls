@@ -185,6 +185,9 @@ Private Function CastType(aValue As Variant) As Variant
         CastType = CStr(aValue)
     ElseIf typeName(aValue) = "Boolean" Then
         CastType = CBool(aValue)
+    ElseIf IsEmpty(aValue) Then
+        ' an empty cell or item stays undefined (VBA's IsNumeric(Empty) is True: it was 0)
+        CastType = Empty
     ElseIf IsNumeric(aValue) Then
         CastType = CDbl(aValue)
     Else

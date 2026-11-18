@@ -256,6 +256,7 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("injecting",                 "injecting_asf_objects") Then injecting_asf_objects: EndTest
     If StartTest("injecting",                 "run_arguments") Then run_arguments: EndTest
     If StartTest("injecting",                 "run_after_an_array_result") Then run_after_an_array_result: EndTest
+    If StartTest("injecting",                 "empty_items_stay_undefined") Then empty_items_stay_undefined: EndTest
     If StartTest("spread",                    "spread_simple") Then spread_simple: EndTest
     If StartTest("spread",                    "spread_multiple") Then spread_multiple: EndTest
     If StartTest("spread",                    "spread_with_empty") Then spread_with_empty: EndTest
@@ -4977,6 +4978,22 @@ Private Sub math_basic()
     expected = "9"
     AssertEqual expected, actual
 
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+' an empty item of an array given to Run (an empty cell of a range) is undefined, not 0
+Private Sub empty_items_stay_undefined()
+    On Error GoTo TestFail
+    Dim eng As New ASF, cells(1 To 2, 1 To 2) As Variant
+    cells(1, 1) = "a": cells(1, 2) = 0
+    With eng
+        actual = CStr(.Run(.Compile("return `${typeof $1[2][1]},${typeof $1[1][2]},${$1[1][2]}`;"), cells))
+    End With
+    AssertEqual "undefined,number,0", actual
 TestExit:
     Exit Sub
 TestFail:
