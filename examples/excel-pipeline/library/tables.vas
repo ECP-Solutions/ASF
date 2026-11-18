@@ -1,0 +1,229 @@
+// tables.vas: what the pipeline scripts share. A table is an array of rows, the first one its
+// header, as ASF_CALL gives a range of several rows and columns. Imported by the other scripts:
+//   import { trimTable, columnIndex, column, listOf, text, isBlank, toNumber, toDate } from './tables.vas';
+
+// The text of a cell value: '' for an empty cell
+fun text(v) {
+    if (typeof v == 'undefined') { return ''; };
+    return `${v}`;
+};
+
+// An empty cell: undefined, or text with nothing but spaces (0 is not empty)
+fun isBlank(v) {
+    if (typeof v == 'undefined') { return true; };
+    if (typeof v == 'string') { return v.trim() == ''; };
+    return false;
+};
+
+// an error value of Excel, which a range passes as its text
+let ERROR_VALUE = regex(`^#(VALUE!|N/A|REF!|NAME\?|DIV/0!|NUM!|NULL!)$`);
+
+// The table without what an array formula pads it with: rows whose cells are all empty, and
+// columns whose header is empty. Texts are kept as they are: the clean stage trims them
+fun trimTable(table) {
+    if (!IsArray(table)) { throw 'Expected a table: a range with a header row and data rows'; };
+    if (!IsArray(table[1])) { throw 'Expected a table: a range of several rows and columns'; };
+    let header = table[1];
+    let keep = [];
+    for (let c = 1, c <= header.length, c += 1) {
+        if (ERROR_VALUE.test(text(header[c]))) {
+            throw `The table holds ${text(header[c])}: the stage before it failed (Why this error? on its cells says why)`;
+        };
+        if (!isBlank(header[c])) { keep.push(c); };
+    };
+    if (keep.length == 0) { throw 'The table has no header: its first row is empty'; };
+    let every = keep.length == header.length;
+    let first = keep[1];
+    let out = [];
+    for (let row of table) {
+        // a filled row usually says so in its first cell
+        let filled = !isBlank(row[first]);
+        if (!filled) {
+            for (let c of keep) {
+                if (!isBlank(row[c])) {
+                    filled = true;
+                    break;
+                };
+            };
+        };
+        if (filled) {
+            if (every) {
+                out.push(row);
+            } else {
+                let cells = [];
+                for (let c of keep) { cells.push(row[c]); };
+                out.push(cells);
+            };
+        };
+    };
+    return out;
+};
+
+// The column of each header name, without regard to case
+fun columnIndex(table) {
+    let index = {};
+    let header = table[1];
+    for (let c = 1, c <= header.length, c += 1) {
+        index.set(text(header[c]).trim().toLowerCase(), c);
+    };
+    return index;
+};
+
+// The column of name, or an error that names it
+fun column(index, name) {
+    let key = text(name).trim().toLowerCase();
+    if (!index.has(key)) { throw `No column '${text(name).trim()}' in the table`; };
+    return index.get(key);
+};
+
+// 'a, b ,c' as ['a', 'b', 'c']
+fun listOf(spec) {
+    let out = [];
+    for (let part of text(spec).split(',')) {
+        if (part.trim() != '') { out.push(part.trim()); };
+    };
+    return out;
+};
+
+// ---------------------------------------------------------------- numbers
+// Text to a number, whatever the separators: '$1,250.00', '1.250,50', '(3.00)', '-12', '15%',
+// ' 7.25 '. A number stays as it is; anything else gives undefined. One separator followed by
+// three digits in groups (1,250 or 1.234.567) is a thousands separator, any other a decimal one.
+// It reads characters rather than running regular expressions, which cost more per cell.
+let EURO = ''.fromCharCode(8364);
+let POUND = ''.fromCharCode(163);
+let YEN = ''.fromCharCode(165);
+let NBSP = ''.fromCharCode(160);
+let DOTS = regex(`\.`);
+let COMMAS = regex(`,`);
+let THOUSANDS_COMMA = regex(`^\d{1,3}(,\d{3})+$`);
+let THOUSANDS_DOTS = regex(`^\d{1,3}(\.\d{3}){2,}$`);
+
+// digits with at most one point: their value, or undefined for anything else
+fun decimalValue(s) {
+    let n = 0;
+    let scale = 0;
+    let digits = 0;
+    for (let i = 0, i < s.length, i += 1) {
+        let code = s.charCodeAt(i);
+        if (code >= 48 && code <= 57) {
+            n = n * 10 + (code - 48);
+            digits = digits + 1;
+            if (scale > 0) { scale = scale * 10; };
+        } elseif (code == 46 && scale == 0) {
+            scale = 1;
+        } else {
+            return undefined;
+        };
+    };
+    if (digits == 0) { return undefined; };
+    if (scale > 1) { return n / scale; };
+    return n;
+};
+
+fun digitsValue(s) {
+    let n = 0;
+    for (let i = 0, i < s.length, i += 1) {
+        n = n * 10 + (s.charCodeAt(i) - 48);
+    };
+    return n;
+};
+
+fun withoutSymbols(v) {
+    let s = '';
+    for (let i = 0, i < v.length, i += 1) {
+        let ch = v.charAt(i);
+        if (ch != ' ' && ch != '$' && ch != EURO && ch != POUND && ch != YEN && ch != NBSP && v.charCodeAt(i) > 32) { s = s + ch; };
+    };
+    return s;
+};
+
+fun toNumber(v) {
+    if (typeof v == 'number') { return v; };
+    if (typeof v != 'string') { return undefined; };
+    let s = v;
+    if (s.indexOf(' ') >= 0 || s.indexOf('$') >= 0 || s.indexOf(EURO) >= 0 || s.indexOf(POUND) >= 0 || s.indexOf(YEN) >= 0 || s.indexOf(NBSP) >= 0) {
+        s = withoutSymbols(s);
+    };
+    if (s == '') { return undefined; };
+    let negative = false;
+    if (s.startsWith('(') && s.endsWith(')')) {
+        negative = true;
+        s = s.slice(1, s.length - 1);
+    };
+    if (s.startsWith('-')) {
+        negative = !negative;
+        s = s.slice(1);
+    } elseif (s.startsWith('+')) {
+        s = s.slice(1);
+    };
+    let percent = s.endsWith('%');
+    if (percent) { s = s.slice(0, s.length - 1); };
+    let dot = s.lastIndexOf('.');
+    let comma = s.lastIndexOf(',');
+    if (dot >= 0 && comma >= 0) {
+        if (comma > dot) {
+            s = COMMAS.replace(DOTS.replace(s, ''), '.');
+        } else {
+            s = COMMAS.replace(s, '');
+        };
+    } elseif (comma >= 0) {
+        if (THOUSANDS_COMMA.test(s)) { s = COMMAS.replace(s, ''); } else { s = COMMAS.replace(s, '.'); };
+    } elseif (dot >= 0 && dot != s.indexOf('.')) {
+        if (THOUSANDS_DOTS.test(s)) { s = DOTS.replace(s, ''); };
+    };
+    let n = decimalValue(s);
+    if (typeof n == 'undefined') { return undefined; };
+    if (percent) { n = n / 100; };
+    if (negative) { n = -n; };
+    return n;
+};
+
+// ---------------------------------------------------------------- dates
+// A date to Excel's serial number (days since 1899-12-30): a serial stays as it is; text as
+// yyyy-mm-dd (or with /), or as d/m/y ('dmy') or m/d/y ('mdy') with /, - or . between, a
+// two-digit year being 20yy. A time after the date is dropped. An impossible date gives undefined.
+let ISO_DATE = regex(`^(\d{4})[-/](\d{1,2})[-/](\d{1,2})([ T].*)?$`);
+let OTHER_DATE = regex(`^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})([ T].*)?$`);
+
+fun daysFromCivil(y, m, d) {
+    let yy = m <= 2 ? y - 1 : y;
+    let era = Math.floor(yy / 400);
+    let yoe = yy - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = Math.floor((153 * mp + 2) / 5) + d - 1;
+    let doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
+    return era * 146097 + doe - 719468;
+};
+
+fun daysInMonth(y, m) {
+    if (m == 2) {
+        if ((y % 4 == 0 && y % 100 != 0) || y % 400 == 0) { return 29; };
+        return 28;
+    };
+    if (m == 4 || m == 6 || m == 9 || m == 11) { return 30; };
+    return 31;
+};
+
+fun serialOf(y, m, d) {
+    if (m < 1 || m > 12 || d < 1 || d > daysInMonth(y, m)) { return undefined; };
+    return daysFromCivil(y, m, d) + 25569;
+};
+
+fun toDate(v, order) {
+    if (typeof v == 'number') { return v; };
+    if (typeof v != 'string') { return undefined; };
+    let s = v.trim();
+    let m = ISO_DATE.exec(s);
+    if (typeof m != 'undefined') {
+        return serialOf(digitsValue(m[2]), digitsValue(m[3]), digitsValue(m[4]));
+    };
+    m = OTHER_DATE.exec(s);
+    if (typeof m == 'undefined') { return undefined; };
+    let y = digitsValue(m[4]);
+    if (m[4].length == 2) { y = 2000 + y; };
+    if (text(order).toLowerCase() == 'mdy') { return serialOf(y, digitsValue(m[2]), digitsValue(m[3])); };
+    return serialOf(y, digitsValue(m[3]), digitsValue(m[2]));
+};
+
+export { text, isBlank, trimTable, columnIndex, column, listOf, toNumber, toDate };

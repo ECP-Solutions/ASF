@@ -1,0 +1,112 @@
+// @asf name: Validate a table
+// validate.vas: rules users keep in a sheet. =ASF_CALL("validate", Clean!A1:H200, Rules!A1:C30, "issues")
+// $1: a table with its header. $2: the rules, a table of Column | Rule | Value:
+//   required            the cell is not empty
+//   number, date        the cell holds a number (a date is a serial number after clean)
+//   min, max            a number not below / above Value
+//   pattern             the text matches the regular expression Value (JavaScript syntax)
+//   oneOf               the text is one of Value's comma-separated items, without regard to case
+//   unique              no other row has the same value
+// Every rule but required skips empty cells; a problem shows once per cell. $3 (optional): what to return
+//   issues (default)    Row | <first column> | Column | Value | Problem; Row counts the header as 1
+//   valid               the rows without issues, with the header
+//   flagged             the whole table, with a last column Issues
+import { trimTable, columnIndex, column, text, isBlank, toNumber, listOf } from './tables.vas';
+
+let table = trimTable($1);
+let rules = trimTable($2);
+let mode = text($3).trim().toLowerCase();
+if (mode == '') { mode = 'issues'; };
+if (mode != 'issues' && mode != 'valid' && mode != 'flagged') {
+    throw `Unknown mode '${mode}': issues, valid or flagged`;
+};
+let index = columnIndex(table);
+
+// the rules as [column number, column name, rule, value, regex or the oneOf items in lower case]
+let checks = [];
+for (let r = 2, r <= rules.length, r += 1) {
+    let name = text(rules[r][1]).trim();
+    let rule = text(rules[r][2]).trim().toLowerCase();
+    let value = rules[r][3];
+    let rx;
+    if (rule == 'pattern') {
+        rx = regex(text(value));
+    } elseif (rule == 'min' || rule == 'max') {
+        if (typeof toNumber(value) == 'undefined') { throw `Rule ${rule} of ${name} needs a number, not '${text(value)}'`; };
+        value = toNumber(value);
+    } elseif (rule == 'oneof') {
+        value = listOf(value);
+        rx = value.map(fun(x) { return x.toLowerCase(); });
+    } elseif (rule != 'required' && rule != 'number' && rule != 'date' && rule != 'unique') {
+        throw `Unknown rule '${rules[r][2]}' for ${name}: required, number, date, min, max, pattern, oneOf or unique`;
+    };
+    checks.push([column(index, name), name, rule, value, rx]);
+};
+
+// the rows of each value of the columns with a unique rule
+let seen = {};
+for (let check of checks) {
+    if (check[3] == 'unique') {
+        let rows = {};
+        for (let r = 2, r <= table.length, r += 1) {
+            let v = text(table[r][check[1]]).trim().toLowerCase();
+            if (v != '') {
+                if (rows.has(v)) { rows.set(v, `${rows.get(v)}, ${r}`); } else { rows.set(v, `${r}`); };
+            };
+        };
+        seen.set(`${check[1]}`, rows);
+    };
+};
+
+fun problemOf(check, v, r) {
+    let rule = check[3];
+    if (isBlank(v)) {
+        if (rule == 'required') { return 'is required'; };
+        return '';
+    };
+    if (rule == 'number' || rule == 'date') {
+        if (typeof v != 'number') { return `is not a ${rule}`; };
+    } elseif (rule == 'min') {
+        if (typeof v != 'number') { return 'is not a number'; };
+        if (v < check[4]) { return `is below ${check[4]}`; };
+    } elseif (rule == 'max') {
+        if (typeof v != 'number') { return 'is not a number'; };
+        if (v > check[4]) { return `is above ${check[4]}`; };
+    } elseif (rule == 'pattern') {
+        if (!check[5].test(text(v))) { return `does not match ${check[5].getPattern()}`; };
+    } elseif (rule == 'oneof') {
+        if (!check[5].includes(text(v).toLowerCase())) { return `is not one of ${check[4].join(', ')}`; };
+    } elseif (rule == 'unique') {
+        let rows = seen.get(`${check[1]}`).get(text(v).trim().toLowerCase());
+        if (rows != `${r}`) { return `is repeated (rows ${rows})`; };
+    };
+    return '';
+};
+
+let issues = [['Row', text(table[1][1]), 'Column', 'Value', 'Problem']];
+let valid = [table[1]];
+let flaggedHeader = [];
+for (let h of table[1]) { flaggedHeader.push(h); };
+flaggedHeader.push('Issues');
+let flagged = [flaggedHeader];
+for (let r = 2, r <= table.length, r += 1) {
+    let row = table[r];
+    let found = [];
+    for (let check of checks) {
+        let problem = problemOf(check, row[check[1]], r);
+        if (problem != '' && !found.includes(`${check[2]} ${problem}`)) {
+            issues.push([r, row[1], check[2], row[check[1]], `${check[2]} ${problem}`]);
+            found.push(`${check[2]} ${problem}`);
+        };
+    };
+    if (found.length == 0) { valid.push(row); };
+    let flaggedRow = [];
+    for (let v of row) { flaggedRow.push(v); };
+    flaggedRow.push(found.join('; '));
+    flagged.push(flaggedRow);
+};
+
+if (mode == 'valid') { return valid; };
+if (mode == 'flagged') { return flagged; };
+if (issues.length == 1) { issues.push(['', '', '', '', 'No issues']); };
+return issues;

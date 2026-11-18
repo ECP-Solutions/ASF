@@ -1,0 +1,35 @@
+// @asf name: Remove duplicates
+// dedupe.vas: one row per key. =ASF_CALL("dedupe", Valid!A1:H200, "Order", "last")
+// $1: a table with its header. $2: the key columns, separated by commas (all columns when empty).
+// $3 (optional): which row of a key stays, first (the default) or last, in its own place. Keys are
+// compared as text, trimmed and without regard to case.
+import { trimTable, columnIndex, column, listOf, text } from './tables.vas';
+
+let table = trimTable($1);
+let index = columnIndex(table);
+let keep = text($3).trim().toLowerCase();
+if (keep == '') { keep = 'first'; };
+if (keep != 'first' && keep != 'last') { throw `Unknown choice '${keep}': first or last`; };
+
+let keys = [];
+for (let name of listOf($2)) { keys.push(column(index, name)); };
+if (keys.length == 0) {
+    for (let c = 1, c <= table[1].length, c += 1) { keys.push(c); };
+};
+
+// the row each key keeps
+let chosen = {};
+for (let r = 2, r <= table.length, r += 1) {
+    let parts = [];
+    for (let c of keys) { parts.push(text(table[r][c]).trim().toLowerCase()); };
+    let key = parts.join('|');
+    if (keep == 'last' || !chosen.has(key)) { chosen.set(key, r); };
+};
+let rows = {};
+for (let key of chosen.keys()) { rows.set(`${chosen.get(key)}`, true); };
+
+let out = [table[1]];
+for (let r = 2, r <= table.length, r += 1) {
+    if (rows.has(`${r}`)) { out.push(table[r]); };
+};
+return out;

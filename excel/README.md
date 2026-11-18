@@ -70,6 +70,10 @@ How array results reach the cells depends on the version:
 - **Excel 2016 and 2019:** select the output range, type the formula and press Ctrl+Shift+Enter. The result is fitted to the selection: cells beyond it get `""`, and a larger result is cut.
 - The same workbook works in both.
 
+## Example: a data pipeline
+
+[examples/excel-pipeline](../examples/excel-pipeline/README.md) is a workbook that only uses formulas. Raw orders are cleaned, checked against rules kept in a sheet, de-duplicated, enriched from a reference table and summarized, one `ASF_CALL` per stage, with its scripts in the library folder.
+
 ## Script library and settings
 
 `ASF_CALL` runs scripts from the library folder. That folder is also the only place `import` may read from, for `ASF_CALL` and `ASF_RUN` alike.

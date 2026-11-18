@@ -1,0 +1,12 @@
+// @asf name: Top N
+// top.vas: the n rows with the largest value of a column. =ASF_CALL("top", Sales!A1:M200, "Amount", 5)
+import { trimTable, columnIndex, column } from './tables.vas';
+
+let t = trimTable($1);
+let c = column(columnIndex(t), $2);
+let rows = t.slice(2);
+// largest first; equal values keep their order (the sort is stable)
+rows.sort(fun(a, b) { return b[c] - a[c]; });
+let out = [t[1]];
+for (let i = 1, i <= rows.length && i <= $3, i += 1) { out.push(rows[i]); };
+return out;

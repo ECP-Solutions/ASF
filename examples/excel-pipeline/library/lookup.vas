@@ -1,0 +1,52 @@
+// @asf name: Add columns from a reference table
+// lookup.vas: a join on a key, like XLOOKUP for whole columns.
+//   =ASF_CALL("lookup", Unique!A1:H200, Customers!A1:D50, "Customer=CustomerID", "Name, Region, Segment")
+// $1: a table with its header. $2: the reference table. $3: the key, "Column" when both tables name it
+// the same, else "Column=ReferenceColumn". $4 (optional): the reference columns to add (all but its
+// key when empty). Keys are compared as text, trimmed and without regard to case; a row with no
+// match gets empty cells, and a column Matched (TRUE or FALSE) is added last.
+import { trimTable, columnIndex, column, listOf, text } from './tables.vas';
+
+let table = trimTable($1);
+let reference = trimTable($2);
+let index = columnIndex(table);
+let refIndex = columnIndex(reference);
+
+let spec = text($3).trim();
+if (spec == '') { throw 'Give the key: Column, or Column=ReferenceColumn'; };
+let eq = spec.indexOf('=');
+let leftKey = column(index, eq < 0 ? spec : spec.slice(0, eq));
+let rightKey = column(refIndex, eq < 0 ? spec : spec.slice(eq + 1));
+
+let bring = [];
+for (let name of listOf($4)) { bring.push(column(refIndex, name)); };
+if (bring.length == 0) {
+    for (let c = 1, c <= reference[1].length, c += 1) {
+        if (c != rightKey) { bring.push(c); };
+    };
+};
+
+// the first reference row of each key
+let rowOf = {};
+for (let r = 2, r <= reference.length, r += 1) {
+    let key = text(reference[r][rightKey]).trim().toLowerCase();
+    if (key != '' && !rowOf.has(key)) { rowOf.set(key, r); };
+};
+
+let header = [];
+for (let h of table[1]) { header.push(h); };
+for (let c of bring) { header.push(reference[1][c]); };
+header.push('Matched');
+let out = [header];
+for (let r = 2, r <= table.length, r += 1) {
+    let row = [];
+    for (let v of table[r]) { row.push(v); };
+    let key = text(table[r][leftKey]).trim().toLowerCase();
+    let matched = rowOf.has(key);
+    for (let c of bring) {
+        if (matched) { row.push(reference[rowOf.get(key)][c]); } else { row.push(''); };
+    };
+    row.push(matched);
+    out.push(row);
+};
+return out;

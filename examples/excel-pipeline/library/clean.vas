@@ -1,0 +1,85 @@
+// @asf name: Clean a table
+// clean.vas: the first stage. =ASF_CALL("clean", Raw!A1:H200, "Date:date-dmy, Qty:number, Email:lower")
+// $1: a table with its header. $2 (optional): how to read some columns, "Column:kind" separated by
+// commas, the kinds being
+//   number                 '$1,250.00', '1.250,50', '(3.00)', '15%'... as numbers
+//   date, date-dmy, date-mdy   yyyy-mm-dd, or d/m/y or m/d/y text, as Excel dates (serial numbers)
+//   lower, upper, title    the text in that case
+//   text                   numbers as text too (codes, phone numbers)
+// Every text is trimmed and its runs of spaces made one; empty rows go. A value a kind can't read
+// stays as it was, for the validate stage to report.
+import { trimTable, columnIndex, column, listOf, text, isBlank, toNumber, toDate } from './tables.vas';
+
+let SPACES = regex(`\s+`);
+let TAB = ''.fromCharCode(9);
+let LF = ''.fromCharCode(10);
+let CR = ''.fromCharCode(13);
+
+// the text trimmed, its runs of spaces made one (the regular expression only when there is a run)
+fun tidy(s) {
+    if (s.indexOf('  ') >= 0 || s.indexOf(TAB) >= 0 || s.indexOf(LF) >= 0 || s.indexOf(CR) >= 0) {
+        s = SPACES.replace(s, ' ');
+    };
+    return s.trim();
+};
+
+fun titleCase(s) {
+    let words = [];
+    for (let w of s.toLowerCase().split(' ')) {
+        words.push(w.charAt(0).toUpperCase() + w.slice(1));
+    };
+    return words.join(' ');
+};
+
+fun convert(v, kind) {
+    if (isBlank(v)) { return ''; };
+    let parsed;
+    if (kind == 'number') {
+        parsed = toNumber(v);
+    } elseif (kind == 'date' || kind == 'date-dmy') {
+        parsed = toDate(v, 'dmy');
+    } elseif (kind == 'date-mdy') {
+        parsed = toDate(v, 'mdy');
+    } elseif (kind == 'lower') {
+        return text(v).toLowerCase();
+    } elseif (kind == 'upper') {
+        return text(v).toUpperCase();
+    } elseif (kind == 'title') {
+        return titleCase(text(v));
+    } elseif (kind == 'text') {
+        return text(v);
+    } else {
+        throw `Unknown kind '${kind}': number, date, date-dmy, date-mdy, lower, upper, title or text`;
+    };
+    if (typeof parsed == 'undefined') { return v; };
+    return parsed;
+};
+
+let table = trimTable($1);
+let index = columnIndex(table);
+
+// the kind of each column the spec names ('' for the others)
+let kindOf = [];
+for (let c = 1, c <= table[1].length, c += 1) { kindOf.push(''); };
+for (let item of listOf($2)) {
+    let p = item.indexOf(':');
+    if (p < 0) { throw `'${item}' is not Column:kind`; };
+    kindOf[column(index, item.slice(0, p))] = item.slice(p + 1).trim().toLowerCase();
+};
+
+let header = [];
+for (let h of table[1]) { header.push(typeof h == 'string' ? tidy(h) : h); };
+let out = [header];
+for (let r = 2, r <= table.length, r += 1) {
+    let row = table[r];
+    let cells = [];
+    for (let c = 1, c <= row.length, c += 1) {
+        let v = row[c];
+        if (typeof v == 'string') { v = tidy(v); };
+        let kind = kindOf[c];
+        if (kind != '') { v = convert(v, kind); };
+        cells.push(v);
+    };
+    out.push(cells);
+};
+return out;

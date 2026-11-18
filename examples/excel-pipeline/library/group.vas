@@ -1,0 +1,109 @@
+// @asf name: Group and summarize
+// group.vas: one row per group, like a pivot table in rows.
+//   =ASF_CALL("group", Sales!A1:M200, "Region", "sum:Amount, count:Order, avg:Amount, distinct:Customer")
+// $1: a table with its header. $2: the columns to group by, separated by commas (one row for the
+// whole table when empty). $3: the measures, "kind:Column" separated by commas, the kinds being
+// sum, avg, min, max (of the numbers), count (the cells not empty; count:* the rows) and distinct
+// (the different values). Groups are sorted by their keys; an empty key shows as (blank).
+import { trimTable, columnIndex, column, listOf, text, isBlank } from './tables.vas';
+
+let table = trimTable($1);
+let index = columnIndex(table);
+
+let by = [];
+for (let name of listOf($2)) { by.push(column(index, name)); };
+let measures = [];
+for (let item of listOf($3)) {
+    let p = item.indexOf(':');
+    if (p < 0) { throw `'${item}' is not kind:Column`; };
+    let kind = item.slice(0, p).trim().toLowerCase();
+    let name = item.slice(p + 1).trim();
+    if (kind != 'sum' && kind != 'avg' && kind != 'min' && kind != 'max' && kind != 'count' && kind != 'distinct') {
+        throw `Unknown measure '${kind}': sum, avg, min, max, count or distinct`;
+    };
+    let c = 0;
+    if (name != '*') { c = column(index, name); };
+    measures.push([kind, c, name]);
+};
+if (measures.length == 0) { measures.push(['count', 0, '*']); };
+
+// per group: its key values, then per measure [sum, count, min, max, distinct values]
+let groups = {};
+let order = [];
+for (let r = 2, r <= table.length, r += 1) {
+    let row = table[r];
+    let parts = [];
+    for (let c of by) { parts.push(text(row[c]).trim()); };
+    let key = parts.join('|').toLowerCase();
+    if (!groups.has(key)) {
+        let values = [];
+        for (let c of by) { values.push(isBlank(row[c]) ? '(blank)' : row[c]); };
+        let stats = [];
+        for (let m of measures) { stats.push([0, 0, '', '', {}]); };
+        groups.set(key, [values, stats]);
+        order.push(key);
+    };
+    let g = groups.get(key);
+    let stats = g[2];
+    for (let i = 1, i <= measures.length, i += 1) {
+        let m = measures[i];
+        let s = stats[i];
+        if (m[2] == 0) {
+            s[2] = s[2] + 1;
+        } else {
+            let v = row[m[2]];
+            if (!isBlank(v)) {
+                s[2] = s[2] + 1;
+                if (typeof v == 'number') {
+                    s[1] = s[1] + v;
+                    if (s[3] == '' || v < s[3]) { s[3] = v; };
+                    if (s[4] == '' || v > s[4]) { s[4] = v; };
+                };
+                s[5].set(text(v).trim().toLowerCase(), true);
+            };
+        };
+        stats[i] = s;
+    };
+    groups.set(key, [g[1], stats]);
+};
+
+fun label(kind) {
+    if (kind == 'sum') { return 'Sum of'; };
+    if (kind == 'avg') { return 'Average of'; };
+    if (kind == 'min') { return 'Min of'; };
+    if (kind == 'max') { return 'Max of'; };
+    if (kind == 'distinct') { return 'Distinct'; };
+    return 'Count of';
+};
+
+let header = [];
+for (let c of by) { header.push(table[1][c]); };
+for (let m of measures) { header.push(m[3] == '*' ? 'Rows' : `${label(m[1])} ${m[3]}`); };
+
+order.sort(fun(a, b) { return a.localeCompare(b); });
+let out = [header];
+for (let key of order) {
+    let g = groups.get(key);
+    let row = [];
+    for (let v of g[1]) { row.push(v); };
+    let stats = g[2];
+    for (let i = 1, i <= measures.length, i += 1) {
+        let kind = measures[i][1];
+        let s = stats[i];
+        if (kind == 'sum') {
+            row.push(Math.round(s[1] * 1000000) / 1000000);
+        } elseif (kind == 'avg') {
+            row.push(s[2] == 0 ? '' : Math.round(s[1] / s[2] * 1000000) / 1000000);
+        } elseif (kind == 'min') {
+            row.push(s[3]);
+        } elseif (kind == 'max') {
+            row.push(s[4]);
+        } elseif (kind == 'distinct') {
+            row.push(s[5].keys().length);
+        } else {
+            row.push(s[2]);
+        };
+    };
+    out.push(row);
+};
+return out;
