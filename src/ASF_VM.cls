@@ -1943,9 +1943,12 @@ Private Function IterList(ByRef v As Variant, ByVal keys As Long) As Variant
     Dim items As Collection: Set items = New Collection
     Dim i As Long, k As Variant
     If IsArray(v) Then
-        For i = LBound(v) To UBound(v)
-            If keys = 1 Then items.Add CLng(1 + i - LBound(v)) Else items.Add v(i)
-        Next i
+        ' an empty array is (-1 To -1) or Array(): no items
+        If UBound(v) >= LBound(v) And UBound(v) <> -1 Then
+            For i = LBound(v) To UBound(v)
+                If keys = 1 Then items.Add CLng(1 + i - LBound(v)) Else items.Add v(i)
+            Next i
+        End If
     ElseIf VarType(v) = VT_STRING Then
         For i = 1 To Len(v)
             If keys = 1 Then items.Add i Else items.Add Mid$(v, i, 1)

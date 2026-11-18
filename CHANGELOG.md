@@ -19,6 +19,7 @@ All notable changes for ASF. This file combines the release notes from the proje
     - **`push` in place** — `x.push(...)` on a variable appends to the array the variable holds; the array was copied about five times per call, so filling an array with `push` in a loop took quadratic time. In LibreOffice, 1,600 pushes went from 5.9 s to 0.3 s and 6,400 from 85.6 s to 2.2 s. `push` on anything else (`o.items.push(...)`, a host object, a method of an object) takes the usual path.
 
 - **Fixed**
+    - **`for…of` and `for…in` on an empty array ran once** — the body ran with `undefined` (or the key 1), as the empty array's placeholder was taken for an item. They don't run now.
     - **Empty items of arrays given to a script were 0** — an empty cell of a range given to `Run` (or to `ASF_RUN` and `ASF_CALL`) arrived as `0`, as VBA's `IsNumeric(Empty)` is true; it is `undefined`, as a single empty cell already was.
     - **LibreOffice: a run after a run that gave an array** — the next `Run`, or a read of `OUTPUT_` or `LastError`, raised error 91. LibreOffice keeps the value of a `Property Get` between calls and fails to replace an array there; `OUTPUT_` and `LastError` are functions now, read as before.
     - **`Run` after an error gave the previous result** — a run that ended in an error or an uncaught `throw` returned what the run before it had returned, instead of `Empty`.

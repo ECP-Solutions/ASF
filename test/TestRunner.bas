@@ -153,6 +153,7 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("for_in_of",                 "for_in_with_array_indices") Then for_in_with_array_indices: EndTest
     If StartTest("for_in_of",                 "for_of_with_string") Then for_of_with_string: EndTest
     If StartTest("for_in_of",                 "for_in_with_object_properties") Then for_in_with_object_properties: EndTest
+    If StartTest("for_in_of",                 "for_of_and_in_on_empty_arrays") Then for_of_and_in_on_empty_arrays: EndTest
     If StartTest("string",                    "string_at") Then string_at: EndTest
     If StartTest("string",                    "string_at_negative_index") Then string_at_negative_index: EndTest
     If StartTest("string",                    "string_at_default_index") Then string_at_default_index: EndTest
@@ -2270,6 +2271,19 @@ Private Sub for_of_with_string()
     actual = CStr(GetResult("s='ab'; out=''; for (ch of s) { out = out + ch }; return(out);"))
     expected = "ab"
     AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
+Private Sub for_of_and_in_on_empty_arrays()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("let n = 0; for (let x of []) { n += 1; }; let a = []; for (let i in a) { n += 10; }; " & _
+                            "fun none() { let out = []; return out; }; for (let x of none()) { n += 100; }; " & _
+                            "for (let x of [7]) { n += x; }; return n;"))
+    AssertEqual "7", actual
 TestExit:
     Exit Sub
 TestFail:
