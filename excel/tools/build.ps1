@@ -6,7 +6,9 @@ param(
 #   - the engine (src/*.cls), its classes made visible to the workbooks that reference the add-in
 #     (VB_Exposed = True: PublicNotCreatable; NewEngine makes them);
 #   - the modules of excel/addin and the regex worksheet functions of the use cases;
-#   - the descriptions of the functions (ASFRegister.RegisterFunctions);
+#   - the descriptions of the functions and their arguments (ASFRegister.RegisterFunctions), set
+#     again on every opening by the code of excel/addin/ThisWorkbook.vba, and the sheet _IntelliSense_
+#     with the tips Excel-DNA IntelliSense shows while typing (ASFRegister.WriteIntelliSenseSheet);
 #   - project name ASFAddIn, saved as an Excel add-in (.xlam);
 #   - the ASF tab of the ribbon (excel/customUI/customUI14.xml), added to the saved package.
 # Excel must trust access to the VBA project object model (Trust Center > Macro Settings), or run
@@ -91,7 +93,13 @@ try {
         $imported = $book.VBProject.VBComponents.Import($path)
         Write-Output "Imported $($imported.Name): $($imported.CodeModule.CountOfLines) lines."
     }
+    # ThisWorkbook by its code name, which does not depend on Excel's language
+    $codeName = $book.CodeName
+    if (-not $codeName) { $codeName = 'ThisWorkbook' }
+    $thisWorkbook = $book.VBProject.VBComponents.Item($codeName)
+    $thisWorkbook.CodeModule.AddFromString([IO.File]::ReadAllText((Join-Path $root 'excel/addin/ThisWorkbook.vba'), $ansi))
     $excel.Run("'" + $book.Name + "'!ASFRegister.RegisterFunctions")
+    $excel.Run("'" + $book.Name + "'!ASFRegister.WriteIntelliSenseSheet")
     $book.Title = 'ASF'
     $book.Subject = 'ASF scripts in Excel: ASF_RUN, ASF_CALL and the RX_ regex functions'
     if (Test-Path $Output) { Remove-Item $Output }

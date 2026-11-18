@@ -92,6 +92,9 @@ End Function
 Function MakeFolder(path As String) As Boolean
     MakeFolder = ASFLibrary.EnsureFolder(path)
 End Function
+Function Registered() As Variant
+    Registered = ASFRegister.FunctionInfo()
+End Function
 '''
 
 
@@ -153,6 +156,41 @@ def ribbon_problems():
     return problems
 
 
+def registration_problems(info):
+    """ASFRegister's table against the worksheet functions: every one there, with its arguments in
+    order, [optional] ones bracketed, and every text within Excel's 255 characters."""
+    sigs = {}
+    for path in (os.path.join(ROOT, "excel", "addin", "ASFFunctions.bas"),
+                 os.path.join(ROOT, "examples", "use-cases", "regex", "RegexFunctions.bas")):
+        with open(path, encoding="utf-8") as f:
+            src = re.sub(r" _\r?\n\s*", " ", f.read())
+        for name, params in re.findall(r"(?m)^Public Function (\w+)\(([^)]*)\)", src):
+            if name == "NewEngine":
+                continue
+            args = []
+            for p in filter(None, (x.strip() for x in params.split(","))):
+                optional = p.startswith("Optional ") or p.startswith("ParamArray ")
+                p = re.sub(r"^(Optional |ParamArray |ByVal |ByRef )+", "", p)
+                args.append((p.split()[0].split("(")[0], optional))
+            sigs[name] = args
+    problems = []
+    listed = [f[0] for f in info]
+    if sorted(listed) != sorted(sigs):
+        problems.append(f"functions {sorted(listed)} instead of {sorted(sigs)}")
+    for f in info:
+        name, description, pairs = f[0], f[1], list(zip(f[2::2], f[3::2]))
+        if len(description) > 255:
+            problems.append(f"{name}: description of {len(description)} characters")
+        want = sigs.get(name, [])
+        got = [(a.strip("[].").strip(), a.startswith("[")) for a, _ in pairs]
+        if got != want:
+            problems.append(f"{name}: arguments {got} instead of {want}")
+        for a, d in pairs:
+            if len(d) > 255:
+                problems.append(f"{name}: description of {a} of {len(d)} characters")
+    return problems
+
+
 def main():
     failures = 0
 
@@ -204,6 +242,7 @@ def main():
                 check(f"Run script {file} with {to_basic(sel)}", got, message)
         nested = os.path.join(library, "made", "by", "EnsureFolder")
         check("the library folder made with its parents", (call("MakeFolder", nested), os.path.isdir(nested)), (True, True))
+        check("registration: every function with its arguments", registration_problems(call("Registered")), [])
     finally:
         try:
             ctx.ServiceManager.createInstanceWithContext("com.sun.star.frame.Desktop", ctx).terminate()

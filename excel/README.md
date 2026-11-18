@@ -27,6 +27,22 @@ A string in an Excel formula can be at most 255 characters long. Put a longer sc
 
 The regular expressions are ASF's own engine (JavaScript syntax), so results are the same on Windows and Mac.
 
+### Writing formulas with them
+
+The functions are registered with Excel, with a description for each one and for each of its arguments, in the category **ASF**:
+
+- **Insert Function (fx)** lists them under ASF, with their descriptions.
+- **Ctrl+A** after `=ASF_RUN` opens the Function Arguments dialog: a box per argument, each with its description, and the result as you fill them.
+- **Ctrl+Shift+A** after the name types the argument names in: `=ASF_RUN(script,args)`.
+- **Formula AutoComplete** offers the names as you type `=ASF_` or `=RX_`.
+
+The tips Excel shows under the formula while you type, as for `SUM(number1, [number2], ...)`, are only for Excel's own functions. The free [Excel-DNA IntelliSense](https://github.com/Excel-DNA/IntelliSense) add-in shows them for these functions too. Load its `.xll` next to `ASF.xlam` and it reads the tips from the add-in's `_IntelliSense_` sheet:
+
+```
+ASF_RUN(script, [args]...)
+RX_EXTRACT(text, pattern, [group], [ignoreCase])
+```
+
 ### Arguments
 
 - A single cell gives its value. Numbers become doubles, as numbers in scripts are.
@@ -151,6 +167,10 @@ The script:
 4. Saves `excel/ASF.xlam`.
 5. Adds the ASF tab, `excel/customUI/customUI14.xml`, to the saved file.
 
+The descriptions of the functions and their arguments come from one table, `ASFRegister.FunctionInfo`, used in two places:
+- **Registration:** the build registers them, and the code `excel/addin/ThisWorkbook.vba` adds to the add-in registers them again on every opening, because Excel doesn't keep the argument descriptions in the file.
+- **Typing tips:** the build also writes the table to the `_IntelliSense_` sheet for Excel-DNA IntelliSense.
+
 Excel must trust access to the VBA project object model. `-TemporaryTrustAccess` turns it on for the build and back as it was.
 
 | Module | Holds |
@@ -159,7 +179,7 @@ Excel must trust access to the VBA project object model. `-TemporaryTrustAccess`
 | `ASFEngine` | the engine the functions share |
 | `ASFCells` | the conversions between cells and ASF values |
 | `ASFSettings` | the settings |
-| `ASFRegister` | the function descriptions |
+| `ASFRegister` | the function descriptions: Insert Function, the Function Arguments dialog, the `_IntelliSense_` sheet |
 | `ASFLibrary` | the scripts of the library and their headers, run as the ribbon runs them |
 | `ASFRibbon` | the callbacks of the ASF tab |
 
@@ -170,7 +190,8 @@ Excel must trust access to the VBA project object model. `-TemporaryTrustAccess`
 - **`python3 excel/tools/run_lo.py`** runs every case of `excel/tools/cases.py` in LibreOffice, headless. It calls the add-in's modules from Basic, with a temporary library folder and a low step limit. It also checks:
   - the library as **Run script** lists and runs it;
   - the script headers;
-  - that every button of the ribbon calls a Sub of `ASFRibbon`.
+  - that every button of the ribbon calls a Sub of `ASFRibbon`;
+  - that `ASFRegister` describes every worksheet function, with its arguments in the order of its parameters.
 
   It needs LibreOffice and `python3-uno`.
 - **The buttons themselves** need Excel: try each once after a build.
