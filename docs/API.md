@@ -100,11 +100,11 @@ All array methods are available as **properties** on arrays. Accessing `a.map` r
 Below is a compact table (name — signature — brief behavior — example):
 
 - `map(callback)`  
-  - Returns new array with `callback` applied to every element (does not mutate original). Supports nested arrays and closures.  
+  - Returns a new array with `callback(value, index, array)` for every element (does not mutate the original). An inner array is one element, as in JavaScript: `[[1,2],[3,4]].map(fun(r){ return r[1] + r[2] }) -> [3,7]`.  
   - Example: `[1,2].map(fun(x){ return x*2 }) -> [2,4]`
 
 - `filter(callback)`  
-  - Returns new array containing elements where `callback` is truthy.  
+  - Returns new array containing elements where `callback(value, index, array)` is truthy.  
   - Example: `[1,2,3].filter(fun(x){ return x%2==1 }) -> [1,3]`
 
 - `reduce(callback, initial?)`  
@@ -187,8 +187,8 @@ Below is a compact table (name — signature — brief behavior — example):
 
 - `sort(comparator?)` / `toSorted(comparator?)`  
   - `sort` mutates the array in-place and writes back. `toSorted` returns a new sorted array.
-  - Comparator is a closure `fun(a,b)` returning negative/0/positive (or numeric) similar to JS.
-  - Implementation uses in-place QuickSort with comparator hook.
+  - Comparator is a closure `fun(a,b)` returning negative/0/positive, as in JS; `true` counts as 1 and `false` as 0. Without one, numbers sort as numbers and the rest as text.
+  - The sort is stable (equal elements keep their order, as in JS), and safe with any comparator: one that never returns 0, such as `a < b ? -1 : 1`, still sorts.
 
 - `with(index, value)`  
   - Returns a shallow copy with `value` set at `index` (non-mutating).

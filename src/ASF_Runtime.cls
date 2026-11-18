@@ -1118,7 +1118,7 @@ Private Function ArrMap(evaluated As Variant, ByRef propN As String, ByRef baseV
     Dim tmpMapObj As ASF_Map
     Dim ii As Long
     Dim outArr() As Variant
-    ' map(fn) -> return new array with fn applied to each element (recursively tolerates nested arrays)
+    ' map(fn) -> a new array of fn(value, index, array) for each item; an inner array is one item
     If ArgCount(evaluated) < 1 Then vAssignment tmpResult, Empty: GoTo exitfun
     Dim mapper As Variant: vAssignment mapper, evaluated(1)
     If typeName(mapper) <> "ASF_Map" Or mapper.GetValue("type") <> "Closure" Then
@@ -1135,23 +1135,24 @@ Private Function ArrMap(evaluated As Variant, ByRef propN As String, ByRef baseV
         vAssignment tmpResult, Empty: GoTo exitfun
     End If
     Dim countEls As Long: countEls = baseUB - baseLB + 1
-    If countEls < 0 Then countEls = 0
-
-    Dim optBaseLocal As Long: optBaseLocal = 1
+    ' an empty array is (-1 To -1) or Array()
+    If countEls < 0 Or baseUB = -1 Then countEls = 0
     If countEls = 0 Then
-        ReDim outArr(optBaseLocal To optBaseLocal)
-    Else
-        ReDim outArr(optBaseLocal To optBaseLocal + countEls - 1)
+        ReDim outArr(-1 To -1)
+        vAssignment tmpResult, outArr
+        GoTo exitfun
     End If
+    ReDim outArr(1 To countEls)
 
     vAssignment tmpMapObj, mapper
+    Dim withArray As Boolean: withArray = (VM_.ParamCount(tmpMapObj) >= 3)
+    Dim argsMap() As Variant
     For ii = 0 To countEls - 1
-        Dim srcIndex As Long: srcIndex = baseLB + ii
-        Dim resVal As Variant
-        ' Recursively apply mapper to nested arrays (preserves nested structure)
-        vAssignment resVal, map_apply_recursive(baseValLocal(srcIndex), _
-                                tmpMapObj, baseValLocal, optBaseLocal)
-        vAssignment outArr(optBaseLocal + ii), resVal
+        ReDim argsMap(1 To 3)
+        vAssignment argsMap(1), baseValLocal(baseLB + ii)
+        argsMap(2) = CDbl(ii + 1)
+        If withArray Then vAssignment argsMap(3), baseValLocal
+        vAssignment outArr(1 + ii), CallClosure(tmpMapObj, argsMap, baseValLocal)
     Next ii
 
     vAssignment tmpResult, outArr
@@ -1175,10 +1176,15 @@ Private Function ArrFilter(evaluated As Variant, ByRef propN As String, ByRef ba
     Dim jj As Long
     Dim keep As Variant
     Dim ca() As Variant
+    vAssignment tmpMapObj, pred
+    Dim withArrayF As Boolean: withArrayF = (VM_.ParamCount(tmpMapObj) >= 3)
     For jj = LBound(baseValLocal) To UBound(baseValLocal)
-        ReDim ca(1 To 1)
+        ' an empty array is (-1 To -1): no items
+        If UBound(baseValLocal) = -1 Then Exit For
+        ReDim ca(1 To 3)
         vAssignment ca(1), baseValLocal(jj)
-        vAssignment tmpMapObj, pred
+        ca(2) = CDbl(jj - LBound(baseValLocal) + 1)
+        If withArrayF Then vAssignment ca(3), baseValLocal
         vAssignment keep, CallClosure(tmpMapObj, ca, baseValLocal)
         If IsTruthy(keep) Then tmpCol.Add baseValLocal(jj)
     Next jj
@@ -1186,7 +1192,7 @@ Private Function ArrFilter(evaluated As Variant, ByRef propN As String, ByRef ba
     Dim outA() As Variant
     Dim ob As Long: ob = 1
     If tmpCol.Count = 0 Then
-        ReDim outA(ob To ob)
+        ReDim outA(-1 To -1)
     Else
         ReDim outA(ob To ob + tmpCol.Count - 1)
         For jj = 1 To tmpCol.Count
@@ -2252,8 +2258,9 @@ Private Function ArrSort(evaluated As Variant, ByRef propN As String, ByRef base
         End If
     End If
 
-    ' quicksort in-place on tempIn. Pass baseValLocal as thisVal (so comparator gets same this as other calls)
-    Call QS_QuickSort(tempIn, 0, n_s - 1, comp, hasComp, baseValLocal)
+    ' a stable merge sort of tempIn; baseValLocal is the comparator's this
+    Dim work() As Variant: ReDim work(0 To n_s - 1)
+    MergeSort tempIn, work, 0, n_s - 1, comp, hasComp, baseValLocal
 
     ' convert sorted tempIn back to option-base array
     ReDim outArr(optBase_srt To optBase_srt + n_s - 1)
@@ -4117,63 +4124,6 @@ Private Function builtin_clone(v As Variant) As Variant
     vAssignment builtin_clone, v
 End Function
 
- ' Recursively applies mapper closure to value. If value is an array, map each element recursively.
-' mapper : closure map (type="Closure")
-' progScope : current scope stack (used for __option_base and to pass as runtime context)
-' parentThis : optional 'this' value passed to CallClosure (typically the containing array)
-' optBase: the indexing base
-Private Function map_apply_recursive(value As Variant, mapper As ASF_Map, _
-                                    Optional parentThis As Variant, _
-                                    Optional optBase As Long = 1) As Variant
-    On Error GoTo ErrHandler
-
-    ' If the value is an array, create an output array with same length and map each element recursively
-    If IsArray(value) Then
-        Dim lb As Long, ub As Long
-        On Error Resume Next
-        lb = LBound(value)
-        ub = UBound(value)
-        If err.Number <> 0 Then
-            err.Clear
-            vAssignment map_apply_recursive, Empty
-            Exit Function
-        End If
-        On Error GoTo ErrHandler
-
-        Dim cnt As Long: cnt = ub - lb + 1
-        If cnt < 0 Then cnt = 0
-        Dim outArr() As Variant
-        If cnt = 0 Then
-            ReDim outArr(optBase To optBase)
-        Else
-            ReDim outArr(optBase To optBase + cnt - 1)
-        End If
-
-        Dim i As Long
-        For i = 0 To cnt - 1
-            Dim srcIdx As Long: srcIdx = lb + i
-            Dim childRes As Variant
-            ' Recurse: pass the current array as parentThis so mapper can use it if needed
-            vAssignment childRes, map_apply_recursive(value(srcIdx), mapper, value, optBase)
-            vAssignment outArr(optBase + i), childRes
-        Next i
-
-        vAssignment map_apply_recursive, outArr
-        Exit Function
-    End If
-
-    ' If not an array, call the mapper closure with the value as single argument.
-    Dim args() As Variant: ReDim args(1 To 1)
-    vAssignment args(1), value
-    Dim result As Variant
-    vAssignment result, CallClosure(mapper, args, parentThis)
-    vAssignment map_apply_recursive, result
-    Exit Function
-
-ErrHandler:
-    ' On mapper errors propagate as runtime error so calling code can handle (consistent with earlier semantics)
-    err.Raise err.Number, err.Source, err.Description
-End Function
 
 Private Function builtin_typeof(v As Variant) As String
     On Error Resume Next
@@ -4355,6 +4305,11 @@ Private Function QS_Compare(ByVal a As Variant, ByVal b As Variant, ByVal comp A
         vAssignment args_cmp(2), b
         vAssignment tmpMapObj, comp
         vAssignment cres, CallClosure(tmpMapObj, args_cmp, thisVal)
+        ' true is 1 and false 0, as in JavaScript (VBA's True is -1)
+        If VarType(cres) = VT_BOOLEAN Then
+            If cres Then QS_Compare = 1 Else QS_Compare = 0
+            Exit Function
+        End If
         If IsNumeric(cres) Then
             Dim d As Double: d = CDbl(cres)
             If d < 0 Then
@@ -4402,40 +4357,42 @@ fallback_cmp:
     End If
 End Function
 
-' QS_Swap: swap two elements in a Variant array
-Private Sub QS_Swap(ByRef arr() As Variant, ByVal i As Long, ByVal j As Long)
-    Dim tmp As Variant
-    vAssignment tmp, arr(i)
-    vAssignment arr(i), arr(j)
-    vAssignment arr(j), tmp
-End Sub
-
-' QS_QuickSort: in-place quicksort (Hoare-style partition)
-Private Sub QS_QuickSort(ByRef arr() As Variant, ByVal low As Long, ByVal high As Long, ByVal comp As Variant, ByVal hasComp As Boolean, ByVal thisVal As Variant)
-    Dim i As Long, j As Long
-    If low >= high Then Exit Sub
-
-    i = low
-    j = high
-    Dim mid As Long: vAssignment mid, (low + high) \ 2
-    Dim pivot As Variant: vAssignment pivot, arr(mid)
-
-    Do While i <= j
-        Do While QS_Compare(arr(i), pivot, comp, hasComp, thisVal) < 0
+' MergeSort: arr(low..high) sorted, stably (equal items keep their order, as JavaScript's sort does),
+' and safely whatever the comparator returns: each step compares two items once and never reads
+' past the range, so a comparator that is not consistent (a < b ? -1 : 1) only gives some order
+Private Sub MergeSort(ByRef arr() As Variant, ByRef work() As Variant, ByVal low As Long, ByVal high As Long, ByVal comp As Variant, ByVal hasComp As Boolean, ByVal thisVal As Variant)
+    If high <= low Then Exit Sub
+    Dim middle As Long: middle = (low + high) \ 2
+    MergeSort arr, work, low, middle, comp, hasComp, thisVal
+    MergeSort arr, work, middle + 1, high, comp, hasComp, thisVal
+    ' the two halves already in order: nothing to merge
+    If QS_Compare(arr(middle), arr(middle + 1), comp, hasComp, thisVal) <= 0 Then Exit Sub
+    Dim i As Long, j As Long, k As Long
+    For k = low To high
+        vAssignment work(k), arr(k)
+    Next k
+    i = low: j = middle + 1: k = low
+    Do While i <= middle And j <= high
+        ' the right item first only when it sorts strictly before the left one
+        If QS_Compare(work(i), work(j), comp, hasComp, thisVal) > 0 Then
+            vAssignment arr(k), work(j)
+            j = j + 1
+        Else
+            vAssignment arr(k), work(i)
             i = i + 1
-        Loop
-        Do While QS_Compare(arr(j), pivot, comp, hasComp, thisVal) > 0
-            j = j - 1
-        Loop
-        If i <= j Then
-            QS_Swap arr, i, j
-            i = i + 1
-            j = j - 1
         End If
+        k = k + 1
     Loop
-
-    If low < j Then QS_QuickSort arr, low, j, comp, hasComp, thisVal
-    If i < high Then QS_QuickSort arr, i, high, comp, hasComp, thisVal
+    Do While i <= middle
+        vAssignment arr(k), work(i)
+        i = i + 1
+        k = k + 1
+    Loop
+    Do While j <= high
+        vAssignment arr(k), work(j)
+        j = j + 1
+        k = k + 1
+    Loop
 End Sub
 
 ' Helper: compute replacement text (supports string or Closure)
