@@ -18,7 +18,7 @@ from xml.sax.saxutils import escape
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LO_DIR = os.path.join(ROOT, "libreoffice")
 LIB_NAME = "ASF"
-VERSION = "4.0.0"
+VERSION = "4.0.2"
 EXTENSION_ID = "com.ecp-solutions.asf"
 
 # classes replaced by libreoffice/overrides/<name>.bas
