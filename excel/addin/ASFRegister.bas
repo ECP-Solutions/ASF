@@ -16,7 +16,7 @@ Private Const HELP_URL As String = "https://github.com/ECP-Solutions/ASF/blob/ma
 
 ' Array(name, description, argument, its description, argument, its description...) per function
 Public Function FunctionInfo() As Variant
-    Const ARGS_TIP As String = "Values or ranges, read by the script as $1, $2...: a range is an array of rows, one cell its value"
+    Const ARGS_TIP As String = "Values or ranges, read by the script as $1, $2...: one row or column is a list, a larger range an array of rows"
     Const PATTERN_TIP As String = "The regular expression, in JavaScript syntax: \d, \b, (?<name>...), lookbehind, lazy quantifiers"
     Const CASE_TIP As String = "TRUE to ignore case; FALSE when omitted"
     FunctionInfo = Array( _

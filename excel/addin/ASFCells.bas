@@ -1,7 +1,8 @@
 Attribute VB_Name = "ASFCells"
 ' What cells and ASF scripts exchange, for the worksheet functions of the add-in.
-'   Into a script: a cell gives its value; a range its Value2, which the engine reads as an array
-'   of rows; errors inside a range become their text (#N/A...), empty cells undefined.
+'   Into a script: a cell gives its value; one row or one column of cells a flat array; a range of
+'   several rows and columns an array of rows; errors inside a range become their text (#N/A...),
+'   empty cells undefined.
 '   Out of a script: an array of rows becomes a grid, a flat array a column, objects and nested
 '   arrays their text; undefined and null an empty string (a function returning Empty shows 0).
 Option Explicit
@@ -26,9 +27,9 @@ Public Function ArgumentValue(ByRef arg As Variant) As Variant
         ArgumentValue = Empty
     ElseIf IsObject(arg) Then
         Dim v As Variant: v = RangeValue(arg)
-        If IsArray(v) Then ArgumentValue = ErrorsAsText(v) Else ArgumentValue = v
+        If IsArray(v) Then ArgumentValue = CellValues(v) Else ArgumentValue = v
     ElseIf IsArray(arg) Then
-        ArgumentValue = ErrorsAsText(arg)
+        ArgumentValue = CellValues(arg)
     Else
         ArgumentValue = arg
     End If
@@ -40,8 +41,10 @@ Private Function RangeValue(ByVal cells As Object) As Variant
     RangeValue = cells.Value2
 End Function
 
-' The values of an array of cells, error values replaced by their text
-Private Function ErrorsAsText(ByVal cells As Variant) As Variant
+' The values of an array of cells, error values replaced by their text: one row or one column as a
+' flat array from 1 (B2:B6 is a list, as in Excel), more as a 2D array, which the engine reads as an
+' array of rows
+Private Function CellValues(ByVal cells As Variant) As Variant
     Dim r As Long, c As Long
     If TwoDimensions(cells) Then
         For r = LBound(cells, 1) To UBound(cells, 1)
@@ -49,13 +52,30 @@ Private Function ErrorsAsText(ByVal cells As Variant) As Variant
                 If IsError(cells(r, c)) Then cells(r, c) = ErrorText(cells(r, c))
             Next c
         Next r
+        If LBound(cells, 1) = UBound(cells, 1) Or LBound(cells, 2) = UBound(cells, 2) Then
+            CellValues = Flat(cells)
+            Exit Function
+        End If
     Else
         ' an array constant as {1,2,3} has one dimension
         For r = LBound(cells) To UBound(cells)
             If IsError(cells(r)) Then cells(r) = ErrorText(cells(r))
         Next r
     End If
-    ErrorsAsText = cells
+    CellValues = cells
+End Function
+
+' The cells of one row or one column, as an array from 1
+Private Function Flat(ByRef cells As Variant) As Variant
+    Dim items() As Variant, r As Long, c As Long, n As Long
+    ReDim items(1 To (UBound(cells, 1) - LBound(cells, 1) + 1) * (UBound(cells, 2) - LBound(cells, 2) + 1))
+    For r = LBound(cells, 1) To UBound(cells, 1)
+        For c = LBound(cells, 2) To UBound(cells, 2)
+            n = n + 1
+            items(n) = cells(r, c)
+        Next c
+    Next r
+    Flat = items
 End Function
 
 Private Function TwoDimensions(ByRef arr As Variant) As Boolean

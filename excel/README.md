@@ -46,7 +46,8 @@ RX_EXTRACT(text, pattern, [group], [ignoreCase])
 ### Arguments
 
 - A single cell gives its value. Numbers become doubles, as numbers in scripts are.
-- A range gives an array of rows, each row an array from 1: `$1[row][column]`.
+- One column or one row of cells gives a flat array from 1: with `B2:B6`, `$1[1]` is B2 and `$1.filter(fun(x) { return x > 2; })` works on the values.
+- A range of several rows and columns gives an array of rows, each row an array from 1: `$1[row][column]`.
 - An empty cell is `undefined`; scripts write `x ?? ''` when they want text.
 - An error value as a whole argument (`#N/A` in a single cell) is returned as it is, without running the script, as Excel's own functions do.
 - Errors inside a range arrive as their text (`"#N/A"`), so a script can test for them.
