@@ -11,7 +11,7 @@ Option Private Module
 
 ' The .vas files of the library, sorted by name: an array of Array(path, name); Empty when none
 Public Function LibraryScripts() As Variant
-    Dim folder As String, sep As String, f As String, n As Long, found() As Variant
+    Dim folder As String, sep As String, f As String, n As Long, i As Long, files() As String, found() As Variant
     folder = ASFSettings.LibraryFolder()
     sep = PathSeparatorOf(folder)
     If Right$(folder, 1) <> sep Then folder = folder & sep
@@ -19,15 +19,20 @@ Public Function LibraryScripts() As Variant
     ' Dir with a pattern does not work on Mac: every file, filtered here
     f = Dir(folder)
     On Error GoTo 0
+    ' the names first: reading a script checks its file with Dir, which would end this listing
     Do While LenB(f) > 0
         If LCase$(Right$(f, 4)) = ".vas" Then
             n = n + 1
-            ReDim Preserve found(1 To n)
-            found(n) = Array(folder & f, ScriptName(folder & f, f))
+            ReDim Preserve files(1 To n)
+            files(n) = f
         End If
         f = Dir()
     Loop
     If n = 0 Then Exit Function
+    ReDim found(1 To n)
+    For i = 1 To n
+        found(i) = Array(folder & files(i), ScriptName(folder & files(i), files(i)))
+    Next i
     SortByName found
     LibraryScripts = found
     Exit Function
