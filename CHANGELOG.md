@@ -4,7 +4,14 @@ All notable changes for ASF. This file combines the release notes from the proje
 
 ## [Unreleased]
 
+- **Added**
+    - **Excel add-in** (`excel/`) — `ASF.xlam`, built from `src/` by `excel/tools/build.ps1`: the worksheet functions `ASF_RUN(script, args...)` and `ASF_CALL(name, args...)` (a script of the library folder), the regex functions of the use cases, and `NewEngine()` for the macros of workbooks that reference it. One row or one column of cells arrives as a flat array, a larger range as an array of rows; arrays of rows come back as grids that spill, or fit the cells of an array formula in Excel 2016 and 2019. Scripts run without Office objects, import only from the library folder and stop at a step limit; `ASF_RUN` can be turned off in the settings. The functions are registered with a description of each and of each argument (Insert Function, Ctrl+A, Ctrl+Shift+A), set again on every opening, and the add-in carries the sheet Excel-DNA IntelliSense reads to show their tips while typing. The ASF tab of the ribbon runs scripts of the library (a header comment gives their name, Office access and whether they take the selection), opens the library folder, tells why a formula gave `#VALUE!`, resets the engine and opens the help. Checked in LibreOffice by `excel/tools/run_lo.py`; `excel/test/AddinTests.xlsx` holds the same checks as formulas for Excel.
+    - **`RunArgs(idx, args)`** — `Run` with the arguments in an array, for hosts that pass a varying number of them.
+    - **`ImportRoot`** — the folder `import` is limited to. An import that resolves outside it, with `../` steps or an absolute path, raises `Import outside the import folder` instead of reading the file. Empty (the default) keeps imports as they were. For scripts that come from users or documents, such as the formulas of the planned Excel add-in.
+    - **`MaxSteps`** — the loop iterations and function calls a run may make. Past it the run stops with `Step limit reached` in `LastError`; no `catch` takes it, so `while (true) { }` can't hang the host. 0 (the default) is no limit. The loop back edges have their own instruction, `LOOP`, so forward jumps cost nothing more.
+
 - **Changed**
+    - **One lookup per `Compile`** of a source compiled before, instead of two.
     - **Arguments as arrays** — methods, built-in functions, host calls and closures called by the runtime take their arguments as an array from 1, as `ASF_VM` keeps them on its stack. They were copied into a `Collection` for each call, and back into an array for `CallByName`; `CollectionToArray` and `ArrayToCollection` are gone.
     - **Callbacks get only the parameters they declare** — `map`, `filter`, `forEach`, `some`, `every`, `find`, `reduce`, `sort`, `replace` and the ones of maps pass a callback as many arguments as it declares (all of them to a rest parameter), so the array is no longer copied for each item unless the callback takes it as its third parameter, and it is copied into `this` only for a callback that reads `this`. `this` is bound as before. In LibreOffice, `forEach` and `filter` run about 20% faster and `map` about 10%.
     - **Faster `Run`** — what a program binds (its function, its global slots, which of them are `Math`, `$1`, `$2`...) is worked out on its first run and kept, instead of looked up by name in maps and parsed from the slot names on every run; arguments are prepared by their type; and only the global slots and classes in use are cleared after the run. A run of a short expression such as `($1 + $2) * 3 - $1 / 2` takes about a quarter of the time in LibreOffice (0.46 ms instead of 1.8 ms), most of which was setting up and clearing the run.
@@ -12,6 +19,8 @@ All notable changes for ASF. This file combines the release notes from the proje
     - **`push` in place** — `x.push(...)` on a variable appends to the array the variable holds; the array was copied about five times per call, so filling an array with `push` in a loop took quadratic time. In LibreOffice, 1,600 pushes went from 5.9 s to 0.3 s and 6,400 from 85.6 s to 2.2 s. `push` on anything else (`o.items.push(...)`, a host object, a method of an object) takes the usual path.
 
 - **Fixed**
+    - **LibreOffice: a run after a run that gave an array** — the next `Run`, or a read of `OUTPUT_` or `LastError`, raised error 91. LibreOffice keeps the value of a `Property Get` between calls and fails to replace an array there; `OUTPUT_` and `LastError` are functions now, read as before.
+    - **`Run` after an error gave the previous result** — a run that ended in an error or an uncaught `throw` returned what the run before it had returned, instead of `Empty`.
     - **`push` on an empty array** returned one more than the new length: `[].push(5)` gave 2.
 
 ## [v4.0.1] - 2026-11-15

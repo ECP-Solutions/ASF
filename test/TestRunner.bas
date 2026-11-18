@@ -142,6 +142,7 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("array",                     "array_sort_and_toSorted") Then array_sort_and_toSorted: EndTest
     If StartTest("array",                     "array_toSpliced_and_join") Then array_toSpliced_and_join: EndTest
     If StartTest("array",                     "array_entries_and_every_find_combo") Then array_entries_and_every_find_combo: EndTest
+    If StartTest("array",                     "callbacks_get_the_collection_from_the_first_item") Then callbacks_get_the_collection_from_the_first_item: EndTest
     If StartTest("array",                     "array_includes_and_index_checks_with_objects") Then array_includes_and_index_checks_with_objects: EndTest
     If StartTest("array",                     "array_complex_splice_and_copyWithin") Then array_complex_splice_and_copyWithin: EndTest
     If StartTest("deeply_nested",             "deeply_nested_Arrays") Then deeply_nested_Arrays: EndTest
@@ -254,6 +255,7 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("sort",                      "sort_chain_on_objects") Then sort_chain_on_objects: EndTest
     If StartTest("injecting",                 "injecting_asf_objects") Then injecting_asf_objects: EndTest
     If StartTest("injecting",                 "run_arguments") Then run_arguments: EndTest
+    If StartTest("injecting",                 "run_after_an_array_result") Then run_after_an_array_result: EndTest
     If StartTest("spread",                    "spread_simple") Then spread_simple: EndTest
     If StartTest("spread",                    "spread_multiple") Then spread_multiple: EndTest
     If StartTest("spread",                    "spread_with_empty") Then spread_with_empty: EndTest
@@ -286,6 +288,8 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("module_system",             "module_system_working_directory") Then module_system_working_directory: EndTest
     If StartTest("module_system",             "module_system_working_dir_before_compile") Then module_system_working_dir_before_compile: EndTest
     If StartTest("module_system",             "path_separator") Then path_separator: EndTest
+    If StartTest("module_system",             "import_root") Then import_root: EndTest
+    If StartTest("max_steps",                 "max_steps") Then max_steps: EndTest
     If StartTest("module_system",             "module_system_named_exports_imports") Then module_system_named_exports_imports: EndTest
     If StartTest("module_system",             "module_system_default_export") Then module_system_default_export: EndTest
     If StartTest("objects",                   "object_literal_semicolon_rejected") Then object_literal_semicolon_rejected: EndTest
@@ -2086,6 +2090,25 @@ TestFail:
     Resume TestExit
 End Sub
 
+
+' a callback that declares a third parameter gets the array or object on every call, the first included
+Private Sub callbacks_get_the_collection_from_the_first_item()
+    On Error GoTo TestFail
+    actual = CStr(GetResult("a = [2, 4, 6]; o = {x: 1, y: 2}; " & _
+        "return [a.every(fun(v, i, arr) { return arr.length == 3; }), " & _
+        "a.some(fun(v, i, arr) { return i == 1 && arr.length == 3; }), " & _
+        "a.find(fun(v, i, arr) { return arr[1] == v; }), " & _
+        "o.every(fun(v, k, obj) { return obj.has(k); }), " & _
+        "o.some(fun(v, k, obj) { return k == 'x' && obj.has(k); }), " & _
+        "o.filter(fun(v, k, obj) { return obj.has(k); }).size()].join('|');"))
+    expected = "true|true|2|true|true|2"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
 
 Private Sub array_entries_and_every_find_combo()
     On Error GoTo TestFail
@@ -4339,6 +4362,64 @@ TestFail:
     AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
+Private Sub import_root()
+    On Error GoTo TestFail
+    Dim eng As New ASF, outside As String
+    With eng
+        .WorkingDir = ThisWorkbook.path
+        .ImportRoot = UCase$(ThisWorkbook.path) & .PathSeparator(ThisWorkbook.path)
+        actual = CStr(.Run(.Compile("import { add } from './math.vas'; return add(2, 3);")))
+        AssertEqual "5", actual
+        ' a relative path that leaves the folder, and an absolute one outside it
+        actual = CStr(.Run(.Compile("import { x } from '../README.md'; return 1;")))
+        AssertEqual "", actual
+        AssertEqual "Import outside the import folder", IIf(InStr(CStr(.LastError), "Import outside the import folder") > 0, "Import outside the import folder", CStr(.LastError))
+        outside = Replace(.JoinPath(ThisWorkbook.path, "../README.md"), "\", "/")
+        actual = CStr(.Run(.Compile("import { x } from '" & outside & "'; return 1;")))
+        AssertEqual "", actual
+        AssertEqual "Import outside the import folder", IIf(InStr(CStr(.LastError), "Import outside the import folder") > 0, "Import outside the import folder", CStr(.LastError))
+        ' no root: any path, as before
+        .ImportRoot = vbNullString
+        actual = CStr(.Run(.Compile("import { add } from './math.vas'; return add(1, 1);")))
+        AssertEqual "2", actual
+    End With
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+Private Sub max_steps()
+    On Error GoTo TestFail
+    Dim eng As New ASF, src As Variant
+    With eng
+        .MaxSteps = 1000
+        ' loops, continue, recursion and callbacks are counted; no catch takes the stop
+        For Each src In Array("let n = 0; while (true) { n += 1; }; return n;", _
+                              "let i = 0; while (true) { i += 1; continue; }; return i;", _
+                              "for (let i = 1, i > 0, i += 1) { }; return 1;", _
+                              "fun f(n) { return f(n + 1); }; return f(0);", _
+                              "return [1, 2, 3].map(fun(x) { while (true) { } });", _
+                              "try { while (true) { } } catch (e) { return 'caught'; }; return 'after';")
+            actual = CStr(.Run(.Compile(CStr(src))))
+            AssertEqual "", actual
+            AssertEqual "Step limit reached", IIf(InStr(CStr(.LastError), "Step limit reached") > 0, "Step limit reached", CStr(.LastError))
+        Next src
+        ' within the limit, and the engine runs again after a stop
+        actual = CStr(.Run(.Compile("let n = 0; for (let i = 1, i <= 100, i += 1) { n += i; }; return n;")))
+        AssertEqual "5050", actual
+        AssertEqual "", CStr(.LastError)
+        ' 0: no limit
+        .MaxSteps = 0
+        actual = CStr(.Run(.Compile("let n = 0; for (let i = 1, i <= 3000, i += 1) { n += 1; }; return n;")))
+        AssertEqual "3000", actual
+    End With
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
 Private Sub module_system_working_dir_before_compile()
     ' WorkingDir set on the host survives Compile: relative imports resolve without scwd
     Dim eng As New ASF
@@ -4903,20 +4984,43 @@ TestFail:
     Resume TestExit
 End Sub
 
+' one engine: a run, and the reads of OUTPUT_ and LastError, after a run that gave an array
+Private Sub run_after_an_array_result()
+    On Error GoTo TestFail
+    Dim eng As New ASF, v As Variant, add As Long
+    With eng
+        add = .Compile("return $1 + 1;")
+        actual = CStr(.Run(add, 1))
+        v = .Run(.Compile("return [2, 3];"))
+        v = .OUTPUT_
+        actual = actual & "|" & CStr(UBound(v) - LBound(v) + 1)
+        actual = actual & "|" & CStr(.Run(add, 4)) & "|" & CStr(.OUTPUT_)
+        .Run .Compile("throw [1, 2];")
+        .Run .Compile("throw 'x';")
+        actual = actual & "|" & CStr(.LastError)
+    End With
+    AssertEqual "2|2|5|5|x", actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+
 Private Sub run_arguments()
     On Error GoTo TestFail
-    Dim eng As ASF, idx As Long, appAccess As Variant, src As String
+    Dim eng As ASF, idx As Long, withAccess As Variant, src As String
     src = "return `${typeof $1} ${($1 + $2) * 3 - $1 / 2} ${$1 % 4} ${$1 == 7} ${typeof $2}`;"
-    For Each appAccess In Array(False, True)
+    For Each withAccess In Array(False, True)
         Set eng = New ASF
-        eng.AppAccess = appAccess
+        eng.AppAccess = withAccess
         idx = eng.Compile(src)
         actual = CStr(eng.Run(idx, CInt(7), CLng(5)))
         AssertEqual "number 32.5 3 true number", actual
         ' a later run with fewer arguments: $2 is undefined again
         actual = CStr(eng.Run(idx, CByte(7)))
         AssertEqual "undefined", Mid$(actual, InStrRev(actual, " ") + 1)
-    Next appAccess
+    Next withAccess
 TestExit:
     Exit Sub
 TestFail:

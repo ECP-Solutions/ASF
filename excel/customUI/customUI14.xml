@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The ASF tab of the add-in: excel/tools/build.ps1 adds this part to ASF.xlam. The callbacks are
+     in excel/addin/ASFRibbon.bas. Only built-in images (imageMso), which Excel for Mac also has. -->
+<customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui">
+  <ribbon>
+    <tabs>
+      <tab id="asfTab" label="ASF">
+        <group id="asfScripts" label="Scripts">
+          <button id="asfRunScript" label="Run script" size="large" imageMso="MacroPlay"
+                  screentip="Run a script of the library"
+                  supertip="Lists the .vas files of the library folder and runs the one you pick. A script whose header asks for the selection gets the selected range as $1."
+                  onAction="ASFRibbon.OnRunScript"/>
+          <button id="asfOpenLibrary" label="Library folder" size="large" imageMso="FileOpen"
+                  screentip="Open the library folder"
+                  supertip="The folder of the scripts that ASF_CALL and Run script use, and the only folder imports read."
+                  onAction="ASFRibbon.OnOpenLibrary"/>
+        </group>
+        <group id="asfFormulas" label="Formulas">
+          <button id="asfWhyError" label="Why this error?" size="large" imageMso="TraceError"
+                  screentip="Why ASF_RUN or ASF_CALL gave #VALUE!"
+                  supertip="Calculates the active cell again and shows the message of its ASF_RUN or ASF_CALL."
+                  onAction="ASFRibbon.OnWhyError"/>
+          <button id="asfResetEngine" label="Reset engine" size="large" imageMso="Refresh"
+                  screentip="Reset the engine of the worksheet functions"
+                  supertip="Drops the compiled scripts and reads the settings again on the next formula."
+                  onAction="ASFRibbon.OnResetEngine"/>
+        </group>
+        <group id="asfHelpGroup" label="Help">
+          <button id="asfHelp" label="Help" size="large" imageMso="Help"
+                  screentip="The documentation of the add-in"
+                  onAction="ASFRibbon.OnHelp"/>
+        </group>
+      </tab>
+    </tabs>
+  </ribbon>
+</customUI>

@@ -23,6 +23,7 @@ Private METHOD_WRITTEN_ As Variant
 Private ENABLE_CALL_TRACE_ As Boolean
 Private CAST_INJECTED_VARIABLES_ As Boolean
 Private APPLICATION_ACCESS_ As Boolean
+Private IMPORT_ROOT_ As String          ' the folder imports are limited to; empty: any path
 Private tmpVar As Variant
 Private COM_PROTOTYPES_ As ASF_Map   ' prototypes of host objects' methods, by COMPrototypeKey
 Private COLLECTIONS_METHOD_OVERRIDE_ As Boolean
@@ -679,8 +680,8 @@ Private Function EvalNamedBuiltin(ByVal fname As String, evaluated As Variant, B
                 ReDim args_obj2(1 To 3)
                 vAssignment args_obj2(1), feTmpVal.GetValue(CStr(fk2))
                 vAssignment args_obj2(2), CStr(fk2)
-                If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_obj2(3), feTmpVal
                 vAssignment tmpMapObj, cbFn
+                If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_obj2(3), feTmpVal
                 vAssignment tmpRes_obj2, CallClosure(tmpMapObj, args_obj2, feTmpVal)
             Next fk2
         Else
@@ -694,9 +695,9 @@ Private Function EvalNamedBuiltin(ByVal fname As String, evaluated As Variant, B
                 ReDim callArgs2(1 To 3)
                 vAssignment callArgs2(1), feTmpVal(j)
                 vAssignment callArgs2(2), (optBase2 + idx2)
+                vAssignment tmpMapObj, cbFn
                 If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment callArgs2(3), feTmpVal
                 Dim tmpRc As Variant
-                vAssignment tmpMapObj, cbFn
                 vAssignment tmpRc, CallClosure(tmpMapObj, callArgs2, feTmpVal)
                 idx2 = idx2 + 1
             Next j
@@ -1401,10 +1402,10 @@ Private Function ArrForeach(evaluated As Variant, ByRef propN As String, ByRef b
         ' index in user-space (respect option base)
         vAssignment callArgs(2), (optBase + idxLocal)
         ' array reference as third arg
+        vAssignment tmpMapObj, cb
         If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment callArgs(3), baseValLocal
         ' call closure with this = base array (so callback can use this)
         Dim tmpResCall As Variant
-        vAssignment tmpMapObj, cb
         vAssignment tmpResCall, CallClosure(tmpMapObj, callArgs, baseValLocal)
         ' discard tmpResCall (forEach ignores return)
         idxLocal = idxLocal + 1
@@ -1863,8 +1864,8 @@ Private Function ArrEvery(evaluated As Variant, ByRef propN As String, ByRef bas
         ReDim args_ev(1 To 3)
         vAssignment args_ev(1), baseValLocal(lb_b + i_ev)
         vAssignment args_ev(2), (ob_ev + idx_ev)
-        If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_ev(3), baseValLocal
         vAssignment tmpMapObj, cb_every
+        If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_ev(3), baseValLocal
         vAssignment res_ev, CallClosure(tmpMapObj, args_ev, baseValLocal)
         If Not IsTruthy(res_ev) Then
             vAssignment tmpResult, False: GoTo exitfun
@@ -1898,8 +1899,8 @@ Private Function ArrFind(evaluated As Variant, ByRef propN As String, ByRef base
             ReDim args_f(1 To 3)
             vAssignment args_f(1), baseValLocal(lb_b + i_f)
             vAssignment args_f(2), (ob_f + i_f)
-            If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_f(3), baseValLocal
             vAssignment tmpMapObj, cb_find
+            If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_f(3), baseValLocal
             vAssignment res_f, CallClosure(tmpMapObj, args_f, baseValLocal)
             If IsTruthy(res_f) Then
                 If propN = "findlast" Then vAssignment tmpResult, baseValLocal(lb_b + i_f) Else vAssignment tmpResult, (ob_f + i_f)
@@ -1915,8 +1916,8 @@ Private Function ArrFind(evaluated As Variant, ByRef propN As String, ByRef base
             ReDim args_f2(1 To 3)
             vAssignment args_f2(1), baseValLocal(lb_b + i_f)
             vAssignment args_f2(2), (ob_f + i_f)
-            If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_f2(3), baseValLocal
             vAssignment tmpMapObj, cb_find
+            If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_f2(3), baseValLocal
             vAssignment res_f2, CallClosure(tmpMapObj, args_f2, baseValLocal)
             If IsTruthy(res_f2) Then
                 If propN = "find" Then vAssignment tmpResult, baseValLocal(lb_b + i_f) Else vAssignment tmpResult, (ob_f + i_f)
@@ -2010,8 +2011,8 @@ Private Function ArrFrom(evaluated As Variant, ByRef propN As String, ByRef base
                     ReDim argColl(1 To 3)
                     vAssignment argColl(1), tempIn(i_sp)
                     vAssignment argColl(2), (opt_from + i_sp)
-                    If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment argColl(3), srcArrOption
                     vAssignment tmpMapObj, comp
+                    If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment argColl(3), srcArrOption
                     vAssignment mapResult, CallClosure(tmpMapObj, argColl, thisVal)
                     outArr(opt_from + i_sp) = mapResult
                 Next i_sp
@@ -2174,8 +2175,8 @@ Private Function ArrSome(evaluated As Variant, ByRef propN As String, ByRef base
         ReDim args_s(1 To 3)
         vAssignment args_s(1), baseValLocal(lb_b + i_som)
         vAssignment args_s(2), (ob_som + i_som)
-        If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_s(3), baseValLocal
         vAssignment tmpMapObj, cb_some
+        If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_s(3), baseValLocal
         vAssignment res_s, CallClosure(tmpMapObj, args_s, baseValLocal)
         If IsTruthy(res_s) Then
             vAssignment tmpResult, True: GoTo exitfun
@@ -3248,8 +3249,8 @@ Private Function MapForeach(evaluated As Variant, ByRef propN As String, ByRef b
         ReDim args_obj(1 To 3)
         vAssignment args_obj(1), baseValLocal.GetValue(CStr(fk))
         vAssignment args_obj(2), CStr(fk)
-        If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_obj(3), baseValLocal
         vAssignment tmpMapObj, cb_obj
+        If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_obj(3), baseValLocal
         vAssignment tmpRes_obj, CallClosure(tmpMapObj, args_obj, baseValLocal)
     Next fk
 
@@ -3283,8 +3284,8 @@ Private Function MapMap(evaluated As Variant, ByRef propN As String, ByRef baseV
         ReDim args_map(1 To 3)
         vAssignment args_map(1), baseValLocal.GetValue(CStr(mapk))
         vAssignment args_map(2), CStr(mapk)
-        If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_map(3), baseValLocal
         vAssignment tmpMapObj, cb_map
+        If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_map(3), baseValLocal
         Dim mapRes As Variant
         vAssignment mapRes, CallClosure(tmpMapObj, args_map, baseValLocal)
         newMap.SetValue CStr(mapk), mapRes
@@ -3321,8 +3322,8 @@ Private Function MapFilter(evaluated As Variant, ByRef propN As String, ByRef ba
         ReDim args_filter(1 To 3)
         vAssignment args_filter(1), baseValLocal.GetValue(CStr(filterk))
         vAssignment args_filter(2), CStr(filterk)
-        If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_filter(3), baseValLocal
         vAssignment tmpMapObj, cb_filter
+        If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_filter(3), baseValLocal
         vAssignment filterRes, CallClosure(tmpMapObj, args_filter, baseValLocal)
         If IsTruthy(filterRes) Then
             filteredMap.SetValue CStr(filterk), baseValLocal.GetValue(CStr(filterk))
@@ -3358,8 +3359,8 @@ Private Function MapSome(evaluated As Variant, ByRef propN As String, ByRef base
         ReDim args_some(1 To 3)
         vAssignment args_some(1), baseValLocal.GetValue(CStr(somek))
         vAssignment args_some(2), CStr(somek)
-        If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_some(3), baseValLocal
         vAssignment tmpMapObj, cb_some_obj
+        If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_some(3), baseValLocal
         Dim someRes As Variant
         vAssignment someRes, CallClosure(tmpMapObj, args_some, baseValLocal)
         If IsTruthy(someRes) Then
@@ -3397,8 +3398,8 @@ Private Function MapEvery(evaluated As Variant, ByRef propN As String, ByRef bas
         ReDim args_every(1 To 3)
         vAssignment args_every(1), baseValLocal.GetValue(CStr(everyk))
         vAssignment args_every(2), CStr(everyk)
-        If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_every(3), baseValLocal
         vAssignment tmpMapObj, cb_every_obj
+        If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_every(3), baseValLocal
         Dim everyRes As Variant
         vAssignment everyRes, CallClosure(tmpMapObj, args_every, baseValLocal)
         If Not IsTruthy(everyRes) Then
@@ -4163,7 +4164,6 @@ Private Function map_apply_recursive(value As Variant, mapper As ASF_Map, _
     vAssignment args(1), value
     Dim result As Variant
     vAssignment result, CallClosure(mapper, args, parentThis)
-    args.Remove args.Count
     vAssignment map_apply_recursive, result
     Exit Function
 
@@ -4781,6 +4781,11 @@ End Function
 
 Public Function ReadModuleSource(modulePath As String) As String
     Dim filePath As String: filePath = ResolveModulePath(modulePath)
+    If LenB(IMPORT_ROOT_) > 0 Then
+        If Not InsideFolder(filePath, IMPORT_ROOT_) Then
+            err.Raise vbObjectError + 9014, "VM.ReadModuleSource", "Import outside the import folder: " & modulePath
+        End If
+    End If
     
     ' Add .vas extension if not present
     If Not FileExists(filePath) Then
@@ -4808,6 +4813,59 @@ Public Function ReadTextFile(filePath As String) As String
         ReadTextFile = OutputStr
         OutputStr = vbNullString
     End If
+End Function
+Public Property Get ImportRoot() As String
+    ImportRoot = IMPORT_ROOT_
+End Property
+Public Property Let ImportRoot(ByVal aValue As String)
+    IMPORT_ROOT_ = aValue
+End Property
+' True when path is folder or lies inside it, both made absolute and without . and .. steps
+Private Function InsideFolder(ByVal path As String, ByVal folder As String) As Boolean
+    Dim p As String: p = LCase$(NormalPath(path))
+    Dim f As String: f = LCase$(NormalPath(folder))
+    If LenB(p) = 0 Or LenB(f) = 0 Then Exit Function
+    If right$(f, 1) <> "/" Then f = f & "/"
+    If right$(p, 1) <> "/" Then p = p & "/"
+    InsideFolder = (left$(p, Len(f)) = f)
+End Function
+' path with / as separator, absolute (a relative one from the current folder) and without empty,
+' . and .. steps; empty when a .. would leave the root
+Private Function NormalPath(ByVal path As String) As String
+    Dim p As String: p = Replace(path, "\", "/")
+    Dim lead As String
+    If left$(p, 2) = "//" Then
+        lead = "//": p = mid$(p, 3)
+    ElseIf mid$(p, 2, 1) = ":" Then
+        lead = left$(p, 2) & "/": p = mid$(p, 3)
+    ElseIf left$(p, 1) = "/" Then
+        lead = "/": p = mid$(p, 2)
+    Else
+        Dim cur As String: cur = Replace(CurDir$, "\", "/")
+        If left$(cur, 1) <> "/" And mid$(cur, 2, 1) <> ":" Then Exit Function
+        NormalPath = NormalPath(cur & "/" & p)
+        Exit Function
+    End If
+    Dim parts() As String, i As Long, n As Long, out As String
+    parts = Split(p, "/")
+    Dim kept() As String
+    ReDim kept(0 To UBound(parts) + 1)
+    For i = 0 To UBound(parts)
+        Select Case parts(i)
+            Case vbNullString, "."
+            Case ".."
+                If n = 0 Then Exit Function
+                n = n - 1
+            Case Else
+                kept(n) = parts(i)
+                n = n + 1
+        End Select
+    Next i
+    For i = 0 To n - 1
+        If i > 0 Then out = out & "/"
+        out = out & kept(i)
+    Next i
+    NormalPath = lead & out
 End Function
 Private Function FileExists(ByVal filePath As String) As Boolean
     FileExists = CBool(LenB(Dir(filePath, vbHidden + vbNormal + vbSystem + vbReadOnly + vbArchive)))

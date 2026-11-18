@@ -16,6 +16,7 @@ Private RT_ As ASF_Runtime
 Private CP_ As ASF_Compiler
 Private VM_ As ASF_VM
 Private CP_GLOBALS_ As ASF_Globals      ' the globals the compiler and the VM belong to
+Private MAX_STEPS_ As Long              ' MaxSteps, kept for a VM made later
 Private OUTPUT__ As Variant
 Private EVALUATOR_ As VBAexpressions
 
@@ -61,6 +62,24 @@ End Property
 Public Property Let AppAccess(aValue As Boolean)
     RT_.AppAccess = aValue
 End Property
+' The folder imports are limited to: an import that resolves outside it raises. Empty (the default):
+' imports may read any path
+Public Property Get ImportRoot() As String
+    ImportRoot = RT_.ImportRoot
+End Property
+Public Property Let ImportRoot(aValue As String)
+    RT_.ImportRoot = aValue
+End Property
+' The loop iterations and calls a run may make before it stops with "Step limit reached" in
+' LastError, which no catch takes. 0 (the default): no limit
+Public Property Get MaxSteps() As Long
+    MaxSteps = MAX_STEPS_
+End Property
+Public Property Let MaxSteps(aValue As Long)
+    If aValue < 0 Then aValue = 0
+    MAX_STEPS_ = aValue
+    If Not VM_ Is Nothing Then VM_.MaxSteps = aValue
+End Property
 Public Property Get OverrideCollMethods() As Boolean
     OverrideCollMethods = RT_.OverrideCollMethods
 End Property
@@ -102,13 +121,14 @@ Private Sub PrepareCode()
         Set CP_GLOBALS_ = GLOBALS_
         Set VM_ = New ASF_VM
         VM_.SetHost GLOBALS_, RT_, CP_
+        VM_.MaxSteps = MAX_STEPS_
     End If
     Set RT_.Globals = GLOBALS_
 End Sub
 Private Sub RunIndex(idx As Long, params As Variant)
     PrepareCode
     If Not VM_.Run(idx, params) Then Err.Raise vbObjectError + 9026, "ASF.Run", "No program " & idx & " was compiled with these globals"
-    vAssignment OUTPUT__, VM_.OUTPUT_
+    vAssignment OUTPUT__, VM_.RunOutput()
     If RT_.verbose Then
         Debug.Print "=== Runtime Log ==="
         Dim elm As Variant
@@ -129,13 +149,15 @@ Private Sub INIT_()
     Set RT_.Globals = GLOBALS_
 End Sub
 ' The value of the last throw that no catch took, or the message of the last error, of the last Run
-Public Property Get LastError() As Variant
-    If VM_ Is Nothing Then Exit Property
+' LastError and OUTPUT_ are functions: LibreOffice keeps the value of a Property Get between calls,
+' and fails to replace an array there
+Public Function LastError() As Variant
+    If VM_ Is Nothing Then Exit Function
     vAssignment LastError, VM_.LastError
-End Property
-Public Property Get OUTPUT_() As Variant
+End Function
+Public Function OUTPUT_() As Variant
     vAssignment OUTPUT_, OUTPUT__
-End Property
+End Function
 Public Function Execute(scriptPath As String, ParamArray params() As Variant) As Variant
     If Not GLOBALS_ Is Nothing Then
         Dim params_ As Variant
@@ -155,6 +177,14 @@ Public Function Run(idx As Long, ParamArray params() As Variant) As Variant
         If Not IsMissing(params) Then params_ = params
         RunIndex idx, params_
         vAssignment Run, OUTPUT__
+    End If
+End Function
+' Run with the arguments in an array ($1 is its first item), for hosts that pass a varying number of
+' them; Empty for none
+Public Function RunArgs(idx As Long, args As Variant) As Variant
+    If Not GLOBALS_ Is Nothing Then
+        RunIndex idx, args
+        vAssignment RunArgs, OUTPUT__
     End If
 End Function
 Private Sub vAssignment(ByRef var As Variant, ByRef vValue As Variant)

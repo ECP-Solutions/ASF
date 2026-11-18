@@ -99,6 +99,7 @@ Private Const OP_VBAEXPR As Long = 84   ' a: the VBA expression, b: the names of
 Private Const OP_PROTO As Long = 85     ' a: the prototype (classType, methodName, funcIndex, params); pops its function
 Private Const OP_EXPORT As Long = 86    ' a: exported name; pops the value (a module being loaded keeps it)
 Private Const OP_EXPORTPROTO As Long = 87 ' a: the prototype, with exportName; pops its function
+Private Const OP_LOOP As Long = 89     ' a: target; JMP back to the top of a loop, counting a step (MaxSteps)
 Private Const OP_SUPER As Long = 88     ' a: 0 init, 1 constructor of the class under this and b arguments (-1: an array of them)
 Private Const METHOD_SHIFT As Long = 1024 ' b of CALLM...: arguments + METHOD_SHIFT * method number
 
@@ -327,7 +328,7 @@ Public Function Disassemble(ByVal idx As Long) As String
                   "NOT NEG TYPEOF JMP JMPF JMPT ANDJ ORJ TOBOOL NULLJ POP CALLF RET RET0 PRINT INCL INCG " & _
                   "JNLT JNLE JNGT JNGE JNEQ JNNE ADDK DUP LOADC STOREC LOADE STOREE MKCLOS MKFUNC CALL NEWARR NEWOBJ " & _
                   "GETIDX GETIDXW SETIDXR GETPROP SETPROPV CALLM CALLMW EXPAND CALLFV CALLV CALLMV CALLMWV CALLB CALLBV TPL " & _
-                  "NEWARRS JNSW ITERLIST FORNEXT UNPACK CLASS NEWINST BINDM CALLFT THROW IMPORT PUSHIN VBAEXPR PROTO EXPORT EXPORTPROTO SUPER", " ")
+                  "NEWARRS JNSW ITERLIST FORNEXT UNPACK CLASS NEWINST BINDM CALLFT THROW IMPORT PUSHIN VBAEXPR PROTO EXPORT EXPORTPROTO SUPER LOOP", " ")
     Dim out As String, i As Long, fn As Long, k As Variant
     If Not Prepare(idx) Then
         Disassemble = "not taken: " & reason_
@@ -805,8 +806,9 @@ End Function
 
 ' Compiles src: its program index. A source with an error raises it, and leaves nothing behind
 Public Function CompileSource(ByVal src As String, ByVal progName As String) As Long
-    If GLOBALS_.ProgramCache.Exists(src) Then
-        CompileSource = GLOBALS_.ProgramCache.GetValue(src)
+    Dim cached As Variant
+    If GLOBALS_.ProgramCache.TryGetValue(src, cached) Then
+        CompileSource = cached
         Exit Function
     End If
     If Not CheckParents(src) Then CompileError "Unbalanced opening or closing parentheses.", ERR_PARENTHESES
@@ -3342,7 +3344,7 @@ Private Sub DEmitPlan(plan As Variant)
         Case "continue"
             If conts_.Count = 0 Then Exit Sub
             If Not conts_(conts_.Count) Is Nothing Then
-                Emit OP_JMP, 0, 0, 0
+                Emit OP_LOOP, 0, 0, 0
                 conts_(conts_.Count).Add nOp_
             End If
         Case "switch": DEmitSwitch plan
@@ -3436,7 +3438,7 @@ Private Sub DEmitWhile(plan As Variant)
     DJumpIfFalse plan(1), plan(2), exits
     OpenLoop
     DEmitPlans DBlock(plan(3), plan(4))
-    Emit OP_JMP, loopTop, 0, 0
+    Emit OP_LOOP, loopTop, 0, 0
     PatchAll conts_(conts_.Count), loopTop
     PatchAll exits, nOp_ + 1
     PatchAll breaks_(breaks_.Count), nOp_ + 1
@@ -3475,7 +3477,7 @@ Private Sub DEmitFor(plan As Variant)
                 Emit OP_POP, 0, 0, -1
         End Select
     End If
-    Emit OP_JMP, loopTop, 0, 0
+    Emit OP_LOOP, loopTop, 0, 0
     PatchAll exits, nOp_ + 1
     PatchAll breaks_(breaks_.Count), nOp_ + 1
     breaks_.Remove breaks_.Count
@@ -3501,7 +3503,7 @@ Private Sub DEmitForEach(plan As Variant)
     If plan(3) > plan(2) Then DAssignTo plan(2), plan(3) Else Emit OP_POP, 0, 0, -1
     OpenLoop
     DEmitPlans DBlock(plan(6), plan(7))
-    Emit OP_JMP, loopTop, 0, 0
+    Emit OP_LOOP, loopTop, 0, 0
     PatchAll conts_(conts_.Count), loopTop
     Patch exitJump, nOp_ + 1
     PatchAll breaks_(breaks_.Count), nOp_ + 1
