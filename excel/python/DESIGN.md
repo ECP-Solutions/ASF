@@ -233,7 +233,7 @@ ASF can sandbox a script. **Python cannot be sandboxed:** any Python code can re
 - The setting is under ASF's registry key (3.2), so an administrator can set it or lock it.
 - The add-in asks the `.xll` for the root of the granted level (3.1): level 1 for `call`, level 2 for `modules`. A level-1 script can't reach `module` by any path.
 - A script that asks for more than the host allows is stopped with a clear message, not given less than it asked for. That way it never fails halfway through.
-- `PY_CALL` and `@xl_func` functions don't go through ASF scripts. They are on whenever `asfpy.xll` is loaded, since loading it is the host's decision, and they reach only installed, exported functions.
+- `PY_CALL` and `@xl_func` functions don't go through ASF scripts. They work whenever `asfpy.xll` is loaded, since loading it is the host's decision, and they reach only installed, exported functions. `PythonAccess` doesn't change them.
 
 **Why there is no package allow-list.** The first draft let `py.import` reach `numpy`, `pandas` and `scipy` from any formula. A list of packages doesn't hold:
 - `numpy.load(f, allow_pickle=True)` and `pandas.read_pickle` run code from a file;
@@ -298,7 +298,8 @@ Decided:
 - Start-up: one of the two options of 3.1, chosen by the spike of phase 1a.
 - Python in ASF scripts needs two keys: the script's `python` header and the host's `PythonAccess` setting (3.4).
 - Phases 2 and 3 start after the `.xll` is done (phase 1). No pywin32 stand-in.
+- `PY_CALL` and `@xl_func` functions work whenever the `.xll` is loaded; `PythonAccess` governs only `py` in ASF scripts.
+- The two keys are for Python only. Python's power can't be sandboxed or easily delegated to users; `appAccess` keeps working as it does now.
 
 Open:
 - **The name:** `asfpy64.xll` and `asfpy32.xll` beside `ASF.xlam` (proposed, as `ASF.xlam` must keep working without Python), or one `ASF.xll` one day.
-- **`PY_CALL` and `PythonAccess`:** `PY_CALL` is on whenever the `.xll` is loaded (3.4). Should `PythonAccess` `off` turn it off too?
