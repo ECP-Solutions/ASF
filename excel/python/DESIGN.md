@@ -1,6 +1,6 @@
 # Python for ASF in Excel: investigation and design
 
-Status: phases 1a and 1b are built (`xll/`, checks in `spike/README.md`). Phase 1a passes in 64-bit Excel 16.0; the 32-bit and Excel 2016 runs, and phase 1b in Excel, are still to do. Phases 2 to 5 are proposals.
+Status: phases 1a and 1b are built (`xll/`, checks in `spike/README.md`). Both pass in 64-bit Excel 16.0; the 32-bit and Excel 2016 runs are still to do. Phases 2 to 5 are proposals.
 
 Goal: Excel users call Python modules from their worksheets and from ASF scripts, through an open source add-in (MIT, like the rest of ASF). PyXLL, a commercial add-in, is the reference for what is possible. This page explains how PyXLL works and then proposes how ASF can do the same.
 
@@ -78,6 +78,7 @@ ASF calls host objects through `CallByName` (`ASF_Runtime.InvokeHost`, up to 30 
 | Method names on host objects are lower-cased before `CallByName` | `ASF_Runtime.TryCallHost` | COM ignores case, Python doesn't: `pd.DataFrame(...)` would arrive as `dataframe`. Pass the name as written (3.3) |
 | `import` is a keyword even after a dot: `py.import(...)` does not compile | `ASF_Compiler` | The method gets another name, `py.module(...)` (3.3) |
 | An error while reading a host property gives `undefined` | `ASF_Runtime.MemberValue` | A Python exception on an attribute read is silent. The proxy keeps the last exception for **Why this error?** |
+| Host calls go through `CallByName` | `ASF_Runtime.InvokeHost` | In Excel, `CallByName` reports a failed call as error 440 "Automation error", although it gets the message in `EXCEPINFO`; a late-bound call gets it, as error vbObjectError + 1001 (phase 1b's checklist). So the text always comes from `py.lastError` |
 
 Missing:
 - a way to run Python in Excel's process;
@@ -117,7 +118,7 @@ excel/python/
   - free-threaded builds (`3.13t` and later), which the stable ABI doesn't cover yet.
 - **Same bitness as Excel.** There are two builds: `asfpy64.xll` for 64-bit Excel with a 64-bit Python, and `asfpy32.xll` for 32-bit Excel with a 32-bit Python. The add-in checks the PE header of `python3.dll` before loading it and gives a clear message. In 32-bit Excel, Python shares Excel's address space of at most 4 GB, so large DataFrames run out of memory sooner.
 - **One Python per process.** Another add-in (PyXLL, xlOil) may already have started one. `asfpy.xll` checks for a loaded `python3*.dll` first. If one is there, it refuses and explains. When the one there was loaded by another copy of `asfpy.xll` (a module that exports `AsfPy_Root`), the message names that copy and says to restart Excel: browsing to a second copy is the usual way to get there.
-- **Python is started once and never finalized.** `Py_Finalize` with numpy or pandas loaded can crash, and they cannot start again in the same process. Reload means reloading modules (3.2), not restarting Python. The `.xll` pins itself in memory (`GetModuleHandleExW` with `GET_MODULE_HANDLE_EX_FLAG_PIN`). Unticking it in the Add-ins dialog then can't unload code that Python threads or VBA proxies still use. `xlAutoClose` unregisters the functions (`xlfUnregister`), so their cells show `#NAME?` while the add-in is off, and `xlAutoOpen` registers them again when it is ticked.
+- **Python is started once and never finalized.** `Py_Finalize` with numpy or pandas loaded can crash, and they cannot start again in the same process. Reload means reloading modules (3.2), not restarting Python. The `.xll` pins itself in memory (`GetModuleHandleExW` with `GET_MODULE_HANDLE_EX_FLAG_PIN`). Unticking it in the Add-ins dialog then can't unload code that Python threads or VBA proxies still use. `xlAutoClose` unregisters the functions (`xlfUnregister`), so Excel no longer calls them, and their cells show `#VALUE!` while the add-in is off. Excel keeps a function's name for the session: deleting it (`xlfSetName`), even after registering the function again as hidden as Excel-DNA does, still gave `#VALUE!` in Excel, not `#NAME?`. `xlAutoOpen` registers the functions again when the add-in is ticked.
 - **Start-up cost.** Importing pandas takes about a second. `xlAutoOpen` imports the Python folder's modules on Excel's start, so Excel starts slower. Later, a manifest written on each load (names, arguments, descriptions) can register the functions at start and import each module on its first call.
 
 **Worksheet functions**
@@ -283,7 +284,7 @@ Decision: write our own small add-in, and read xlOil and Excel-DNA for ideas, no
 |---|---|---|
 | 0 | Investigation, design, toolchain spike | This page; the MinGW build |
 | 1a | **Excel spike,** both bitnesses. The `.xll` loads a venv's Python by full path, registers one slot function, and gives VBA a root proxy through `AsfPy_Root` | In Excel 2016 (32-bit and 64-bit) and Microsoft 365: a formula returns a value from Python; VBA calls `py.call`; the start-up option of 3.1 is chosen; the 32-bit slot stub works, or the fallback is chosen; the cost of one call and of start-up is measured; Excel closes cleanly with numpy loaded. **Built; passes in 64-bit Excel 16.0** |
-| 1b | **The `.xll`, complete.** Start-up, both slot pools, registration, memory, threads and the GIL, the proxy, roots of both levels. Only a minimal Python bootstrap, enough to test it | The fake Excel host (below) runs both builds in CI; the struct-layout tests pass; a checklist in Excel 2016 (32-bit and 64-bit) and Microsoft 365 passes. **Built; the fake host passes natively with 64-bit Pythons; CI and the Excel checklist are still to run** |
+| 1b | **The `.xll`, complete.** Start-up, both slot pools, registration, memory, threads and the GIL, the proxy, roots of both levels. Only a minimal Python bootstrap, enough to test it | The fake Excel host (below) runs both builds in CI; the struct-layout tests pass; a checklist in Excel 2016 (32-bit and 64-bit) and Microsoft 365 passes. **Built; the fake host passes natively in 64-bit and 32-bit; the checklist passes in 64-bit Excel 16.0; CI, 32-bit Excel and Excel 2016 are still to run** |
 | 2 | Starts after phase 1. `PY_CALL`; `@xl_func` and `@export` with plain values and arrays; errors and **Why this error?**; reload; registry settings | Python tests on Linux; the `.xll` driven by a fake Excel host in CI (see below); a checklist run in Excel |
 | 3 | Starts after phase 1. Engine changes (3.3); `py` in library scripts; the two keys of 3.4 (`python` header and `PythonAccess`); ribbon buttons | Plus ASF test cases with a fake `py` object in LibreOffice and Excel |
 | 4 | numpy and pandas conversions, object handles, `thread_safe`, async functions, `@xl_macro` | |

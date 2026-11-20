@@ -43,6 +43,10 @@ If Python doesn't start, Excel shows the reason when it loads the add-in, and `A
 | Excel | Add-in | Result |
 |---|---|---|
 | Microsoft Excel 16.0, 64-bit (Windows 10), Python 3.14.6 venv with numpy | asfpy64.xll of phase 1a | Passes: 11 worksheet functions and 14 exports registered; the only errors in the log are the ones the checks provoke |
+| The same Excel, 4 calculation threads | asfpy64.xll of phase 1b (commit c2fc9c7) | 4 checks fail, the rest pass: `For Each`, `x = obj`, the suffixes, 20,000 thread-safe cells. Unticked, a function gave `#VALUE!`, not `#NAME?`: `xlfUnregister` leaves the name defined. The three refused calls raised error 440 "Automation error" through `CallByName`, without Python's text, while `py.lastError` held it: the checks now read `py.lastError` |
+| The same Excel | phase 1b, the name deleted before `xlfUnregister` | 1 check fails: unticked, still `#VALUE!`. `CallByName` gets Python's message in `EXCEPINFO` (the log shows it) and still raises a bare 440; a late-bound call raises `-2147220503` (vbObjectError + 1001) with the message. So `CallByName` drops it, and ASF reads `py.lastError` |
+| The same Excel | phase 1b, Excel-DNA's steps to remove a function | Excel took every step for all 14 functions (unregistered, registered again hidden, name deleted, hidden one unregistered), and an unticked function still gave `#VALUE!`: Excel keeps the name for the session. The add-in isn't called while unticked, so `xlAutoClose` is back to a plain `xlfUnregister`, and the check now asks for an error instead of 5.5 |
+| The same Excel, 4 calculation threads | phase 1b as committed after this run | **All 34 checks pass.** `py.call` from VBA 8.5 µs; 2,000 cells of `spike_add` in 15 ms; unticked, `#VALUE!` |
 
 ## Already checked without Excel
 

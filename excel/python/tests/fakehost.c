@@ -576,7 +576,7 @@ int wmain(int argc, wchar_t **argv)
             info->lpVtbl->Release(info);
         }
         ok = ok && desc && wcsncmp(desc, L"NameError", 9) == 0;
-        check(ok, L"py error info for CallByName", desc ? desc : L"none");
+        check(ok, L"py error info (ISupportErrorInfo, GetErrorInfo)", desc ? desc : L"none");
         SysFreeString(desc);
     }
     com_check(V_DISPATCH(&py), L"lastError", 0, args, L"NameError", NULL);

@@ -776,9 +776,11 @@ EXPORT int WINAPI xlAutoOpen(void)
     return 1;
 }
 
-/* When the add-in is unticked or Excel closes: the functions go, so that their cells show #NAME?
-   while the add-in is off. Python stays: it is never finalized, since numpy and pandas can't
-   start again in one process. */
+/* When the add-in is unticked or Excel closes: the functions are unregistered, so Excel no longer
+   calls them, and their cells show #VALUE! while the add-in is off. Excel keeps a function's name
+   for the session: deleting it, even after registering the function again as hidden as
+   Excel-DNA does, still gave #VALUE! (phase 1b's checklist). Python stays: it is never
+   finalized, since numpy and pandas can't start again in one process. */
 EXPORT int WINAPI xlAutoClose(void)
 {
     XLOPER12 id, res;
@@ -1199,6 +1201,9 @@ static HRESULT new_enum(Proxy *p, VARIANT *result, EXCEPINFO *ei)
     return hr;
 }
 
+/* A failed call fills EXCEPINFO: a late-bound call in VBA then gets the message, as error
+   vbObjectError + 1001. VBA's CallByName gets it too but raises error 440 "Automation error"
+   without it, so ASF reads py.lastError (phase 1b's checklist). */
 static HRESULT STDMETHODCALLTYPE px_Invoke(IDispatch *self, DISPID id, REFIID riid, LCID lcid, WORD flags,
                                            DISPPARAMS *dp, VARIANT *result, EXCEPINFO *ei, UINT *argerr)
 {

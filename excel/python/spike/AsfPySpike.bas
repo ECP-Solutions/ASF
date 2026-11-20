@@ -10,7 +10,7 @@ Private Declare PtrSafe Function AsfPy_Root Lib "asfpy64.xll" (ByVal level As Lo
 Private Declare PtrSafe Function AsfPy_Root Lib "asfpy32.xll" (ByVal level As Long, ByRef out As Variant) As Long
 #End If
 
-Private ws As Object, row As Long, failures As Long, lastFailure As String
+Private ws As Object, row As Long, failures As Long, lastFailure As String, lastRaised As String
 
 ' Sets the venv (or Python install) and the Python folder that the add-in reads when it loads
 Public Sub AsfPySetup()
@@ -58,11 +58,17 @@ Public Sub AsfPySpikeTest()
     End If
     a(1, 1) = 11: a(1, 2) = 12: a(2, 1) = 21: a(2, 2) = 22
     Check "py.call mean of a 2-D array", CallPy(py, "call", VbMethod, "spike.mean", a), 16.5
-    Check "py.call refused: os.system", ErrorOf(py, "call", "os.system", "calc"), "NameError"
+    Check "py.call refused: os.system", ErrorOf(py, "call", "os.system", "calc"), "NameError: no exported function 'os.system' in the Python folder"
+    Put3 "  what CallByName raised for it", lastRaised, ""
     Check "py.lastError", Left$(CallPy(py, "lastError", VbGet), 9), "NameError"
-    Check "py.module at level 1", ErrorOf(py, "module", "math", Empty), "AttributeError"
-    Check "py.__class__", ErrorOf(py, "__class__", Empty, Empty), "AttributeError"
+    Check "py.module at level 1", ErrorOf(py, "module", "math", Empty), "AttributeError: '_Root' has no member 'module'"
+    Check "py.__class__", ErrorOf(py, "__class__", Empty, Empty), "AttributeError: '__class__' can't be used"
     code = AsfPy_Root(2, py2)
+    ' what a plain late-bound call raises, as against CallByName above (information only)
+    On Error Resume Next
+    v = py2.module("_hidden")
+    Put3 "  what a late-bound call raised for py.module('_hidden')", Err.Number & ": " & Err.Description, ""
+    On Error GoTo 0
     Set m = PyObj(py2, "module", "math")
     If m Is Nothing Then
         Check "py.module('math')", lastFailure, "an object"
@@ -164,9 +170,12 @@ Public Sub AsfPySpikeTest()
     If ai Is Nothing Then
         Put3 "Unticked and ticked again", "the add-in isn't in Application.AddIns: check by hand (README)", ""
     Else
+        ' unticked, Excel doesn't call the function: an error (#VALUE!, as Excel keeps the name), not 5.5
         ai.Installed = False
         s.Range("E16").Formula = "=spike_add(2,3.5)"
-        Check "Unticked: =spike_add(2,3.5)", s.Range("E16").Value, CVErr(xlErrName)
+        v = s.Range("E16").Value
+        Check "Unticked: =spike_add(2,3.5) isn't calculated", IIf(IsError(v), "an error", v), "an error"
+        Put3 "  the error", CStr(v), ""
         ai.Installed = True
         s.Range("E16").Formula = "=spike_add(2,3.5)"
         Check "Ticked again: =spike_add(2,3.5)", s.Range("E16").Value, 5.5
@@ -245,19 +254,23 @@ Private Function RoundIf(v As Variant) As Variant
     If IsNumeric(v) Then RoundIf = Round(v, 6) Else RoundIf = v
 End Function
 
-' the text of a Python error raised through CallByName, or "" when there was none
-Private Function ErrorOf(obj As Variant, name As String, a1 As Variant, a2 As Variant) As String
-    Dim v As Variant
+' A call of py that Python refuses, through CallByName as ASF makes it. VBA raises an error (in
+' Excel, error 440 "Automation error", without Python's text), and py.lastError names the
+' exception: the result is that text, or "no error". What VBA raised goes to lastRaised.
+Private Function ErrorOf(py As Variant, name As String, a1 As Variant, a2 As Variant) As String
+    Dim v As Variant, raised As Boolean
     On Error Resume Next
     If IsEmpty(a1) Then
-        v = CallByName(obj, name, VbGet)
+        v = CallByName(py, name, VbGet)
     ElseIf IsEmpty(a2) Then
-        v = CallByName(obj, name, VbMethod, a1)
+        v = CallByName(py, name, VbMethod, a1)
     Else
-        v = CallByName(obj, name, VbMethod, a1, a2)
+        v = CallByName(py, name, VbMethod, a1, a2)
     End If
-    If Err.Number <> 0 Then ErrorOf = Split(Err.Description & ":", ":")(0)
-    If Err.Number <> 0 And InStr(Err.Description, ":") = 0 Then ErrorOf = "error " & Err.Number & ": " & Err.Description
+    raised = Err.Number <> 0
+    lastRaised = IIf(raised, Err.Number & ": " & Err.Description, "no error")
+    On Error GoTo 0
+    If raised Then ErrorOf = CallPy(py, "lastError", VbGet) Else ErrorOf = "no error"
 End Function
 
 ' a text that starts with = would become a formula in the cell
