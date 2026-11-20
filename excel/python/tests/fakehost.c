@@ -15,13 +15,15 @@
 #include "../xll/xloper.h"
 
 #define NSLOTS 1000   /* as in asfpy.c */
+#define NBUILTIN 2    /* PY_CALL and the command AsfPyReload */
+#define SETTINGS_KEY L"Software\\VB and VBA Program Settings\\ASF\\AddIn"
 
 #if defined(_MSC_VER) && !defined(_WIN64)
 #pragma comment(linker, "/EXPORT:MdCallBack12=_MdCallBack12@16")   /* undecorated, as Excel exports it */
 #endif
 
 typedef struct { wchar_t proc[32], name[64], type[48]; int nargs; } Reg;
-static Reg regs[4 * NSLOTS];
+static Reg regs[8 * NSLOTS];
 static int nregs, nunregs, checks, failed;
 static wchar_t xll_path[MAX_PATH], last_alert[1024];
 static HMODULE xll;
@@ -54,7 +56,7 @@ __declspec(dllexport) int WINAPI MdCallBack12(int fn, int n, LPXLOPER12 *op, LPX
         return xlretSuccess;
     case xlfRegister: {
         Reg *r;
-        if (nregs == 4 * NSLOTS) return 2;
+        if (nregs == 8 * NSLOTS) return 2;
         r = &regs[nregs++];
         copy_text(r->proc, op[1], 32);
         copy_text(r->type, op[2], 48);
@@ -119,6 +121,7 @@ typedef LPXLOPER12 (WINAPI *F0)(void);
 typedef LPXLOPER12 (WINAPI *F1)(LPXLOPER12);
 typedef LPXLOPER12 (WINAPI *F2)(LPXLOPER12, LPXLOPER12);
 typedef LPXLOPER12 (WINAPI *F3)(LPXLOPER12, LPXLOPER12, LPXLOPER12);
+typedef LPXLOPER12 (WINAPI *F4)(LPXLOPER12, LPXLOPER12, LPXLOPER12, LPXLOPER12);
 typedef LPXLOPER12 (WINAPI *F7)(LPXLOPER12, LPXLOPER12, LPXLOPER12, LPXLOPER12, LPXLOPER12, LPXLOPER12, LPXLOPER12);
 
 static void (WINAPI *free12)(LPXLOPER12);
@@ -129,10 +132,11 @@ static void release(LPXLOPER12 r)
     if (r->xltype & xlbitDLLFree) free12(r);
 }
 
+/* the latest registration of a name: registering it again replaces it, as in Excel */
 static Reg *reg_of(const wchar_t *name)
 {
     int i;
-    for (i = 0; i < nregs; i++)
+    for (i = nregs - 1; i >= 0; i--)
         if (_wcsicmp(regs[i].name, name) == 0) return &regs[i];
     return NULL;
 }
@@ -144,6 +148,55 @@ static FARPROC slot_of(const wchar_t *name)
     if (!r) return NULL;
     WideCharToMultiByte(CP_ACP, 0, r->proc, -1, proc, 32, NULL, NULL);
     return GetProcAddress(xll, proc);
+}
+
+static Reg *reg_of_proc(const wchar_t *proc)
+{
+    int i;
+    for (i = nregs - 1; i >= 0; i--)
+        if (wcscmp(regs[i].proc, proc) == 0) return &regs[i];
+    return NULL;
+}
+
+/* PY_CALL as Excel calls it: always 30 arguments, those not given as xltypeMissing */
+typedef LPXLOPER12 (WINAPI *F30)(LPXLOPER12, LPXLOPER12, LPXLOPER12, LPXLOPER12, LPXLOPER12, LPXLOPER12,
+                                 LPXLOPER12, LPXLOPER12, LPXLOPER12, LPXLOPER12, LPXLOPER12, LPXLOPER12,
+                                 LPXLOPER12, LPXLOPER12, LPXLOPER12, LPXLOPER12, LPXLOPER12, LPXLOPER12,
+                                 LPXLOPER12, LPXLOPER12, LPXLOPER12, LPXLOPER12, LPXLOPER12, LPXLOPER12,
+                                 LPXLOPER12, LPXLOPER12, LPXLOPER12, LPXLOPER12, LPXLOPER12, LPXLOPER12);
+
+static void pycall_check(const wchar_t *what, int n, LPXLOPER12 *given, const wchar_t *want)
+{
+    F30 f = (F30)slot_of(L"PY_CALL");
+    XLOPER12 missing;
+    LPXLOPER12 a[30], r;
+    wchar_t got[1024];
+    int i;
+    if (!f) { check(0, what, L"PY_CALL not registered"); return; }
+    missing.xltype = xltypeMissing;
+    for (i = 0; i < 30; i++) a[i] = i < n ? given[i] : &missing;
+    r = f(a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], a[9], a[10], a[11], a[12], a[13], a[14],
+          a[15], a[16], a[17], a[18], a[19], a[20], a[21], a[22], a[23], a[24], a[25], a[26], a[27], a[28], a[29]);
+    cell_text(r, got, 1024);
+    check(wcscmp(got, want) == 0, what, got);
+    release(r);
+}
+
+/* a file in the add-in's Python folder (the setting run_fakehost.py made); NULL text deletes it */
+static int folder_file(const wchar_t *name, const char *text)
+{
+    wchar_t folder[MAX_PATH], path[MAX_PATH];
+    DWORD size = sizeof folder;
+    FILE *f;
+    if (RegGetValueW(HKEY_CURRENT_USER, SETTINGS_KEY, L"PythonFolder", RRF_RT_REG_SZ, NULL, folder, &size) != ERROR_SUCCESS)
+        return 0;
+    swprintf(path, MAX_PATH, L"%ls\\%ls", folder, name);
+    if (!text) return DeleteFileW(path) != 0;
+    f = _wfopen(path, L"wb");
+    if (!f) return 0;
+    fputs(text, f);
+    fclose(f);
+    return 1;
 }
 
 static void type_check(const wchar_t *name, const wchar_t *want)
@@ -167,7 +220,9 @@ static void call_check(const wchar_t *name, int n, LPXLOPER12 *a, const wchar_t 
     case 1: r = ((F1)f)(a[0]); break;
     case 2: r = ((F2)f)(a[0], a[1]); break;
     case 3: r = ((F3)f)(a[0], a[1], a[2]); break;
+    case 4: r = ((F4)f)(a[0], a[1], a[2], a[3]); break;
     case 7: r = ((F7)f)(a[0], a[1], a[2], a[3], a[4], a[5], a[6]); break;
+    default: check(0, what, L"the fake host can't call this many arguments"); return;
     }
     cell_text(r, got, 1024);
     check(wcsncmp(got, want, wcslen(want)) == 0, what, got);
@@ -412,11 +467,13 @@ int wmain(int argc, wchar_t **argv)
     QueryPerformanceCounter(&t1);
     wprintf(L"     start-up: %.0f ms, %d functions registered\n", (t1.QuadPart - t0.QuadPart) * 1000.0 / fq.QuadPart, nregs);
     swprintf(got, 256, L"%d", nregs);
-    check(nregs == NSLOTS, L"registered: one function in each slot", got);
+    check(nregs == NSLOTS + NBUILTIN, L"registered: one function in each slot, PY_CALL and AsfPyReload", got);
     if (nregs < 20) { wprintf(L"%d checks, %d failed\n", checks, failed); return 1; }
     check(wcsstr(last_alert, L"are not registered") != NULL, L"alert: functions beyond the slots", last_alert);
 
     /* --- registration: types and their suffixes */
+    type_check(L"PY_CALL", L"QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ");
+    type_check(L"AsfPyReload", L"J");
     type_check(L"spike_add", L"QQQ");
     type_check(L"spike_version", L"Q");
     type_check(L"spike_volatile", L"Q!");
@@ -426,14 +483,14 @@ int wmain(int argc, wchar_t **argv)
 
     /* --- the pool: the last slot, and slots of 0 to 3 arguments (the 32-bit stubs pop them) */
     {
-        Reg *last = &regs[NSLOTS - 1];
-        int k = _wtoi(last->name + 5), n = k % 4;
+        Reg *last = reg_of_proc(L"asfpy_f0999");
+        int k = last ? _wtoi(last->name + 5) : 0, n = k % 4;
         wchar_t want[32];
-        check(wcscmp(last->proc, L"asfpy_f0999") == 0 && wcsncmp(last->name, L"slot_", 5) == 0,
-              L"the last slot is asfpy_f0999", last->proc);
+        check(last && wcsncmp(last->name, L"slot_", 5) == 0, L"the last slot, asfpy_f0999, holds a slot_ function",
+              last ? last->name : L"nothing");
         for (i = 0; i < n; i++) a[i] = num(1);
         swprintf(want, 32, L"%d", k * 1000 + n);
-        call_check(last->name, n, p, want);
+        if (last) call_check(last->name, n, p, want);
     }
     call_check(L"slot_0000", 0, p, L"0");
     a[0] = num(5);
@@ -473,6 +530,36 @@ int wmain(int argc, wchar_t **argv)
     call_check(L"spike_sqrt", 1, p, L"4");
     a[0] = str(L"Ωmega");
     call_check(L"spike_text", 1, p, L"Ωmega · ü · 中文 · 5 chars");
+
+    /* --- type hints: int, date, str and list from cell values; a date back as a serial number */
+    a[0] = num(2); a[1] = num(45000); a[2] = num(12); a[3] = num(7);
+    call_check(L"spike_hints", 4, p, L"2 | datetime.date(2023, 3, 15) | '12' | [7.0]");
+    a[0] = num(45000);
+    call_check(L"spike_nextday", 1, p, L"45001");
+
+    /* --- PY_CALL: exported functions by name, never imported; missing arguments at the end dropped */
+    {
+        XLOPER12 g[4], col[3], missing;
+        LPXLOPER12 q[4] = { &g[0], &g[1], &g[2], &g[3] };
+        missing.xltype = xltypeMissing;
+        g[0] = str(L"spike.add"); g[1] = num(2); g[2] = num(40);
+        pycall_check(L"PY_CALL(\"spike.add\", 2, 40)", 3, q, L"42");
+        for (i = 0; i < 3; i++) col[i] = num(i + 1);
+        g[0] = str(L"spike.scale");
+        g[1].xltype = xltypeMulti; g[1].val.array.lparray = col; g[1].val.array.rows = 3; g[1].val.array.columns = 1;
+        g[2] = num(10);
+        pycall_check(L"PY_CALL(\"spike.scale\", A1:A3, 10)", 3, q, L"10;20;30");
+        g[0] = str(L"spike.spike_args3"); g[1] = num(1); g[2] = missing; g[3] = str(L"x");
+        pycall_check(L"PY_CALL with a missing argument between two", 4, q, L"1.0 | None | 'x'");
+        g[0] = str(L"os.system"); g[1] = str(L"calc");
+        pycall_check(L"PY_CALL(\"os.system\", \"calc\"): #NAME?", 2, q, L"#29");
+        g[0] = str(L"spike.add"); g[1] = str(L"x"); g[2] = num(1);
+        pycall_check(L"PY_CALL raising TypeError: #VALUE!", 3, q, L"#15");
+        g[0] = str(L"spike.add"); g[1] = num(1); g[2] = err(xlerrNA);
+        pycall_check(L"PY_CALL with #N/A as an argument: #N/A", 3, q, L"#42");
+        g[0] = err(xlerrDiv0);
+        pycall_check(L"PY_CALL with #DIV/0! as the name: #DIV/0!", 1, q, L"#7");
+    }
     if (argc > 2 && wcscmp(argv[2], L"numpy") == 0) {
         XLOPER12 col[10];
         for (i = 0; i < 10; i++) col[i] = num(i + 1);
@@ -580,6 +667,9 @@ int wmain(int argc, wchar_t **argv)
         SysFreeString(desc);
     }
     com_check(V_DISPATCH(&py), L"lastError", 0, args, L"NameError", NULL);
+    com_check(V_DISPATCH(&py), L"lastTraceback", 0, args, L"Traceback (most recent call last)", NULL);
+    com_check(V_DISPATCH(&py), L"clearError", 0, args, L"<empty>", NULL);
+    com_check(V_DISPATCH(&py), L"lastError", 0, args, L":8", NULL);       /* empty text after clearError */
     args[0] = vstr(L"math");
     com_check(V_DISPATCH(&py), L"module", 1, args, L"error: AttributeError", NULL);
     args[0] = vstr(L"spike.echo");
@@ -645,12 +735,42 @@ int wmain(int argc, wchar_t **argv)
     {
         int (WINAPI *close)(void) = (int (WINAPI *)(void))GetProcAddress(xll, "xlAutoClose");
         int before = nregs;
+        nunregs = 0;
         close();
         swprintf(got, 256, L"%d", nunregs);
-        check(nunregs == NSLOTS, L"xlAutoClose unregisters every function", got);
+        check(nunregs == NSLOTS + NBUILTIN, L"xlAutoClose unregisters every function, PY_CALL and AsfPyReload", got);
         open();
         swprintf(got, 256, L"%d", nregs - before);
-        check(nregs - before == NSLOTS, L"xlAutoOpen again registers them again", got);
+        check(nregs - before == NSLOTS + NBUILTIN, L"xlAutoOpen again registers them again", got);
+        a[0] = num(2); a[1] = num(3.5);
+        call_check(L"spike_add", 2, p, L"5.5");
+    }
+
+    /* --- AsfPyReload: a module added, changed (same size, same second) and removed */
+    {
+        int (WINAPI *reload)(void) = (int (WINAPI *)(void))GetProcAddress(xll, "asfpy_reload");
+        XLOPER12 g[1];
+        LPXLOPER12 q[1] = { &g[0] };
+        const char *v1 = "from asfpy import export, xl_func\n\n@xl_func\ndef reload_check():\n    return 1\n\n"
+                         "@export\ndef version():\n    return 1\n";
+        const char *v2 = "from asfpy import export, xl_func\n\n@xl_func\ndef reload_check():\n    return 2\n\n"
+                         "@export\ndef version():\n    return 2\n";
+        int before;
+        g[0] = str(L"aa_reload.version");
+        check(folder_file(L"aa_reload.py", v1), L"aa_reload.py written in the Python folder", L"");
+        before = nunregs;
+        check(reload && reload() == 1, L"AsfPyReload", L"1");
+        swprintf(got, 256, L"%d", nunregs - before);
+        check(nunregs - before == NSLOTS, L"AsfPyReload unregisters the functions before", got);
+        call_check(L"reload_check", 0, p, L"1");
+        pycall_check(L"PY_CALL(\"aa_reload.version\") after a reload", 1, q, L"1");
+        folder_file(L"aa_reload.py", v2);
+        if (reload) reload();
+        call_check(L"reload_check", 0, p, L"2");
+        pycall_check(L"PY_CALL(\"aa_reload.version\") after the module changed", 1, q, L"2");
+        folder_file(L"aa_reload.py", NULL);
+        if (reload) reload();
+        pycall_check(L"PY_CALL(\"aa_reload.version\") after the module went: #NAME?", 1, q, L"#29");
         a[0] = num(2); a[1] = num(3.5);
         call_check(L"spike_add", 2, p, L"5.5");
     }

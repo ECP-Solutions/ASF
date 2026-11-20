@@ -64,11 +64,11 @@ def build_fakehost(tool, b):
     if tool == "mingw":
         gcc = "x86_64-w64-mingw32-gcc" if b == 64 else "i686-w64-mingw32-gcc"
         subprocess.run([gcc, "-O2", "-municode", src, "-o", exe, "-loleaut32", "-lole32", "-luuid", "-lpsapi",
-                        "-Wl,--kill-at"], check=True)   # MdCallBack12 undecorated, as Excel exports it
+                        "-ladvapi32", "-Wl,--kill-at"], check=True)   # MdCallBack12 undecorated, as Excel exports it
     else:
         build.msvc_run(b, ["cl"] + build.MSVC_FLAGS + [src, "/Fo" + os.path.join(BUILD, "fakehost%d.obj" % b),
                                                       "/Fe" + exe, "/link", "oleaut32.lib", "ole32.lib", "uuid.lib",
-                                                      "psapi.lib"], cwd=BUILD)
+                                                      "psapi.lib", "advapi32.lib"], cwd=BUILD)
     return exe
 
 

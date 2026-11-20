@@ -1,5 +1,5 @@
 Attribute VB_Name = "AsfPySpike"
-' The checks of phases 1a and 1b in Excel (excel/python/spike/README.md). Import this module into
+' The checks of phases 1a, 1b and 2 in Excel (excel/python/spike/README.md). Import this module into
 ' any workbook (not into ASF.xlam), then run AsfPySetup once and AsfPySpikeTest with
 ' asfpy64.xll or asfpy32.xll loaded. The results go to a new workbook.
 Option Explicit
@@ -28,12 +28,12 @@ End Sub
 
 Public Sub AsfPySpikeTest()
     Dim py As Variant, py2 As Variant, m As Variant, v As Variant, a(1 To 2, 1 To 2) As Variant
-    Dim i As Long, t As Double, code As Long, numpy As Boolean, x As Variant, s2 As String
+    Dim i As Long, t As Double, code As Long, numpy As Boolean, x As Variant, s2 As String, folder As String
     Set ws = Workbooks.Add.Worksheets(1)
     ws.Name = "Spike"
     row = 1
     failures = 0
-    Put3 "ASF Python, phases 1a and 1b", Application.Name & " " & Application.Version & ", " & IIf(Is64(), "64-bit", "32-bit"), ""
+    Put3 "ASF Python, phases 1a, 1b and 2", Application.Name & " " & Application.Version & ", " & IIf(Is64(), "64-bit", "32-bit"), ""
 
     ' --- py from VBA
     On Error Resume Next
@@ -141,8 +141,9 @@ Public Sub AsfPySpikeTest()
 
     ' --- recalculation: 2,000 cells
     s.Range("M1:M2000").Formula = "=spike_add(ROW(),1)"
+    ' the clock first: with automatic calculation, Dirty calculates the cells at once
     t = Timer
-    s.Range("M1:M2000").Calculate
+    Recalc s.Range("M1:M2000")
     Put3 "2,000 cells of spike_add, ms to calculate", Format((Timer - t) * 1000, "0"), ""
     Check "M2000", s.Range("M2000").Value, 2001
 
@@ -157,10 +158,42 @@ Public Sub AsfPySpikeTest()
     Put3 "Multi-threaded calculation", IIf(Application.MultiThreadedCalculation.Enabled, Application.MultiThreadedCalculation.ThreadCount & " threads", "off: File > Options > Advanced > Formulas"), ""
     s.Range("O1:O20000").Formula = "=spike_threadsafe(ROW())"
     t = Timer
-    s.Range("O1:O20000").Calculate
+    Recalc s.Range("O1:O20000")
     Put3 "20,000 cells of spike_threadsafe, ms to calculate", Format((Timer - t) * 1000, "0"), ""
     s.Range("P1").Formula = "=SUMPRODUCT(--(O1:O20000=2*ROW(O1:O20000)))"
     Check "spike_threadsafe: right results of 20,000", s.Range("P1").Value, 20000
+
+    ' --- phase 2: PY_CALL, type hints, Why this error?
+    Formula s, "E17", "=PY_CALL(""spike.add"",2,40)", 42
+    s.Range("R1:R3").FormulaArray = "=PY_CALL(""spike.scale"",A1:A3,10)"
+    Check "=PY_CALL(""spike.scale"",A1:A3,10), an array formula", Join2(s.Range("R1:R3").Value), "10;20;30"
+    Formula s, "E18", "=PY_CALL(""os.system"",""calc"")", CVErr(xlErrName)
+    Formula s, "E19", "=spike_hints(2,DATE(2023,3,15),12,7)", "2 | datetime.date(2023, 3, 15) | '12' | [7.0]"
+    s.Range("E20").Formula = "=spike_nextday(DATE(2023,3,15))"
+    Check "=spike_nextday(DATE(2023,3,15)), a serial number", s.Range("E20").Value2, 45001
+    ' what Why this error? will do: forget the last error, calculate the cell again, read it
+    CallPy py, "clearError", VbMethod
+    Recalc s.Range("E8")
+    Check "Why this error? for =spike_sqrt(-1)", CallPy(py, "lastError", VbGet), "ValueError: expected a nonnegative input, got -1.0"
+    Check "  its traceback names the function", IIf(InStr(CallPy(py, "lastTraceback", VbGet), "spike_sqrt") > 0, "yes", "no"), "yes"
+
+    ' --- phase 2: AsfPyReload, with a module added, changed and removed in the Python folder
+    folder = GetSetting("ASF", "AddIn", "PythonFolder", Environ$("APPDATA") & "\ASF\python")
+    WriteReloadModule folder & "\aa_reload.py", 1
+    Check "AsfPyReload, aa_reload.py added", Reload(), "done"
+    Formula s, "E21", "=reload_check()", 1
+    Formula s, "E22", "=PY_CALL(""aa_reload.version"")", 1
+    WriteReloadModule folder & "\aa_reload.py", 22
+    Check "AsfPyReload, aa_reload.py changed", Reload(), "done"
+    Put3 "  =reload_check() before the cell is calculated again", s.Range("E21").Value, ""
+    Recalc s.Range("E21:E22")
+    Check "=reload_check() after the change", s.Range("E21").Value, 22
+    Check "=PY_CALL(""aa_reload.version"") after the change", s.Range("E22").Value, 22
+    Kill folder & "\aa_reload.py"
+    Check "AsfPyReload, aa_reload.py removed", Reload(), "done"
+    Recalc s.Range("E22")
+    Check "=PY_CALL(""aa_reload.version"") after the removal", s.Range("E22").Value, CVErr(xlErrName)
+    Formula s, "E23", "=spike_add(2,3.5)", 5.5
 
     ' --- phase 1b: the add-in unticked and ticked again (xlAutoClose, xlAutoOpen)
     Dim ai As Object
@@ -187,6 +220,42 @@ Public Sub AsfPySpikeTest()
     ws.Columns("A:C").AutoFit
     ws.Activate
 End Sub
+
+' a range calculated again, as Ctrl+Alt+F9 does: Range.Calculate alone skips cells that aren't
+' dirty, such as a cell whose function the add-in just reloaded
+Private Sub Recalc(r As Object)
+    r.Dirty
+    r.Calculate
+End Sub
+
+' a module for the reload checks: reload_check() and aa_reload.version() both return n
+Private Sub WriteReloadModule(path As String, n As Long)
+    Dim f As Integer
+    f = FreeFile
+    Open path For Output As #f
+    Print #f, "from asfpy import export, xl_func"
+    Print #f, ""
+    Print #f, ""
+    Print #f, "@xl_func"
+    Print #f, "def reload_check():"
+    Print #f, "    return " & n
+    Print #f, ""
+    Print #f, ""
+    Print #f, "@export"
+    Print #f, "def version():"
+    Print #f, "    return " & n
+    Close #f
+End Sub
+
+' the add-in's command AsfPyReload: "done", or the error
+Private Function Reload() As String
+    On Error GoTo Failed
+    Application.Run "AsfPyReload"
+    Reload = "done"
+    Exit Function
+Failed:
+    Reload = "error " & Err.Number & ": " & Err.Description
+End Function
 
 Private Function Is64() As Boolean
 #If Win64 Then

@@ -432,47 +432,120 @@ static void alert(const wchar_t *msg)
     free(text.val.str);
 }
 
+/* xlfRegister of one procedure of the add-in (macro type 1: a worksheet function; 2: a command);
+   its register ID, or 0 */
+static double register_proc(LPXLOPER12 dll, const wchar_t *proc, const wchar_t *type, const wchar_t *name,
+                            const wchar_t *args, int macro_type, const wchar_t *help, int nhelp, wchar_t **arghelp)
+{
+    XLOPER12 res, x[10 + MAX_ARGS + 1];
+    LPXLOPER12 op[10 + MAX_ARGS + 1];
+    double id = 0;
+    int k, n;
+    op[0] = dll;
+    xltext(&x[1], proc);
+    xltext(&x[2], type);
+    xltext(&x[3], name);
+    xltext(&x[4], args);
+    x[5].xltype = xltypeNum;
+    x[5].val.num = macro_type;
+    xltext(&x[6], L"Python");
+    xltext(&x[7], L"");
+    xltext(&x[8], L"");
+    xltext(&x[9], help);
+    n = 10;
+    for (k = 0; k < nhelp && k < MAX_ARGS; k++) xltext(&x[n++], arghelp[k]);
+    xltext(&x[n++], L"");    /* Insert Function cuts the last description: one more, empty */
+    for (k = 1; k < n; k++) op[k] = &x[k];
+    if (excel12(xlfRegister, &res, n, op) == xlretSuccess && res.xltype == xltypeNum) {
+        id = res.val.num;
+        note(L"registered %ls as %ls, type %ls", name, proc, type);
+    } else {
+        note(L"registering %ls failed", name);
+    }
+    for (k = 1; k < n; k++)
+        if (k != 5) free(x[k].val.str);    /* x[5] is the macro type, a number */
+    return id;
+}
+
+/* the functions of the Python folder, one in each slot */
 static void register_functions(void)
 {
-    XLOPER12 dll, res, x[10 + MAX_ARGS + 1];
-    LPXLOPER12 op[10 + MAX_ARGS + 1];
-    int i, k, n;
+    XLOPER12 dll;
+    LPXLOPER12 op[1] = { &dll };
+    int i, k;
     if (excel12(xlGetName, &dll, 0, NULL) != xlretSuccess) {
         note(L"xlGetName failed");
         return;
     }
-    op[0] = &dll;
     for (i = 0; i < g_nfuncs; i++) {
         Func *f = &g_funcs[i];
         wchar_t proc[32], type[MAX_ARGS + 8];
         swprintf(proc, 32, L"asfpy_f%04d", i);
         for (k = 0; k <= f->nargs; k++) type[k] = L'Q';
         wcscpy(type + f->nargs + 1, f->flags);
-        xltext(&x[1], proc);
-        xltext(&x[2], type);
-        xltext(&x[3], f->name);
-        xltext(&x[4], f->args);
-        x[5].xltype = xltypeNum; x[5].val.num = 1;
-        xltext(&x[6], L"Python");
-        xltext(&x[7], L"");
-        xltext(&x[8], L"");
-        xltext(&x[9], f->help);
-        n = 10;
-        for (k = 0; k < f->nargs; k++) xltext(&x[n++], f->arghelp[k]);
-        xltext(&x[n++], L"");    /* Insert Function cuts the last description: one more, empty */
-        for (k = 1; k < n; k++) op[k] = &x[k];
         asfpy_nargs[i] = f->nargs;
-        f->id = 0;
-        if (excel12(xlfRegister, &res, n, op) != xlretSuccess || res.xltype != xltypeNum) {
-            note(L"registering %ls failed", f->name);
-        } else {
-            f->id = res.val.num;
-            note(L"registered %ls as %ls, type %ls", f->name, proc, type);
-        }
-        for (k = 1; k < n; k++)
-            if (k != 5) free(x[k].val.str);    /* x[5] is the macro type, a number */
+        f->id = register_proc(&dll, proc, type, f->name, f->args, 1, f->help, f->nargs, f->arghelp);
     }
     excel12(xlFree, NULL, 1, op);
+}
+
+/* PY_CALL and the command AsfPyReload: the add-in's own, registered once Python runs */
+#define PYCALL_ARGS 29          /* PY_CALL(name, 29 arguments): 30 in all, below Excel's 255 */
+static double g_pycall_id, g_reload_id;
+
+static void register_builtins(void)
+{
+    XLOPER12 dll;
+    LPXLOPER12 op[1] = { &dll };
+    wchar_t type[PYCALL_ARGS + 3], args[256] = L"name";
+    wchar_t *help[2] = { L"module.function: a function of the Python folder marked with @export",
+                         L"an argument of the function; a range arrives as a list" };
+    int k;
+    if (excel12(xlGetName, &dll, 0, NULL) != xlretSuccess) return;
+    for (k = 0; k < PYCALL_ARGS + 2; k++) type[k] = L'Q';
+    type[PYCALL_ARGS + 2] = 0;
+    for (k = 1; k <= PYCALL_ARGS; k++) swprintf(args + wcslen(args), 256 - wcslen(args), L",arg%d", k);
+    g_pycall_id = register_proc(&dll, L"asfpy_call", type, L"PY_CALL", args, 1,
+                                L"Calls a function of the Python folder exported with @export, by its module and name.", 2, help);
+    g_reload_id = register_proc(&dll, L"asfpy_reload", L"J", L"AsfPyReload", L"", 2,
+                                L"Imports the modules of the Python folder again and registers their functions.", 0, NULL);
+    excel12(xlFree, NULL, 1, op);
+}
+
+static int unregister_id(double *id)
+{
+    XLOPER12 x, res;
+    LPXLOPER12 op[1] = { &x };
+    int ok;
+    if (!*id) return 0;
+    x.xltype = xltypeNum;
+    x.val.num = *id;
+    ok = excel12(xlfUnregister, &res, 1, op) == xlretSuccess;
+    *id = 0;
+    return ok;
+}
+
+/* the functions of the slots; Excel no longer calls them, and their cells show #VALUE! */
+static int unregister_functions(void)
+{
+    int i, n = 0;
+    for (i = 0; i < g_nfuncs; i++) n += unregister_id(&g_funcs[i].id);
+    return n;
+}
+
+/* g_funcs empty again, for the functions of a reload */
+static void free_functions(void)
+{
+    int i, k;
+    for (i = 0; i < g_nfuncs; i++) {
+        Func *f = &g_funcs[i];
+        free(f->name);
+        free(f->args);
+        free(f->help);
+        for (k = 0; k < f->nargs; k++) free(f->arghelp[k]);
+        memset(f, 0, sizeof *f);
+    }
+    g_nfuncs = g_total = 0;
 }
 
 /* boot.start's list of (name, [argument names], description, suffixes) into g_funcs */
@@ -656,6 +729,12 @@ static PyObject *multi_to_py(LPXLOPER12 x)
     return list;
 }
 
+/* an argument of a worksheet function: a range as a list of rows, else a cell value */
+static PyObject *arg_to_py(LPXLOPER12 x)
+{
+    return (x->xltype & 0xFFF) == xltypeMulti ? multi_to_py(x) : cell_to_py(x);
+}
+
 static void set_xlstr(LPXLOPER12 x, PyObject *s)
 {
     Py_ssize_t n;
@@ -733,8 +812,7 @@ LPXLOPER12 __cdecl asfpy_dispatch(int slot, LPXLOPER12 *argv)
         if ((argv[i]->xltype & 0xFFF) == xltypeErr) return xlerror(argv[i]->val.err);
     gil = P.PyGILState_Ensure();
     args = P.PyList_New(n);
-    for (i = 0; i < n; i++)
-        P.PyList_SetItem(args, i, (argv[i]->xltype & 0xFFF) == xltypeMulti ? multi_to_py(argv[i]) : cell_to_py(argv[i]));
+    for (i = 0; i < n; i++) P.PyList_SetItem(args, i, arg_to_py(argv[i]));
     r = boot_call("xl_call", 2, P.PyLong_FromLong(slot), args);
     res = r ? tag_to_result(r) : xlerror(xlerrValue);
     if (r) P.Py_DecRef(r);
@@ -748,6 +826,77 @@ LPXLOPER12 __cdecl asfpy_dispatch(int slot, LPXLOPER12 *argv)
 #include "slots_x86_msvc.h"    /* MinGW assembles slots_x86.S instead */
 #endif
 
+/* PY_CALL(name, arguments...): an exported function of the Python folder, looked up by name
+   (boot.xl_call_export). Excel passes all 30 arguments, those not given as xltypeMissing, so
+   one __stdcall signature serves in both bitnesses; the missing ones at the end are dropped. */
+EXPORT LPXLOPER12 WINAPI asfpy_call(LPXLOPER12 name,
+    LPXLOPER12 a0, LPXLOPER12 a1, LPXLOPER12 a2, LPXLOPER12 a3, LPXLOPER12 a4, LPXLOPER12 a5,
+    LPXLOPER12 a6, LPXLOPER12 a7, LPXLOPER12 a8, LPXLOPER12 a9, LPXLOPER12 a10, LPXLOPER12 a11,
+    LPXLOPER12 a12, LPXLOPER12 a13, LPXLOPER12 a14, LPXLOPER12 a15, LPXLOPER12 a16, LPXLOPER12 a17,
+    LPXLOPER12 a18, LPXLOPER12 a19, LPXLOPER12 a20, LPXLOPER12 a21, LPXLOPER12 a22, LPXLOPER12 a23,
+    LPXLOPER12 a24, LPXLOPER12 a25, LPXLOPER12 a26, LPXLOPER12 a27, LPXLOPER12 a28)
+{
+    LPXLOPER12 argv[PYCALL_ARGS] = { a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14,
+                                     a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28 };
+    PyGILState_STATE gil;
+    PyObject *args, *r;
+    LPXLOPER12 res;
+    int i, n = PYCALL_ARGS;
+    if (g_started != 1) return xlerror(xlerrName);
+    if ((name->xltype & 0xFFF) == xltypeErr) return xlerror(name->val.err);
+    while (n > 0 && (argv[n - 1]->xltype & 0xFFF) == xltypeMissing) n--;
+    for (i = 0; i < n; i++)
+        if ((argv[i]->xltype & 0xFFF) == xltypeErr) return xlerror(argv[i]->val.err);
+    gil = P.PyGILState_Ensure();
+    args = P.PyList_New(n);
+    for (i = 0; i < n; i++) P.PyList_SetItem(args, i, arg_to_py(argv[i]));
+    r = boot_call("xl_call_export", 2, cell_to_py(name), args);
+    res = r ? tag_to_result(r) : xlerror(xlerrValue);
+    if (r) P.Py_DecRef(r);
+    P.PyGILState_Release(gil);
+    return res;
+}
+
+/* the alerts after the functions were registered: none, or more than the slots */
+static void report_functions(void)
+{
+    wchar_t msg[1200];
+    if (g_nfuncs == 0) {
+        swprintf(msg, 1200, L"ASF Python: Python started, but the Python folder gave no worksheet functions. Details: %ls", g_log);
+        alert(msg);
+    } else if (g_total > g_nfuncs) {
+        swprintf(msg, 1200, L"ASF Python: the Python folder gave %d worksheet functions, and the add-in has %d slots: %d functions are not registered. Details: %ls",
+                 g_total, NSLOTS, g_total - g_nfuncs, g_log);
+        alert(msg);
+    }
+}
+
+/* The command AsfPyReload (VBA: Application.Run "AsfPyReload"): the Python folder's modules are
+   imported again and their functions registered again, without restarting Excel. Python and
+   the packages it imported stay. A command, so that Excel takes the C API calls of registration. */
+EXPORT int WINAPI asfpy_reload(void)
+{
+    PyGILState_STATE gil;
+    PyObject *list;
+    LARGE_INTEGER t0;
+    int gone;
+    if (g_started != 1) return 0;
+    QueryPerformanceCounter(&t0);
+    gone = unregister_functions();
+    free_functions();
+    gil = P.PyGILState_Ensure();
+    list = boot_call("reload", 0);
+    if (list) {
+        read_functions(list);
+        P.Py_DecRef(list);
+    }
+    P.PyGILState_Release(gil);
+    register_functions();
+    note(L"reload: %d functions unregistered, %d registered, in %.0f ms", gone, g_nfuncs, ms_since(t0));
+    report_functions();
+    return 1;
+}
+
 /* --- the add-in's entry points ----------------------------------------------------------------- */
 
 /* Each time Excel loads the add-in: Python starts the first time only; the functions are
@@ -760,15 +909,9 @@ EXPORT int WINAPI xlAutoOpen(void)
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN, (LPCWSTR)(void *)xlAutoOpen, &self);
     if (!g_started) start_python();
     if (g_started == 1) {
+        register_builtins();
         register_functions();
-        if (g_nfuncs == 0) {
-            swprintf(msg, 1200, L"ASF Python: Python started, but the Python folder gave no worksheet functions. Details: %ls", g_log);
-            alert(msg);
-        } else if (g_total > g_nfuncs) {
-            swprintf(msg, 1200, L"ASF Python: the Python folder gave %d worksheet functions, and the add-in has %d slots: %d functions are not registered. Details: %ls",
-                     g_total, NSLOTS, g_total - g_nfuncs, g_log);
-            alert(msg);
-        }
+        report_functions();
     } else {
         swprintf(msg, 1200, L"ASF Python: %ls. Details: %ls", g_start_error, g_log);
         alert(msg);
@@ -783,16 +926,9 @@ EXPORT int WINAPI xlAutoOpen(void)
    finalized, since numpy and pandas can't start again in one process. */
 EXPORT int WINAPI xlAutoClose(void)
 {
-    XLOPER12 id, res;
-    LPXLOPER12 op[1] = { &id };
-    int i, n = 0;
-    for (i = 0; i < g_nfuncs; i++) {
-        if (!g_funcs[i].id) continue;
-        id.xltype = xltypeNum;
-        id.val.num = g_funcs[i].id;
-        if (excel12(xlfUnregister, &res, 1, op) == xlretSuccess) n++;
-        g_funcs[i].id = 0;
-    }
+    int n = unregister_functions();
+    unregister_id(&g_pycall_id);
+    unregister_id(&g_reload_id);
     if (n) note(L"unregistered %d functions", n);
     return 1;
 }

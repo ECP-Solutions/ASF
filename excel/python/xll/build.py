@@ -16,7 +16,8 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "build")
 NSLOTS, MAX_ARGS = 1000, 32         # as in asfpy.c and boot.py
-EXPORTS = ["xlAutoOpen", "xlAutoClose", "xlAutoFree12", "xlAddInManagerInfo12", "SetExcel12EntryPt", "AsfPy_Root"]
+EXPORTS = ["xlAutoOpen", "xlAutoClose", "xlAutoFree12", "xlAddInManagerInfo12", "SetExcel12EntryPt", "AsfPy_Root",
+           "asfpy_call", "asfpy_reload"]
 
 
 def write(name, text):

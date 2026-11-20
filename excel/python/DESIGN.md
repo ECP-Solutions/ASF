@@ -1,6 +1,6 @@
 # Python for ASF in Excel: investigation and design
 
-Status: phases 1a and 1b are built (`xll/`, checks in `spike/README.md`). Both pass in 64-bit Excel 16.0; the 32-bit and Excel 2016 runs are still to do. Phases 2 to 5 are proposals.
+Status: phases 1a, 1b and 2 are built (`xll/`, checks in `spike/README.md`), and all three pass in 64-bit Excel 16.0; their 32-bit and Excel 2016 runs, and CI, are still to do. Phases 3 to 5 are proposals.
 
 Goal: Excel users call Python modules from their worksheets and from ASF scripts, through an open source add-in (MIT, like the rest of ASF). PyXLL, a commercial add-in, is the reference for what is possible. This page explains how PyXLL works and then proposes how ASF can do the same.
 
@@ -92,11 +92,13 @@ Three parts, all MIT, in `excel/python/`:
 
 ```
 excel/python/
-  xll/        asfpy.xll: C, about 2–3k lines, no Excel SDK files, built with MinGW or MSVC
+  xll/        asfpy.xll: C, about 2–3k lines, no Excel SDK files, built with MinGW or MSVC; PY_CALL
   asfpy/      the Python package: decorators, conversions, object handles, reload
-  vba/        ASFPython.bas: PY_CALL and the `py` object for ASF scripts
+  vba/        ASFPython.bas: the `py` object for ASF scripts
   tests/      Python tests (any OS), a fake Excel host for the .xll, export and size checks
 ```
+
+Since phase 2, `PY_CALL` is registered by `asfpy.xll` itself, not written in VBA: it works whenever the `.xll` is loaded, without `ASF.xlam`, and a call doesn't pass through VBA. Until the package needs files of its own (object handles, stubs for editors), the Python side lives in `xll/boot.py`, which `build.py` compiles into the add-in and `tests/test_boot.py` tests on any OS.
 
 `ASF.xlam` stays pure VBA and works without Python. `asfpy.xll` is a second, optional add-in, built for 64-bit and 32-bit Excel (3.1). `ASF.xlam` uses it when it is loaded and says so when it is not.
 
@@ -164,8 +166,8 @@ excel/python/
 
   | Cell / VBA | Python | Back to the cell |
   |---|---|---|
-  | number | `float` (`int` with a type hint) | number; `int` beyond 2^53 loses digits |
-  | date | `float` (the cell holds a serial number); `datetime` with a type hint | number |
+  | number | `float` (`int` with a type hint; a fraction then gives `#VALUE!`) | number; `int` beyond 2^53 loses digits |
+  | date | `float` (the cell holds a serial number); `date` or `datetime` with a type hint | number; a `date` or `datetime` as its serial number |
   | text, boolean | `str`, `bool` | value; text over 32,767 characters is cut |
   | empty | `None` | `""` |
   | error value | not called: the error is the result, as in `ASF_RUN` | — |
@@ -175,9 +177,12 @@ excel/python/
   | other object | kept in the handle cache | `<DataFrame#12>`, a handle other functions accept |
   | exception | — | `#VALUE!`; the reason via **Why this error?** |
 
+  Phase 2 reads the type hints `int`, `float`, `str`, `bool`, `list`, `date` and `datetime` (also written as strings, and `list[...]` as `list`), for `@xl_func` functions and for `PY_CALL`. `str` makes a whole number `"12"`, not `"12.0"`; `list` makes one value a list of one, and an empty cell `[]`. An empty cell stays `None` under the other hints.
+
   From VBA (the `py` proxy), arrays arrive as `SAFEARRAY`s of `VARIANT`. ASF arrays have a lower bound of 1, ranges of 1, and VBA's `Array()` of 0. The proxy reads `LBound` and doesn't assume one. An ASF object (`ASF_Map`) is a VBA class with no type information, so `ASFPython.bas` converts it to a list of `[key, value]` pairs before the call, and Python gets a `dict`.
 - **Handles are owned by their cell.** A handle is keyed by the calling cell (`xlfCaller`). When the cell is calculated again, its old object is dropped, so the cache doesn't grow with each recalculation. Handles are also scoped to the workbook.
-- **Reload** re-imports the Python folder's modules and registers the functions again. Python itself stays (3.1).
+- **Reload** re-imports the Python folder's modules and registers the functions again. Python itself stays (3.1), and so do the packages the modules imported (numpy is not imported again). Phase 2 makes it the add-in's command `AsfPyReload` (`Application.Run "AsfPyReload"`; a command, since Excel takes the C API calls of registration only from one). The modules of the folder are compiled from their source on each load, so a changed file is read again whatever its time stamp, and no `__pycache__` appears in the folder; a module that another module of the folder imported first runs once. Excel then recalculates by itself only the cells whose function changed slot; a cell whose function kept its slot keeps its old value until it is calculated again (Ctrl+Alt+F9), and so does a `PY_CALL` cell, since `PY_CALL` itself doesn't change (phase 2's checklist). The ribbon button **Reload Python** comes with phase 3, and it should then recalculate the workbook in full.
+- **Errors.** Every failure keeps its exception: `py.lastError` (one line) and `py.lastTraceback`; `py.clearError()` forgets it. **Why this error?** clears it, calculates the cell again and shows what the cell's own call raised, as it does now for `ASF_RUN`. It must mark the cell dirty first (`Range.Dirty`): in Excel 16.0, `Range.Calculate` skips a cell that isn't dirty, and the cell's function is then not called at all (phase 2's checklist). `ASFRibbon.OnWhyError` calls `cell.Calculate` alone today. The button reads Python's error from phase 3, with the ribbon.
 - **Settings live where ASF's do.** They go under the same registry key as `SaveSetting` (`HKCU\Software\VB and VBA Program Settings\ASF`): the Python folder, the venv, and `PythonAccess` (3.4). The `.xll` reads that key with `RegGetValueW`. An administrator then has one place to set, or lock, both add-ins. There is no `asfpy.cfg`.
 - **Pure Python where possible:** tested on Linux in CI, with a fake Excel in place of the `.xll`.
 
@@ -190,6 +195,8 @@ excel/python/
 =forecast(B2:B40, 12)                        a function registered with @xl_func
 =ASF_CALL("summary", A2:A500)                summary.vas in the library, which asks for Python (below)
 ```
+
+`PY_CALL(name, arg1, …, arg29)` takes up to 29 arguments; the ones left out at the end are dropped, one left out between two is `None`. An unknown name gives `#NAME?`, an exception `#VALUE!`, and an error value among the arguments is the result, as for `@xl_func` functions. `@xl_func` functions are exported too, as `module.function`.
 
 **Library scripts** get a `py` object when they ask for it and the host allows it (3.4):
 
@@ -285,7 +292,7 @@ Decision: write our own small add-in, and read xlOil and Excel-DNA for ideas, no
 | 0 | Investigation, design, toolchain spike | This page; the MinGW build |
 | 1a | **Excel spike,** both bitnesses. The `.xll` loads a venv's Python by full path, registers one slot function, and gives VBA a root proxy through `AsfPy_Root` | In Excel 2016 (32-bit and 64-bit) and Microsoft 365: a formula returns a value from Python; VBA calls `py.call`; the start-up option of 3.1 is chosen; the 32-bit slot stub works, or the fallback is chosen; the cost of one call and of start-up is measured; Excel closes cleanly with numpy loaded. **Built; passes in 64-bit Excel 16.0** |
 | 1b | **The `.xll`, complete.** Start-up, both slot pools, registration, memory, threads and the GIL, the proxy, roots of both levels. Only a minimal Python bootstrap, enough to test it | The fake Excel host (below) runs both builds in CI; the struct-layout tests pass; a checklist in Excel 2016 (32-bit and 64-bit) and Microsoft 365 passes. **Built; the fake host passes natively in 64-bit and 32-bit; the checklist passes in 64-bit Excel 16.0; CI, 32-bit Excel and Excel 2016 are still to run** |
-| 2 | Starts after phase 1. `PY_CALL`; `@xl_func` and `@export` with plain values and arrays; errors and **Why this error?**; reload; registry settings | Python tests on Linux; the `.xll` driven by a fake Excel host in CI (see below); a checklist run in Excel |
+| 2 | Starts after phase 1. `PY_CALL`; `@xl_func` and `@export` with plain values and arrays; errors and **Why this error?**; reload; registry settings | Python tests on Linux; the `.xll` driven by a fake Excel host in CI (see below); a checklist run in Excel. **Built: `PY_CALL` in the `.xll`, type hints, `lastTraceback` and `clearError`, the command `AsfPyReload`; the settings were already ASF's (`ASF\AddIn`). `tests/test_boot.py` and the fake host pass on Windows in 64-bit and 32-bit; the checklist passes in 64-bit Excel 16.0; CI, 32-bit Excel and Excel 2016 are still to run. The ribbon's buttons are phase 3's** |
 | 3 | Starts after phase 1. Engine changes (3.3); `py` in library scripts; the two keys of 3.4 (`python` header and `PythonAccess`); ribbon buttons | Plus ASF test cases with a fake `py` object in LibreOffice and Excel |
 | 4 | numpy and pandas conversions, object handles, `thread_safe`, async functions, `@xl_macro` | |
 | 5 | LibreOffice `PY_CALL` and `py` (after its spike); later, if ever, the ribbon from Python, RTD and task panes | |

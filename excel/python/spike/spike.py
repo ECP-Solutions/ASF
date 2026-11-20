@@ -1,5 +1,6 @@
-"""The functions of the checks of phases 1a and 1b. Copy this file into the Python folder
+"""The functions of the checks of phases 1a, 1b and 2. Copy this file into the Python folder
 (%APPDATA%\\ASF\\python by default) before loading asfpy64.xll or asfpy32.xll."""
+import datetime
 import itertools
 import math
 import sys
@@ -106,9 +107,27 @@ def spike_refused():
     return "registered"
 
 
+@xl_func
+def spike_hints(n: int, when: datetime.date, text: str, values: list):
+    """What type hints make of cell values."""
+    return "%r | %r | %r | %r" % (n, when, text, values)
+
+
+@xl_func
+def spike_nextday(when: datetime.date):
+    """The day after a date; a date comes back as Excel's serial number."""
+    return when + datetime.timedelta(days=1)
+
+
 @export
 def add(a, b):
     return a + b
+
+
+@export
+def scale(values: list, factor: float):
+    """Each value times factor: =PY_CALL("spike.scale", A1:A3, 10)."""
+    return [v * factor for v in values]
 
 
 @export
