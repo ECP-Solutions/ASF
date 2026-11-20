@@ -47,6 +47,7 @@ Public Sub AsfPySpikeTest()
         Put3 "AsfPy_Root", "", "Python didn't start: " & py & ". See " & Environ$("TEMP") & "\asfpy.log"
         Exit Sub
     End If
+    Put3 "Start-up of the Python folder", CallPy(py, "startInfo", VbGet), ""
     ' each call goes through CallPy or PyObj: an error shows in the sheet, with its number and text
     Check "py.call add", CallPy(py, "call", VbMethod, "spike.add", 2, 40), 42
     v = CallPy(py, "call", VbMethod, "spike.echo", ChrW(937) & "mega", 7)
@@ -126,7 +127,7 @@ Private Function Is64() As Boolean
 End Function
 
 Private Sub Put3(a As String, b As Variant, c As Variant)
-    ws.Cells(row, 1).Value = a
+    ws.Cells(row, 1).Value = Label(a)
     ws.Cells(row, 2).Value = b
     ws.Cells(row, 3).Value = c
     row = row + 1
@@ -141,7 +142,7 @@ Private Sub Check(what As String, got As Variant, want As Variant)
         ok = (CStr(got) = CStr(want))
     End If
     If Not ok Then failures = failures + 1
-    ws.Cells(row, 1).Value = what
+    ws.Cells(row, 1).Value = Label(what)
     ws.Cells(row, 2).Value = IIf(IsError(got), CStr(got), got)
     ws.Cells(row, 3).Value = IIf(ok, "ok", "FAIL, expected " & CStr(want))
     row = row + 1
@@ -199,13 +200,18 @@ Private Function ErrorOf(obj As Variant, name As String, a1 As Variant, a2 As Va
     If Err.Number <> 0 And InStr(Err.Description, ":") = 0 Then ErrorOf = "error " & Err.Number & ": " & Err.Description
 End Function
 
+' a text that starts with = would become a formula in the cell
+Private Function Label(s As String) As String
+    If Left$(s, 1) = "=" Then Label = "'" & s Else Label = s
+End Function
+
 Private Function Join2(v As Variant) As String
     Dim r As Long, c As Long, out As String
     For r = LBound(v, 1) To UBound(v, 1)
         If r > LBound(v, 1) Then out = out & ";"
         For c = LBound(v, 2) To UBound(v, 2)
             If c > LBound(v, 2) Then out = out & ","
-            out = out & v(r, c)
+            If IsError(v(r, c)) Then out = out & CStr(v(r, c)) Else out = out & v(r, c)
         Next c
     Next r
     Join2 = out

@@ -20,6 +20,7 @@ _functions = []          # (qualified name, function, number of arguments, works
 _exports = {}            # 'module.function' -> function, for py.call and PY_CALL
 _last_error = ''
 _log = None
+_start_info = []         # what start() found, for py.startInfo and the log
 
 
 class _Log:
@@ -40,6 +41,11 @@ class _Log:
 def _note(text):
     if _log:
         _log.write(time.strftime('%H:%M:%S ') + text + '\n')
+
+
+def _info(text):
+    _start_info.append(text)
+    _note(text)
 
 
 def _fail(exc):
@@ -92,7 +98,15 @@ def start(python_folder, site_dir, executable, log_path):
         sys.executable = sys._base_executable = executable
     sys.modules['asfpy'] = _make_api()
     _note('python %s, sys.path=%r' % (sys.version.split()[0], sys.path))
-    names = sorted(n for n in os.listdir(python_folder) if n.endswith('.py')) if python_folder and os.path.isdir(python_folder) else []
+    names = []
+    if not python_folder or not os.path.isdir(python_folder):
+        _info('the Python folder %s does not exist' % python_folder)
+    else:
+        names = sorted(n for n in os.listdir(python_folder) if n.lower().endswith('.py'))
+        others = sorted(n for n in os.listdir(python_folder) if not n.lower().endswith('.py'))
+        _info('Python folder %s: %s' % (python_folder, ', '.join(names) or 'no .py files'))
+        if others:
+            _info('not modules (only .py files are): %s' % ', '.join(others[:10]))
     for file in names:
         stem = file[:-3]
         t = time.perf_counter()
@@ -104,6 +118,7 @@ def start(python_folder, site_dir, executable, log_path):
         except BaseException as exc:
             sys.modules.pop(stem, None)
             _fail(exc)
+            _info('%s did not import: %s: %s' % (file, type(exc).__name__, exc))
             continue
         for attr, fn in sorted(vars(mod).items()):
             if not isinstance(fn, types.FunctionType) or fn.__module__ != stem:
@@ -116,8 +131,9 @@ def start(python_folder, site_dir, executable, log_path):
                     _note('%s.%s: more than %d arguments, not registered' % (stem, attr, MAX_ARGS))
                     continue
                 _functions.append((stem + '.' + attr, fn, sheet))
-        _note('imported %s in %.0f ms' % (file, (time.perf_counter() - t) * 1000))
-    _note('start: %.0f ms' % ((time.perf_counter() - t0) * 1000))
+        _info('imported %s in %.0f ms' % (file, (time.perf_counter() - t) * 1000))
+    _info('%d worksheet functions, %d exported functions; start %.0f ms'
+          % (len(_functions), len(_exports), (time.perf_counter() - t0) * 1000))
     return [(sheet, _arguments(fn), (fn.__doc__ or '').strip().split('\n')[0]) for _, fn, sheet in _functions]
 
 
@@ -175,6 +191,10 @@ class _Root:
     @property
     def lastError(self):
         return _last_error
+
+    @property
+    def startInfo(self):
+        return 'Python %s\n%s' % (sys.version.split()[0], '\n'.join(_start_info))
 
     def __repr__(self):
         return '<py>'

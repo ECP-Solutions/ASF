@@ -21,7 +21,7 @@ This folder is the Excel side of phase 1a of [the design](../DESIGN.md). `asfpy6
    %USERPROFILE%\asfpy-venv\Scripts\python -m pip install numpy
    ```
    For 32-bit, use `py -3.12-32`.
-3. **The Python folder.** Copy `spike.py` to `%APPDATA%\ASF\python` (create the folder).
+3. **The Python folder.** Copy `spike.py` to `%APPDATA%\ASF\python` (create the folder). Take the file itself: on GitHub, use **Download raw file**. A page saved with the browser's "Save as" is HTML, not Python. The name must be exactly `spike.py`: browsers sometimes save it as `spike (1).py` or `spike.py.txt`. When Excel loads the add-in, an alert says so if the folder gave no functions; the first rows of `AsfPySpikeTest` say why.
 4. **The add-in.** Copy `asfpy64.xll` (64-bit Excel) or `asfpy32.xll` (32-bit Excel) to a folder of your own. In the file's Properties, tick **Unblock** if Windows shows it: Excel refuses add-ins downloaded from the internet.
 5. **Settings.** Import `AsfPySpike.bas` into a new workbook (Alt+F11, File > Import File) and run `AsfPySetup`. Give it the venv folder and the Python folder.
 6. **Load and test.** File > Options > Add-ins > Manage: Excel Add-ins > Go > Browse, then pick the `.xll`. Run `AsfPySpikeTest`. A new workbook shows each check, `ok` or `FAIL`, and the timings. Its second sheet holds the formulas.

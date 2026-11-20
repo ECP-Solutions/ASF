@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <stddef.h>
 #include <string.h>
 #include <wchar.h>
 #include "xloper.h"
@@ -404,13 +405,13 @@ static void register_functions(void)
         note(L"xlGetName failed");
         return;
     }
+    op[0] = &dll;
     for (i = 0; i < g_nfuncs; i++) {
         Func *f = &g_funcs[i];
         wchar_t proc[32], type[MAX_ARGS + 2];
         swprintf(proc, 32, L"asfpy_f%04d", i);
         for (k = 0; k <= f->nargs; k++) type[k] = L'Q';
         type[f->nargs + 1] = 0;
-        op[0] = &dll;
         xltext(&x[1], proc);
         xltext(&x[2], type);
         xltext(&x[3], f->name);
@@ -695,6 +696,11 @@ EXPORT int WINAPI xlAutoOpen(void)
     if (!g_started) start_python();
     if (g_started == 1) {
         register_functions();
+        if (g_nfuncs == 0) {
+            wchar_t msg[1200];
+            swprintf(msg, 1200, L"ASF Python: Python started, but the Python folder gave no worksheet functions. Details: %ls", g_log);
+            alert(msg);
+        }
     } else {
         wchar_t msg[1200];
         swprintf(msg, 1200, L"ASF Python: %ls. Details: %ls", g_start_error, g_log);
@@ -723,10 +729,14 @@ EXPORT LPXLOPER12 WINAPI xlAddInManagerInfo12(LPXLOPER12 action)
 
 /* --- the proxy: a Python object as IDispatch ------------------------------------------------ */
 
-typedef struct { IDispatchVtbl *lpVtbl; LONG refs; PyObject *obj; int level; } Proxy;
+/* a proxy is an IDispatch, and also an ISupportErrorInfo: VBA's CallByName takes the message of
+   an error only from objects that say they set the thread's error info */
+typedef struct { IDispatchVtbl *lpVtbl; ISupportErrorInfoVtbl *lpSeiVtbl; LONG refs; PyObject *obj; int level; } Proxy;
 static IDispatchVtbl g_proxy_vtbl;
+static ISupportErrorInfoVtbl g_sei_vtbl;
 static const GUID IID_IUnknown_ = { 0x00000000, 0, 0, { 0xC0, 0, 0, 0, 0, 0, 0, 0x46 } };
 static const GUID IID_IDispatch_ = { 0x00020400, 0, 0, { 0xC0, 0, 0, 0, 0, 0, 0, 0x46 } };
+static const GUID IID_ISupportErrorInfo_ = { 0xDF0B3D60, 0x548F, 0x101B, { 0x8E, 0x65, 0x08, 0x00, 0x2B, 0x2B, 0xD1, 0x19 } };
 
 static wchar_t **g_names;         /* DISPID n is g_names[n - 1] */
 static int g_nnames, g_cap;
@@ -736,6 +746,7 @@ static IDispatch *new_proxy(PyObject *obj, int level)  /* obj: a new reference, 
 {
     Proxy *p = calloc(1, sizeof(Proxy));
     p->lpVtbl = &g_proxy_vtbl;
+    p->lpSeiVtbl = &g_sei_vtbl;
     p->refs = 1;
     p->obj = obj;
     p->level = level;
@@ -749,9 +760,33 @@ static HRESULT STDMETHODCALLTYPE px_QueryInterface(IDispatch *self, REFIID riid,
         self->lpVtbl->AddRef(self);
         return S_OK;
     }
+    if (IsEqualGUID(riid, &IID_ISupportErrorInfo_)) {
+        *out = &((Proxy *)self)->lpSeiVtbl;
+        self->lpVtbl->AddRef(self);
+        return S_OK;
+    }
     *out = NULL;
     return E_NOINTERFACE;
 }
+
+#define SEI_PROXY(self) ((IDispatch *)((char *)(self) - offsetof(Proxy, lpSeiVtbl)))
+
+static HRESULT STDMETHODCALLTYPE sei_QueryInterface(ISupportErrorInfo *self, REFIID riid, void **out)
+{
+    IDispatch *d = SEI_PROXY(self);
+    return d->lpVtbl->QueryInterface(d, riid, out);
+}
+
+static ULONG STDMETHODCALLTYPE sei_AddRef(ISupportErrorInfo *self) { IDispatch *d = SEI_PROXY(self); return d->lpVtbl->AddRef(d); }
+static ULONG STDMETHODCALLTYPE sei_Release(ISupportErrorInfo *self) { IDispatch *d = SEI_PROXY(self); return d->lpVtbl->Release(d); }
+
+static HRESULT STDMETHODCALLTYPE sei_InterfaceSupportsErrorInfo(ISupportErrorInfo *self, REFIID riid)
+{
+    (void)self; (void)riid;
+    return S_OK;
+}
+
+static ISupportErrorInfoVtbl g_sei_vtbl = { sei_QueryInterface, sei_AddRef, sei_Release, sei_InterfaceSupportsErrorInfo };
 
 static ULONG STDMETHODCALLTYPE px_AddRef(IDispatch *self) { return InterlockedIncrement(&((Proxy *)self)->refs); }
 
@@ -975,6 +1010,7 @@ static HRESULT STDMETHODCALLTYPE px_Invoke(IDispatch *self, DISPID id, REFIID ri
     UINT i, n = dp ? dp->cArgs : 0;
     wchar_t *msg = NULL;
     (void)riid; (void)lcid; (void)argerr;
+    SetErrorInfo(0, NULL);    /* no stale message from an earlier call */
     if (flags & (DISPATCH_PROPERTYPUT | DISPATCH_PROPERTYPUTREF)) return DISP_E_MEMBERNOTFOUND;
     if (dp && dp->cNamedArgs) return DISP_E_NONAMEDARGS;
     if (id > 0) {

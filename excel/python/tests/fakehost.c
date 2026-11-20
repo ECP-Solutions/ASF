@@ -366,6 +366,24 @@ int wmain(int argc, wchar_t **argv)
     }
     args[0] = vstr(L"os.system"); args[1] = vstr(L"calc");
     com_check(V_DISPATCH(&py), L"call", 2, args, L"error: NameError: no exported function 'os.system'", NULL);
+    {
+        /* what VBA's CallByName reads: ISupportErrorInfo, then the thread's error info */
+        ISupportErrorInfo *sei = NULL;
+        IErrorInfo *info = NULL;
+        BSTR desc = NULL;
+        HRESULT hr = V_DISPATCH(&py)->lpVtbl->QueryInterface(V_DISPATCH(&py), &IID_ISupportErrorInfo, (void **)&sei);
+        int ok = SUCCEEDED(hr) && sei->lpVtbl->InterfaceSupportsErrorInfo(sei, &IID_IDispatch) == S_OK;
+        if (sei) sei->lpVtbl->Release(sei);
+        args[0] = vstr(L"os.system"); args[1] = vstr(L"calc");
+        invoke_vba(V_DISPATCH(&py), L"call", 2, args, &obj, NULL);
+        if (ok && GetErrorInfo(0, &info) == S_OK && info) {
+            info->lpVtbl->GetDescription(info, &desc);
+            info->lpVtbl->Release(info);
+        }
+        ok = ok && desc && wcsncmp(desc, L"NameError", 9) == 0;
+        check(ok, L"py error info for CallByName", desc ? desc : L"none");
+        SysFreeString(desc);
+    }
     com_check(V_DISPATCH(&py), L"lastError", 0, args, L"NameError", NULL);
     args[0] = vstr(L"math");
     com_check(V_DISPATCH(&py), L"module", 1, args, L"error: AttributeError", NULL);
