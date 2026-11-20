@@ -57,10 +57,25 @@ typedef struct xloper12 {
 #define xlFree     (0 | xlSpecial)
 #define xlGetName  (9 | xlSpecial)
 #define xlfRegister 149
+#define xlfUnregister 201
 
 #define xlretSuccess 0
 
 /* MdCallBack12, exported by Excel; __stdcall on 32-bit Windows */
 typedef int (WINAPI *EXCEL12PROC)(int xlfn, int coper, LPXLOPER12 *rgpxloper12, LPXLOPER12 xloper12Res);
+
+/* The layouts Excel expects, in both bitnesses: a build fails if a declaration above drifts. */
+#include <stddef.h>
+#define ASFPY_PTR ((size_t)sizeof(void *))
+_Static_assert(sizeof(XLREF12) == 16, "XLREF12 is 16 bytes");
+_Static_assert(sizeof(XLOPER12) == 32, "XLOPER12 is 32 bytes in both bitnesses");
+_Static_assert(offsetof(XLOPER12, xltype) == 24, "xltype follows the 24-byte value");
+_Static_assert(offsetof(XLOPER12, val.sref.ref) == 4, "sref.ref follows its count");
+_Static_assert(offsetof(XLOPER12, val.mref.idSheet) == ASFPY_PTR, "mref.idSheet follows the pointer");
+_Static_assert(offsetof(XLOPER12, val.array.rows) == ASFPY_PTR, "array.rows follows the pointer");
+_Static_assert(offsetof(XLOPER12, val.array.columns) == ASFPY_PTR + 4, "array.columns follows rows");
+_Static_assert(offsetof(XLOPER12, val.flow.rw) == ASFPY_PTR, "flow.rw follows valflow");
+_Static_assert(offsetof(XLOPER12, val.flow.xlflow) == ASFPY_PTR + 8, "flow.xlflow follows col");
+_Static_assert(offsetof(XLOPER12, val.bigdata.cbData) == ASFPY_PTR, "bigdata.cbData follows the handle");
 
 #endif

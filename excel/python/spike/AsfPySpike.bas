@@ -1,5 +1,5 @@
 Attribute VB_Name = "AsfPySpike"
-' The checks of the phase 1a spike in Excel (excel/python/spike/README.md). Import this module into
+' The checks of phases 1a and 1b in Excel (excel/python/spike/README.md). Import this module into
 ' any workbook (not into ASF.xlam), then run AsfPySetup once and AsfPySpikeTest with
 ' asfpy64.xll or asfpy32.xll loaded. The results go to a new workbook.
 Option Explicit
@@ -28,12 +28,12 @@ End Sub
 
 Public Sub AsfPySpikeTest()
     Dim py As Variant, py2 As Variant, m As Variant, v As Variant, a(1 To 2, 1 To 2) As Variant
-    Dim i As Long, t As Double, code As Long, numpy As Boolean
+    Dim i As Long, t As Double, code As Long, numpy As Boolean, x As Variant, s2 As String
     Set ws = Workbooks.Add.Worksheets(1)
     ws.Name = "Spike"
     row = 1
     failures = 0
-    Put3 "ASF Python, phase 1a", Application.Name & " " & Application.Version & ", " & IIf(Is64(), "64-bit", "32-bit"), ""
+    Put3 "ASF Python, phases 1a and 1b", Application.Name & " " & Application.Version & ", " & IIf(Is64(), "64-bit", "32-bit"), ""
 
     ' --- py from VBA
     On Error Resume Next
@@ -69,6 +69,32 @@ Public Sub AsfPySpikeTest()
     Else
         Check "py.module('math').sqrt(2)", RoundIf(CallPy(m, "sqrt", VbMethod, 2)), 1.414214
         Check "math.PI, by case", RoundIf(CallPy(m, "PI", VbGet)), 3.141593
+    End If
+
+    ' --- phase 1b: For Each and the default value, through VBA itself
+    Set m = PyObj(py, "call", "spike.squares", 4)
+    If m Is Nothing Then
+        Check "For Each over a generator", lastFailure, "0,1,4,9,"
+    Else
+        s2 = ""
+        On Error Resume Next
+        For Each x In m
+            s2 = s2 & x & ","
+        Next x
+        If Err.Number <> 0 Then s2 = "error " & Err.Number & ": " & Err.Description
+        On Error GoTo 0
+        Check "For Each over a generator", s2, "0,1,4,9,"
+    End If
+    Set m = PyObj(py2, "module", "collections")
+    If Not m Is Nothing Then Set m = PyObj(m, "Counter", "abcab")
+    If m Is Nothing Then
+        Check "x = obj: a Counter's text", lastFailure, "Counter({'a': 2, 'b': 2, 'c': 1})"
+    Else
+        On Error Resume Next
+        v = m
+        If Err.Number <> 0 Then v = "error " & Err.Number & ": " & Err.Description
+        On Error GoTo 0
+        Check "x = obj: a Counter's text", v, "Counter({'a': 2, 'b': 2, 'c': 1})"
     End If
     t = Timer
     For i = 1 To 10000
@@ -113,6 +139,39 @@ Public Sub AsfPySpikeTest()
     s.Range("M1:M2000").Calculate
     Put3 "2,000 cells of spike_add, ms to calculate", Format((Timer - t) * 1000, "0"), ""
     Check "M2000", s.Range("M2000").Value, 2001
+
+    ' --- phase 1b: the type suffixes in formulas
+    Formula s, "E13", "=spike_thread()", "MainThread"
+    Formula s, "E14", "=spike_refused()", CVErr(xlErrName)
+    s.Range("E15").Formula = "=spike_volatile()"
+    v = s.Range("E15").Value
+    Application.Calculate
+    Check "=spike_volatile() counts each recalculation", IIf(s.Range("E15").Value > v, "more", "the same: " & s.Range("E15").Value & " after " & v), "more"
+    ' a thread-safe function on Excel's calculation threads: 20,000 cells, multi-threaded
+    Put3 "Multi-threaded calculation", IIf(Application.MultiThreadedCalculation.Enabled, Application.MultiThreadedCalculation.ThreadCount & " threads", "off: File > Options > Advanced > Formulas"), ""
+    s.Range("O1:O20000").Formula = "=spike_threadsafe(ROW())"
+    t = Timer
+    s.Range("O1:O20000").Calculate
+    Put3 "20,000 cells of spike_threadsafe, ms to calculate", Format((Timer - t) * 1000, "0"), ""
+    s.Range("P1").Formula = "=SUMPRODUCT(--(O1:O20000=2*ROW(O1:O20000)))"
+    Check "spike_threadsafe: right results of 20,000", s.Range("P1").Value, 20000
+
+    ' --- phase 1b: the add-in unticked and ticked again (xlAutoClose, xlAutoOpen)
+    Dim ai As Object
+    For Each ai In Application.AddIns
+        If LCase$(ai.Name) Like "asfpy*.xll" And ai.Installed Then Exit For
+    Next ai
+    If ai Is Nothing Then
+        Put3 "Unticked and ticked again", "the add-in isn't in Application.AddIns: check by hand (README)", ""
+    Else
+        ai.Installed = False
+        s.Range("E16").Formula = "=spike_add(2,3.5)"
+        Check "Unticked: =spike_add(2,3.5)", s.Range("E16").Value, CVErr(xlErrName)
+        ai.Installed = True
+        s.Range("E16").Formula = "=spike_add(2,3.5)"
+        Check "Ticked again: =spike_add(2,3.5)", s.Range("E16").Value, 5.5
+        Check "Ticked again: py.call still works", CallPy(py, "call", VbMethod, "spike.add", 2, 40), 42
+    End If
 
     Put3 IIf(failures = 0, "All checks pass", failures & " checks fail"), "", ""
     Put3 "The add-in's log", Environ$("TEMP") & "\asfpy.log", ""
@@ -173,7 +232,8 @@ Private Function PyObj(obj As Variant, name As String, ParamArray a() As Variant
     On Error GoTo Failed
     Select Case UBound(a) - LBound(a) + 1
         Case 0: Set PyObj = CallByName(obj, name, VbMethod)
-        Case Else: Set PyObj = CallByName(obj, name, VbMethod, a(0))
+        Case 1: Set PyObj = CallByName(obj, name, VbMethod, a(0))
+        Case Else: Set PyObj = CallByName(obj, name, VbMethod, a(0), a(1))
     End Select
     Exit Function
 Failed:

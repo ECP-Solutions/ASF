@@ -1,9 +1,13 @@
-"""The functions of the phase 1a spike. Copy this file into the Python folder
+"""The functions of the checks of phases 1a and 1b. Copy this file into the Python folder
 (%APPDATA%\\ASF\\python by default) before loading asfpy64.xll or asfpy32.xll."""
+import itertools
 import math
 import sys
+import threading
 
 from asfpy import export, xl_func
+
+_volatile_calls = itertools.count(1)
 
 
 @xl_func
@@ -78,9 +82,39 @@ def spike_numpy(x):
     return float(numpy.percentile(numpy.asarray(x, dtype=float), 90))
 
 
+@xl_func(volatile=True)
+def spike_volatile():
+    """Counts its calls: volatile, so each recalculation of the sheet counts once more."""
+    return next(_volatile_calls)
+
+
+@xl_func(thread_safe=True)
+def spike_threadsafe(x):
+    """x times 2, on Excel's calculation threads."""
+    return x * 2
+
+
+@xl_func
+def spike_thread():
+    """The thread a function that isn't thread-safe runs on: Excel's main thread."""
+    return threading.current_thread().name
+
+
+@xl_func(thread_safe=True, macro=True)
+def spike_refused():
+    """Never registered: Excel refuses thread-safe macro equivalents ($ with #)."""
+    return "registered"
+
+
 @export
 def add(a, b):
     return a + b
+
+
+@export
+def squares(n):
+    """A generator: VBA gets an object it can go through with For Each."""
+    return (i * i for i in range(int(n)))
 
 
 @export

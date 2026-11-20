@@ -1,4 +1,4 @@
-/* asfpy.xll, phase 1a spike: loads the Python of a venv into Excel's process, registers the
+/* asfpy.xll (phase 1b): loads the Python of a venv into Excel's process, registers the
    worksheet functions of the Python folder through a pool of exported slots, and gives VBA a
    root object (py) through AsfPy_Root. See excel/python/DESIGN.md and spike/README.md.
 
@@ -8,6 +8,7 @@
 #define _WIN32_WINNT 0x0601
 #include <windows.h>
 #include <oleauto.h>
+#include <tlhelp32.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -17,14 +18,18 @@
 #include "xloper.h"
 #include "boot_py.h"
 
-#define NSLOTS    256
+#define NSLOTS    1000       /* asfpy_f0000 to asfpy_f0999, as build.py generates them */
 #define MAX_ARGS  32
 #define SETTINGS_KEY L"Software\\VB and VBA Program Settings\\ASF\\AddIn"
-#define ADDIN_NAME L"ASF Python (spike)"
+#define ADDIN_NAME L"ASF Python"
+#ifdef ASFPY_DEF             /* MSVC: a .def file exports the plain names */
+#define EXPORT
+#else
 #define EXPORT __declspec(dllexport)
+#endif
 #define ASFPY_SCODE 0x800403E9   /* VBA's Err.Number: vbObjectError + 1001 */
 
-enum { TAG_EMPTY, TAG_BOOL, TAG_FLOAT, TAG_INT, TAG_STR, TAG_LIST, TAG_OBJECT, TAG_FAIL, TAG_XLERR, TAG_GRID };
+enum { TAG_EMPTY, TAG_BOOL, TAG_FLOAT, TAG_INT, TAG_STR, TAG_LIST, TAG_OBJECT, TAG_FAIL, TAG_XLERR, TAG_GRID, TAG_STOP };
 
 /* --- Python, as far as the add-in uses it ---------------------------------------------------- */
 
@@ -246,6 +251,30 @@ static const wchar_t *python_in_process(void)
     return NULL;
 }
 
+/* the path of another copy of this add-in in Excel's process (one that exports AsfPy_Root), or
+   NULL. Unticking the add-in can't unload it, so browsing to a second copy finds the first. */
+static const wchar_t *other_copy(void)
+{
+    static wchar_t path[MAX_PATH];
+    HMODULE self = NULL;
+    MODULEENTRY32W me;
+    HANDLE snap;
+    BOOL more;
+    int found = 0;
+    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                       (LPCWSTR)(void *)other_copy, &self);
+    snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, 0);
+    if (snap == INVALID_HANDLE_VALUE) return NULL;
+    me.dwSize = sizeof me;
+    for (more = Module32FirstW(snap, &me); more && !found; more = Module32NextW(snap, &me))
+        if (me.hModule != self && GetProcAddress(me.hModule, "AsfPy_Root")) {
+            wcsncpy(path, me.szExePath, MAX_PATH - 1);
+            found = 1;
+        }
+    CloseHandle(snap);
+    return found ? path : NULL;
+}
+
 static int sym(void *slot, const char *name)
 {
     FARPROC f = GetProcAddress(g_python, name);
@@ -360,10 +389,17 @@ static wchar_t *pytext(PyObject *s, Py_ssize_t *len)
 
 /* --- worksheet functions: registration ----------------------------------------------------- */
 
-typedef struct { wchar_t *name, *args, *help; wchar_t *arghelp[MAX_ARGS]; int nargs; } Func;
+typedef struct {
+    wchar_t *name, *args, *help;
+    wchar_t *arghelp[MAX_ARGS];
+    int nargs;
+    wchar_t flags[4];             /* the type's suffixes: ! volatile, # macro equivalent, $ thread-safe */
+    double id;                    /* xlfRegister's result while registered, else 0 */
+} Func;
 static Func g_funcs[NSLOTS];
-static int g_nfuncs;
-int asfpy_nargs[NSLOTS];          /* read by the 32-bit slots (slots_x86.S) */
+static int g_nfuncs;              /* functions in slots */
+static int g_total;               /* worksheet functions the Python folder gave, in slots or not */
+int asfpy_nargs[NSLOTS];          /* read by the 32-bit slots */
 
 static EXCEL12PROC g_excel12;
 
@@ -408,10 +444,10 @@ static void register_functions(void)
     op[0] = &dll;
     for (i = 0; i < g_nfuncs; i++) {
         Func *f = &g_funcs[i];
-        wchar_t proc[32], type[MAX_ARGS + 2];
+        wchar_t proc[32], type[MAX_ARGS + 8];
         swprintf(proc, 32, L"asfpy_f%04d", i);
         for (k = 0; k <= f->nargs; k++) type[k] = L'Q';
-        type[f->nargs + 1] = 0;
+        wcscpy(type + f->nargs + 1, f->flags);
         xltext(&x[1], proc);
         xltext(&x[2], type);
         xltext(&x[3], f->name);
@@ -426,37 +462,56 @@ static void register_functions(void)
         xltext(&x[n++], L"");    /* Insert Function cuts the last description: one more, empty */
         for (k = 1; k < n; k++) op[k] = &x[k];
         asfpy_nargs[i] = f->nargs;
-        if (excel12(xlfRegister, &res, n, op) != xlretSuccess || res.xltype != xltypeNum)
+        f->id = 0;
+        if (excel12(xlfRegister, &res, n, op) != xlretSuccess || res.xltype != xltypeNum) {
             note(L"registering %ls failed", f->name);
-        else
-            note(L"registered %ls as %ls (%d arguments)", f->name, proc, f->nargs);
+        } else {
+            f->id = res.val.num;
+            note(L"registered %ls as %ls, type %ls", f->name, proc, type);
+        }
         for (k = 1; k < n; k++)
             if (k != 5) free(x[k].val.str);    /* x[5] is the macro type, a number */
     }
     excel12(xlFree, NULL, 1, op);
 }
 
-/* boot.start's list of (name, [argument names], description) into g_funcs */
+/* boot.start's list of (name, [argument names], description, suffixes) into g_funcs */
 static void read_functions(PyObject *list)
 {
     Py_ssize_t i, k, n = P.PyList_Size(list);
+    g_total = (int)n;
     for (i = 0; i < n && g_nfuncs < NSLOTS; i++) {
         PyObject *t = P.PyList_GetItem(list, i), *args = P.PyTuple_GetItem(t, 1);
         Func *f = &g_funcs[g_nfuncs++];
         Py_ssize_t na = P.PyList_Size(args);
+        wchar_t *flags = pytext(P.PyTuple_GetItem(t, 3), NULL), *c;
         size_t len = 0;
         f->name = pytext(P.PyTuple_GetItem(t, 0), NULL);
         f->help = pytext(P.PyTuple_GetItem(t, 2), NULL);
         f->nargs = (int)na;
+        for (c = flags, k = 0; *c && k < 3; c++)
+            if (wcschr(L"!#$", *c)) f->flags[k++] = *c;
+        f->flags[k] = 0;
+        free(flags);
         for (k = 0; k < na; k++) {
             f->arghelp[k] = pytext(P.PyList_GetItem(args, k), NULL);
             len += wcslen(f->arghelp[k]) + 1;
         }
+        /* Excel takes at most 255 characters of argument names: whole names only */
         f->args = calloc(len + 1, sizeof(wchar_t));
         for (k = 0; k < na; k++) {
+            if (wcslen(f->args) + (k ? 1 : 0) + wcslen(f->arghelp[k]) > 255) {
+                note(L"%ls: the argument names are longer than 255 characters; Excel shows the first %d", f->name, (int)k);
+                break;
+            }
             if (k) wcscat(f->args, L",");
             wcscat(f->args, f->arghelp[k]);
         }
+    }
+    if (g_total > g_nfuncs) {
+        wchar_t *first = pytext(P.PyTuple_GetItem(P.PyList_GetItem(list, g_nfuncs), 0), NULL);
+        note(L"%d worksheet functions for %d slots: %d not registered, from %ls on", g_total, NSLOTS, g_total - g_nfuncs, first);
+        free(first);
     }
 }
 
@@ -490,7 +545,11 @@ static void start_python(void)
         return;
     }
     if ((other = python_in_process()) != NULL) {
-        start_failed(L"another add-in has already loaded %ls into Excel; one Python per process", other);
+        const wchar_t *copy = other_copy();
+        if (copy)
+            start_failed(L"another copy of this add-in (%ls) already runs Python in this Excel. Close Excel and start it again to use this copy", copy);
+        else
+            start_failed(L"another add-in has already loaded %ls into Excel; one Python per process", other);
         return;
     }
     want = sizeof(void *) == 8 ? IMAGE_FILE_MACHINE_AMD64 : IMAGE_FILE_MACHINE_I386;
@@ -548,13 +607,14 @@ static void start_python(void)
 
 /* --- worksheet functions: calls ---------------------------------------------------------------- */
 
-static XLOPER12 g_err[64];
+/* error results, filled once in DllMain and only read afterwards: any calculation thread may
+   return them, and Excel doesn't free them (no xlbitDLLFree) */
+#define NERRORS 64
+static XLOPER12 g_err[NERRORS];
 
 static LPXLOPER12 xlerror(int code)
 {
-    g_err[code].xltype = xltypeErr;
-    g_err[code].val.err = code;
-    return &g_err[code];
+    return &g_err[code >= 0 && code < NERRORS ? code : xlerrValue];
 }
 
 static const wchar_t *error_text(int code)
@@ -684,33 +744,56 @@ LPXLOPER12 __cdecl asfpy_dispatch(int slot, LPXLOPER12 *argv)
 
 #ifdef _WIN64
 #include "slots_x64.h"
+#elif defined(_MSC_VER)
+#include "slots_x86_msvc.h"    /* MinGW assembles slots_x86.S instead */
 #endif
 
 /* --- the add-in's entry points ----------------------------------------------------------------- */
 
+/* Each time Excel loads the add-in: Python starts the first time only; the functions are
+   registered each time, since xlAutoClose unregisters them. */
 EXPORT int WINAPI xlAutoOpen(void)
 {
     HMODULE self;
+    wchar_t msg[1200];
     /* pinned: Excel can't unload code that Python and VBA's proxies still use */
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN, (LPCWSTR)(void *)xlAutoOpen, &self);
     if (!g_started) start_python();
     if (g_started == 1) {
         register_functions();
         if (g_nfuncs == 0) {
-            wchar_t msg[1200];
             swprintf(msg, 1200, L"ASF Python: Python started, but the Python folder gave no worksheet functions. Details: %ls", g_log);
+            alert(msg);
+        } else if (g_total > g_nfuncs) {
+            swprintf(msg, 1200, L"ASF Python: the Python folder gave %d worksheet functions, and the add-in has %d slots: %d functions are not registered. Details: %ls",
+                     g_total, NSLOTS, g_total - g_nfuncs, g_log);
             alert(msg);
         }
     } else {
-        wchar_t msg[1200];
         swprintf(msg, 1200, L"ASF Python: %ls. Details: %ls", g_start_error, g_log);
         alert(msg);
     }
     return 1;
 }
 
-/* Python is never finalized (numpy and pandas can't start again in one process) */
-EXPORT int WINAPI xlAutoClose(void) { return 1; }
+/* When the add-in is unticked or Excel closes: the functions go, so that their cells show #NAME?
+   while the add-in is off. Python stays: it is never finalized, since numpy and pandas can't
+   start again in one process. */
+EXPORT int WINAPI xlAutoClose(void)
+{
+    XLOPER12 id, res;
+    LPXLOPER12 op[1] = { &id };
+    int i, n = 0;
+    for (i = 0; i < g_nfuncs; i++) {
+        if (!g_funcs[i].id) continue;
+        id.xltype = xltypeNum;
+        id.val.num = g_funcs[i].id;
+        if (excel12(xlfUnregister, &res, 1, op) == xlretSuccess) n++;
+        g_funcs[i].id = 0;
+    }
+    if (n) note(L"unregistered %d functions", n);
+    return 1;
+}
 
 EXPORT LPXLOPER12 WINAPI xlAddInManagerInfo12(LPXLOPER12 action)
 {
@@ -999,6 +1082,123 @@ static HRESULT fail(EXCEPINFO *ei, const wchar_t *msg)
     return DISP_E_EXCEPTION;
 }
 
+/* --- For Each: a Python iterator as IEnumVARIANT ------------------------------------------------ */
+
+typedef struct { IEnumVARIANTVtbl *lpVtbl; LONG refs; PyObject *it; int level; } Enum;
+static IEnumVARIANTVtbl g_enum_vtbl;
+static const GUID IID_IEnumVARIANT_ = { 0x00020404, 0, 0, { 0xC0, 0, 0, 0, 0, 0, 0, 0x46 } };
+
+static HRESULT STDMETHODCALLTYPE en_QueryInterface(IEnumVARIANT *self, REFIID riid, void **out)
+{
+    if (IsEqualGUID(riid, &IID_IUnknown_) || IsEqualGUID(riid, &IID_IEnumVARIANT_)) {
+        *out = self;
+        self->lpVtbl->AddRef(self);
+        return S_OK;
+    }
+    *out = NULL;
+    return E_NOINTERFACE;
+}
+
+static ULONG STDMETHODCALLTYPE en_AddRef(IEnumVARIANT *self) { return InterlockedIncrement(&((Enum *)self)->refs); }
+
+static ULONG STDMETHODCALLTYPE en_Release(IEnumVARIANT *self)
+{
+    Enum *e = (Enum *)self;
+    LONG n = InterlockedDecrement(&e->refs);
+    if (n == 0) {
+        PyGILState_STATE gil = P.PyGILState_Ensure();
+        P.Py_DecRef(e->it);
+        P.PyGILState_Release(gil);
+        free(e);
+    }
+    return n;
+}
+
+static HRESULT STDMETHODCALLTYPE en_Next(IEnumVARIANT *self, ULONG celt, VARIANT *out, ULONG *fetched)
+{
+    Enum *e = (Enum *)self;
+    PyGILState_STATE gil;
+    HRESULT hr = S_OK;
+    ULONG i;
+    if (fetched) *fetched = 0;
+    gil = P.PyGILState_Ensure();
+    for (i = 0; i < celt; i++) {
+        wchar_t *msg = NULL;
+        PyObject *r;
+        P.Py_IncRef(e->it);
+        r = boot_call("com_next", 2, e->it, P.PyLong_FromLong(e->level));
+        if (!r) {
+            fail(NULL, L"the add-in's bootstrap failed: see the log");
+            hr = E_FAIL;
+            break;
+        }
+        if (P.PyLong_AsLong(P.PyTuple_GetItem(r, 0)) == TAG_STOP) {
+            P.Py_DecRef(r);
+            hr = S_FALSE;
+            break;
+        }
+        if (!tag_to_variant(r, &out[i], e->level, &msg)) {
+            fail(NULL, msg);
+            free(msg);
+            P.Py_DecRef(r);
+            hr = E_FAIL;
+            break;
+        }
+        P.Py_DecRef(r);
+    }
+    P.PyGILState_Release(gil);
+    if (fetched) *fetched = i;
+    return hr;
+}
+
+static HRESULT STDMETHODCALLTYPE en_Skip(IEnumVARIANT *self, ULONG celt)
+{
+    HRESULT hr = S_OK;
+    while (celt-- && hr == S_OK) {
+        VARIANT v;
+        VariantInit(&v);
+        hr = en_Next(self, 1, &v, NULL);
+        VariantClear(&v);
+    }
+    return hr;
+}
+
+/* a Python iterator runs once: it can't start again, nor be copied */
+static HRESULT STDMETHODCALLTYPE en_Reset(IEnumVARIANT *self) { (void)self; return E_NOTIMPL; }
+static HRESULT STDMETHODCALLTYPE en_Clone(IEnumVARIANT *self, IEnumVARIANT **out) { (void)self; *out = NULL; return E_NOTIMPL; }
+
+static IEnumVARIANTVtbl g_enum_vtbl = { en_QueryInterface, en_AddRef, en_Release, en_Next, en_Skip, en_Reset, en_Clone };
+
+/* For Each over a proxy: Invoke(DISPID_NEWENUM) gives an IEnumVARIANT of iter(obj) */
+static HRESULT new_enum(Proxy *p, VARIANT *result, EXCEPINFO *ei)
+{
+    PyGILState_STATE gil = P.PyGILState_Ensure();
+    HRESULT hr = S_OK;
+    PyObject *r;
+    P.Py_IncRef(p->obj);
+    r = boot_call("com_iter", 1, p->obj);
+    if (!r) {
+        hr = fail(ei, L"the add-in's bootstrap failed: see the log");
+    } else if (P.PyLong_AsLong(P.PyTuple_GetItem(r, 0)) == TAG_FAIL) {
+        wchar_t *msg = pytext(P.PyTuple_GetItem(r, 1), NULL);
+        hr = fail(ei, msg);
+        free(msg);
+    } else if (result) {
+        Enum *e = calloc(1, sizeof(Enum));
+        e->lpVtbl = &g_enum_vtbl;
+        e->refs = 1;
+        e->level = p->level;
+        e->it = P.PyTuple_GetItem(r, 1);
+        P.Py_IncRef(e->it);
+        VariantInit(result);
+        V_VT(result) = VT_UNKNOWN;
+        V_UNKNOWN(result) = (IUnknown *)e;
+    }
+    if (r) P.Py_DecRef(r);
+    P.PyGILState_Release(gil);
+    return hr;
+}
+
 static HRESULT STDMETHODCALLTYPE px_Invoke(IDispatch *self, DISPID id, REFIID riid, LCID lcid, WORD flags,
                                            DISPPARAMS *dp, VARIANT *result, EXCEPINFO *ei, UINT *argerr)
 {
@@ -1013,6 +1213,7 @@ static HRESULT STDMETHODCALLTYPE px_Invoke(IDispatch *self, DISPID id, REFIID ri
     SetErrorInfo(0, NULL);    /* no stale message from an earlier call */
     if (flags & (DISPATCH_PROPERTYPUT | DISPATCH_PROPERTYPUTREF)) return DISP_E_MEMBERNOTFOUND;
     if (dp && dp->cNamedArgs) return DISP_E_NONAMEDARGS;
+    if (id == DISPID_NEWENUM) return new_enum(p, result, ei);
     if (id > 0) {
         EnterCriticalSection(&g_names_lock);
         if (id <= g_nnames) name = g_names[id - 1];
@@ -1086,7 +1287,14 @@ EXPORT long WINAPI AsfPy_Root(long level, VARIANT *out)
 
 BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID reserved)
 {
+    int i;
     (void)h; (void)reserved;
-    if (reason == DLL_PROCESS_ATTACH) InitializeCriticalSection(&g_names_lock);
+    if (reason == DLL_PROCESS_ATTACH) {
+        InitializeCriticalSection(&g_names_lock);
+        for (i = 0; i < NERRORS; i++) {
+            g_err[i].xltype = xltypeErr;
+            g_err[i].val.err = i;
+        }
+    }
     return TRUE;
 }

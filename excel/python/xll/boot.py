@@ -11,12 +11,12 @@ import time
 import traceback
 import types
 
-TAG_EMPTY, TAG_BOOL, TAG_FLOAT, TAG_INT, TAG_STR, TAG_LIST, TAG_OBJECT, TAG_FAIL, TAG_XLERR, TAG_GRID = range(10)
+TAG_EMPTY, TAG_BOOL, TAG_FLOAT, TAG_INT, TAG_STR, TAG_LIST, TAG_OBJECT, TAG_FAIL, TAG_XLERR, TAG_GRID, TAG_STOP = range(11)
 XLERR_NUM, XLERR_VALUE = 36, 15
 MAX_ARGS = 32
 MAX_TEXT = 32767
 
-_functions = []          # (qualified name, function, number of arguments, worksheet name or None)
+_functions = []          # (qualified name, function, worksheet name, type suffixes), by slot
 _exports = {}            # 'module.function' -> function, for py.call and PY_CALL
 _last_error = ''
 _log = None
@@ -59,11 +59,14 @@ def _fail(exc):
 
 def _make_api():
     api = types.ModuleType('asfpy')
-    api.__doc__ = 'Decorators of the ASF Python add-in (phase 1a spike).'
+    api.__doc__ = 'Decorators of the ASF Python add-in (phase 1b: the minimal bootstrap).'
 
-    def xl_func(fn=None, *, name=None):
+    def xl_func(fn=None, *, name=None, volatile=False, thread_safe=False, macro=False):
+        """A worksheet function. volatile: calculated on every recalculation (!); thread_safe:
+        may run on Excel's calculation threads ($); macro: a macro sheet equivalent (#)."""
         def mark(f):
             f.__asfpy_xl__ = name or f.__name__
+            f.__asfpy_flags__ = ('!' if volatile else '') + ('#' if macro else '') + ('$' if thread_safe else '')
             return f
         return mark(fn) if fn is not None else mark
 
@@ -82,7 +85,7 @@ def _arguments(fn):
 
 def start(python_folder, site_dir, executable, log_path):
     """Pins sys.path, imports the modules of the Python folder and returns the worksheet
-    functions to register: a list of (name, argument names, description)."""
+    functions to register: a list of (name, argument names, description, type suffixes)."""
     global _log
     _log = _Log(log_path)
     sys.stdout = sys.stderr = _log
@@ -127,14 +130,20 @@ def start(python_folder, site_dir, executable, log_path):
             if sheet or getattr(fn, '__asfpy_export__', False):
                 _exports[stem + '.' + attr] = fn
             if sheet:
+                flags = getattr(fn, '__asfpy_flags__', '')
                 if len(_arguments(fn)) > MAX_ARGS:
-                    _note('%s.%s: more than %d arguments, not registered' % (stem, attr, MAX_ARGS))
+                    _info('%s.%s: more than %d arguments, not registered' % (stem, attr, MAX_ARGS))
                     continue
-                _functions.append((stem + '.' + attr, fn, sheet))
+                if '$' in flags and '#' in flags:
+                    _info("%s.%s: thread_safe and macro can't go together (Excel refuses $ with #), not registered"
+                          % (stem, attr))
+                    continue
+                _functions.append((stem + '.' + attr, fn, sheet, flags))
         _info('imported %s in %.0f ms' % (file, (time.perf_counter() - t) * 1000))
     _info('%d worksheet functions, %d exported functions; start %.0f ms'
           % (len(_functions), len(_exports), (time.perf_counter() - t0) * 1000))
-    return [(sheet, _arguments(fn), (fn.__doc__ or '').strip().split('\n')[0]) for _, fn, sheet in _functions]
+    return [(sheet, _arguments(fn), (fn.__doc__ or '').strip().split('\n')[0], flags)
+            for _, fn, sheet, flags in _functions]
 
 
 # --- worksheet functions ---------------------------------------------------------------------
@@ -165,7 +174,7 @@ def _flat(rows):
 def xl_call(slot, args):
     """Runs the worksheet function of a slot. A range arrives as a list of rows."""
     try:
-        _, fn, _ = _functions[slot]
+        fn = _functions[slot][1]
         result = fn(*[_flat(a) if isinstance(a, list) else a for a in args])
         if isinstance(result, (list, tuple)):
             rows = [list(r) if isinstance(r, (list, tuple)) else [r] for r in result]
@@ -249,14 +258,35 @@ def _com(v, level):
 
 
 def com_invoke(obj, name, level, want_call, args):
-    """obj.name, called when it is callable and want_call; name '' is the object itself."""
+    """obj.name, called when it is callable and want_call; name '' is the object itself, whose
+    value is its text (VBA's x = obj and Debug.Print obj)."""
     try:
         target = obj if name == '' else _member(obj, name)
         if callable(target) and (want_call or args):
             return _com(target(*args), level)
         if args:
             raise TypeError("'%s' is not callable" % (name or type(obj).__name__))
+        if name == '':
+            return (TAG_STR, com_text(target))
         return _com(target, level)
+    except BaseException as exc:
+        return _fail(exc)
+
+
+def com_iter(obj):
+    """iter(obj), for VBA's For Each."""
+    try:
+        return (TAG_OBJECT, iter(obj))
+    except BaseException as exc:
+        return _fail(exc)
+
+
+def com_next(it, level):
+    """The next item of a For Each, or TAG_STOP at the end."""
+    try:
+        return _com(next(it), level)
+    except StopIteration:
+        return (TAG_STOP, None)
     except BaseException as exc:
         return _fail(exc)
 
