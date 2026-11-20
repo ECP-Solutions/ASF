@@ -47,18 +47,18 @@ Public Sub AsfPySpikeTest()
         Put3 "AsfPy_Root", "", "Python didn't start: " & py & ". See " & Environ$("TEMP") & "\asfpy.log"
         Exit Sub
     End If
-    ' each call goes through Py or PyObj: an error shows in the sheet, with its number and text
-    Check "py.call add", Py(py, "call", VbMethod, "spike.add", 2, 40), 42
-    v = Py(py, "call", VbMethod, "spike.echo", ChrW(937) & "mega", 7)
+    ' each call goes through CallPy or PyObj: an error shows in the sheet, with its number and text
+    Check "py.call add", CallPy(py, "call", VbMethod, "spike.add", 2, 40), 42
+    v = CallPy(py, "call", VbMethod, "spike.echo", ChrW(937) & "mega", 7)
     If IsArray(v) Then
         Check "py.call echo: an array back", LBound(v) & ":" & UBound(v) & ":" & v(0) & ":" & v(1), "0:1:" & ChrW(937) & "mega:7"
     Else
         Check "py.call echo: an array back", v, "an array"
     End If
     a(1, 1) = 11: a(1, 2) = 12: a(2, 1) = 21: a(2, 2) = 22
-    Check "py.call mean of a 2-D array", Py(py, "call", VbMethod, "spike.mean", a), 16.5
+    Check "py.call mean of a 2-D array", CallPy(py, "call", VbMethod, "spike.mean", a), 16.5
     Check "py.call refused: os.system", ErrorOf(py, "call", "os.system", "calc"), "NameError"
-    Check "py.lastError", Left$(Py(py, "lastError", VbGet), 9), "NameError"
+    Check "py.lastError", Left$(CallPy(py, "lastError", VbGet), 9), "NameError"
     Check "py.module at level 1", ErrorOf(py, "module", "math", Empty), "AttributeError"
     Check "py.__class__", ErrorOf(py, "__class__", Empty, Empty), "AttributeError"
     code = AsfPy_Root(2, py2)
@@ -66,18 +66,18 @@ Public Sub AsfPySpikeTest()
     If m Is Nothing Then
         Check "py.module('math')", lastFailure, "an object"
     Else
-        Check "py.module('math').sqrt(2)", RoundIf(Py(m, "sqrt", VbMethod, 2)), 1.414214
-        Check "math.PI, by case", RoundIf(Py(m, "PI", VbGet)), 3.141593
+        Check "py.module('math').sqrt(2)", RoundIf(CallPy(m, "sqrt", VbMethod, 2)), 1.414214
+        Check "math.PI, by case", RoundIf(CallPy(m, "PI", VbGet)), 3.141593
     End If
     t = Timer
     For i = 1 To 10000
-        v = Py(py, "call", VbMethod, "spike.add", 1, 2)
+        v = CallPy(py, "call", VbMethod, "spike.add", 1, 2)
     Next i
     Put3 "py.call from VBA, microseconds per call", Format((Timer - t) * 100, "0.0"), ""
     Set m = PyObj(py2, "module", "numpy")
     numpy = Not m Is Nothing
     If numpy Then
-        Check "numpy through py: percentile", Py(m, "percentile", VbMethod, Py(py, "call", VbMethod, "spike.echo", 1, 2), 50), 1.5
+        Check "numpy through py: percentile", CallPy(m, "percentile", VbMethod, CallPy(py, "call", VbMethod, "spike.echo", 1, 2), 50), 1.5
     Else
         Put3 "numpy", "not available: " & lastFailure, ""
     End If
@@ -153,18 +153,18 @@ Private Sub Formula(s As Object, cell As String, f As String, want As Variant)
 End Sub
 
 ' obj.name(args) through CallByName, for a value; on an error, "error <number>: <text>"
-Private Function Py(obj As Variant, name As String, kind As VbCallType, ParamArray a() As Variant) As Variant
+Private Function CallPy(obj As Variant, name As String, kind As VbCallType, ParamArray a() As Variant) As Variant
     On Error GoTo Failed
     Select Case UBound(a) - LBound(a) + 1
-        Case 0: Py = CallByName(obj, name, kind)
-        Case 1: Py = CallByName(obj, name, kind, a(0))
-        Case 2: Py = CallByName(obj, name, kind, a(0), a(1))
-        Case Else: Py = CallByName(obj, name, kind, a(0), a(1), a(2))
+        Case 0: CallPy = CallByName(obj, name, kind)
+        Case 1: CallPy = CallByName(obj, name, kind, a(0))
+        Case 2: CallPy = CallByName(obj, name, kind, a(0), a(1))
+        Case Else: CallPy = CallByName(obj, name, kind, a(0), a(1), a(2))
     End Select
     Exit Function
 Failed:
-    Py = "error " & Err.Number & ": " & Err.Description
-    lastFailure = Py
+    CallPy = "error " & Err.Number & ": " & Err.Description
+    lastFailure = CallPy
 End Function
 
 ' obj.name(args) through CallByName, for an object; Nothing on an error, kept in lastFailure

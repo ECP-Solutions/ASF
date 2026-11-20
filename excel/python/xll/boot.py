@@ -235,7 +235,7 @@ def com_invoke(obj, name, level, want_call, args):
         if callable(target) and (want_call or args):
             return _com(target(*args), level)
         if args:
-            raise TypeError("'%s' is not callable" % name)
+            raise TypeError("'%s' is not callable" % (name or type(obj).__name__))
         return _com(target, level)
     except BaseException as exc:
         return _fail(exc)
