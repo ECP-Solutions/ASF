@@ -10,7 +10,7 @@ Private Declare PtrSafe Function AsfPy_Root Lib "asfpy64.xll" (ByVal level As Lo
 Private Declare PtrSafe Function AsfPy_Root Lib "asfpy32.xll" (ByVal level As Long, ByRef out As Variant) As Long
 #End If
 
-Private ws As Object, row As Long, failures As Long
+Private ws As Object, row As Long, failures As Long, lastFailure As String
 
 ' Sets the venv (or Python install) and the Python folder that the add-in reads when it loads
 Public Sub AsfPySetup()
@@ -47,33 +47,39 @@ Public Sub AsfPySpikeTest()
         Put3 "AsfPy_Root", "", "Python didn't start: " & py & ". See " & Environ$("TEMP") & "\asfpy.log"
         Exit Sub
     End If
-    Check "py.call add", CallByName(py, "call", VbMethod, "spike.add", 2, 40), 42
-    v = CallByName(py, "call", VbMethod, "spike.echo", ChrW(937) & "mega", 7)
-    Check "py.call echo: an array back", LBound(v) & ":" & UBound(v) & ":" & v(0) & ":" & v(1), "0:1:" & ChrW(937) & "mega:7"
+    ' each call goes through Py or PyObj: an error shows in the sheet, with its number and text
+    Check "py.call add", Py(py, "call", VbMethod, "spike.add", 2, 40), 42
+    v = Py(py, "call", VbMethod, "spike.echo", ChrW(937) & "mega", 7)
+    If IsArray(v) Then
+        Check "py.call echo: an array back", LBound(v) & ":" & UBound(v) & ":" & v(0) & ":" & v(1), "0:1:" & ChrW(937) & "mega:7"
+    Else
+        Check "py.call echo: an array back", v, "an array"
+    End If
     a(1, 1) = 11: a(1, 2) = 12: a(2, 1) = 21: a(2, 2) = 22
-    Check "py.call mean of a 2-D array", CallByName(py, "call", VbMethod, "spike.mean", a), 16.5
+    Check "py.call mean of a 2-D array", Py(py, "call", VbMethod, "spike.mean", a), 16.5
     Check "py.call refused: os.system", ErrorOf(py, "call", "os.system", "calc"), "NameError"
-    Check "py.lastError", Left$(CallByName(py, "lastError", VbGet), 9), "NameError"
+    Check "py.lastError", Left$(Py(py, "lastError", VbGet), 9), "NameError"
     Check "py.module at level 1", ErrorOf(py, "module", "math", Empty), "AttributeError"
     Check "py.__class__", ErrorOf(py, "__class__", Empty, Empty), "AttributeError"
     code = AsfPy_Root(2, py2)
-    Set m = CallByName(py2, "module", VbMethod, "math")
-    Check "py.module('math').sqrt(2)", Round(CallByName(m, "sqrt", VbMethod, 2), 6), 1.414214
-    Check "math.PI, by case", Round(CallByName(m, "PI", VbGet), 6), 3.141593
+    Set m = PyObj(py2, "module", "math")
+    If m Is Nothing Then
+        Check "py.module('math')", lastFailure, "an object"
+    Else
+        Check "py.module('math').sqrt(2)", RoundIf(Py(m, "sqrt", VbMethod, 2)), 1.414214
+        Check "math.PI, by case", RoundIf(Py(m, "PI", VbGet)), 3.141593
+    End If
     t = Timer
     For i = 1 To 10000
-        v = CallByName(py, "call", VbMethod, "spike.add", 1, 2)
+        v = Py(py, "call", VbMethod, "spike.add", 1, 2)
     Next i
     Put3 "py.call from VBA, microseconds per call", Format((Timer - t) * 100, "0.0"), ""
-    On Error Resume Next
-    Set m = Nothing
-    Set m = CallByName(py2, "module", VbMethod, "numpy")
+    Set m = PyObj(py2, "module", "numpy")
     numpy = Not m Is Nothing
-    On Error GoTo 0
     If numpy Then
-        Check "numpy through py: percentile", CallByName(m, "percentile", VbMethod, CallByName(py, "call", VbMethod, "spike.echo", 1, 2), 50), 1.5
+        Check "numpy through py: percentile", Py(m, "percentile", VbMethod, Py(py, "call", VbMethod, "spike.echo", 1, 2), 50), 1.5
     Else
-        Put3 "numpy", "not installed in the venv", ""
+        Put3 "numpy", "not available: " & lastFailure, ""
     End If
 
     ' --- worksheet functions
@@ -108,6 +114,7 @@ Public Sub AsfPySpikeTest()
     Check "M2000", s.Range("M2000").Value, 2001
 
     Put3 IIf(failures = 0, "All checks pass", failures & " checks fail"), "", ""
+    Put3 "The add-in's log", Environ$("TEMP") & "\asfpy.log", ""
     ws.Columns("A:C").AutoFit
     ws.Activate
 End Sub
@@ -145,6 +152,38 @@ Private Sub Formula(s As Object, cell As String, f As String, want As Variant)
     If Not IsEmpty(want) Then Check f, s.Range(cell).Value, want
 End Sub
 
+' obj.name(args) through CallByName, for a value; on an error, "error <number>: <text>"
+Private Function Py(obj As Variant, name As String, kind As VbCallType, ParamArray a() As Variant) As Variant
+    On Error GoTo Failed
+    Select Case UBound(a) - LBound(a) + 1
+        Case 0: Py = CallByName(obj, name, kind)
+        Case 1: Py = CallByName(obj, name, kind, a(0))
+        Case 2: Py = CallByName(obj, name, kind, a(0), a(1))
+        Case Else: Py = CallByName(obj, name, kind, a(0), a(1), a(2))
+    End Select
+    Exit Function
+Failed:
+    Py = "error " & Err.Number & ": " & Err.Description
+    lastFailure = Py
+End Function
+
+' obj.name(args) through CallByName, for an object; Nothing on an error, kept in lastFailure
+Private Function PyObj(obj As Variant, name As String, ParamArray a() As Variant) As Object
+    On Error GoTo Failed
+    Select Case UBound(a) - LBound(a) + 1
+        Case 0: Set PyObj = CallByName(obj, name, VbMethod)
+        Case Else: Set PyObj = CallByName(obj, name, VbMethod, a(0))
+    End Select
+    Exit Function
+Failed:
+    lastFailure = "error " & Err.Number & ": " & Err.Description
+    Set PyObj = Nothing
+End Function
+
+Private Function RoundIf(v As Variant) As Variant
+    If IsNumeric(v) Then RoundIf = Round(v, 6) Else RoundIf = v
+End Function
+
 ' the text of a Python error raised through CallByName, or "" when there was none
 Private Function ErrorOf(obj As Variant, name As String, a1 As Variant, a2 As Variant) As String
     Dim v As Variant
@@ -157,6 +196,7 @@ Private Function ErrorOf(obj As Variant, name As String, a1 As Variant, a2 As Va
         v = CallByName(obj, name, VbMethod, a1, a2)
     End If
     If Err.Number <> 0 Then ErrorOf = Split(Err.Description & ":", ":")(0)
+    If Err.Number <> 0 And InStr(Err.Description, ":") = 0 Then ErrorOf = "error " & Err.Number & ": " & Err.Description
 End Function
 
 Private Function Join2(v As Variant) As String

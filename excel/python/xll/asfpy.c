@@ -937,8 +937,24 @@ static int tag_to_variant(PyObject *t, VARIANT *out, int level, wchar_t **msg)
     return 1;
 }
 
+static const GUID IID_IErrorInfo_ = { 0x1CF2B120, 0x547D, 0x101B, { 0x8E, 0x65, 0x08, 0x00, 0x2B, 0x2B, 0xD1, 0x19 } };
+
+/* the message goes to VBA twice: in EXCEPINFO and as the thread's error info, which VBA's
+   Err.Description may read instead; and to the log */
 static HRESULT fail(EXCEPINFO *ei, const wchar_t *msg)
 {
+    ICreateErrorInfo *cei;
+    note(L"py error: %ls", msg);
+    if (SUCCEEDED(CreateErrorInfo(&cei))) {
+        IErrorInfo *info;
+        cei->lpVtbl->SetSource(cei, (LPOLESTR)L"Python");
+        cei->lpVtbl->SetDescription(cei, (LPOLESTR)msg);
+        if (SUCCEEDED(cei->lpVtbl->QueryInterface(cei, &IID_IErrorInfo_, (void **)&info))) {
+            SetErrorInfo(0, info);
+            info->lpVtbl->Release(info);
+        }
+        cei->lpVtbl->Release(cei);
+    }
     if (ei) {
         memset(ei, 0, sizeof *ei);
         ei->bstrSource = SysAllocString(L"Python");

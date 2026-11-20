@@ -173,6 +173,37 @@ static HRESULT invoke(IDispatch *d, const wchar_t *name, int n, VARIANT *args, V
     return hr;
 }
 
+/* as VBA's CallByName with VbMethod calls it: each argument ByRef, the method flag only */
+static HRESULT invoke_vba(IDispatch *d, const wchar_t *name, int n, VARIANT *args, VARIANT *res, wchar_t *errtext)
+{
+    DISPID id;
+    LPOLESTR nm = (LPOLESTR)name;
+    DISPPARAMS dp;
+    VARIANT rev[8];
+    EXCEPINFO ei;
+    HRESULT hr;
+    int i;
+    for (i = 0; i < n; i++) {
+        VariantInit(&rev[i]);
+        V_VT(&rev[i]) = VT_BYREF | VT_VARIANT;
+        V_VARIANTREF(&rev[i]) = &args[n - 1 - i];
+    }
+    dp.rgvarg = rev;
+    dp.cArgs = n;
+    dp.rgdispidNamedArgs = NULL;
+    dp.cNamedArgs = 0;
+    VariantInit(res);
+    memset(&ei, 0, sizeof ei);
+    hr = d->lpVtbl->GetIDsOfNames(d, &IID_NULL, &nm, 1, 0x409, &id);
+    if (FAILED(hr)) return hr;
+    hr = d->lpVtbl->Invoke(d, id, &IID_NULL, 0x409, DISPATCH_METHOD, &dp, res, &ei, NULL);
+    if (hr == DISP_E_EXCEPTION && errtext) {
+        wcsncpy(errtext, ei.bstrDescription ? ei.bstrDescription : L"", 255);
+        errtext[255] = 0;
+    }
+    return hr;
+}
+
 static void variant_text(VARIANT *v, wchar_t *out, int max)
 {
     VARIANT t;
@@ -302,6 +333,19 @@ int wmain(int argc, wchar_t **argv)
     check(i == 0 && V_VT(&py) == VT_DISPATCH, L"AsfPy_Root(1)", V_VT(&py) == VT_DISPATCH ? L"object" : L"no object");
     args[0] = vstr(L"spike.add"); args[1] = vnum(2); args[2] = vlong(40);
     com_check(V_DISPATCH(&py), L"call", 3, args, L"42:5", NULL);
+    {
+        VARIANT r;
+        wchar_t got[256], errtext[256] = L"";
+        HRESULT hr;
+        args[0] = vstr(L"spike.add");
+        VariantInit(&args[1]); V_VT(&args[1]) = VT_I2; V_I2(&args[1]) = 2;
+        VariantInit(&args[2]); V_VT(&args[2]) = VT_I2; V_I2(&args[2]) = 40;
+        hr = invoke_vba(V_DISPATCH(&py), L"call", 3, args, &r, errtext);
+        if (hr == DISP_E_EXCEPTION) swprintf(got, 256, L"error: %ls", errtext);
+        else if (FAILED(hr)) swprintf(got, 256, L"HRESULT 0x%08lx", (unsigned long)hr);
+        else variant_text(&r, got, 256);
+        check(wcscmp(got, L"42:3") == 0, L"py call, as VBA's CallByName makes it", got);
+    }
     args[0] = vstr(L"spike.echo"); args[1] = vstr(L"Ωmega"); args[2] = vlong(7);
     com_check(V_DISPATCH(&py), L"call", 3, args, L"[Ωmega:8,7:3]", NULL);
     {
