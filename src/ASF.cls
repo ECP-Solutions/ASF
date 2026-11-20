@@ -109,6 +109,11 @@ End Function
 Public Sub InjectVariable(varName As String, VarValue As Variant)
     RT_.InjectVariable varName, VarValue
 End Sub
+' An object the host trusts, which stays an object while AppAccess is off (InjectVariable makes it
+' its type name then): the host decides what scripts may reach, as the Python add-in's py
+Public Sub InjectHostObject(varName As String, obj As Object)
+    RT_.InjectHostObject varName, obj
+End Sub
 ' The compiler and the VM of the current globals: compiled programs belong to the globals they
 ' were compiled with (SetGlobals changes them)
 Private Sub PrepareCode()

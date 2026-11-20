@@ -60,6 +60,17 @@ Public Sub InjectVariable(varName As String, VarValue As Variant)
         INJECTED_VARIABLES_.Add Array(varName, tmpVar), varName
     End If
 End Sub
+' An object the host trusts: it stays an object while AppAccess is off, which InjectVariable would
+' make its type name. Only the host calls it; scripts reach what the object hands them
+Public Sub InjectHostObject(varName As String, obj As Object)
+    If INJECTED_VARIABLES_ Is Nothing Then
+        Set INJECTED_VARIABLES_ = New Collection
+    End If
+    On Error Resume Next
+    INJECTED_VARIABLES_.Remove (varName)
+    On Error GoTo 0
+    INJECTED_VARIABLES_.Add Array(varName, obj), varName
+End Sub
 Private Sub InitializeCOMPrototypes()
     If COM_PROTOTYPES_ Is Nothing Then Set COM_PROTOTYPES_ = New ASF_Map
 End Sub
@@ -494,7 +505,9 @@ Private Function MemberValue(ByRef baseVal As Variant, ByVal prop As String) As 
             End If
         End If
     End If
-    vAssignment MemberValue, CallObjectMethod(baseVal, prop)
+    ' Empty: no arguments. A missing optional one would do in VBA, but LibreOffice raises when
+    ' InvokeHost looks at it, and the read gave undefined there
+    vAssignment MemberValue, CallObjectMethod(baseVal, prop, Empty)
     Exit Function
 ErrHandler:
     If err.Number = (vbObjectError + 5007) Then
@@ -780,7 +793,8 @@ Private Function DispatchMethod(evaluated As Variant, ByRef propN As String, ByR
         If baseValLocal Then tmpResult = "true" Else tmpResult = "false"
         DispatchMethod = True
     Else
-        vAssignment tmpResult, CallObjectMethod(baseValLocal, propN, evaluated)
+        ' a host object: the name as written, as in TryCallHost
+        vAssignment tmpResult, CallObjectMethod(baseValLocal, METHOD_NAME_, evaluated)
         DispatchMethod = True
     End If
 End Function
@@ -4885,7 +4899,8 @@ Public Function TryCallHost(ByRef target As Variant, ByVal name As String, ByRef
     If HasCOMPrototype(target, name) Then Exit Function
     ' an object whose default value is an array (a Range of several cells) has the array methods
     If IsArray(target) Then Exit Function
-    vAssignment result, CallHostOn(target, LCase$(name), args)
+    ' the name as written: COM ignores case, and Python doesn't (pd.DataFrame, not dataframe)
+    vAssignment result, CallHostOn(target, name, args)
     TryCallHost = True
 End Function
 ' CallByName with the arguments of a (an array, or Empty for none); one Empty argument is none

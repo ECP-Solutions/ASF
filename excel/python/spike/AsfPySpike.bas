@@ -1,5 +1,5 @@
 Attribute VB_Name = "AsfPySpike"
-' The checks of phases 1a, 1b and 2 in Excel (excel/python/spike/README.md). Import this module into
+' The checks of phases 1a to 3 in Excel (excel/python/spike/README.md). Import this module into
 ' any workbook (not into ASF.xlam), then run AsfPySetup once and AsfPySpikeTest with
 ' asfpy64.xll or asfpy32.xll loaded. The results go to a new workbook.
 Option Explicit
@@ -33,7 +33,7 @@ Public Sub AsfPySpikeTest()
     ws.Name = "Spike"
     row = 1
     failures = 0
-    Put3 "ASF Python, phases 1a, 1b and 2", Application.Name & " " & Application.Version & ", " & IIf(Is64(), "64-bit", "32-bit"), ""
+    Put3 "ASF Python, phases 1a to 3", Application.Name & " " & Application.Version & ", " & IIf(Is64(), "64-bit", "32-bit"), ""
 
     ' --- py from VBA
     On Error Resume Next
@@ -195,6 +195,9 @@ Public Sub AsfPySpikeTest()
     Check "=PY_CALL(""aa_reload.version"") after the removal", s.Range("E22").Value, CVErr(xlErrName)
     Formula s, "E23", "=spike_add(2,3.5)", 5.5
 
+    ' --- phase 3: library scripts with py, through ASF.xlam
+    Phase3Checks s
+
     ' --- phase 1b: the add-in unticked and ticked again (xlAutoClose, xlAutoOpen)
     Dim ai As Object
     For Each ai In Application.AddIns
@@ -219,6 +222,78 @@ Public Sub AsfPySpikeTest()
     Put3 "The add-in's log", Environ$("TEMP") & "\asfpy.log", ""
     ws.Columns("A:C").AutoFit
     ws.Activate
+End Sub
+
+' Phase 3: ASF_CALL of library scripts that ask for Python, with PythonAccess off, call and modules,
+' and ASF_RUN, which never gets py. Needs ASF.xlam of phase 3 loaded next to the Python add-in. The
+' scripts go to the library folder and are deleted afterwards; PythonAccess is put back as it was.
+Private Sub Phase3Checks(s As Object)
+    Dim lib As String, saved As String, wb As Object
+    On Error Resume Next
+    Set wb = Workbooks("ASF.xlam")
+    On Error GoTo 0
+    If wb Is Nothing Then
+        Put3 "Phase 3", "ASF.xlam isn't loaded: its checks are skipped", ""
+        Exit Sub
+    End If
+    lib = GetSetting("ASF", "AddIn", "LibraryFolder", Environ$("APPDATA") & "\ASF\scripts")
+    saved = GetSetting("ASF", "AddIn", "PythonAccess", "")
+    WriteText lib & "\py_check_call.vas", "// @asf python: call" & vbLf & "return py.call('spike.add', $1, 1);"
+    WriteText lib & "\py_check_modules.vas", "// @asf python: modules" & vbLf & "return py.module('spike').Which();"
+    WriteText lib & "\py_check_fails.vas", "// @asf python: call" & vbLf & "return py.call('spike.add', 'x', 1);"
+    On Error GoTo PutBack
+    SetPythonAccess "off"
+    Formula s, "G20", "=ASF_CALL(""py_check_call"",41)", CVErr(xlErrValue)
+    Check "  why, with PythonAccess off", WhyText(s.Range("G20")), _
+          "the script asks for Python (python: call), which the setting PythonAccess (off) doesn't allow: it needs call or modules"
+    SetPythonAccess "call"
+    Formula s, "G21", "=ASF_CALL(""py_check_call"",41)", 42
+    Formula s, "G22", "=ASF_CALL(""py_check_modules"")", CVErr(xlErrValue)
+    Check "  why, modules with PythonAccess call", WhyText(s.Range("G22")), _
+          "the script asks for Python (python: modules), which the setting PythonAccess (call) doesn't allow: it needs modules"
+    SetPythonAccess "modules"
+    ' the name as written: a lower-cased one would call which() and give "which"
+    Formula s, "G23", "=ASF_CALL(""py_check_modules"")", "Which"
+    Formula s, "G24", "=ASF_CALL(""py_check_fails"")", CVErr(xlErrValue)
+    Check "  why: the script's message and Python's", InStr(WhyText(s.Range("G24")), "(Python: TypeError") > 0, True
+    Formula s, "G25", "=ASF_RUN(""// @asf python: call""&CHAR(10)&""return 1;"")", CVErr(xlErrValue)
+    Check "  why: ASF_RUN never gets py", WhyText(s.Range("G25")), _
+          "Python is for the scripts of the library (ASF_CALL): a script in a formula can't ask for it"
+Done:
+    On Error Resume Next
+    If LenB(saved) = 0 Then
+        DeleteSetting "ASF", "AddIn", "PythonAccess"
+        Application.Run "ASF.xlam!ASFEngine.ResetEngine"
+    Else
+        SetPythonAccess saved
+    End If
+    Kill lib & "\py_check_call.vas"
+    Kill lib & "\py_check_modules.vas"
+    Kill lib & "\py_check_fails.vas"
+    Exit Sub
+PutBack:
+    Put3 "Phase 3 stopped", "error " & Err.Number & ": " & Err.Description, "FAIL"
+    failures = failures + 1
+    Resume Done
+End Sub
+
+Private Sub SetPythonAccess(ByVal value As String)
+    Application.Run "ASF.xlam!ASFSettings.ChangeSetting", "PythonAccess", value
+End Sub
+
+' what Why this error? shows for a cell with ASF_RUN or ASF_CALL: the cell calculated again, then
+' the add-in's message
+Private Function WhyText(cell As Object) As String
+    Recalc cell
+    WhyText = CStr(Application.Run("ASF.xlam!ASFEngine.LastErrorMessage"))
+End Function
+
+Private Sub WriteText(path As String, text As String)
+    Dim f As Integer
+    f = FreeFile
+    Open path For Output As #f
+    Print #f, text
+    Close #f
 End Sub
 
 ' a range calculated again, as Ctrl+Alt+F9 does: Range.Calculate alone skips cells that aren't

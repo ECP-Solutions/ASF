@@ -340,6 +340,9 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("compile_errors",            "compile_errors_messages") Then compile_errors_messages: EndTest
     If StartTest("compile_errors",            "compile_error_keeps_nothing") Then compile_error_keeps_nothing: EndTest
     If StartTest("call_trace",                "call_trace_records_calls") Then call_trace_records_calls: EndTest
+    If StartTest("host_objects",              "host_object_cast_without_app_access") Then host_object_cast_without_app_access: EndTest
+    If StartTest("host_objects",              "host_object_injected_trusted") Then host_object_injected_trusted: EndTest
+    If StartTest("host_objects",              "host_method_name_as_written") Then host_method_name_as_written: EndTest
     On Error GoTo 0
 
     Dim summary As String
@@ -5523,6 +5526,64 @@ Private Sub call_trace_records_calls()
     expected = "6|CALL: <anonymous>(2) -> 6;CALL: f(2) -> 3;"
     AssertEqual expected, actual
 
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+' With AppAccess off, an object given with InjectVariable is its type name: the sandbox
+Private Sub host_object_cast_without_app_access()
+    On Error GoTo TestFail
+    Dim eng As New ASF
+    With eng
+        .AppAccess = False
+        .InjectVariable "host", New AsfFakeHost
+        actual = CStr(.Run(.Compile("return `${typeof host} ${host}`;")))
+    End With
+    expected = "string AsfFakeHost"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+' InjectHostObject keeps the object with AppAccess off: its methods, its properties and the objects
+' it hands out work, as the Python add-in's py and the modules it gives
+Private Sub host_object_injected_trusted()
+    On Error GoTo TestFail
+    Dim eng As New ASF
+    With eng
+        .AppAccess = False
+        .InjectHostObject "host", New AsfFakeHost
+        actual = CStr(.Run(.Compile("let c = host.Child(); return `${typeof host} ${host.Twice(21)} ${c.Twice(c.Twice(1))} ${host.Label}`;")))
+        If LenB(actual) = 0 Then actual = "error: " & CStr(.LastError)
+    End With
+    expected = "object: <AsfFakeHost> 42 4 fake host"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+    Resume TestExit
+End Sub
+' A host object's method is called by its name as written (COM ignores case, Python doesn't): the
+' call trace shows the name the host got
+Private Sub host_method_name_as_written()
+    On Error GoTo TestFail
+    Dim eng As New ASF
+    With eng
+        .AppAccess = False
+        .EnableCallTrace = True
+        .InjectHostObject "host", New AsfFakeHost
+        .Run .Compile("let c = host.Child(); return c.Twice(host.Twice(1));")
+        Dim trace As String: trace = .GetCallStackTrace
+        actual = CStr(.OUTPUT_) & "|" & (InStr(trace, "CALL: Child()") > 0) & "|" & (InStr(trace, "CALL: Twice(1) -> 2") > 0) _
+                 & "|" & (InStr(trace, "CALL: Twice(2) -> 4") > 0) & "|" & (InStr(1, trace, "twice", vbBinaryCompare) = 0)
+    End With
+    expected = "4|True|True|True|True"
+    AssertEqual expected, actual
 TestExit:
     Exit Sub
 TestFail:

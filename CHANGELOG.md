@@ -4,6 +4,18 @@ All notable changes for ASF. This file combines the release notes from the proje
 
 ## [Unreleased]
 
+- **Added**
+    - **`InjectHostObject(name, obj)`** — an object the host trusts, which stays an object while `AppAccess` is off (`InjectVariable` makes it its type name then). Only VBA calls it; scripts reach the object and what it hands out. The Excel add-in gives the Python add-in's `py` to the library scripts that ask for it this way.
+    - **Excel add-in: Python in library scripts** — a script whose header says `// @asf python: call` gets `py.call` of the functions the Python add-in (`excel/python`) exports, and `// @asf python: modules` gets `py.module` too, when the new setting `PythonAccess` (`off` by default) allows it; a script that asks for more doesn't run, and **Why this error?** says which setting it needs. `ASF_RUN` never gets `py`. A failed script's message ends with Python's error. The ASF tab gets a Python group: **Python folder** and **Reload Python**, and **Why this error?** also shows the Python error of a `PY_CALL` or Python function.
+
+- **Changed**
+    - **Host methods by their name as written** — a method of a host object is called by its name as the script writes it (`pd.DataFrame`), where it was lower-cased: COM objects ignore case, Python doesn't.
+
+- **Fixed**
+    - **LibreOffice: Basic objects as host objects** — a call of a Basic class object's method from a script, and the read of its property, failed: LibreOffice's `CallByName` takes ASF's `VbGet Or VbMethod` as neither, and a missing optional argument raised where VBA lets it pass. A host call is a method call first, then a property read, and the read passes no arguments as `Empty`.
+    - **Excel add-in: Why this error? ran nothing** — in Excel 16.0, `Range.Calculate` skips a cell that isn't dirty, so the cell's script didn't run again and the message could be an older one. The cell is marked dirty first.
+    - **LibreOffice test tools opened the user's own profile on Windows** — LibreOffice's Python hands its children `URE_BOOTSTRAP` and `UNO_PATH`, and soffice restarts once with a new profile, losing `-env:UserInstallation`: the checks ran in the user's profile and replaced its `ASF` library of My Macros. `soffice` now gets `UserInstallation` in its environment too, and every tool stops before writing anything when the profile it got isn't the throw-away one.
+
 ## [v4.0.2] - 2026-11-18
 https://github.com/ECP-Solutions/ASF/releases/tag/v4.0.2
 

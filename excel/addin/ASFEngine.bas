@@ -1,11 +1,16 @@
 Attribute VB_Name = "ASFEngine"
 ' The engine the worksheet functions share: made on first use with the settings (ASFSettings), it
-' keeps the scripts it compiled; ResetEngine drops it.
+' keeps the scripts it compiled; ResetEngine drops it. The scripts of the library that ask for
+' Python (ASFPython) run in engines of their own, one for each level, which hold py: the shared
+' engine never does, since it also runs the scripts of formulas.
 Option Explicit
 Option Private Module
 
 Private engine_ As ASF
+Private pyEngines_(1 To 2) As ASF   ' by level of Python: 1 py.call, 2 py.module too
+Private pyRoots_(1 To 2) As Object  ' their py
 Private runEnabled_ As Boolean   ' the settings, read when the engine is made
+Private pythonAllowed_ As Long
 Private folder_ As String
 Private sources_ As Collection   ' library scripts read: Array(file time, source), by path
 Private textOf_ As Long          ' the program that writes a value as a template does
@@ -19,7 +24,12 @@ Public Function RunScript(ByVal script As String, ByRef args As Variant) As Vari
         RunScript = CVErr(XL_ERR_VALUE)
         Exit Function
     End If
-    RunScript = RunSource(script, args)
+    If ASFPython.AsksForPython(script) Then
+        lastError_ = "Python is for the scripts of the library (ASF_CALL): a script in a formula can't ask for it"
+        RunScript = CVErr(XL_ERR_VALUE)
+        Exit Function
+    End If
+    RunScript = RunSource(0, script, args)
 End Function
 
 ' ASF_CALL: name.vas from the library folder
@@ -37,7 +47,17 @@ Public Function RunLibraryScript(ByVal name As String, ByRef args As Variant) As
         RunLibraryScript = CVErr(XL_ERR_VALUE)
         Exit Function
     End If
-    RunLibraryScript = RunSource(source, args)
+    Dim level As Long, message As String
+    level = ASFPython.ScriptLevel(source, pythonAllowed_, message)
+    If level > 0 Then
+        If Not PythonReady(level, message) Then level = -1
+    End If
+    If level < 0 Then
+        lastError_ = message
+        RunLibraryScript = CVErr(XL_ERR_VALUE)
+        Exit Function
+    End If
+    RunLibraryScript = RunSource(level, source, args)
 End Function
 
 ' Why the last call of ASF_RUN or ASF_CALL gave #VALUE! (empty when it did not)
@@ -48,6 +68,10 @@ End Function
 ' Drops the engine of the worksheet functions, its compiled scripts and the settings it read
 Public Sub ResetEngine()
     Set engine_ = Nothing
+    Set pyEngines_(1) = Nothing
+    Set pyEngines_(2) = Nothing
+    Set pyRoots_(1) = Nothing
+    Set pyRoots_(2) = Nothing
     Set sources_ = Nothing
     textOf_ = 0
 End Sub
@@ -67,17 +91,48 @@ Private Sub Ready()
     If Not engine_ Is Nothing Then Exit Sub
     folder_ = ASFSettings.LibraryFolder()
     runEnabled_ = ASFSettings.RunEnabled()
-    Set engine_ = New ASF
-    engine_.AppAccess = False
-    engine_.WorkingDir = folder_
-    engine_.ImportRoot = folder_
-    engine_.MaxSteps = ASFSettings.StepLimit()
+    pythonAllowed_ = ASFPython.AllowedLevel()
+    Set engine_ = MakeEngine()
     Set sources_ = New Collection
     textOf_ = 0
 End Sub
 
-Private Function RunSource(ByVal source As String, ByRef args As Variant) As Variant
+' An engine with the settings: no Office access, imports from the library only, the step limit
+Private Function MakeEngine() As ASF
+    Dim eng As ASF
+    Set eng = New ASF
+    eng.AppAccess = False
+    eng.WorkingDir = folder_
+    eng.ImportRoot = folder_
+    eng.MaxSteps = ASFSettings.StepLimit()
+    Set MakeEngine = eng
+End Function
+
+' The engine of a level of Python, made on first use with py from the Python add-in; False, with
+' message, when the add-in can't give py
+Private Function PythonReady(ByVal level As Long, ByRef message As String) As Boolean
+    Dim py As Object
+    If pyEngines_(level) Is Nothing Then
+        Set py = ASFPython.Root(level, message)
+        If py Is Nothing Then Exit Function
+        Set pyEngines_(level) = MakeEngine()
+        pyEngines_(level).InjectHostObject "py", py
+        Set pyRoots_(level) = py
+    End If
+    PythonReady = True
+End Function
+
+' level 0: the shared engine; 1 or 2: the engine of that level of Python, with py
+Private Function RunSource(ByVal level As Long, ByVal source As String, ByRef args As Variant) As Variant
     Dim values() As Variant, n As Long, i As Long, idx As Long, compiled As Boolean, result As Variant
+    Dim eng As ASF, py As Object
+    If level = 0 Then
+        Set eng = engine_
+    Else
+        Set eng = pyEngines_(level)
+        Set py = pyRoots_(level)
+        ASFPython.ClearError py
+    End If
     On Error GoTo Failed
     n = UBound(args) - LBound(args) + 1
     If n > 0 Then
@@ -92,15 +147,16 @@ Private Function RunSource(ByVal source As String, ByRef args As Variant) As Var
             End If
         Next i
     End If
-    idx = engine_.Compile(source)
+    idx = eng.Compile(source)
     compiled = True
     If n > 0 Then
-        SetValue result, engine_.RunArgs(idx, values)
+        SetValue result, eng.RunArgs(idx, values)
     Else
-        SetValue result, engine_.RunArgs(idx, Empty)
+        SetValue result, eng.RunArgs(idx, Empty)
     End If
-    If Not IsEmpty(engine_.LastError) Then
-        If IsObject(engine_.LastError) Then lastError_ = "a throw of " & ValueText(engine_.LastError) Else lastError_ = CStr(engine_.LastError)
+    If Not IsEmpty(eng.LastError) Then
+        If IsObject(eng.LastError) Then lastError_ = "a throw of " & ValueText(eng.LastError) Else lastError_ = CStr(eng.LastError)
+        lastError_ = ASFPython.WithPythonError(lastError_, py)
         RunSource = CVErr(XL_ERR_VALUE)
         Exit Function
     End If
@@ -109,6 +165,7 @@ Private Function RunSource(ByVal source As String, ByRef args As Variant) As Var
     Exit Function
 Failed:
     lastError_ = Err.Description
+    lastError_ = ASFPython.WithPythonError(lastError_, py)
     ' a compile error leaves the engine as it was; any other may leave it half way through a run
     If compiled Then ResetEngine
     RunSource = CVErr(XL_ERR_VALUE)

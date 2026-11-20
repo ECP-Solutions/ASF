@@ -1,6 +1,6 @@
-# Python inside Excel: the checks of phases 1a, 1b and 2
+# Python inside Excel: the checks of phases 1a to 3
 
-This folder is the Excel side of phases 1a, 1b and 2 of [the design](../DESIGN.md). `asfpy64.xll` and `asfpy32.xll` load a venv's Python into Excel and register the worksheet functions of `spike.py`. They also give VBA a `py` object. `AsfPySpike.bas` checks all of it and measures it. There is one log file, no ribbon, and no ASF integration yet.
+This folder is the Excel side of phases 1a to 3 of [the design](../DESIGN.md). `asfpy64.xll` and `asfpy32.xll` load a venv's Python into Excel and register the worksheet functions of `spike.py`. They also give VBA a `py` object. `AsfPySpike.bas` checks all of it and measures it. The phase 3 rows also need ASF.xlam loaded.
 
 Phase 1a was the spike. Phase 1b completes the `.xll`: a pool of 1,000 slots, the volatile and thread-safe suffixes, functions unregistered when the add-in is unticked, `For Each` over Python objects, and an object's text as its default value.
 
@@ -17,9 +17,10 @@ Phase 2 adds `PY_CALL("module.function", arguments...)`, registered by the `.xll
 | Do volatile and thread-safe functions work, and is `$` with `#` refused? | the `spike_volatile`, `spike_threadsafe` and `spike_refused` rows |
 | Do the functions go when the add-in is unticked, and come back when it's ticked again? | the `Unticked` and `Ticked again` rows |
 | Do `PY_CALL` and the type hints work in formulas, and does a cell's error come back with its traceback? | the `PY_CALL`, `spike_hints`, `spike_nextday` and `Why this error?` rows |
+| Does a library script get `py` only with both keys, and does `ASF_RUN` never get it? (phase 3, with `ASF.xlam`) | the `ASF_CALL` and `ASF_RUN` rows at the end; `=ASF_CALL("py_check_modules")` gives `Which` only if the engine passes names as written |
 | Does `AsfPyReload` read a module added, changed and removed? | the `AsfPyReload` rows (they write and delete `aa_reload.py` in the Python folder) |
 | What does a call cost, and what does start-up cost? | the timing rows; the start-up lines of `%TEMP%\asfpy.log` |
-| Does Excel close cleanly with numpy loaded? | step 7 |
+| Does Excel close cleanly with numpy loaded? | step 8 |
 
 ## Steps
 
@@ -34,7 +35,8 @@ Phase 2 adds `PY_CALL("module.function", arguments...)`, registered by the `.xll
 4. **The add-in.** Copy `asfpy64.xll` (64-bit Excel) or `asfpy32.xll` (32-bit Excel) to a folder of your own. In the file's Properties, tick **Unblock** if Windows shows it: Excel refuses add-ins downloaded from the internet.
 5. **Settings.** Import `AsfPySpike.bas` into a new workbook (Alt+F11, File > Import File) and run `AsfPySetup`. Give it the venv folder and the Python folder.
 6. **Load and test.** File > Options > Add-ins > Manage: Excel Add-ins > Go > Browse, then pick the `.xll`. Run `AsfPySpikeTest`. A new workbook shows each check, `ok` or `FAIL`, and the timings. Its second sheet holds the formulas. For the thread-safe rows, keep multi-threaded calculation on (File > Options > Advanced > Formulas).
-7. **Close Excel** with that workbook open (numpy loaded). Excel should close without an error or a hang. Then open Excel again: the add-in loads by itself.
+7. **Phase 3: `ASF.xlam` built again,** with the engine and add-in of phase 3: `powershell -ExecutionPolicy Bypass -File excel/tools/build.ps1 -TemporaryTrustAccess` (see `excel/README.md`), then load it next to the `.xll`. `AsfPySpikeTest` then writes three scripts to the library folder, sets `PythonAccess` to `off`, `call` and `modules` in turn, and puts the setting and the folder back as they were. Without `ASF.xlam` it skips these rows.
+8. **Close Excel** with that workbook open (numpy loaded). Excel should close without an error or a hang. Then open Excel again: the add-in loads by itself.
 
 Please send back the result sheet and `%TEMP%\asfpy.log` for each Excel you tried: 2016 32-bit, 2016 64-bit, Microsoft 365.
 

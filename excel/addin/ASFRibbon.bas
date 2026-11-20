@@ -44,29 +44,75 @@ ShowPath:
     MsgBox "The library folder is" & vbLf & folder, vbInformation, TITLE
 End Sub
 
-' Why this error?: calculates the active cell again and shows why its ASF_RUN or ASF_CALL gave #VALUE!
+' Why this error?: calculates the active cell again and shows why its ASF_RUN or ASF_CALL gave
+' #VALUE!, or, when the Python add-in is loaded, the Python error of its PY_CALL or Python function
 Public Sub OnWhyError(control As Object)
-    Dim cell As Object, formula As String, message As String
+    Dim cell As Object, formula As String, message As String, isAsf As Boolean, py As Object, notLoaded As String
     If TypeName(Selection) <> "Range" Then
-        MsgBox "Select a cell with ASF_RUN or ASF_CALL.", vbInformation, TITLE
+        MsgBox "Select a cell with ASF_RUN, ASF_CALL or a Python function.", vbInformation, TITLE
         Exit Sub
     End If
     Set cell = ActiveCell
     formula = UCase$(cell.Formula)
-    If InStr(formula, "ASF_RUN(") = 0 And InStr(formula, "ASF_CALL(") = 0 Then
+    isAsf = InStr(formula, "ASF_RUN(") > 0 Or InStr(formula, "ASF_CALL(") > 0
+    Set py = ASFPython.Root(1, notLoaded)
+    If Not isAsf And py Is Nothing Then
         MsgBox "The formula of " & cell.Address(False, False) & " doesn't call ASF_RUN or ASF_CALL.", vbInformation, TITLE
         Exit Sub
     End If
-    ' the cell's own call, so that the arguments and the fitting are its own
+    If Not py Is Nothing Then ASFPython.ClearError py
+    ' the cell's own call, so that the arguments and the fitting are its own. Dirty first: Calculate
+    ' alone skips a cell that isn't dirty, and then nothing runs
+    cell.Dirty
     cell.Calculate
-    message = ASFEngine.LastErrorMessage()
+    If isAsf Then message = ASFEngine.LastErrorMessage()
+    If LenB(message) = 0 And Not py Is Nothing Then message = ASFPython.ErrorReport(py)
     If LenB(message) = 0 And IsError(cell.Value) Then
-        MsgBox cell.Address(False, False) & ": the error comes from an argument of the formula, not from the script.", vbInformation, TITLE
+        MsgBox cell.Address(False, False) & ": the error comes from an argument of the formula, not from " & _
+               IIf(py Is Nothing, "the script.", "ASF or Python."), vbInformation, TITLE
     ElseIf LenB(message) = 0 Then
-        MsgBox cell.Address(False, False) & ": no error from ASF.", vbInformation, TITLE
+        MsgBox cell.Address(False, False) & ": no error from ASF" & IIf(py Is Nothing, ".", " or Python."), vbInformation, TITLE
     Else
         MsgBox cell.Address(False, False) & ": " & message, vbExclamation, TITLE
     End If
+End Sub
+
+' Python folder: opens the Python add-in's folder of modules, made first when it is missing
+Public Sub OnPythonFolder(control As Object)
+    Dim folder As String: folder = ASFSettings.PythonFolder()
+    If LenB(folder) = 0 Then
+        MsgBox "Python needs the Python add-in, which runs on Excel for Windows.", vbInformation, TITLE
+        Exit Sub
+    End If
+    If Not ASFLibrary.EnsureFolder(folder) Then
+        MsgBox "The Python folder can't be made:" & vbLf & folder, vbExclamation, TITLE
+        Exit Sub
+    End If
+    On Error GoTo ShowPath
+    ThisWorkbook.FollowHyperlink folder
+    Exit Sub
+ShowPath:
+    MsgBox "The Python folder is" & vbLf & folder, vbInformation, TITLE
+End Sub
+
+' Reload Python: the Python add-in imports the modules of its folder again (its command
+' AsfPyReload), then the open workbooks are calculated in full: a cell keeps its old value otherwise
+Public Sub OnReloadPython(control As Object)
+    Dim py As Object, message As String, info As String
+    Set py = ASFPython.Root(1, message)
+    If py Is Nothing Then
+        MsgBox message, vbExclamation, TITLE
+        Exit Sub
+    End If
+    On Error GoTo Failed
+    Application.Run "AsfPyReload"
+    Application.CalculateFull
+    info = CStr(CallByName(py, "startInfo", VbGet))
+    If Len(info) > 900 Then info = Left$(info, 900) & "..."
+    MsgBox "The Python folder was imported again, and the workbooks calculated." & vbLf & vbLf & info, vbInformation, TITLE
+    Exit Sub
+Failed:
+    MsgBox "Reload Python failed: " & Err.Description, vbExclamation, TITLE
 End Sub
 
 ' Reset engine: drops the engine of the worksheet functions and their compiled scripts

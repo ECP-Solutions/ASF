@@ -1,4 +1,4 @@
-"""The functions of the checks of phases 1a, 1b and 2. Copy this file into the Python folder
+"""The functions of the checks of phases 1a to 3. Copy this file into the Python folder
 (%APPDATA%\\ASF\\python by default) before loading asfpy64.xll or asfpy32.xll."""
 import datetime
 import itertools
@@ -122,6 +122,16 @@ def spike_nextday(when: datetime.date):
 @export
 def add(a, b):
     return a + b
+
+
+def Which():
+    """Not marked: an ASF script reaches it as py.module('spike').Which(), where a lower-cased name
+    would reach which() instead."""
+    return "Which"
+
+
+def which():
+    return "which"
 
 
 @export

@@ -113,15 +113,18 @@ def run(suites, keep_log=False, vba_expressions=None):
     skip = list(EXCLUDED) + ([] if vba_expressions else list(NEEDS_VBA_EXPRESSIONS))
     if "runner" in suites:
         mods.append(("TestRunner", runner_module(skip), "normal"))
+        # the host object of the host_objects tests
+        fake = build.generic(build.load(os.path.join(TEST_DIR, "AsfFakeHost.cls")))
+        mods.append(("AsfFakeHost", build.class_module("AsfFakeHost", fake), "class"))
 
     work = tempfile.mkdtemp(prefix="asf-lo-")
     log_path = os.path.join(work, "tests.log")
     mods.append(("LOTestMain", main_module(log_path, suites), "normal"))
     port = free_port()
     proc = subprocess.Popen(["soffice", "--headless", "--norestore", "--nologo", "--nodefault",
-                             f"-env:UserInstallation=file://{work}/profile",
+                             "-env:UserInstallation=" + uno.systemPathToFileUrl(os.path.join(work, "profile")),   # also a Windows path
                              f"--accept=socket,host=127.0.0.1,port={port};urp;"],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=build.soffice_env(uno.systemPathToFileUrl(os.path.join(work, "profile"))))
     local = uno.getComponentContext()
     resolver = local.ServiceManager.createInstanceWithContext("com.sun.star.bridge.UnoUrlResolver", local)
     ctx = None
@@ -134,6 +137,7 @@ def run(suites, keep_log=False, vba_expressions=None):
     if ctx is None:
         proc.kill()
         sys.exit("could not connect to soffice")
+    build.check_profile(ctx, work)
     try:
         libs = ctx.ServiceManager.createInstanceWithContext("com.sun.star.script.ApplicationScriptLibraryContainer", ctx)
         if vba_expressions:

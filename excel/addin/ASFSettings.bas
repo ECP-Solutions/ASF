@@ -5,6 +5,10 @@ Attribute VB_Name = "ASFSettings"
 '   LibraryFolder   the folder of the scripts ASF_CALL runs and imports read
 '   RunEnabled      "0" turns ASF_RUN off: only the scripts of the library run
 '   StepLimit       the loop iterations and calls a script may make (MaxSteps; 0: no limit)
+'   PythonAccess    Python for the scripts of the library whose header asks for it (ASFPython):
+'                   off (the default), call (py.call of exported functions) or modules (py.module too)
+'   PythonVenv, PythonFolder   the Python of the Python add-in (asfpy64.xll, asfpy32.xll) and its
+'                   folder of modules; the add-in reads them when Excel loads it
 ' Change them from the Immediate window or a macro, for example:
 '   Application.Run "ASF.xlam!ASFSettings.ChangeSetting", "RunEnabled", "0"
 Option Explicit
@@ -28,6 +32,22 @@ Public Function StepLimit() As Long
     Dim v As String: v = Setting("StepLimit", CStr(DEFAULT_STEP_LIMIT))
     If IsNumeric(v) Then StepLimit = CLng(v) Else StepLimit = DEFAULT_STEP_LIMIT
     If StepLimit < 0 Then StepLimit = 0
+End Function
+
+' off, call or modules: anything else is off
+Public Function PythonAccess() As String
+    PythonAccess = LCase$(Trim$(Setting("PythonAccess", "off")))
+    If PythonAccess <> "call" And PythonAccess <> "modules" Then PythonAccess = "off"
+End Function
+
+' The Python add-in's folder of modules: the setting, or ASF\python in the user's application data,
+' as the add-in takes it
+Public Function PythonFolder() As String
+#If Mac Then
+    PythonFolder = vbNullString
+#Else
+    PythonFolder = Setting("PythonFolder", Environ$("APPDATA") & "\ASF\python")
+#End If
 End Function
 
 ' Saves a setting; the worksheet functions use it from their next call

@@ -38,6 +38,28 @@ DEFINES = {}
 OLD_DIR = "old"
 
 
+
+def soffice_env(profile_url):
+    """The environment for a soffice that must open the throw-away profile at profile_url, never the
+    user's own: without the variables LibreOffice's own Python sets, and with UserInstallation. On
+    Windows soffice restarts once after it made a new profile, and the restart loses the command
+    line's -env:UserInstallation but keeps the environment."""
+    env = {k: v for k, v in os.environ.items() if k.upper() not in ("URE_BOOTSTRAP", "UNO_PATH", "PYTHONHOME", "PYTHONPATH")}
+    env["UserInstallation"] = profile_url
+    return env
+
+
+def check_profile(ctx, work):
+    """Stops before anything is written when soffice didn't open the throw-away profile in work."""
+    import uno
+    user = ctx.ServiceManager.createInstanceWithContext("com.sun.star.util.PathSubstitution", ctx).substituteVariables("$(user)", True)
+    if not user.lower().startswith(uno.systemPathToFileUrl(work).lower()):
+        try:
+            ctx.ServiceManager.createInstanceWithContext("com.sun.star.frame.Desktop", ctx).terminate()
+        except Exception:
+            pass
+        sys.exit("soffice opened the profile %s, not the throw-away one: nothing was changed" % user)
+
 def load(path):
     with open(path, encoding="latin-1", newline="") as f:
         return resolve_conditionals(f.read().replace("\r\n", "\n"))
@@ -704,22 +726,41 @@ def class_module(name, body):
 
 
 def call_by_name(max_args=30):
-    """LOhelper.CallMember(obj, name, kind, args...): CallSpecial's dispatch, then CallByName."""
+    """LOhelper.CallMember(obj, name, kind, args...): CallSpecial's dispatch, then CallByName.
+    LibreOffice's CallByName takes VbGet Or VbMethod, ASF's kind for host calls, as neither: a
+    Basic object's Function or Property Get is then 'not defined' (error 35). So that kind is a
+    method call first, then a property read."""
     cases = []
     for n in range(max_args + 1):
         args = "".join(f", a({i})" for i in range(n))
         cases.append(f"        Case {n}\n            If (kind And (VbLet Or VbSet)) <> 0 Then\n"
                      f"                CallByName obj, name, kind{args}\n            Else\n"
                      f"                r = CallByName(obj, name, kind{args})\n            End If")
-    return ("\nPublic Function CallMember(obj As Object, ByVal name As String, ByVal kind As Integer, ParamArray args() As Variant) As Variant\n"
-            "    Dim a() As Variant, r As Variant, i As Long\n"
+    return ("\nPrivate Sub CallKind(obj As Object, ByVal name As String, ByVal kind As Integer, a As Variant, r As Variant)\n"
+            "    Select Case UBound(a) + 1\n" + "\n".join(cases) + "\n    End Select\n"
+            "End Sub\n"
+            "\nPublic Function CallMember(obj As Object, ByVal name As String, ByVal kind As Integer, ParamArray args() As Variant) As Variant\n"
+            "    Dim a() As Variant, r As Variant, i As Long, n As Long, d As String\n"
             "    a = Array()\n"
             "    If UBound(args) >= LBound(args) Then ReDim a(0 To UBound(args) - LBound(args))\n"
             "    For i = 0 To UBound(a)\n"
             "        If IsObject(args(LBound(args) + i)) Then Set a(i) = args(LBound(args) + i) Else a(i) = args(LBound(args) + i)\n"
             "    Next i\n"
             "    If Not CallSpecial(obj, name, kind, a, r) Then\n"
-            "        Select Case UBound(a) + 1\n" + "\n".join("    " + l for c in cases for l in c.split("\n")) + "\n        End Select\n"
+            "        If kind = (VbGet Or VbMethod) Then\n"
+            "            On Error Resume Next\n"
+            "            CallKind obj, name, VbMethod, a, r\n"
+            "            n = Err.Number\n"
+            "            d = Err.Description\n"
+            "            On Error GoTo 0\n"
+            "            If n = 35 Or n = 438 Then\n"
+            "                CallKind obj, name, VbGet, a, r\n"
+            "            ElseIf n <> 0 Then\n"
+            "                Err.Raise n, name, d\n"
+            "            End If\n"
+            "        Else\n"
+            "            CallKind obj, name, kind, a, r\n"
+            "        End If\n"
             "    End If\n"
             "    If IsObject(r) Then Set CallMember = r Else CallMember = r\n"
             "End Function\n")
