@@ -2,6 +2,11 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [Unreleased]
+
+- **Added**
+    - **Python add-in: its own Python** — `asfpy64.xll` and `asfpy32.xll` carry CPython 3.14.10 of their bitness, with pip (python.org's build, pinned with its SHA-256 in `excel/python/xll/runtime.json`), and unpack it into `%LOCALAPPDATA%\ASF\runtime` the first time Excel loads them: no Python to install and no venv to make. **Python packages** on the ASF tab (the add-in's command `AsfPyPackages`) opens a console window with pip for that Python. The setting `PythonVenv` is now optional: it names another Python to use instead. After the approach of [sancarn/xll-python](https://github.com/sancarn/xll-python); no code of it is used.
+
 ## [v4.1.0] - 2026-11-20
 https://github.com/ECP-Solutions/ASF/releases/tag/v4.1.0
 

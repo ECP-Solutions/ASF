@@ -1,7 +1,7 @@
 Attribute VB_Name = "AsfPySpike"
 ' The checks of phases 1a to 4 in Excel (excel/python/spike/README.md). Import this module into
-' any workbook (not into ASF.xlam), then run AsfPySetup once and AsfPySpikeTest with
-' asfpy64.xll or asfpy32.xll loaded. The results go to a new workbook.
+' any workbook (not into ASF.xlam), then run AsfPySpikeTest with asfpy64.xll or asfpy32.xll
+' loaded (AsfPySetup only to use another Python than the add-in's own). The results go to a new workbook.
 Option Explicit
 
 #If Win64 Then
@@ -12,16 +12,24 @@ Private Declare PtrSafe Function AsfPy_Root Lib "asfpy32.xll" (ByVal level As Lo
 
 Private ws As Object, row As Long, failures As Long, lastFailure As String, lastRaised As String
 
-' Sets the venv (or Python install) and the Python folder that the add-in reads when it loads
+' Optional: another Python than the add-in's own (a venv or a Python install), and the Python
+' folder. The add-in reads them when it loads.
 Public Sub AsfPySetup()
     Dim venv As String, folder As String
-    venv = InputBox("Folder of the venv (or of a Python install) whose bitness matches Excel's:", _
+    venv = InputBox("Folder of a venv (or of a Python install) whose bitness matches Excel's." & vbLf & vbLf & _
+                    "Leave it empty for the Python the add-in carries.", _
                     "ASF Python", GetSetting("ASF", "AddIn", "PythonVenv", ""))
-    If LenB(venv) = 0 Then Exit Sub
+    If StrPtr(venv) = 0 Then Exit Sub   ' Cancel
     folder = InputBox("Python folder, with spike.py in it:", "ASF Python", _
                       GetSetting("ASF", "AddIn", "PythonFolder", Environ$("APPDATA") & "\ASF\python"))
     If LenB(folder) = 0 Then Exit Sub
-    SaveSetting "ASF", "AddIn", "PythonVenv", venv
+    If LenB(venv) = 0 Then
+        On Error Resume Next
+        DeleteSetting "ASF", "AddIn", "PythonVenv"
+        On Error GoTo 0
+    Else
+        SaveSetting "ASF", "AddIn", "PythonVenv", venv
+    End If
     SaveSetting "ASF", "AddIn", "PythonFolder", folder
     MsgBox "Saved. Now load the add-in (File > Options > Add-ins > Excel Add-ins > Browse), or restart Excel if it was loaded.", vbInformation, "ASF Python"
 End Sub

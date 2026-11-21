@@ -8,7 +8,8 @@ Attribute VB_Name = "ASFSettings"
 '   PythonAccess    Python for the scripts of the library whose header asks for it (ASFPython):
 '                   off (the default), call (py.call of exported functions) or modules (py.module too)
 '   PythonVenv, PythonFolder   the Python of the Python add-in (asfpy64.xll, asfpy32.xll) and its
-'                   folder of modules; the add-in reads them when Excel loads it
+'                   folder of modules; the add-in reads them when Excel loads it. Without
+'                   PythonVenv, the add-in uses the Python it carries
 ' Change them from the Immediate window or a macro, for example:
 '   Application.Run "ASF.xlam!ASFSettings.ChangeSetting", "RunEnabled", "0"
 Option Explicit

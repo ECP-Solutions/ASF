@@ -80,7 +80,7 @@ def spike_text(s):
 
 @xl_func
 def spike_numpy(x):
-    """The 90th percentile with numpy, when numpy is installed in the venv."""
+    """The 90th percentile with numpy, when numpy is installed."""
     import numpy
     return float(numpy.percentile(numpy.asarray(x, dtype=float), 90))
 

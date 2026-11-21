@@ -1,10 +1,12 @@
 # Python inside Excel: the checks of phases 1a to 4
 
-This folder is the Excel side of phases 1a to 4 of [the design](../DESIGN.md). `asfpy64.xll` and `asfpy32.xll` load a venv's Python into Excel and register the worksheet functions of `spike.py`. They also give VBA a `py` object. `AsfPySpike.bas` checks all of it and measures it. The phase 3 rows also need ASF.xlam loaded.
+This folder is the Excel side of phases 1a to 4 of [the design](../DESIGN.md). `asfpy64.xll` and `asfpy32.xll` load Python into Excel (the Python they carry, or a venv's) and register the worksheet functions of `spike.py`. They also give VBA a `py` object. `AsfPySpike.bas` checks all of it and measures it. The phase 3 rows also need ASF.xlam loaded.
 
 Phase 1a was the spike. Phase 1b completes the `.xll`: a pool of 1,000 slots, the volatile and thread-safe suffixes, functions unregistered when the add-in is unticked, `For Each` over Python objects, and an object's text as its default value.
 
 Phase 2 adds `PY_CALL("module.function", arguments...)`, registered by the `.xll`; type hints (`int`, `float`, `str`, `bool`, `list`, `date`, `datetime`); `py.lastTraceback` and `py.clearError`, for **Why this error?**; and the command `AsfPyReload`, which imports the Python folder again without restarting Excel.
+
+Since then, each `.xll` carries its own Python (CPython 3.14.10 of its bitness, with pip), which it unpacks into `%LOCALAPPDATA%\ASF\runtime` the first time Excel loads it, and the command `AsfPyPackages` opens pip for it in a console window. A venv is optional.
 
 Phase 4 adds numpy and pandas type hints and results, object handles (`<Counter#1>` in a cell, the object for the functions that take the cell), asynchronous functions (`async def` or `asynchronous=True`, with `xlAsyncReturn`), and commands (`@xl_macro`, run with `Application.Run`, which may use `xl_app()`).
 
@@ -20,27 +22,22 @@ Phase 4 adds numpy and pandas type hints and results, object handles (`<Counter#
 | Do the functions go when the add-in is unticked, and come back when it's ticked again? | the `Unticked` and `Ticked again` rows |
 | Do `PY_CALL` and the type hints work in formulas, and does a cell's error come back with its traceback? | the `PY_CALL`, `spike_hints`, `spike_nextday` and `Why this error?` rows |
 | Does a library script get `py` only with both keys, and does `ASF_RUN` never get it? (phase 3, with `ASF.xlam`) | the `ASF_CALL` and `ASF_RUN` rows at the end; `=ASF_CALL("py_check_modules")` gives `Which` only if the engine passes names as written |
-| Do handles, asynchronous functions, numpy and pandas hints, and commands work? (phase 4) | the `spike_counter`, `spike_most`, `spike_async`, `spike_matrix`, `spike_frame`, `spike_describe`, `spike_macro` and `spike_app` rows. `spike_frame` needs pandas and `spike_app` pywin32 in the venv (`pip install pandas pywin32`); without them their rows say so |
+| Do handles, asynchronous functions, numpy and pandas hints, and commands work? (phase 4) | the `spike_counter`, `spike_most`, `spike_async`, `spike_matrix`, `spike_frame`, `spike_describe`, `spike_macro` and `spike_app` rows. `spike_frame` needs pandas and `spike_app` pywin32 (step 2: `install pandas pywin32`); without them their rows say so |
 | Does `AsfPyReload` read a module added, changed and removed? | the `AsfPyReload` rows (they write and delete `aa_reload.py` in the Python folder) |
 | What does a call cost, and what does start-up cost? | the timing rows; the start-up lines of `%TEMP%\asfpy.log` |
-| Does Excel close cleanly with numpy loaded? | step 9 |
+| Does Excel close cleanly with numpy loaded? | step 7 |
 
 ## Steps
 
-1. **Python of Excel's bitness.** Check Excel's bitness under File > Account > About Excel. Install a python.org Python 3.11 or later of the same bitness (the "Windows installer (64-bit)" or "(32-bit)"). Store Python and free-threaded builds don't work.
-2. **A venv,** with numpy to try a real package:
-   ```
-   py -3.12 -m venv %USERPROFILE%\asfpy-venv
-   %USERPROFILE%\asfpy-venv\Scripts\python -m pip install numpy
-   ```
-   For 32-bit, use `py -3.12-32`.
+1. **The add-in.** Check Excel's bitness under File > Account > About Excel. Copy `asfpy64.xll` (64-bit Excel) or `asfpy32.xll` (32-bit Excel) to a folder of your own. In the file's Properties, tick **Unblock** if Windows shows it: Excel refuses add-ins downloaded from the internet. Then File > Options > Add-ins > Manage: Excel Add-ins > Go > Browse, and pick it. The first load unpacks the add-in's Python (about 40 MB).
+2. **Packages,** numpy to try a real one: in the Immediate window (Alt+F11, then Ctrl+G), `Application.Run "AsfPyPackages"` opens a console window with pip (with `ASF.xlam` built again, **Python packages** on the ASF tab does the same). Type `install numpy`, and for the phase 4 rows `install pandas pywin32`. Wait for "pip exited with 0", press Enter on an empty line, and restart Excel.
 3. **The Python folder.** Copy `spike.py` to `%APPDATA%\ASF\python` (create the folder). Take the file itself: on GitHub, use **Download raw file**. A page saved with the browser's "Save as" is HTML, not Python. The name must be exactly `spike.py`: browsers sometimes save it as `spike (1).py` or `spike.py.txt`. When Excel loads the add-in, an alert says so if the folder gave no functions; the first rows of `AsfPySpikeTest` say why.
-4. **The add-in.** Copy `asfpy64.xll` (64-bit Excel) or `asfpy32.xll` (32-bit Excel) to a folder of your own. In the file's Properties, tick **Unblock** if Windows shows it: Excel refuses add-ins downloaded from the internet.
-5. **Settings.** Import `AsfPySpike.bas` into a new workbook (Alt+F11, File > Import File) and run `AsfPySetup`. Give it the venv folder and the Python folder.
-6. **Load and test.** File > Options > Add-ins > Manage: Excel Add-ins > Go > Browse, then pick the `.xll`. Run `AsfPySpikeTest`. A new workbook shows each check, `ok` or `FAIL`, and the timings. Its second sheet holds the formulas. For the thread-safe rows, keep multi-threaded calculation on (File > Options > Advanced > Formulas).
-7. **Phase 3: `ASF.xlam` built again,** with the engine and add-in of phase 3: `powershell -ExecutionPolicy Bypass -File excel/tools/build.ps1 -TemporaryTrustAccess` (see `excel/README.md`), then load it next to the `.xll`. `AsfPySpikeTest` then writes three scripts to the library folder, sets `PythonAccess` to `off`, `call` and `modules` in turn, and puts the setting and the folder back as they were. Without `ASF.xlam` it skips these rows.
-8. **Phase 4** needs only the new `.xll` and `spike.py`, and `AsfPySpike.bas` imported again. For the pandas and `xl_app()` rows, `pip install pandas pywin32` in the venv first.
-9. **Close Excel** with that workbook open (numpy loaded). Excel should close without an error or a hang. Then open Excel again: the add-in loads by itself.
+4. **Test.** Import `AsfPySpike.bas` into a new workbook (Alt+F11, File > Import File) and run `AsfPySpikeTest`. A new workbook shows each check, `ok` or `FAIL`, and the timings. Its second sheet holds the formulas. For the thread-safe rows, keep multi-threaded calculation on (File > Options > Advanced > Formulas).
+5. **Phase 3: `ASF.xlam` built again,** with the engine and add-in of phase 3: `powershell -ExecutionPolicy Bypass -File excel/tools/build.ps1 -TemporaryTrustAccess` (see `excel/README.md`), then load it next to the `.xll`. `AsfPySpikeTest` then writes three scripts to the library folder, sets `PythonAccess` to `off`, `call` and `modules` in turn, and puts the setting and the folder back as they were. Without `ASF.xlam` it skips these rows.
+6. **Phase 4** needs only the new `.xll` and `spike.py`, and `AsfPySpike.bas` imported again. The pandas and `xl_app()` rows need the packages of step 2.
+7. **Close Excel** with that workbook open (numpy loaded). Excel should close without an error or a hang. Then open Excel again: the add-in loads by itself.
+
+To use another Python instead (a venv, or a python.org install of Excel's bitness, 3.11 or later), run `AsfPySetup` and give its folder; leave the folder empty to go back to the add-in's Python. Packages then go into that Python, with its own pip.
 
 Please send back the result sheet and `%TEMP%\asfpy.log` for each Excel you tried: 2016 32-bit, 2016 64-bit, Microsoft 365.
 
@@ -96,6 +93,13 @@ Phase 1a, under Wine on a Linux container, with the MinGW build:
 
 The times aren't Excel's: Excel adds its own cost per call, so they only show that the add-in's part is small. numpy 2.x doesn't load under Wine 9 (Wine's C runtime lacks `crealf`), which is a Wine limit; numpy 1.26 does. Natively, numpy 2.x works.
 
+The add-in's own Python, under Wine on a Linux container with the MinGW build (its first load unpacked it in 430 ms; pip in that Python installed a package from PyPI into its `Lib\site-packages`):
+
+| Python | Add-in | Checks |
+|---|---|---|
+| the add-in's own, 3.14.10, 32-bit | asfpy32.xll | 98 of 98 |
+| the add-in's own, 3.14.10, 64-bit | asfpy64.xll | the checks pass until an asynchronous call crashes Wine's 64-bit process, as it does with any Python on this container, before this change too |
+
 The GitHub workflow `.github/workflows/python-addin.yml` runs `test_boot.py` and these checks on every change to `excel/python`: the MinGW build under Wine with Pythons 3.11, 3.12 (with numpy 1.26), 3.14 and 32-bit 3.12, and the MSVC build natively with Pythons 3.11, 3.13 (with numpy), 3.14 and 32-bit 3.12.
 
 ## Building
@@ -104,8 +108,9 @@ On Windows with Visual Studio's C++ build tools, or anywhere with MinGW-w64:
 
 ```
 python excel/python/xll/build.py                      # both add-ins; MinGW-w64 if it's on the PATH, else MSVC
-python excel/python/tests/run_fakehost.py PYTHON...   # the checks; PYTHON is an install or a venv folder
+python excel/python/tests/run_fakehost.py PYTHON...   # the checks; PYTHON is an install or a venv folder,
+                                                      # or bundled64 / bundled32: the Python the add-in carries
 python -m unittest discover -s excel/python/tests -p "test_*.py"   # boot.py alone, any OS
 ```
 
-`build.py` writes to `excel/python/xll/build/`, and `run_fakehost.py` builds the fake host with the same toolchain. On Windows, `run_fakehost.py` sets the add-in's settings for the run and puts yours back afterwards. The add-ins in this folder are copies of the MSVC build.
+`build.py` downloads the Python packages that `xll/runtime.json` pins, once, checking their SHA-256, and writes to `excel/python/xll/build/`, and `run_fakehost.py` builds the fake host with the same toolchain. On Windows, `run_fakehost.py` sets the add-in's settings for the run and puts yours back afterwards. The add-ins in this folder are copies of the MSVC build. `build.py --no-runtime` leaves the Python out: such an add-in needs `PythonVenv`.

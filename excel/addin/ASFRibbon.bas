@@ -115,6 +115,21 @@ Failed:
     MsgBox "Reload Python failed: " & Err.Description, vbExclamation, TITLE
 End Sub
 
+' Python packages: pip for the Python add-in's Python, in a console window (its command AsfPyPackages)
+Public Sub OnPythonPackages(control As Object)
+    Dim py As Object, message As String
+    Set py = ASFPython.Root(1, message)
+    If py Is Nothing Then
+        MsgBox message, vbExclamation, TITLE
+        Exit Sub
+    End If
+    On Error GoTo Failed
+    Application.Run "AsfPyPackages"
+    Exit Sub
+Failed:
+    MsgBox "Python packages failed: " & Err.Description, vbExclamation, TITLE
+End Sub
+
 ' Reset engine: drops the engine of the worksheet functions and their compiled scripts
 Public Sub OnResetEngine(control As Object)
     ASFEngine.ResetEngine

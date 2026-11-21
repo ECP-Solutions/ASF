@@ -15,7 +15,7 @@
 #include "../xll/xloper.h"
 
 #define NSLOTS 1000   /* as in asfpy.c */
-#define NBUILTIN 2    /* PY_CALL and the command AsfPyReload */
+#define NBUILTIN 3    /* PY_CALL and the commands AsfPyReload and AsfPyPackages */
 #define SETTINGS_KEY L"Software\\VB and VBA Program Settings\\ASF\\AddIn"
 
 #if defined(_MSC_VER) && !defined(_WIN64)
@@ -536,13 +536,18 @@ int wmain(int argc, wchar_t **argv)
     QueryPerformanceCounter(&t1);
     wprintf(L"     start-up: %.0f ms, %d functions registered\n", (t1.QuadPart - t0.QuadPart) * 1000.0 / fq.QuadPart, nregs);
     swprintf(got, 256, L"%d", nregs);
-    check(nregs == NSLOTS + NBUILTIN, L"registered: one function in each slot, PY_CALL and AsfPyReload", got);
+    check(nregs == NSLOTS + NBUILTIN, L"registered: one function in each slot, PY_CALL, AsfPyReload and AsfPyPackages", got);
     if (nregs < 20) { wprintf(L"%d checks, %d failed\n", checks, failed); return 1; }
     check(wcsstr(last_alert, L"are not registered") != NULL, L"alert: functions beyond the slots", last_alert);
 
     /* --- registration: types and their suffixes */
     type_check(L"PY_CALL", L"QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ");
     type_check(L"AsfPyReload", L"J");
+    type_check(L"AsfPyPackages", L"J");
+    {
+        Reg *r = reg_of(L"AsfPyPackages");
+        check(r && r->macro_type == 2, L"AsfPyPackages registered as a command (macro type 2)", r && r->macro_type == 2 ? L"2" : L"not 2");
+    }
     type_check(L"spike_add", L"QQQ");
     type_check(L"spike_version", L"Q");
     type_check(L"spike_volatile", L"Q!");

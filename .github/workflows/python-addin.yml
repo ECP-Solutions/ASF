@@ -53,6 +53,7 @@ jobs:
           python excel/python/tests/run_fakehost.py
           "$RUNNER_TEMP/py/python-3.11.9/tools" "$RUNNER_TEMP/py/python-3.12.10/tools"
           "$RUNNER_TEMP/py/python-3.14.10/tools" "$RUNNER_TEMP/py/pythonx86-3.12.10/tools"
+          bundled64 bundled32
       - name: Checksums
         run: cd excel/python/xll/build && sha256sum asfpy64.xll asfpy32.xll | tee SHA256SUMS
       - uses: actions/upload-artifact@v4
@@ -88,6 +89,9 @@ jobs:
         run: python excel/python/xll/build.py msvc
       - name: Fake Excel host
         run: python excel/python/tests/run_fakehost.py "$env:pythonLocation"
+      - name: Fake Excel host, the Python the add-in carries
+        if: matrix.python == '3.14'
+        run: python excel/python/tests/run_fakehost.py bundled64 bundled32
       - name: Checksums
         if: matrix.python == '3.14'
         working-directory: excel/python/xll/build

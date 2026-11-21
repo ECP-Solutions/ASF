@@ -1,0 +1,11 @@
+{
+  "version": "3.14.10",
+  "64": {
+    "url": "https://api.nuget.org/v3-flatcontainer/python/3.14.10/python.3.14.10.nupkg",
+    "sha256": "f54ba67c9951c3d773ea47d2bb095150c037c399f0423a968bcda22809241784"
+  },
+  "32": {
+    "url": "https://api.nuget.org/v3-flatcontainer/pythonx86/3.14.10/pythonx86.3.14.10.nupkg",
+    "sha256": "fd47b2d9fa6a5585c36ac87b65e172461fc66ee57b3b41fe2d96a3078433c9f6"
+  }
+}

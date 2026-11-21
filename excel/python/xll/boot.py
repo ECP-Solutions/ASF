@@ -121,7 +121,7 @@ def _make_api():
 
 def xl_app():
     """Excel's Application object, inside a command (@xl_macro) only: a worksheet function must not
-    use Excel's object model. Needs pywin32 (or comtypes) in the venv."""
+    use Excel's object model. Needs the package pywin32 (or comtypes)."""
     if _native_app is None:
         raise RuntimeError('xl_app() works inside Excel only')
     if _macro_depth <= 0:
@@ -137,7 +137,7 @@ def xl_app():
             import comtypes.client.dynamic
             wrap = 'comtypes'
         except ImportError:
-            raise ImportError('xl_app() needs pywin32 (pip install pywin32) or comtypes in the venv') from None
+            raise ImportError('xl_app() needs pywin32 or comtypes (ASF tab: Python packages, install pywin32)') from None
     address = _native_app()
     if isinstance(address, str):
         raise RuntimeError(address)
