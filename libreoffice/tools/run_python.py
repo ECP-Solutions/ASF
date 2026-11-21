@@ -1,14 +1,15 @@
 """Checks Python in the LibreOffice edition (phase 5 of excel/python/DESIGN.md): PY_CALL in Calc
 cells and py in ASF scripts, through the Python script of ASF.oxt.
 
-    python libreoffice/tools/run_python.py
+    python libreoffice/tools/run_python.py [--oxt=libreoffice/ASF.oxt]
 
 Run it with a Python that imports uno (LibreOffice's own on Windows). It builds ASF.oxt from src/,
 starts LibreOffice headless with a temporary profile, installs the extension there, points it at a
 temporary Python folder with one module (lo_check.py, below) and runs the checks in Basic: py in
 ASF scripts, and PY_CALL as Calc calls it. Calc cells themselves are not checked: in a headless
 LibreOffice no Basic function runs from a cell (#VALUE!, even for a one-line function). Your own
-profile and Python folder are not used. Exits with 0 when every check passes.
+profile and Python folder are not used. --oxt checks a built extension, such as the one a release
+ships, instead of building it. Exits with 0 when every check passes.
 """
 import os
 import shutil
@@ -218,9 +219,14 @@ def main():
     try:
         smgr = ctx.ServiceManager
         # the extension, built from src/, in the temporary profile
-        oxt = os.path.join(work, "ASF.oxt")
-        with open(oxt, "wb") as f:
-            f.write(build.extension_bytes(build.library_modules()))
+        given = [a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--oxt=")]
+        if given:
+            oxt = os.path.abspath(given[0])
+            print("     %s" % oxt)
+        else:
+            oxt = os.path.join(work, "ASF.oxt")
+            with open(oxt, "wb") as f:
+                f.write(build.extension_bytes(build.library_modules()))
         manager = ctx.getValueByName("/singletons/com.sun.star.deployment.ExtensionManager")
         try:
             manager.addExtension(uno.systemPathToFileUrl(oxt), (), "user", manager.createAbortChannel(), CommandEnvironment())

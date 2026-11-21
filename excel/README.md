@@ -166,6 +166,23 @@ Application.Run "ASF.xlam!ASFSettings.ChangeSetting", "PythonAccess", "call"
 
 A script that asks for more than the setting allows doesn't run at all, so it never fails halfway through. A Python error stops the script; **Why this error?** shows the script's message and Python's. Python can't be sandboxed: `modules` lets library scripts do anything Python can, which is why it is a setting of its own. `PY_CALL` and the Python folder's worksheet functions come from the Python add-in itself and don't depend on `PythonAccess`.
 
+### Installing the Python add-in
+
+1. Install a python.org Python 3.11 or later of Excel's bitness (File > Account > About Excel says which), and make a venv with the packages your functions use:
+   ```
+   py -3.12 -m venv %USERPROFILE%\asfpy-venv
+   %USERPROFILE%\asfpy-venv\Scripts\python -m pip install numpy pandas pywin32
+   ```
+   The Microsoft Store Python and free-threaded builds don't work.
+2. Tell the add-in where the venv is (the Immediate window, Ctrl+G, takes it), with `ASF.xlam` loaded:
+   ```vb
+   Application.Run "ASF.xlam!ASFSettings.ChangeSetting", "PythonVenv", Environ$("USERPROFILE") & "\asfpy-venv"
+   ```
+3. Put your modules in the Python folder, `%APPDATA%\ASF\python` (**Python folder** on the ASF tab opens it).
+4. Unblock `asfpy64.xll` (64-bit Excel) or `asfpy32.xll` (32-bit Excel) in its Properties, copy it to a trusted location, and add it under File > Options > Add-ins > Manage: Excel Add-ins > Browse.
+
+Python starts once per Excel: after changing the settings or the add-in, restart Excel. After changing a module, **Reload Python** is enough. If Python doesn't start, Excel says why when it loads the add-in, and `%TEMP%\asfpy.log` has the details. `excel/python/spike` holds the checks of each phase.
+
 ### The Python folder's functions
 
 The modules of the Python folder mark what Excel gets:

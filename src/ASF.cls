@@ -10,7 +10,7 @@ Attribute VB_Exposed = False
 Option Explicit
 ' ASF: compiles scripts to bytecode (ASF_Compiler) and runs them (ASF_VM, with the library of
 ' values of ASF_Runtime). The classes of ASF 3, which ran the AST, are in src/old with the suffix _OLD.
-Private Const ASF_VERSION As String = "4.0.2"
+Private Const ASF_VERSION As String = "4.1.0"
 Private GLOBALS_ As ASF_Globals
 Private RT_ As ASF_Runtime
 Private CP_ As ASF_Compiler
