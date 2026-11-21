@@ -4,6 +4,8 @@ Attribute VB_Name = "ASFLibrary"
 '   // @asf name: Apply discount rules     the name the ribbon lists (else the file name)
 '   // @asf appAccess: true                 the script may use Office objects (default: false)
 '   // @asf args: selection                 $1 is the selected range (default: no arguments)
+'   // @asf python: call                    py, from the Python add-in, when PythonAccess allows
+'                                           it (ASFPython)
 ' With appAccess, $1 is the Range itself; without, its values (ASFCells). The library holds the
 ' scripts the user installed: they may have Office access, unlike the scripts of formulas.
 Option Explicit
@@ -68,12 +70,26 @@ End Function
 ' The message for the user: the result, or why the script stopped
 Public Function RunForRibbon(ByVal path As String, ByRef selection As Variant) As String
     Dim eng As ASF, source As String, idx As Long, result As Variant, appAccess As Boolean, arg As Variant
+    Dim level As Long, message As String, py As Object
     On Error GoTo Failed
     Set eng = New ASF
     source = eng.ReadTextFile(path)
     If LenB(source) = 0 Then
         RunForRibbon = "No script " & path
         Exit Function
+    End If
+    level = ASFPython.ScriptLevel(source, ASFPython.AllowedLevel(), message)
+    If level > 0 Then
+        Set py = ASFPython.Root(level, message)
+        If py Is Nothing Then level = -1
+    End If
+    If level < 0 Then
+        RunForRibbon = "The script could not run: " & message
+        Exit Function
+    End If
+    If Not py Is Nothing Then
+        eng.InjectHostObject "py", py
+        ASFPython.ClearError py
     End If
     appAccess = (LCase$(HeaderValue(source, "appAccess")) = "true")
     eng.AppAccess = appAccess
@@ -92,7 +108,7 @@ Public Function RunForRibbon(ByVal path As String, ByRef selection As Variant) A
         SetValue result, eng.RunArgs(idx, Empty)
     End If
     If Not IsEmpty(eng.LastError) Then
-        RunForRibbon = "The script stopped: " & ASFEngine.ValueText(eng.LastError)
+        RunForRibbon = "The script stopped: " & ASFPython.WithPythonError(ASFEngine.ValueText(eng.LastError), py)
     ElseIf IsEmpty(result) Then
         RunForRibbon = "Done."
     Else
@@ -100,7 +116,8 @@ Public Function RunForRibbon(ByVal path As String, ByRef selection As Variant) A
     End If
     Exit Function
 Failed:
-    RunForRibbon = "The script could not run: " & Err.Description
+    message = Err.Description
+    RunForRibbon = "The script could not run: " & ASFPython.WithPythonError(message, py)
 End Function
 
 ' The folder, made when it is missing (with its parents); False when it can't be made. Folders are

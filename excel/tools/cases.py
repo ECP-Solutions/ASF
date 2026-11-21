@@ -41,10 +41,14 @@ LIBRARY = {
     "nothing.vas": "let x = 1;",
     "typeof.vas": "return typeof $1;",
     "obj.vas": "// a comment before the header ends nothing\n// @asf name: Object\nreturn {n: 2};",
+    # scripts that ask for Python: PythonAccess is off (the default) in the checks
+    "py_call.vas": "// @asf python: call\nreturn py.call('stats.zscore', $1);",
+    "py_modules.vas": "// @asf python: modules\nreturn py.module('math').sqrt($1);",
+    "py_typo.vas": "// @asf python: everything\nreturn 1;",
 }
 
 # the library as the ribbon lists it: header names, else file names, sorted without case
-RIBBON_NAMES = "A report|Bad|double|nothing|Object|typeof|uses_util|util|"
+RIBBON_NAMES = "A report|Bad|double|nothing|Object|py_call|py_modules|py_typo|typeof|uses_util|util|"
 
 # (script file, selection, the message of Run script)
 RIBBON_RUNS = [
@@ -55,6 +59,7 @@ RIBBON_RUNS = [
     ("obj.vas", None, "Result: { n: 2 }"),
     ("typeof.vas", Range([[5]]), "Result: undefined"),   # no args header: no $1
     ("no_such.vas", None, None),
+    ("py_call.vas", None, "The script could not run: the script asks for Python (python: call), which the setting PythonAccess (off) doesn't allow: it needs call or modules"),
 ]
 
 # (source, key, the header value)
@@ -64,6 +69,7 @@ HEADERS = [
     ("\n// @asf appAccess:  true \r\nreturn 1;", "appaccess", "true"),
     ("return 1;\n// @asf name: late", "name", ""),
     ("//@asf name: no space", "name", "no space"),
+    ("// @asf python: Call\nreturn 1;", "python", "Call"),
 ]
 
 CASES = [
@@ -103,6 +109,7 @@ CASES = [
     dict(name="an import outside the library", fn="ASF_RUN", args=["import { x } from '../outside.vas'; return 1;"], expected=Error("#VALUE!")),
     dict(name="a script name with a folder", fn="ASF_CALL", args=["../double", 1], expected=Error("#VALUE!")),
     dict(name="a script that is not there", fn="ASF_CALL", args=["no_such_script", 1], expected=Error("#VALUE!")),
+    dict(name="a formula's script can't ask for Python", fn="ASF_RUN", args=["// @asf python: call\nreturn 1;"], expected=Error("#VALUE!")),
     # regex functions
     dict(name="RX_TEST", fn="RX_TEST", args=["AB-1234", r"^[A-Z]{2}-\d{4}$"], expected=True),
     dict(name="RX_EXTRACT", fn="RX_EXTRACT", args=["12 kg", r"(\d+)\s*kg", 1], expected="12"),
@@ -114,6 +121,16 @@ CASES = [
     dict(name="a library script importing another", fn="ASF_CALL", args=["uses_util", 5], expected=11, lo_only=True),
     dict(name="ASF_RUN importing from the library", fn="ASF_RUN", args=["import { twice } from './util.vas'; return twice($1);", 4], expected=8, lo_only=True),
     dict(name="an endless loop stops", fn="ASF_RUN", args=["while (true) { }"], expected=Error("#VALUE!"), lo_only=True),
+]
+
+
+# (function, arguments, the message of Why this error?) of scripts that ask for Python, with
+# PythonAccess off: each gives #VALUE!
+PYTHON_MESSAGES = [
+    ("ASF_CALL", ["py_call", 1], "the script asks for Python (python: call), which the setting PythonAccess (off) doesn't allow: it needs call or modules"),
+    ("ASF_CALL", ["py_modules", 4], "the script asks for Python (python: modules), which the setting PythonAccess (off) doesn't allow: it needs modules"),
+    ("ASF_CALL", ["py_typo"], "the header '// @asf python: everything' takes call or modules"),
+    ("ASF_RUN", ["// @asf python: call\nreturn 1;"], "Python is for the scripts of the library (ASF_CALL): a script in a formula can't ask for it"),
 ]
 
 

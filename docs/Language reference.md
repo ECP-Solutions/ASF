@@ -3124,6 +3124,21 @@ result = engine.Run(pid, ThisWorkbook)
 
 **Security Note:** `AppAccess` is `False` by default. Enable only when scripts need to interact with Office applications.
 
+### Trusted Host Objects: `InjectHostObject`
+
+With `AppAccess` off, an object given with `InjectVariable` (or as `$1`) becomes its type name, a string: the sandbox keeps Office out. A host that wants a script to reach one object it chose, and nothing else, injects it with `InjectHostObject`, which keeps it an object while `AppAccess` stays off:
+
+```vb
+Dim engine As New ASF
+engine.AppAccess = False                    ' no Office access
+engine.InjectHostObject "host", myObject    ' but this object, as an object
+pid = engine.Compile("return host.Twice(21);")
+```
+
+Only VBA can call it, not scripts: the host decides what a script may reach. The ASF add-in injects the Python add-in's `py` this way, for the library scripts that ask for it (`excel/python/DESIGN.md`).
+
+Methods of host objects are called by their name as written in the script (`pd.DataFrame`, not `pd.dataframe`): COM objects ignore case, and an object whose names do not (Python's) gets the right one.
+
 ### Excel Integration
 
 #### Accessing Workbooks and Sheets

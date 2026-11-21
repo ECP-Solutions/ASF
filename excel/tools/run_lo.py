@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(ROOT, "Tools", "stdRegex"))
 sys.path.insert(0, HERE)
 import build  # noqa: E402
 from BenchmarkLO import start_office  # noqa: E402
-from cases import CASES, HEADERS, LIBRARY, RIBBON_NAMES, RIBBON_RUNS, Error, Range, shape  # noqa: E402
+from cases import CASES, HEADERS, LIBRARY, PYTHON_MESSAGES, RIBBON_NAMES, RIBBON_RUNS, Error, Range, shape  # noqa: E402
 import re  # noqa: E402
 import xml.etree.ElementTree as ET  # noqa: E402
 
@@ -72,6 +72,11 @@ Function CallFn(fn As String, args As Variant, rows As Long, columns As Long) As
 End Function
 Function LastMessage() As String
     LastMessage = ASFEngine.LastErrorMessage()
+End Function
+' fn's result and the message of Why this error?, read in the same run: LibreOffice starts the
+' add-in's module variables again on the next call from outside
+Function CallAndWhy(fn As String, args As Variant) As String
+    CallAndWhy = CStr(CallFn(fn, args, 1, 1)) & "|" & ASFEngine.LastErrorMessage()
 End Function
 ' the ribbon's library: the names it lists, a header value, a run of Run script
 Function ScriptNames() As String
@@ -240,6 +245,10 @@ def main():
                 check(f"Run script {file}: not there", got.startswith("No script"), True)
             else:
                 check(f"Run script {file} with {to_basic(sel)}", got, message)
+        # Python's two keys: PythonAccess is off here, so a script that asks for Python doesn't run
+        for fn, args, message in PYTHON_MESSAGES:
+            got = call("CallAndWhy", fn, tuple(to_basic(a) for a in args))
+            check(f"{fn} {args[0]!r}: #VALUE! and why", got, "#ERRV:#VALUE!|" + message)
         nested = os.path.join(library, "made", "by", "EnsureFolder")
         check("the library folder made with its parents", (call("MakeFolder", nested), os.path.isdir(nested)), (True, True))
         # a hidden folder on the way, as AppData is on Windows. Here it is a folder whose name starts with

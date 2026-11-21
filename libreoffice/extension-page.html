@@ -62,12 +62,13 @@ MsgBox engine.OUTPUT_   &#x27; =&gt; 12</code></pre>
   <li>Scripts call methods and properties of UNO objects passed to them: documents, sheets, cells, text, services</li>
   <li>Variable injection from Basic into scripts, with Basic arrays turned into script arrays</li>
   <li>More than 100 mathematical, statistical, financial and matrix functions through the <a href="https://extensions.libreoffice.org/en/extensions/show/70059">VBA Expressions</a> extension, with the <code>@(...)</code> syntax</li>
+  <li>Python functions of your own, from the extension's Python script and LibreOffice's own Python: <code>py</code> for scripts (<code>LOpython.PyRoot</code>) and <code>PY_CALL("module.function"; ...)</code> for cells and Basic, reaching only the functions you mark with <code>@export</code></li>
   <li>Error containment and a runtime log for debugging</li>
 </ul>
 
 <h3>Architecture</h3>
 <ul>
-  <li>Pure LibreOffice Basic: one Basic library named <code>ASF</code></li>
+  <li>LibreOffice Basic: one Basic library named <code>ASF</code>, and one Python script for the optional Python functions</li>
   <li>Sandboxed virtual machine with call stack tracing; access to UNO objects is off until you enable it</li>
   <li>Generated from the same sources as the VBA edition for Microsoft Office, so both editions share the language and its fixes</li>
 </ul>
@@ -176,6 +177,18 @@ End Sub</code></pre>
 End Sub</code></pre>
 
 <p class="note">That&rsquo;s it! You are now writing modern scripts in LibreOffice Basic.</p>
+
+<h3>Step 7: Python (optional)</h3>
+<p>Put a module in the Python folder (<code>%APPDATA%\ASF\python</code> on Windows, <code>~/.config/ASF/python</code> elsewhere) and mark the functions scripts may call:</p>
+<pre><code># stats.py
+from asfpy import export
+
+@export
+def scale(values: list, factor: float):
+    return [v * factor for v in values]</code></pre>
+<p>Then give a script <code>py</code>: level 1 calls exported functions, level 2 imports any module too. Python can't be sandboxed, so give level 2 only to scripts you trust.</p>
+<pre><code>engine.InjectHostObject "py", LOpython.PyRoot(1)
+MsgBox engine.Run(engine.Compile("return py.call('stats.scale', [1, 2, 3], 10).length;"))   ' 3</code></pre>
 
 <h2>More of the language</h2>
 

@@ -17,13 +17,23 @@
         </group>
         <group id="asfFormulas" label="Formulas">
           <button id="asfWhyError" label="Why this error?" size="large" imageMso="TraceError"
-                  screentip="Why ASF_RUN or ASF_CALL gave #VALUE!"
-                  supertip="Calculates the active cell again and shows the message of its ASF_RUN or ASF_CALL."
+                  screentip="Why ASF_RUN, ASF_CALL or a Python function gave an error"
+                  supertip="Calculates the active cell again and shows the message of its ASF_RUN or ASF_CALL, or the Python error and traceback of its PY_CALL or Python function when the Python add-in is loaded."
                   onAction="ASFRibbon.OnWhyError"/>
           <button id="asfResetEngine" label="Reset engine" size="large" imageMso="Refresh"
                   screentip="Reset the engine of the worksheet functions"
                   supertip="Drops the compiled scripts and reads the settings again on the next formula."
                   onAction="ASFRibbon.OnResetEngine"/>
+        </group>
+        <group id="asfPython" label="Python">
+          <button id="asfPythonFolder" label="Python folder" size="large" imageMso="FileOpen"
+                  screentip="Open the Python folder"
+                  supertip="The folder of the Python modules whose functions the Python add-in (asfpy64.xll or asfpy32.xll) registers and PY_CALL calls."
+                  onAction="ASFRibbon.OnPythonFolder"/>
+          <button id="asfReloadPython" label="Reload Python" size="large" imageMso="RefreshAll"
+                  screentip="Import the Python folder again"
+                  supertip="The Python add-in imports the modules of its folder again and registers their functions, then the workbooks are calculated in full. Python and its packages stay loaded."
+                  onAction="ASFRibbon.OnReloadPython"/>
         </group>
         <group id="asfHelpGroup" label="Help">
           <button id="asfHelp" label="Help" size="large" imageMso="Help"

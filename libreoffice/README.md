@@ -74,6 +74,33 @@ UNO members are found case-insensitively; `typeof` reports a UNO object's implem
 
 VBA Expressions 1.2.0 cannot evaluate expressions that contain variables on LibreOffice 24.2: there, an optional `String` parameter with an empty default raises "Data type mismatch" when the caller leaves it out and the procedure compares it. Expressions without variables are not affected. Version 1.2.1 sets those parameters explicitly.
 
+### Python
+
+`ASF.oxt` carries a Python script that runs on LibreOffice's own Python (on Linux, the system's, where numpy and pandas install as usual). It gives what the Python add-in gives Excel (`excel/python`): functions of your own, in the modules of a Python folder (`%APPDATA%\ASF\python` on Windows, `~/.config/ASF/python` elsewhere), marked with `@export` from the `asfpy` module:
+
+```python
+# stats.py in the Python folder
+from asfpy import export
+
+@export
+def scale(values: list, factor: float):
+    return [v * factor for v in values]
+```
+
+A script gets `py` when the host gives it: level 1 calls exported functions, level 2 imports any module too. Python can't be sandboxed, so give level 2 only to scripts you trust.
+
+```vb
+GlobalScope.BasicLibraries.LoadLibrary "ASF"
+engine.InjectHostObject "py", LOpython.PyRoot(1)
+MsgBox engine.Run(engine.Compile("return py.call('stats.scale', [1, 2, 3], 10).length;"))   ' => 3
+r = LOpython.PyCall("stats.scale", Array(1, 2), 10)                ' from Basic: rows from 1
+MsgBox r(1, 1)                                                      ' => 10
+LOpython.PySetFolder "/home/me/python"                              ' another folder ("" for the default)
+MsgBox LOpython.PyReload()                                          ' after the modules changed
+```
+
+In a cell, `=PY_CALL("stats.scale"; A1:A3; 10)` (an array formula for a result over several cells) calls the same function once the `ASF` library is loaded, for example by a macro on *Tools > Customize > Events > Start Application*. Calc takes no error value from a Basic function, so an unknown name shows the text `#NAME?` and a Python exception `#VALUE!`; `LOpython.PyLastError()` says why. `PY_CALL` takes up to 15 arguments. The script runs only from the extension, never from a document. `tools/run_python.py` checks `PY_CALL` as Calc calls it, from Basic; in Calc cells it hasn't been checked yet, since a headless LibreOffice runs no Basic function from a cell.
+
 ## Differences from the VBA edition
 
 - No Excel object model: `ThisWorkbook`, `Worksheet` and `Range` are not available. COM prototypes target Excel object types, so the Excel prototype libraries in `test/` do not apply.
@@ -92,6 +119,7 @@ Code in `src/` must not resize an array in a one-line `If` (`If n > UBound(a) Th
 - [`tools/build.py`](tools/build.py): the rewrite passes and the packaging.
 - [`compat/LOhelper.bas`](compat/LOhelper.bas): helpers the rewritten code calls, the factories and the output functions.
 - [`compat/VBAEhelper.bas`](compat/VBAEhelper.bas): creates `VBAExpressionsLib` evaluators.
+- [`compat/LOpython.bas`](compat/LOpython.bas), [`compat/ASF_PyObject.bas`](compat/ASF_PyObject.bas) and [`python/asfpy_lo.py`](python/asfpy_lo.py): Python. `build.py` puts `excel/python/xll/boot.py` into the script; `tools/run_python.py` checks it in a temporary profile.
 - [`overrides/ASF_Map.bas`](overrides/ASF_Map.bas): hand-written `ASF_Map`; keep it in step with `src/ASF_Map.cls`.
 
 The extension holds ASF 4 only; `build.old_library_modules()` builds the classes of `src/old/` (ASF 3.2.1) for the benchmarks.

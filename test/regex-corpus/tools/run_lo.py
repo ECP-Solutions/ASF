@@ -27,14 +27,17 @@ def start_office():
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
     proc = subprocess.Popen(["soffice", "--headless", "--norestore", "--nologo", "--nodefault",
-                             f"-env:UserInstallation=file://{work}/profile",
+                             "-env:UserInstallation=" + uno.systemPathToFileUrl(os.path.join(work, "profile")),   # also a Windows path
                              f"--accept=socket,host=127.0.0.1,port={port};urp;"],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            env=build.soffice_env(uno.systemPathToFileUrl(os.path.join(work, "profile"))))
     local = uno.getComponentContext()
     resolver = local.ServiceManager.createInstanceWithContext("com.sun.star.bridge.UnoUrlResolver", local)
     for _ in range(120):
         try:
-            return resolver.resolve(f"uno:socket,host=127.0.0.1,port={port};urp;StarOffice.ComponentContext"), proc, work
+            ctx = resolver.resolve(f"uno:socket,host=127.0.0.1,port={port};urp;StarOffice.ComponentContext")
+            build.check_profile(ctx, work)
+            return ctx, proc, work
         except NoConnectException:
             time.sleep(0.5)
     proc.kill()

@@ -83,6 +83,8 @@ How array results reach the cells depends on the version:
 | `LibraryFolder` | Windows: `%APPDATA%\ASF\scripts`. Mac: `~/Library/Group Containers/UBF8T346G9.Office/ASF/scripts`, where Excel for Mac can read without asking |
 | `RunEnabled` | `1`. With `0`, `ASF_RUN` gives `#VALUE!` and only library scripts run |
 | `StepLimit` | `10000000` loop iterations and calls per script; `0` for no limit |
+| `PythonAccess` | `off`. What library scripts that ask for Python may do: `call` (`py.call` of exported functions) or `modules` (`py.module` too). See **Python** below |
+| `PythonVenv`, `PythonFolder` | Read by the Python add-in when Excel loads it: its venv, and its folder of modules (default `%APPDATA%\ASF\python`) |
 
 The settings are kept with `SaveSetting`: on Windows in `HKEY_CURRENT_USER\Software\VB and VBA Program Settings\ASF\AddIn`, where an administrator can set them by group policy; on Mac in a preferences file. Change one from the Immediate window or a macro:
 
@@ -98,8 +100,10 @@ The worksheet functions keep one engine and its compiled scripts for the whole s
 |---|---|
 | **Run script** | Lists the scripts of the library folder (the first 30) and runs the one you pick, then shows its result or why it stopped |
 | **Library folder** | Opens the library folder, made first when it is missing |
-| **Why this error?** | Calculates the active cell again and shows why its `ASF_RUN` or `ASF_CALL` gave `#VALUE!` (with several calls in one formula, the message of the last one) |
+| **Why this error?** | Calculates the active cell again and shows why its `ASF_RUN` or `ASF_CALL` gave `#VALUE!` (with several calls in one formula, the message of the last one). With the Python add-in loaded, also the Python error and traceback of a `PY_CALL` or Python function |
 | **Reset engine** | Drops the engine of the worksheet functions and their compiled scripts; the next formula reads the settings again |
+| **Python folder** | Opens the Python add-in's folder of modules, made first when it is missing |
+| **Reload Python** | The Python add-in imports its folder again and registers its functions again, then the workbooks are calculated in full |
 | **Help** | Opens this page |
 
 A library script may start with a header of comment lines. It says how **Run script** lists and runs it; the worksheet functions ignore it.
@@ -108,6 +112,7 @@ A library script may start with a header of comment lines. It says how **Run scr
 // @asf name: Apply discount rules
 // @asf appAccess: true
 // @asf args: selection
+// @asf python: call
 ```
 
 | Key | Meaning |
@@ -115,6 +120,7 @@ A library script may start with a header of comment lines. It says how **Run scr
 | `name` | The name the list shows; the file name when there is none |
 | `appAccess` | `true`: the script may use Office objects. Default `false` |
 | `args` | `selection`: `$1` is the selected range. Default: no arguments |
+| `python` | `call` or `modules`: the script gets `py`, from the Python add-in. Unlike the other keys, `ASF_CALL` reads it too. See **Python** below |
 
 With `appAccess: true` and `args: selection`, `$1` is the `Range` itself, so the script can write cells, format them or reach the workbook. Without `appAccess`, `$1` holds the range's values, as in a formula. Only library scripts can ask for Office access: the library holds what the user installed.
 
@@ -129,6 +135,89 @@ A workbook's formulas run when it recalculates, with no macro warning: the add-i
 - **Scripts are never stored inside workbooks.**
 - **`ASF_RUN` can be turned off** in the settings, leaving only library scripts.
 - **Office access only for library scripts run from the ribbon,** and only when their header asks for it.
+- **Python only for library scripts, with two keys:** the script's `python` header and the `PythonAccess` setting. A formula's script (`ASF_RUN`) never gets `py`.
+
+## Python
+
+With the Python add-in (`asfpy64.xll` or `asfpy32.xll`, Excel for Windows; see `excel/python`) loaded next to `ASF.xlam`, a library script can call Python. It asks with its header, and the `PythonAccess` setting decides:
+
+```js
+// @asf python: call
+return py.call('stats.zscore', $1);          // stats.py in the Python folder, a function marked @export
+```
+
+```js
+// @asf python: modules
+let np = py.module('numpy');
+return np.percentile($1, 90);
+```
+
+| Header | `PythonAccess` | The script |
+|---|---|---|
+| none | any | runs without `py` |
+| `call` | `off` (the default) | doesn't run: `#VALUE!`, and **Why this error?** names the setting |
+| `call` | `call` or `modules` | gets `py`: `py.call` of exported functions |
+| `modules` | `off` or `call` | doesn't run, as above |
+| `modules` | `modules` | gets `py`: `py.call` and `py.module` |
+
+```vb
+Application.Run "ASF.xlam!ASFSettings.ChangeSetting", "PythonAccess", "call"
+```
+
+A script that asks for more than the setting allows doesn't run at all, so it never fails halfway through. A Python error stops the script; **Why this error?** shows the script's message and Python's. Python can't be sandboxed: `modules` lets library scripts do anything Python can, which is why it is a setting of its own. `PY_CALL` and the Python folder's worksheet functions come from the Python add-in itself and don't depend on `PythonAccess`.
+
+### Installing the Python add-in
+
+1. Install a python.org Python 3.11 or later of Excel's bitness (File > Account > About Excel says which), and make a venv with the packages your functions use:
+   ```
+   py -3.12 -m venv %USERPROFILE%\asfpy-venv
+   %USERPROFILE%\asfpy-venv\Scripts\python -m pip install numpy pandas pywin32
+   ```
+   The Microsoft Store Python and free-threaded builds don't work.
+2. Tell the add-in where the venv is (the Immediate window, Ctrl+G, takes it), with `ASF.xlam` loaded:
+   ```vb
+   Application.Run "ASF.xlam!ASFSettings.ChangeSetting", "PythonVenv", Environ$("USERPROFILE") & "\asfpy-venv"
+   ```
+3. Put your modules in the Python folder, `%APPDATA%\ASF\python` (**Python folder** on the ASF tab opens it).
+4. Unblock `asfpy64.xll` (64-bit Excel) or `asfpy32.xll` (32-bit Excel) in its Properties, copy it to a trusted location, and add it under File > Options > Add-ins > Manage: Excel Add-ins > Browse.
+
+Python starts once per Excel: after changing the settings or the add-in, restart Excel. After changing a module, **Reload Python** is enough. If Python doesn't start, Excel says why when it loads the add-in, and `%TEMP%\asfpy.log` has the details. `excel/python/spike` holds the checks of each phase.
+
+### The Python folder's functions
+
+The modules of the Python folder mark what Excel gets:
+
+```python
+from asfpy import export, xl_app, xl_func, xl_macro
+import numpy, pandas
+
+@xl_func                                  # =zscore(A2:A500), a worksheet function
+def zscore(values: numpy.ndarray):
+    return (values - values.mean()) / values.std()
+
+@xl_func
+def summary(table: pandas.DataFrame):     # the range's first row holds the column names
+    return table.describe()               # back with its column names and index
+
+@xl_func
+async def quote(symbol):                  # asynchronous: Excel goes on with other cells meanwhile
+    ...
+
+@xl_macro                                 # Application.Run "tidy", "Sheet1"
+def tidy(sheet):
+    xl_app().Worksheets(sheet).UsedRange.Columns.AutoFit()   # needs pywin32 in the venv
+
+@export                                   # =PY_CALL("stats.scale", A1:A3, 10), py.call in scripts
+def scale(values: list, factor: float):
+    return [v * factor for v in values]
+```
+
+- **Type hints** convert the arguments: `int`, `float`, `str`, `bool`, `list`, `date`, `datetime`, `numpy.ndarray` (numbers as `float`, empty cells as `nan`; one row or column 1-D), `pandas.DataFrame` (the first row gives the column names) and `pandas.Series`. Without a hint a range is a list of rows, one row or column a flat list.
+- **Results:** a list of rows, a numpy array or a DataFrame fills the cells of an array formula (Excel 365 spills it). A DataFrame comes with its column names, and with its index when the index has a name or isn't whole numbers. Missing values (`NaN`, `NaT`, `None`) are empty cells; `nan` alone is `#NUM!`.
+- **Objects:** any other result, or any result of a function hinted `-> object`, stays in Python, and the cell shows a handle such as `<Counter#12>`. Another function given that cell gets the object. The handle belongs to its cell: calculated again, the cell gets a new object and the old one goes. A handle names nothing in another workbook, or after Excel restarts (calculate the cell again).
+- **Asynchronous functions** (`async def`, or `@xl_func(asynchronous=True)` for a plain function on a thread of the add-in) show `#GETTING_DATA` until they are done; Excel's calculation waits for them.
+- **Commands** (`@xl_macro`) run with `Application.Run "name", arguments...` and give back their result. They run on Excel's main thread, and only they may use `xl_app()`, Excel's `Application` (with pywin32 or comtypes in the venv).
+- `thread_safe=True` lets Excel call a function on its calculation threads, `volatile=True` calculates it on every recalculation.
 
 ## Macros in other workbooks
 
