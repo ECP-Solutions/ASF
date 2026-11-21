@@ -363,6 +363,66 @@ Private Function CallSpecial(obj As Object, ByVal name As String, ByVal kind As 
         End Select
         CallSpecial = True
     ElseIf HasUnoInterfaces(obj, "com.sun.star.uno.XInterface") Then
+        CallSpecial = CallUno(obj, name, kind, a, r)
+    ElseIf TypeOf obj Is ASF_PyObject Then
+        ' a Python object (LOpython): Python finds the member by the name as ASF passes it, calls
+        ' it when it is callable and reads it otherwise
+        Dim px As Object, oi() As Variant, oa() As Variant, rv As Variant, i As Long
+        Set px = obj.Proxy
+        For i = LBound(a) To UBound(a)
+            PyArgument a(i)
+        Next i
+        If (kind And (VbLet Or VbSet)) <> 0 Then
+            px.setValue name, a(LBound(a))
+        Else
+            rv = px.invoke(name, a, oi, oa)
+            PyValue rv, r
+        End If
+        CallSpecial = True
+    End If
+End Function
+
+' A Python object of LOpython for the engine: the proxy inside an ASF_PyObject; an array's items too
+Public Sub PyValue(v As Variant, r As Variant)
+    If IsObject(v) Then
+        If HasUnoInterfaces(v, "com.sun.star.script.XInvocation") Then
+            Dim w As New ASF_PyObject
+            Set w.Proxy = v
+            Set r = w
+        Else
+            Set r = v
+        End If
+    ElseIf IsArray(v) Then
+        Dim i As Long, out As Variant
+        out = v
+        For i = LBound(v) To UBound(v)
+            If IsObject(v(i)) Or IsArray(v(i)) Then
+                Dim item As Variant
+                PyValue v(i), item
+                If IsObject(item) Then Set out(i) = item Else out(i) = item
+            End If
+        Next i
+        r = out
+    Else
+        r = v
+    End If
+End Sub
+
+' An argument for Python: an ASF_PyObject becomes the reference its proxy gives, which asfpy_lo.py
+' turns back into the Python object (pyuno doesn't take the proxy itself back)
+Private Sub PyArgument(v As Variant)
+    If Not IsObject(v) Then Exit Sub
+    If v Is Nothing Then Exit Sub
+    If HasUnoInterfaces(v, "com.sun.star.uno.XInterface") Then Exit Sub
+    If TypeOf v Is ASF_PyObject Then
+        Dim ref As String
+        ref = v.Proxy.getValue("$Reference")
+        v = ref
+    End If
+End Sub
+
+' obj.name of a UNO object, found by its name without case through its introspection
+Private Function CallUno(obj As Object, ByVal name As String, ByVal kind As Integer, a As Variant, r As Variant) As Boolean
         Dim inv As Object
         Set inv = CreateUnoService("com.sun.star.script.Invocation").createInstanceWithArguments(Array(obj))
         ' UNO names are case-sensitive, ASF passes them lower-cased
@@ -397,6 +457,5 @@ Private Function CallSpecial(obj As Object, ByVal name As String, ByVal kind As 
         Else
             If IsObject(inv.getValue(member)) Then Set r = inv.getValue(member) Else r = inv.getValue(member)
         End If
-        CallSpecial = True
-    End If
+        CallUno = True
 End Function

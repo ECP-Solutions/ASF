@@ -1,4 +1,4 @@
-/* asfpy.xll (phase 1b): loads the Python of a venv into Excel's process, registers the
+/* asfpy.xll: loads the Python of a venv into Excel's process, registers the
    worksheet functions of the Python folder through a pool of exported slots, and gives VBA a
    root object (py) through AsfPy_Root. See excel/python/DESIGN.md and spike/README.md.
 
@@ -37,6 +37,10 @@ typedef struct _object PyObject;
 typedef intptr_t Py_ssize_t;
 typedef int PyGILState_STATE;
 typedef struct PyInitConfig PyInitConfig;
+typedef PyObject *(*PyCFunction)(PyObject *, PyObject *);
+typedef struct { const char *ml_name; PyCFunction ml_meth; int ml_flags; const char *ml_doc; } PyMethodDef;
+#define METH_VARARGS 0x0001
+#define METH_NOARGS  0x0004
 
 static struct {
     void (*Py_InitializeEx)(int);
@@ -48,6 +52,10 @@ static struct {
     int (*PyInitConfig_SetStr)(PyInitConfig *, const char *, const char *);
     int (*Py_InitializeFromInitConfig)(PyInitConfig *);
     void *(*PyEval_SaveThread)(void);
+    void (*PyEval_RestoreThread)(void *);
+    PyObject *(*PyCFunction_NewEx)(PyMethodDef *, PyObject *, PyObject *);
+    int (*PyObject_SetAttrString)(PyObject *, const char *, PyObject *);
+    long long (*PyLong_AsLongLong)(PyObject *);
     PyGILState_STATE (*PyGILState_Ensure)(void);
     void (*PyGILState_Release)(PyGILState_STATE);
     PyObject *(*PyImport_ImportModule)(const char *);
@@ -287,7 +295,8 @@ static int sym(void *slot, const char *name)
 
 static int load_api(const wchar_t *dll)
 {
-    NEED(Py_InitializeEx) NEED(PyEval_SaveThread) NEED(PyGILState_Ensure) NEED(PyGILState_Release)
+    NEED(Py_InitializeEx) NEED(PyEval_SaveThread) NEED(PyEval_RestoreThread) NEED(PyCFunction_NewEx)
+    NEED(PyObject_SetAttrString) NEED(PyLong_AsLongLong) NEED(PyGILState_Ensure) NEED(PyGILState_Release)
     NEED(PyImport_ImportModule) NEED(PyModule_New) NEED(PyModule_GetDict) NEED(PyObject_GetAttrString)
     NEED(PyObject_CallObject) NEED(PyTuple_New) NEED(PyTuple_SetItem) NEED(PyTuple_GetItem)
     NEED(PyList_New) NEED(PyList_SetItem) NEED(PyList_GetItem) NEED(PyList_Size)
@@ -394,6 +403,8 @@ typedef struct {
     wchar_t *arghelp[MAX_ARGS];
     int nargs;
     wchar_t flags[4];             /* the type's suffixes: ! volatile, # macro equivalent, $ thread-safe */
+    int async;                    /* asynchronous: Excel passes a handle after the arguments (X) */
+    int command;                  /* a command (@xl_macro), registered with macro type 2 */
     double id;                    /* xlfRegister's result while registered, else 0 */
 } Func;
 static Func g_funcs[NSLOTS];
@@ -402,6 +413,8 @@ static int g_total;               /* worksheet functions the Python folder gave,
 int asfpy_nargs[NSLOTS];          /* read by the 32-bit slots */
 
 static EXCEL12PROC g_excel12;
+static const GUID IID_IDispatch_ = { 0x00020400, 0, 0, { 0xC0, 0, 0, 0, 0, 0, 0, 0x46 } };
+static const GUID IID_NULL_ = { 0, 0, 0, { 0, 0, 0, 0, 0, 0, 0, 0 } };
 
 EXPORT void WINAPI SetExcel12EntryPt(EXCEL12PROC p) { g_excel12 = p; }
 
@@ -481,10 +494,14 @@ static void register_functions(void)
         Func *f = &g_funcs[i];
         wchar_t proc[32], type[MAX_ARGS + 8];
         swprintf(proc, 32, L"asfpy_f%04d", i);
-        for (k = 0; k <= f->nargs; k++) type[k] = L'Q';
-        wcscpy(type + f->nargs + 1, f->flags);
-        asfpy_nargs[i] = f->nargs;
-        f->id = register_proc(&dll, proc, type, f->name, f->args, 1, f->help, f->nargs, f->arghelp);
+        /* QQ...: the result and each argument; an asynchronous function returns nothing (>) and
+           gets Excel's handle last (X); a command has no suffixes */
+        type[0] = f->async ? L'>' : L'Q';
+        for (k = 1; k <= f->nargs; k++) type[k] = L'Q';
+        if (f->async) type[k++] = L'X';
+        wcscpy(type + k, f->command ? L"" : f->flags);
+        asfpy_nargs[i] = f->nargs + f->async;     /* what the 32-bit slot removes from the stack */
+        f->id = register_proc(&dll, proc, type, f->name, f->args, f->command ? 2 : 1, f->help, f->nargs, f->arghelp);
     }
     excel12(xlFree, NULL, 1, op);
 }
@@ -565,6 +582,8 @@ static void read_functions(PyObject *list)
         for (c = flags, k = 0; *c && k < 3; c++)
             if (wcschr(L"!#$", *c)) f->flags[k++] = *c;
         f->flags[k] = 0;
+        f->async = wcschr(flags, L'&') != NULL;      /* boot.py's marks, not Excel's suffixes */
+        f->command = wcschr(flags, L'%') != NULL;
         free(flags);
         for (k = 0; k < na; k++) {
             f->arghelp[k] = pytext(P.PyList_GetItem(args, k), NULL);
@@ -589,6 +608,8 @@ static void read_functions(PyObject *list)
 }
 
 /* --- starting Python --------------------------------------------------------------------------- */
+
+static void set_natives(void);
 
 static void start_python(void)
 {
@@ -664,6 +685,7 @@ static void start_python(void)
         return;
     }
     P.Py_DecRef(r);
+    set_natives();
     list = boot_call("start", 4, wstr(folder), wstr(site), wstr(exe), wstr(g_log));
     if (!list) {
         start_failed(L"the start of the Python folder failed");
@@ -785,7 +807,8 @@ static LPXLOPER12 tag_to_result(PyObject *t)
     return res;
 }
 
-EXPORT void WINAPI xlAutoFree12(LPXLOPER12 x)
+/* a result of tag_to_result, with what it holds */
+static void free_result(LPXLOPER12 x)
 {
     DWORD type = x->xltype & ~xlbitDLLFree;
     if (type == xltypeStr) {
@@ -799,6 +822,175 @@ EXPORT void WINAPI xlAutoFree12(LPXLOPER12 x)
     free(x);
 }
 
+EXPORT void WINAPI xlAutoFree12(LPXLOPER12 x)
+{
+    free_result(x);
+}
+
+/* --- asynchronous functions: the result goes back later, with xlAsyncReturn ------------------ */
+
+typedef struct { XLOPER12 handle; } AsyncJob;   /* Excel's handle, copied: its XLOPER12 is Excel's */
+
+/* res to Excel for the job, which is then freed; owned: res came from tag_to_result. Any thread
+   may call it: xlAsyncReturn is the one callback Excel takes from a thread of the add-in's own. */
+static int async_finish(AsyncJob *job, LPXLOPER12 res, int owned)
+{
+    XLOPER12 ret;
+    LPXLOPER12 op[2] = { &job->handle, res };
+    int rc;
+    ret.xltype = xltypeNil;
+    if (owned) res->xltype &= ~xlbitDLLFree;    /* xlAsyncReturn copies the value: the add-in frees it */
+    rc = excel12(xlAsyncReturn, &ret, 2, op);
+    if (rc != xlretSuccess) note(L"xlAsyncReturn failed (%d): the calculation was over or cancelled", rc);
+    if (owned) free_result(res);
+    free(job);
+    return rc == xlretSuccess;
+}
+
+/* boot._native_async_return(token, tagged): called by Python, which holds the GIL; it is let go
+   while Excel takes the result, since Excel's threads may be waiting for it */
+static PyObject *native_async_return(PyObject *self, PyObject *args)
+{
+    AsyncJob *job = (AsyncJob *)(intptr_t)P.PyLong_AsLongLong(P.PyTuple_GetItem(args, 0));
+    LPXLOPER12 res = tag_to_result(P.PyTuple_GetItem(args, 1));
+    void *state;
+    int ok;
+    (void)self;
+    state = P.PyEval_SaveThread();
+    ok = async_finish(job, res, 1);
+    P.PyEval_RestoreThread(state);
+    return P.PyBool_FromLong(ok);
+}
+
+/* an asynchronous slot: Python starts the function and returns; its result comes later */
+static void call_async(int slot, LPXLOPER12 *argv, int n)
+{
+    AsyncJob *job = malloc(sizeof *job);
+    PyGILState_STATE gil;
+    PyObject *args, *r;
+    int i;
+    job->handle = *argv[n];
+    for (i = 0; i < n; i++)
+        if ((argv[i]->xltype & 0xFFF) == xltypeErr) { async_finish(job, xlerror(argv[i]->val.err), 0); return; }
+    gil = P.PyGILState_Ensure();
+    args = P.PyList_New(n);
+    for (i = 0; i < n; i++) P.PyList_SetItem(args, i, arg_to_py(argv[i]));
+    r = boot_call("xl_call_async", 3, P.PyLong_FromLong(slot), args, P.PyLong_FromLongLong((long long)(intptr_t)job));
+    if (r) P.Py_DecRef(r);
+    P.PyGILState_Release(gil);
+    if (!r) async_finish(job, xlerror(xlerrValue), 0);
+}
+
+/* --- the calling cell, for handles --------------------------------------------------------------- */
+
+/* boot._native_caller(): '[Book1.xlsx]Sheet1!R2C3', the cell that called the function now
+   running, or '' (a call from VBA, or a calculation without a cell). xlfCaller and xlSheetNm are
+   thread-safe, so a thread-safe function may ask too. */
+static PyObject *native_caller(PyObject *self, PyObject *unused)
+{
+    XLOPER12 ref, name;
+    LPXLOPER12 op[1] = { &ref };
+    wchar_t text[600] = L"";
+    (void)self; (void)unused;
+    if (excel12(xlfCaller, &ref, 0, NULL) != xlretSuccess) return wstr(L"");
+    if ((ref.xltype & 0xFFF) == xltypeSRef || (ref.xltype & 0xFFF) == xltypeRef) {
+        const XLREF12 *at = (ref.xltype & 0xFFF) == xltypeSRef ? &ref.val.sref.ref
+                          : ref.val.mref.lpmref && ref.val.mref.lpmref->count ? &ref.val.mref.lpmref->reftbl[0] : NULL;
+        if (at && excel12(xlSheetNm, &name, 1, op) == xlretSuccess) {
+            if ((name.xltype & 0xFFF) == xltypeStr) {
+                int k = name.val.str[0] < 500 ? name.val.str[0] : 500;
+                memcpy(text, name.val.str + 1, k * sizeof(wchar_t));
+                swprintf(text + k, 100, L"!R%dC%d", (int)at->rwFirst + 1, (int)at->colFirst + 1);
+            }
+            op[0] = &name;
+            excel12(xlFree, NULL, 1, op);
+            op[0] = &ref;
+        }
+    }
+    excel12(xlFree, NULL, 1, op);
+    return wstr(text);
+}
+
+/* --- Excel's Application, for xl_app() in a command ------------------------------------------- */
+
+static BOOL CALLBACK find_xlmain(HWND w, LPARAM out)
+{
+    DWORD pid = 0;
+    wchar_t cls[16];
+    GetWindowThreadProcessId(w, &pid);
+    if (pid == GetCurrentProcessId() && GetClassNameW(w, cls, 16) && wcscmp(cls, L"XLMAIN") == 0) {
+        *(HWND *)out = w;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+/* boot._native_app(): the address of Excel's Application (an IDispatch with one reference for
+   the caller), or a message. Through a workbook window's object (AccessibleObjectFromWindow),
+   which is in this process: not the running object table, which may give another Excel. */
+static PyObject *native_app(PyObject *self, PyObject *unused)
+{
+    typedef HRESULT (WINAPI *AOFW)(HWND, DWORD, REFIID, void **);
+    static AOFW aofw;
+    HWND main = NULL, desk, book;
+    IDispatch *win = NULL;
+    DISPID id;
+    LPOLESTR name = (LPOLESTR)L"Application";
+    DISPPARAMS none = { NULL, NULL, 0, 0 };
+    VARIANT app;
+    HRESULT hr;
+    (void)self; (void)unused;
+    if (!aofw) {
+        HMODULE oleacc = LoadLibraryW(L"oleacc.dll");
+        aofw = oleacc ? (AOFW)(void *)GetProcAddress(oleacc, "AccessibleObjectFromWindow") : NULL;
+        if (!aofw) return wstr(L"oleacc.dll has no AccessibleObjectFromWindow");
+    }
+    EnumWindows(find_xlmain, (LPARAM)&main);
+    desk = main ? FindWindowExW(main, NULL, L"XLDESK", NULL) : NULL;
+    book = desk ? FindWindowExW(desk, NULL, L"EXCEL7", NULL) : NULL;
+    if (!book) return wstr(L"Excel's window wasn't found: xl_app() needs a workbook open in this Excel");
+    hr = aofw(book, (DWORD)0xFFFFFFF0 /* OBJID_NATIVEOM */, &IID_IDispatch_, (void **)&win);
+    if (FAILED(hr) || !win) return wstr(L"the workbook window gave no object");
+    VariantInit(&app);
+    hr = win->lpVtbl->GetIDsOfNames(win, &IID_NULL_, &name, 1, LOCALE_USER_DEFAULT, &id);
+    if (SUCCEEDED(hr))
+        hr = win->lpVtbl->Invoke(win, id, &IID_NULL_, LOCALE_USER_DEFAULT, DISPATCH_PROPERTYGET, &none, &app, NULL, NULL);
+    win->lpVtbl->Release(win);
+    if (FAILED(hr) || V_VT(&app) != VT_DISPATCH || !V_DISPATCH(&app)) {
+        VariantClear(&app);
+        return wstr(L"the workbook window gave no Application");
+    }
+    return P.PyLong_FromLongLong((long long)(intptr_t)V_DISPATCH(&app));   /* its reference goes to Python */
+}
+
+/* boot._native_release(address): IUnknown::Release of an address native_app gave */
+static PyObject *native_release(PyObject *self, PyObject *args)
+{
+    IUnknown *u = (IUnknown *)(intptr_t)P.PyLong_AsLongLong(P.PyTuple_GetItem(args, 0));
+    (void)self;
+    if (u) u->lpVtbl->Release(u);
+    P.Py_IncRef(P.None);
+    return P.None;
+}
+
+static PyMethodDef g_native[] = {
+    { "_native_caller", native_caller, METH_NOARGS, NULL },
+    { "_native_async_return", native_async_return, METH_VARARGS, NULL },
+    { "_native_app", native_app, METH_NOARGS, NULL },
+    { "_native_release", native_release, METH_VARARGS, NULL },
+};
+
+/* the functions above as attributes of boot.py's module */
+static void set_natives(void)
+{
+    size_t i;
+    for (i = 0; i < sizeof g_native / sizeof g_native[0]; i++) {
+        PyObject *f = P.PyCFunction_NewEx(&g_native[i], NULL, NULL);
+        if (!f || P.PyObject_SetAttrString(g_boot, g_native[i].ml_name, f) < 0) note(L"no %hs for boot.py", g_native[i].ml_name);
+        if (f) P.Py_DecRef(f);
+    }
+}
+
 /* every slot comes here: from C on 64-bit, from the stubs of slots_x86.S on 32-bit */
 LPXLOPER12 __cdecl asfpy_dispatch(int slot, LPXLOPER12 *argv)
 {
@@ -808,6 +1000,10 @@ LPXLOPER12 __cdecl asfpy_dispatch(int slot, LPXLOPER12 *argv)
     int i, n;
     if (g_started != 1 || slot >= g_nfuncs) return xlerror(xlerrName);
     n = g_funcs[slot].nargs;
+    if (g_funcs[slot].async) {
+        call_async(slot, argv, n);
+        return NULL;      /* registered with >: Excel reads no result */
+    }
     for (i = 0; i < n; i++)
         if ((argv[i]->xltype & 0xFFF) == xltypeErr) return xlerror(argv[i]->val.err);
     gil = P.PyGILState_Ensure();
@@ -956,7 +1152,6 @@ typedef struct { IDispatchVtbl *lpVtbl; ISupportErrorInfoVtbl *lpSeiVtbl; LONG r
 static IDispatchVtbl g_proxy_vtbl;
 static ISupportErrorInfoVtbl g_sei_vtbl;
 static const GUID IID_IUnknown_ = { 0x00000000, 0, 0, { 0xC0, 0, 0, 0, 0, 0, 0, 0x46 } };
-static const GUID IID_IDispatch_ = { 0x00020400, 0, 0, { 0xC0, 0, 0, 0, 0, 0, 0, 0x46 } };
 static const GUID IID_ISupportErrorInfo_ = { 0xDF0B3D60, 0x548F, 0x101B, { 0x8E, 0x65, 0x08, 0x00, 0x2B, 0x2B, 0xD1, 0x19 } };
 
 static wchar_t **g_names;         /* DISPID n is g_names[n - 1] */

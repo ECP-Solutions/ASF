@@ -1,10 +1,12 @@
-# Python inside Excel: the checks of phases 1a to 3
+# Python inside Excel: the checks of phases 1a to 4
 
-This folder is the Excel side of phases 1a to 3 of [the design](../DESIGN.md). `asfpy64.xll` and `asfpy32.xll` load a venv's Python into Excel and register the worksheet functions of `spike.py`. They also give VBA a `py` object. `AsfPySpike.bas` checks all of it and measures it. The phase 3 rows also need ASF.xlam loaded.
+This folder is the Excel side of phases 1a to 4 of [the design](../DESIGN.md). `asfpy64.xll` and `asfpy32.xll` load a venv's Python into Excel and register the worksheet functions of `spike.py`. They also give VBA a `py` object. `AsfPySpike.bas` checks all of it and measures it. The phase 3 rows also need ASF.xlam loaded.
 
 Phase 1a was the spike. Phase 1b completes the `.xll`: a pool of 1,000 slots, the volatile and thread-safe suffixes, functions unregistered when the add-in is unticked, `For Each` over Python objects, and an object's text as its default value.
 
 Phase 2 adds `PY_CALL("module.function", arguments...)`, registered by the `.xll`; type hints (`int`, `float`, `str`, `bool`, `list`, `date`, `datetime`); `py.lastTraceback` and `py.clearError`, for **Why this error?**; and the command `AsfPyReload`, which imports the Python folder again without restarting Excel.
+
+Phase 4 adds numpy and pandas type hints and results, object handles (`<Counter#1>` in a cell, the object for the functions that take the cell), asynchronous functions (`async def` or `asynchronous=True`, with `xlAsyncReturn`), and commands (`@xl_macro`, run with `Application.Run`, which may use `xl_app()`).
 
 ## What the checks must answer in Excel
 
@@ -18,9 +20,10 @@ Phase 2 adds `PY_CALL("module.function", arguments...)`, registered by the `.xll
 | Do the functions go when the add-in is unticked, and come back when it's ticked again? | the `Unticked` and `Ticked again` rows |
 | Do `PY_CALL` and the type hints work in formulas, and does a cell's error come back with its traceback? | the `PY_CALL`, `spike_hints`, `spike_nextday` and `Why this error?` rows |
 | Does a library script get `py` only with both keys, and does `ASF_RUN` never get it? (phase 3, with `ASF.xlam`) | the `ASF_CALL` and `ASF_RUN` rows at the end; `=ASF_CALL("py_check_modules")` gives `Which` only if the engine passes names as written |
+| Do handles, asynchronous functions, numpy and pandas hints, and commands work? (phase 4) | the `spike_counter`, `spike_most`, `spike_async`, `spike_matrix`, `spike_frame`, `spike_describe`, `spike_macro` and `spike_app` rows. `spike_frame` needs pandas and `spike_app` pywin32 in the venv (`pip install pandas pywin32`); without them their rows say so |
 | Does `AsfPyReload` read a module added, changed and removed? | the `AsfPyReload` rows (they write and delete `aa_reload.py` in the Python folder) |
 | What does a call cost, and what does start-up cost? | the timing rows; the start-up lines of `%TEMP%\asfpy.log` |
-| Does Excel close cleanly with numpy loaded? | step 8 |
+| Does Excel close cleanly with numpy loaded? | step 9 |
 
 ## Steps
 
@@ -36,7 +39,8 @@ Phase 2 adds `PY_CALL("module.function", arguments...)`, registered by the `.xll
 5. **Settings.** Import `AsfPySpike.bas` into a new workbook (Alt+F11, File > Import File) and run `AsfPySetup`. Give it the venv folder and the Python folder.
 6. **Load and test.** File > Options > Add-ins > Manage: Excel Add-ins > Go > Browse, then pick the `.xll`. Run `AsfPySpikeTest`. A new workbook shows each check, `ok` or `FAIL`, and the timings. Its second sheet holds the formulas. For the thread-safe rows, keep multi-threaded calculation on (File > Options > Advanced > Formulas).
 7. **Phase 3: `ASF.xlam` built again,** with the engine and add-in of phase 3: `powershell -ExecutionPolicy Bypass -File excel/tools/build.ps1 -TemporaryTrustAccess` (see `excel/README.md`), then load it next to the `.xll`. `AsfPySpikeTest` then writes three scripts to the library folder, sets `PythonAccess` to `off`, `call` and `modules` in turn, and puts the setting and the folder back as they were. Without `ASF.xlam` it skips these rows.
-8. **Close Excel** with that workbook open (numpy loaded). Excel should close without an error or a hang. Then open Excel again: the add-in loads by itself.
+8. **Phase 4** needs only the new `.xll` and `spike.py`, and `AsfPySpike.bas` imported again. For the pandas and `xl_app()` rows, `pip install pandas pywin32` in the venv first.
+9. **Close Excel** with that workbook open (numpy loaded). Excel should close without an error or a hang. Then open Excel again: the add-in loads by itself.
 
 Please send back the result sheet and `%TEMP%\asfpy.log` for each Excel you tried: 2016 32-bit, 2016 64-bit, Microsoft 365.
 
@@ -55,6 +59,7 @@ If Python doesn't start, Excel shows the reason when it loads the add-in, and `A
 | The same Excel, 4 calculation threads | phase 1b as committed after this run | **All 34 checks pass.** `py.call` from VBA 8.5 µs; 2,000 cells of `spike_add` in 15 ms; unticked, `#VALUE!` |
 | The same Excel | phase 2 | 45 checks pass: `PY_CALL` (with a range, and `#NAME?` for `os.system`), the type hints, a date back, three reloads (35–65 ms each, the log shows each module read again). 5 fail, all from `Range.Calculate`, which skipped cells that weren't dirty: **Why this error?** read no error, and after a reload the cells kept their old values. The checklist now marks them dirty first (`Range.Dirty`); its timings were 0 ms for the same reason |
 | The same Excel | phase 2, cells marked dirty | **All 50 checks pass.** Why this error? reads the cell's `ValueError` and its traceback; after a reload a cell keeps its old value until it is calculated again, then shows the new code's; a removed export gives `#NAME?`. `py.call` from VBA 8.6 µs. The timings still read 0 ms: with automatic calculation `Range.Dirty` calculates at once, before the clock started, so the clock now starts before it |
+| The same Excel, venv with numpy, pandas and pywin32 | phases 3 and 4, with `ASF.xlam` of phase 3 | 85 of 87 checks pass: the phase 3 rows; handles (`spike_most` reads the object, follows its cell's new one, and the old handle gives `LookupError`); 20 cells of `spike_async` in 0.8 s; `spike_matrix`, `spike_frame` and `spike_describe`; `Application.Run "spike_macro", 2, 3` gives 5, and `xl_app().ActiveSheet.Name` gives `Formulas`. The 2 that failed were the checklist's: VBA's `Like` takes `#` in `"<Counter#*>"` for a digit, so a handle never matched; the pattern is `"<Counter[#]*>"` now |
 
 ## Already checked without Excel
 
@@ -70,6 +75,13 @@ Phase 2, on Windows 10 natively, with the MSVC build (`test_boot.py` passes with
 | 3.12.10, 32-bit (nuget.org's `pythonx86`) | asfpy32.xll | 82 of 82 | 6 µs | 6 µs | 1,440 ms |
 
 Start-up compiles the folder's modules from their source since phase 2; most of it is `zz_slots.py`'s 1,000 functions.
+
+Phase 4, the same way: `test_boot.py` has 39 tests (numpy and pandas ones skip without them). The fake host answers `xlfCaller`, `xlSheetNm` and `xlAsyncReturn` too, and checks handles (one cell's object for another, none across workbooks, the old one gone when its cell is calculated again), asynchronous functions (`async def` and a thread, an error argument, 30 calls at once), the type `>QX` of an asynchronous function, a command registered with macro type 2 and run, and `xl_app()` failing cleanly without Excel's window.
+
+| Python | Add-in | Checks | One worksheet call |
+|---|---|---|---|
+| 3.14.6 venv with numpy 2.x, 64-bit | asfpy64.xll | 103 of 103 | 8 µs |
+| 3.12.10, 32-bit (nuget.org's `pythonx86`) | asfpy32.xll | 96 of 96 | 12 µs |
 
 Phase 1a, under Wine on a Linux container, with the MinGW build:
 

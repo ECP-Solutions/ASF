@@ -1,5 +1,5 @@
 Attribute VB_Name = "AsfPySpike"
-' The checks of phases 1a to 3 in Excel (excel/python/spike/README.md). Import this module into
+' The checks of phases 1a to 4 in Excel (excel/python/spike/README.md). Import this module into
 ' any workbook (not into ASF.xlam), then run AsfPySetup once and AsfPySpikeTest with
 ' asfpy64.xll or asfpy32.xll loaded. The results go to a new workbook.
 Option Explicit
@@ -33,7 +33,7 @@ Public Sub AsfPySpikeTest()
     ws.Name = "Spike"
     row = 1
     failures = 0
-    Put3 "ASF Python, phases 1a to 3", Application.Name & " " & Application.Version & ", " & IIf(Is64(), "64-bit", "32-bit"), ""
+    Put3 "ASF Python, phases 1a to 4", Application.Name & " " & Application.Version & ", " & IIf(Is64(), "64-bit", "32-bit"), ""
 
     ' --- py from VBA
     On Error Resume Next
@@ -198,6 +198,9 @@ Public Sub AsfPySpikeTest()
     ' --- phase 3: library scripts with py, through ASF.xlam
     Phase3Checks s
 
+    ' --- phase 4: handles, asynchronous functions, numpy and pandas, commands
+    Phase4Checks s, py, numpy
+
     ' --- phase 1b: the add-in unticked and ticked again (xlAutoClose, xlAutoOpen)
     Dim ai As Object
     For Each ai In Application.AddIns
@@ -275,6 +278,100 @@ PutBack:
     Put3 "Phase 3 stopped", "error " & Err.Number & ": " & Err.Description, "FAIL"
     failures = failures + 1
     Resume Done
+End Sub
+
+' Phase 4: object handles, asynchronous functions, numpy and pandas arguments and results, and
+' commands (@xl_macro) run with Application.Run. pandas and pywin32 are optional: without them,
+' their rows say so.
+Private Sub Phase4Checks(s As Object, py As Variant, numpy As Boolean)
+    Dim v As Variant, t As Double, old As String
+    ' a Counter isn't a cell value: the cell shows its handle, which another function takes
+    s.Range("T1").Formula = "=spike_counter(""abcab"")"
+    Check "=spike_counter(""abcab""): a handle", s.Range("T1").Text Like "<Counter[#]*>", True
+    Formula s, "T2", "=spike_most(T1,1)", "a"
+    Formula s, "T3", "=spike_most(T1,2)", "b"
+    ' calculated again, the cell gets a new object; its old handle names nothing any more
+    old = s.Range("T1").Text
+    s.Range("T1").Formula = "=spike_counter(""xyy"")"
+    Check "  T1 calculated again: a new handle", s.Range("T1").Text <> old And s.Range("T1").Text Like "<Counter[#]*>", True
+    Check "  =spike_most(T1,1) follows it", s.Range("T2").Value, "y"
+    Formula s, "T4", "=spike_most(" & Chr$(34) & old & Chr$(34) & ",1)", CVErr(xlErrValue)
+    Check "  why: the old handle", Left$(CallPy(py, "lastError", VbGet), 11), "LookupError"
+
+    ' asynchronous functions: Excel's calculation waits for their results
+    t = Timer
+    s.Range("U1:U20").Formula = "=spike_async(ROW())"
+    WaitAsync s.Range("U1:U20")
+    Put3 "20 cells of spike_async (50 ms each), ms until all are in", Format((Timer - t) * 1000, "0"), ""
+    Check "spike_async: the sum of the 20 results", Application.Sum(s.Range("U1:U20")), 420
+    s.Range("U21").Formula = "=spike_async_thread(41)"
+    WaitAsync s.Range("U21")
+    Check "=spike_async_thread(41)", s.Range("U21").Value, 42
+    s.Range("U22").Formula = "=spike_async(NA())"
+    WaitAsync s.Range("U22")
+    Check "=spike_async(NA())", s.Range("U22").Value, CVErr(xlErrNA)
+
+    ' numpy and pandas: type hints and results
+    If numpy Then
+        s.Range("V1:V2").FormulaArray = "=spike_matrix(A1:B2)"
+        Check "=spike_matrix(A1:B2), sums of columns", Join2(s.Range("V1:V2").Value), "3;3"
+    Else
+        Put3 "spike_matrix", "numpy isn't installed: skipped", ""
+    End If
+    s.Range("X1").Value = "x": s.Range("Y1").Value = "y"
+    s.Range("X2:X4").Value = Application.Transpose(Array(1, 2, 3))
+    s.Range("Y2:Y4").Value = Application.Transpose(Array(10, 20, 60))
+    s.Range("W1").Formula = "=spike_frame(X1:Y4)"
+    If IsError(s.Range("W1").Value) Then
+        v = CallPy(py, "lastError", VbGet)
+        If InStr(v, "pandas") > 0 Then
+            Put3 "spike_frame", "pandas isn't installed: skipped (" & v & ")", ""
+        Else
+            Check "=spike_frame(X1:Y4)", v, "x, y; 3 rows"
+        End If
+    Else
+        Check "=spike_frame(X1:Y4)", s.Range("W1").Value, "x, y; 3 rows"
+        s.Range("Z1:AB9").FormulaArray = "=spike_describe(X1:Y4)"
+        Check "=spike_describe(X1:Y4): the header", Join2(s.Range("Z1:AB1").Value), ",x,y"
+        Check "  count and mean of y", Join2(s.Range("Z2:AB3").Value), "count,3,3;mean,2,30"
+    End If
+
+    ' commands: Application.Run with arguments and a result
+    On Error Resume Next
+    v = Application.Run("spike_macro", 2, 3)
+    If Err.Number <> 0 Then v = "error " & Err.Number & ": " & Err.Description
+    On Error GoTo 0
+    Check "Application.Run ""spike_macro"", 2, 3", v, 5
+    On Error Resume Next
+    v = Application.Run("spike_app")
+    If Err.Number <> 0 Then v = "error " & Err.Number & ": " & Err.Description
+    On Error GoTo 0
+    If IsError(v) Then
+        v = CallPy(py, "lastError", VbGet)
+        If InStr(v, "needs pywin32") > 0 Then
+            Put3 "spike_app: xl_app()", "pywin32 isn't installed: skipped (" & v & ")", ""
+        Else
+            Check "spike_app: xl_app().ActiveSheet.Name", v, ActiveSheet.Name
+        End If
+    Else
+        Check "spike_app: xl_app().ActiveSheet.Name", v, ActiveSheet.Name
+    End If
+End Sub
+
+' while cells of asynchronous functions still show #GETTING_DATA, for 10 seconds at most
+Private Sub WaitAsync(r As Object)
+    Dim t As Double, c As Object, busy As Boolean
+    t = Timer
+    Do
+        busy = False
+        For Each c In r.Cells
+            If IsError(c.Value) Then
+                If CStr(c.Value) = "Error 2043" Then busy = True
+            End If
+        Next c
+        If Not busy Or Timer - t > 10 Then Exit Do
+        DoEvents
+    Loop
 End Sub
 
 Private Sub SetPythonAccess(ByVal value As String)

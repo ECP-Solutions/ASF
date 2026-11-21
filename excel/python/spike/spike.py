@@ -1,12 +1,14 @@
-"""The functions of the checks of phases 1a to 3. Copy this file into the Python folder
+"""The functions of the checks of phases 1a to 4. Copy this file into the Python folder
 (%APPDATA%\\ASF\\python by default) before loading asfpy64.xll or asfpy32.xll."""
+import collections
 import datetime
 import itertools
 import math
 import sys
 import threading
+import time
 
-from asfpy import export, xl_func
+from asfpy import export, xl_app, xl_func, xl_macro
 
 _volatile_calls = itertools.count(1)
 
@@ -117,6 +119,63 @@ def spike_hints(n: int, when: datetime.date, text: str, values: list):
 def spike_nextday(when: datetime.date):
     """The day after a date; a date comes back as Excel's serial number."""
     return when + datetime.timedelta(days=1)
+
+
+@xl_func
+def spike_counter(text):
+    """A collections.Counter of the letters of text: not a cell value, so the cell shows a handle."""
+    return collections.Counter(text)
+
+
+@xl_func
+def spike_most(counter, n: int):
+    """The n-th most common letter of a Counter, given its handle."""
+    return counter.most_common(n)[-1][0]
+
+
+@xl_func
+async def spike_async(x):
+    """x times 2 after 50 ms, with asyncio: an asynchronous function."""
+    import asyncio
+    await asyncio.sleep(0.05)
+    return x * 2
+
+
+@xl_func(asynchronous=True)
+def spike_async_thread(x):
+    """x plus 1 after 50 ms, on a thread of the add-in."""
+    time.sleep(0.05)
+    return x + 1
+
+
+@xl_func
+def spike_matrix(a: 'numpy.ndarray'):
+    """A range as a numpy array: the sum of each column, as a column (needs numpy)."""
+    return a.sum(axis=0) if a.ndim == 2 else a.sum()
+
+
+@xl_func
+def spike_frame(table: 'pandas.DataFrame'):
+    """A table with headers as a pandas DataFrame: its column names and row count (needs pandas)."""
+    return '%s; %d rows' % (', '.join(table.columns), len(table))
+
+
+@xl_func
+def spike_describe(table: 'pandas.DataFrame'):
+    """pandas' describe() of a table with headers, back to the cells with its index (needs pandas)."""
+    return table.describe()
+
+
+@xl_macro
+def spike_macro(a, b):
+    """A command: Application.Run "spike_macro", 2, 3 gives 5."""
+    return a + b
+
+
+@xl_macro
+def spike_app():
+    """A command that reaches Excel with xl_app() (needs pywin32): the name of the active sheet."""
+    return xl_app().ActiveSheet.Name
 
 
 @export

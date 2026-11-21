@@ -42,6 +42,7 @@ typedef struct xloper12 {
 #define xltypeNil     0x0100
 #define xltypeSRef    0x0400
 #define xltypeInt     0x0800
+#define xltypeBigData (xltypeStr | xltypeInt)   /* an asynchronous function's handle */
 #define xlbitXLFree   0x1000
 #define xlbitDLLFree  0x4000
 
@@ -55,7 +56,10 @@ typedef struct xloper12 {
 
 #define xlSpecial  0x4000
 #define xlFree     (0 | xlSpecial)
+#define xlSheetNm  (5 | xlSpecial)
 #define xlGetName  (9 | xlSpecial)
+#define xlAsyncReturn (16 | xlSpecial)
+#define xlfCaller  89
 #define xlfRegister 149
 #define xlfUnregister 201
 

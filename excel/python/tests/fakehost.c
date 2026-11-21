@@ -22,11 +22,22 @@
 #pragma comment(linker, "/EXPORT:MdCallBack12=_MdCallBack12@16")   /* undecorated, as Excel exports it */
 #endif
 
-typedef struct { wchar_t proc[32], name[64], type[48]; int nargs; } Reg;
+typedef struct { wchar_t proc[32], name[64], type[48]; int nargs, macro_type; } Reg;
 static Reg regs[8 * NSLOTS];
 static int nregs, nunregs, checks, failed;
 static wchar_t xll_path[MAX_PATH], last_alert[1024];
 static HMODULE xll;
+
+/* the cell xlfCaller gives, and its sheet's name; row 0: no cell (a call from VBA) */
+static int caller_row, caller_col;
+static wchar_t caller_sheet[64] = L"[Book1.xlsx]Sheet1";
+
+/* the results of asynchronous functions, as xlAsyncReturn gives them, by handle */
+#define NASYNC 64
+static struct { INT_PTR handle; wchar_t text[256]; } async_results[NASYNC];
+static int nasync;
+static CRITICAL_SECTION async_lock;
+static void cell_text(LPXLOPER12 x, wchar_t *out, int max);
 
 static XCHAR *xstr(const wchar_t *s)
 {
@@ -61,13 +72,36 @@ __declspec(dllexport) int WINAPI MdCallBack12(int fn, int n, LPXLOPER12 *op, LPX
         copy_text(r->proc, op[1], 32);
         copy_text(r->type, op[2], 48);
         copy_text(r->name, op[3], 64);
-        r->nargs = (int)wcsspn(r->type, L"Q") - 1;
+        r->nargs = r->type[0] == L'>' ? (int)wcsspn(r->type + 1, L"QX") : (int)wcsspn(r->type, L"Q") - 1;
+        r->macro_type = (int)op[5]->val.num;
         res->xltype = xltypeNum;
         res->val.num = nregs;
         return xlretSuccess;
     }
     case xlfUnregister:
         nunregs++;
+        res->xltype = xltypeBool;
+        res->val.xbool = TRUE;
+        return xlretSuccess;
+    case xlfCaller:
+        if (!caller_row) { res->xltype = xltypeErr; res->val.err = xlerrRef; return xlretSuccess; }
+        res->xltype = xltypeSRef;
+        res->val.sref.count = 1;
+        res->val.sref.ref.rwFirst = res->val.sref.ref.rwLast = caller_row - 1;
+        res->val.sref.ref.colFirst = res->val.sref.ref.colLast = caller_col - 1;
+        return xlretSuccess;
+    case xlSheetNm:
+        res->xltype = xltypeStr | xlbitXLFree;
+        res->val.str = xstr(caller_sheet);
+        return xlretSuccess;
+    case xlAsyncReturn:     /* from any thread, as in Excel */
+        EnterCriticalSection(&async_lock);
+        if (nasync < NASYNC && (op[0]->xltype & 0xFFF) == xltypeBigData) {
+            async_results[nasync].handle = (INT_PTR)op[0]->val.bigdata.h.hdata;
+            cell_text(op[1], async_results[nasync].text, 256);
+            nasync++;
+        }
+        LeaveCriticalSection(&async_lock);
         res->xltype = xltypeBool;
         res->val.xbool = TRUE;
         return xlretSuccess;
@@ -180,6 +214,40 @@ static void pycall_check(const wchar_t *what, int n, LPXLOPER12 *given, const wc
     cell_text(r, got, 1024);
     check(wcscmp(got, want) == 0, what, got);
     release(r);
+}
+
+/* an asynchronous function's call: its arguments and a handle, then the result xlAsyncReturn
+   gives for that handle, waited for up to 10 seconds */
+static XLOPER12 async_handle(INT_PTR h) { XLOPER12 x; x.xltype = xltypeBigData; x.val.bigdata.h.hdata = (HANDLE)h; x.val.bigdata.cbData = 0; return x; }
+
+static int async_result(INT_PTR h, wchar_t *got, int max)
+{
+    int i, t;
+    for (t = 0; t < 1000; t++) {
+        EnterCriticalSection(&async_lock);
+        for (i = 0; i < nasync; i++)
+            if (async_results[i].handle == h) {
+                wcsncpy(got, async_results[i].text, max);
+                LeaveCriticalSection(&async_lock);
+                return 1;
+            }
+        LeaveCriticalSection(&async_lock);
+        Sleep(10);
+    }
+    wcscpy(got, L"no result in 10 s");
+    return 0;
+}
+
+static void async_check(const wchar_t *name, XLOPER12 arg, INT_PTR h, const wchar_t *want)
+{
+    F2 f = (F2)slot_of(name);
+    XLOPER12 handle = async_handle(h);
+    wchar_t got[256], what[128];
+    swprintf(what, 128, L"%ls, asynchronous", name);
+    if (!f) { check(0, what, L"not registered"); return; }
+    f(&arg, &handle);       /* registered with >: no result now */
+    async_result(h, got, 256);
+    check(wcscmp(got, want) == 0, what, got);
 }
 
 /* a file in the add-in's Python folder (the setting run_fakehost.py made); NULL text deletes it */
@@ -455,6 +523,7 @@ int wmain(int argc, wchar_t **argv)
     GetFullPathNameW(argv[1], MAX_PATH, xll_path, NULL);
     for (i = 0; i < 8; i++) p[i] = &a[i];
     CoInitialize(NULL);
+    InitializeCriticalSection(&async_lock);
     _setmode(_fileno(stdout), _O_U8TEXT);
     QueryPerformanceFrequency(&fq);
 
@@ -498,7 +567,7 @@ int wmain(int argc, wchar_t **argv)
     a[0] = num(1); a[1] = num(2);
     call_check(L"slot_0502", 2, p, L"502003");
     a[0] = num(1); a[1] = num(2); a[2] = num(3);
-    call_check(L"slot_0983", 3, p, L"983006");
+    call_check(L"slot_0951", 3, p, L"951006");
     check(reg_of(L"slot_0999") == NULL, L"slot_0999, beyond the pool, not registered", reg_of(L"slot_0999") ? L"registered" : L"not registered");
 
     call_check(L"spike_version", 0, p, L"Python 3.");
@@ -565,6 +634,67 @@ int wmain(int argc, wchar_t **argv)
         for (i = 0; i < 10; i++) col[i] = num(i + 1);
         multi.val.array.lparray = col; multi.val.array.rows = 10; multi.val.array.columns = 1; a[0] = multi;
         call_check(L"spike_numpy", 1, p, L"9.1");
+    }
+
+    /* --- phase 4: handles, asynchronous functions, commands */
+    type_check(L"spike_async", L">QX");
+    type_check(L"spike_async_thread", L">QX");
+    type_check(L"spike_macro", L"QQQ");
+    {
+        Reg *r = reg_of(L"spike_macro");
+        check(r && r->macro_type == 2, L"spike_macro registered as a command (macro type 2)", r && r->macro_type == 2 ? L"2" : L"not 2");
+    }
+    {
+        wchar_t handle[64];
+        LPXLOPER12 r;
+        caller_row = 1; caller_col = 1;         /* A1 */
+        a[0] = str(L"abcab");
+        r = ((F1)slot_of(L"spike_counter"))(p[0]);
+        cell_text(r, handle, 64);
+        check(wcsncmp(handle, L"<Counter#", 9) == 0, L"spike_counter: a handle", handle);
+        release(r);
+        caller_col = 2;                         /* B1 */
+        a[0] = str(handle); a[1] = num(1);
+        call_check(L"spike_most", 2, p, L"a");
+        wcscpy(caller_sheet, L"[Book2.xlsx]Sheet1");
+        call_check(L"spike_most", 2, p, L"#15");   /* the handle names nothing in another workbook */
+        wcscpy(caller_sheet, L"[Book1.xlsx]Sheet1");
+        caller_col = 1;                         /* A1 again: its old handle goes */
+        a[0] = str(L"xyy");
+        release(((F1)slot_of(L"spike_counter"))(p[0]));
+        caller_col = 2;
+        a[0] = str(handle); a[1] = num(1);
+        call_check(L"spike_most", 2, p, L"#15");
+        caller_row = caller_col = 0;
+    }
+    async_check(L"spike_async", num(21), 1001, L"42");
+    async_check(L"spike_async_thread", num(1), 1002, L"2");
+    async_check(L"spike_async", err(xlerrNA), 1003, L"#42");
+    {
+        /* 30 at once: each result comes back to its handle */
+        F2 f = (F2)slot_of(L"spike_async");
+        int bad = 0;
+        for (i = 0; f && i < 30; i++) {
+            XLOPER12 x = num(i), h = async_handle(2000 + i);
+            f(&x, &h);
+        }
+        for (i = 0; f && i < 30; i++) {
+            wchar_t want[16];
+            async_result(2000 + i, got, 256);
+            swprintf(want, 16, L"%d", i * 2);
+            if (wcscmp(got, want) != 0) bad++;
+        }
+        swprintf(got, 256, L"%d wrong of 30", bad);
+        check(f && bad == 0, L"spike_async, 30 calls at once", got);
+    }
+    a[0] = num(2); a[1] = num(3);
+    call_check(L"spike_macro", 2, p, L"5");
+    call_check(L"spike_app", 0, p, L"#15");    /* no pywin32 or no Excel window: an error, not a crash */
+    if (argc > 2 && wcscmp(argv[2], L"numpy") == 0) {
+        XLOPER12 g4[4] = { num(1), num(2), num(3), num(4) };
+        multi.xltype = xltypeMulti;
+        multi.val.array.lparray = g4; multi.val.array.rows = 2; multi.val.array.columns = 2; a[0] = multi;
+        call_check(L"spike_matrix", 1, p, L"4;6");
     }
 
     /* the cost of a call: a function of two arguments, 20,000 times */

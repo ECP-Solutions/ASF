@@ -81,7 +81,13 @@ Public Function Root(ByVal level As Long, ByRef message As String) As Object
 NotLoaded:
     message = "the Python add-in (" & AddinName() & ") is not loaded: File > Options > Add-ins > Manage: Excel Add-ins"
 #Else
-    message = "Python needs the Python add-in (asfpy64.xll or asfpy32.xll) of Excel for Windows"
+    ' LibreOffice, where these modules run in excel/tools/run_lo.py: py of the ASF extension
+    ' (libreoffice/compat/LOpython.bas)
+    On Error GoTo NoPython
+    Set Root = LOpython.PyRoot(level)
+    Exit Function
+NoPython:
+    message = "Python didn't start in LibreOffice: " & Err.Description
 #End If
 End Function
 

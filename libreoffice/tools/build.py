@@ -36,6 +36,9 @@ REGEX_ENGINE = "ASF_RegexEngine"
 DEFINES = {}
 # ASF 3.2.1, the AST engine as ASF 3 users run it by default, with the suffix _OLD on its classes
 OLD_DIR = "old"
+# the Python side of the Excel add-in (excel/python), which asfpy_lo.py carries into ASF.oxt
+BOOT_PY = os.path.join(ROOT, "excel", "python", "xll", "boot.py")
+PYTHON_SCRIPT = "asfpy_lo.py"
 
 
 
@@ -834,11 +837,14 @@ def library_modules(repo=ROOT):
         if name == "ASF_VM":
             body = release_before_let(body)
         mods.append((name, class_module(name, body), "class"))
-    for name in ("LOhelper", "VBAEhelper"):
+    for name in ("LOhelper", "VBAEhelper", "LOpython"):
         code = load(os.path.join(LO_DIR, "compat", name + ".bas"))
         if name == "LOhelper":
             code += if_redim_blocks(call_by_name())
         mods.append((name, "Option VBASupport 1\n" + code, "normal"))
+    # a Python object of LOpython for the engine; its LOClassName is the Python class's
+    code = load(os.path.join(LO_DIR, "compat", "ASF_PyObject.bas"))
+    mods.append(("ASF_PyObject", "Option VBASupport 1\nOption ClassModule\n" + code, "class"))
     return mods
 
 
@@ -930,6 +936,19 @@ def write_library(folder, lib, mods):
             f.write(text)
 
 
+def python_script():
+    """libreoffice/python/asfpy_lo.py with the text of boot.py in BOOT_SOURCE: one file, which the
+    script provider runs from the extension (LOpython.bas)."""
+    with open(os.path.join(LO_DIR, "python", PYTHON_SCRIPT), encoding="utf-8") as f:
+        script = f.read()
+    with open(BOOT_PY, encoding="utf-8") as f:
+        boot = f.read()
+    marker = "BOOT_SOURCE = None   # build.py: the text of boot.py"
+    if marker not in script:
+        sys.exit(f"no {marker!r} in {PYTHON_SCRIPT}")
+    return script.replace(marker, "BOOT_SOURCE = " + repr(boot.replace("\r\n", "\n")))
+
+
 def extension_bytes(mods):
     description = f'''<?xml version="1.0" encoding="UTF-8"?>
 <description xmlns="http://openoffice.org/extensions/description/2006"
@@ -949,6 +968,7 @@ def extension_bytes(mods):
     manifest = f'''<?xml version="1.0" encoding="UTF-8"?>
 <manifest:manifest xmlns:manifest="http://openoffice.org/2001/manifest">
   <manifest:file-entry manifest:media-type="application/vnd.sun.star.basic-library" manifest:full-path="{LIB_NAME}/"/>
+  <manifest:file-entry manifest:media-type="application/vnd.sun.star.framework-script" manifest:full-path="python/"/>
 </manifest:manifest>
 '''
     buf = io.BytesIO()
@@ -957,9 +977,11 @@ def extension_bytes(mods):
         z.writestr("description.xml", description)
         z.write(os.path.join(LO_DIR, "icons", "ICON.png"), "icons/ICON.png")
         z.writestr("description-en.txt", "ASF scripting engine (JavaScript-like language, regex engine, "
-                   "module system) as a LibreOffice Basic library named ASF.\n")
+                   "module system) as a LibreOffice Basic library named ASF, with PY_CALL and py for "
+                   "Python functions of your own.\n")
         for fname, text in library_files(LIB_NAME, mods).items():
             z.writestr(f"{LIB_NAME}/{fname}", text)
+        z.writestr(f"python/{PYTHON_SCRIPT}", python_script())
     return buf.getvalue()
 
 

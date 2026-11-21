@@ -12,6 +12,16 @@ import tempfile
 import textwrap
 import unittest
 
+# imported once, before any test: numpy can't be imported again after a test drops it from sys.modules
+try:
+    import numpy
+except ImportError:
+    numpy = None
+try:
+    import pandas
+except ImportError:
+    pandas = None
+
 BOOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'xll', 'boot.py')
 
 STATS = '''
@@ -81,6 +91,116 @@ def uses_helper():
     return z_helper.VALUE
 '''
 
+OBJECTS = '''
+import asyncio
+import collections
+import time
+from asfpy import export, xl_func, xl_macro, xl_app
+
+
+@xl_func
+def counter(text):
+    return collections.Counter(text)
+
+
+@xl_func
+def most(c, n: int):
+    return c.most_common(n)[0][0]
+
+
+@xl_func
+def as_text(c: str):
+    return c
+
+
+@xl_func
+def boxed(x) -> object:
+    return [x, x]
+
+
+@xl_func
+def mixed():
+    return [[1, collections.OrderedDict()], [2, 'b']]
+
+
+@xl_func
+async def later(x):
+    await asyncio.sleep(0.01)
+    return x * 2
+
+
+@xl_func(asynchronous=True)
+def slow(x):
+    time.sleep(0.01)
+    return x + 1
+
+
+@xl_func(asynchronous=True)
+def slow_fails():
+    raise KeyError('async on purpose')
+
+
+@xl_func(asynchronous=True, macro=True)
+def async_macro():
+    return 1
+
+
+@xl_macro
+def command(a, b):
+    return a + b
+
+
+@xl_macro(name='TryApp')
+def try_app():
+    return repr(xl_app())
+
+
+@xl_func
+def app_in_function():
+    return repr(xl_app())
+
+
+@export
+async def awaited(x):
+    await asyncio.sleep(0)
+    return x * 3
+'''
+
+FRAMES = '''
+import numpy
+from asfpy import xl_func
+
+
+@xl_func
+def arr_info(a: numpy.ndarray):
+    return '%s %s %s' % (a.shape, a.dtype, a.tolist())
+
+
+@xl_func
+def arr_back(n: int):
+    return numpy.arange(n * 2, dtype=float).reshape(n, 2)
+
+
+@xl_func
+def arr_column(n: int):
+    return numpy.arange(n)
+
+
+@xl_func
+def arr_nan():
+    return numpy.array([1.0, float('nan')])
+
+
+@xl_func
+def arr_scalar():
+    return numpy.float64(2.5), numpy.int64(3), numpy.bool_(True)
+
+
+@xl_func
+def arr_3d():
+    return numpy.zeros((2, 2, 2))
+'''
+
 HELPER = '''
 import asfpy
 asfpy.helper_loads = getattr(asfpy, 'helper_loads', 0) + 1
@@ -100,6 +220,9 @@ class BootTest(unittest.TestCase):
         self.write('a_uses.py', USES)
         self.write('z_helper.py', HELPER)
         self.write('broken.py', 'raise RuntimeError("broken on purpose")\n')
+        self.write('objects.py', OBJECTS)
+        if numpy is not None:
+            self.write('frames.py', FRAMES)
         spec = importlib.util.spec_from_file_location('asfpy_boot_under_test', BOOT)
         self.boot = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.boot)
@@ -122,6 +245,14 @@ class BootTest(unittest.TestCase):
 
     def call(self, name, *args):
         return self.boot.xl_call(self.slot(name), list(args))
+
+    def in_cell(self, caller, name, *args):
+        # a call from a cell: _native_caller says which
+        self.boot._native_caller = lambda: caller
+        try:
+            return self.call(name, *args)
+        finally:
+            self.boot._native_caller = None
 
     def info(self):
         return self.boot.root(1).startInfo
@@ -265,6 +396,186 @@ class Proxies(BootTest):
 
     def test_dates_to_vba_are_serial_numbers(self):
         self.assertEqual(self.boot._com(datetime.date(2023, 3, 15), 1), (self.boot.TAG_FLOAT, 45000.0))
+
+
+class Handles(BootTest):
+    A1, B1, OTHER = '[Book1.xlsx]Sheet1!R1C1', '[Book1.xlsx]Sheet1!R1C2', '[Book2.xlsx]Sheet1!R1C1'
+
+    def test_an_object_is_a_handle_another_function_takes(self):
+        T = self.boot
+        tag, text = self.in_cell(self.A1, 'counter', 'abcab')
+        self.assertEqual(tag, T.TAG_STR)
+        self.assertRegex(text, r'^<Counter#\d+>$')
+        self.assertEqual(self.in_cell(self.B1, 'most', text, 1.0), (T.TAG_STR, 'a'))
+
+    def test_a_str_hint_keeps_the_text(self):
+        _, text = self.in_cell(self.A1, 'counter', 'ab')
+        self.assertEqual(self.in_cell(self.B1, 'as_text', text), (self.boot.TAG_STR, text))
+
+    def test_the_cell_owns_its_handle_and_drops_the_old_one(self):
+        T = self.boot
+        _, first = self.in_cell(self.A1, 'counter', 'ab')
+        _, second = self.in_cell(self.A1, 'counter', 'abb')
+        self.assertNotEqual(first, second)
+        self.assertEqual(len(T._handles), 1)
+        tag, message = self.in_cell(self.B1, 'most', first, 1.0)
+        self.assertEqual(tag, T.TAG_FAIL)
+        self.assertIn('names no object of this workbook', message)
+        self.assertEqual(self.in_cell(self.B1, 'most', second, 1.0), (T.TAG_STR, 'b'))
+        self.in_cell(self.A1, 'as_text', 'no object now')
+        self.assertEqual(T._handles, {})
+
+    def test_handles_do_not_cross_workbooks(self):
+        _, text = self.in_cell(self.A1, 'counter', 'ab')
+        tag, message = self.in_cell(self.OTHER, 'most', text, 1.0)
+        self.assertEqual(tag, self.boot.TAG_FAIL)
+        self.assertIn('LookupError', message)
+
+    def test_an_object_return_hint_and_objects_in_a_grid(self):
+        T = self.boot
+        tag, text = self.in_cell(self.A1, 'boxed', 2.0)
+        self.assertRegex(text, r'^<list#\d+>$')
+        tag, rows = self.in_cell(self.B1, 'mixed')
+        self.assertEqual(tag, T.TAG_GRID)
+        self.assertRegex(rows[0][1][1], r'^<OrderedDict#\d+>$')
+        self.assertEqual(len(T._owned[self.B1]), 1)
+
+    def test_no_handles_no_caller(self):
+        # a call that makes no handle, while none exists, never asks Excel for its cell
+        self.boot._native_caller = lambda: self.fail('the caller was read')
+        try:
+            self.assertEqual(self.call('double', 2.0), (self.boot.TAG_FLOAT, 4.0))
+        finally:
+            self.boot._native_caller = None
+
+
+class Async(BootTest):
+    def wait(self, token):
+        import time
+        for _ in range(500):
+            if token in self.boot._async_results:
+                return self.boot._async_results.pop(token)
+            time.sleep(0.01)
+        self.fail('no result for %r' % token)
+
+    def test_flags_and_the_refused_one(self):
+        by_name = {f[0]: f for f in self.functions}
+        self.assertEqual(by_name['later'][3], '&')
+        self.assertEqual(by_name['slow'][3], '&')
+        self.assertNotIn('async_macro', by_name)
+        self.assertIn("objects.async_macro: asynchronous and macro can't go together", self.info())
+
+    def test_async_def_and_a_thread(self):
+        T = self.boot
+        T.xl_call_async(self.slot('later'), [4.0], 'one')
+        T.xl_call_async(self.slot('slow'), [4.0], 'two')
+        self.assertEqual(self.wait('one'), (T.TAG_FLOAT, 8.0))
+        self.assertEqual(self.wait('two'), (T.TAG_FLOAT, 5.0))
+
+    def test_an_exception_comes_back_too(self):
+        T = self.boot
+        T.xl_call_async(self.slot('slow_fails'), [], 'three')
+        self.assertEqual(self.wait('three'), (T.TAG_FAIL, "KeyError: 'async on purpose'"))
+        self.assertEqual(T.root(1).lastError, "KeyError: 'async on purpose'")
+
+    def test_py_call_and_pycall_wait_for_a_coroutine(self):
+        T = self.boot
+        self.assertEqual(T.root(1).call('objects.awaited', 2), 6)
+        self.assertEqual(T.xl_call_export('objects.awaited', [2.0]), (T.TAG_FLOAT, 6.0))
+
+
+class Commands(BootTest):
+    def test_a_command_is_registered_and_runs(self):
+        by_name = {f[0]: f for f in self.functions}
+        self.assertEqual(by_name['command'], ('command', ['a', 'b'], '', '%'))
+        self.assertEqual(by_name['TryApp'][3], '%')
+        self.assertEqual(self.call('command', 2.0, 3.0), (self.boot.TAG_FLOAT, 5.0))
+
+    def test_xl_app_in_a_command_only(self):
+        T = self.boot
+        T._native_app = lambda: 0
+        T._native_release = lambda address: None
+        try:
+            tag, message = self.call('app_in_function')
+            self.assertEqual(tag, T.TAG_FAIL)
+            self.assertIn('works in a command (@xl_macro) only', message)
+            tag, message = self.call('TryApp')
+            try:
+                import win32com  # noqa: F401
+            except ImportError:
+                try:
+                    import comtypes  # noqa: F401
+                except ImportError:
+                    self.assertIn('needs pywin32', message)
+            self.assertEqual(T._macro_depth, 0)
+        finally:
+            T._native_app = T._native_release = None
+
+    def test_outside_excel(self):
+        tag, message = self.call('TryApp')
+        self.assertIn('works inside Excel only', message)
+
+
+class FakeFrame:
+    """Stands in for pandas in _kind: only the module and the name are read."""
+
+
+class Frames(BootTest):
+    def setUp(self):
+        if numpy is None:
+            self.skipTest('numpy is not installed')
+        super().setUp()
+
+    def test_a_range_as_an_array(self):
+        T = self.boot
+        self.assertEqual(self.call('arr_info', [[1.0, 2.0], [None, 4.0]]), (T.TAG_STR, '(2, 2) float64 [[1.0, 2.0], [nan, 4.0]]'))
+        self.assertEqual(self.call('arr_info', [[1.0], [2.0]]), (T.TAG_STR, '(2,) float64 [1.0, 2.0]'))
+        self.assertEqual(self.call('arr_info', [['a', 1.0]]), (T.TAG_STR, "(2,) object ['a', 1.0]"))
+        self.assertEqual(self.call('arr_info', 5.0), (T.TAG_STR, '(1,) float64 [5.0]'))
+
+    def test_arrays_back(self):
+        T = self.boot
+        self.assertEqual(self.call('arr_back', 2.0), (T.TAG_GRID, [[(T.TAG_FLOAT, 0.0), (T.TAG_FLOAT, 1.0)],
+                                                                   [(T.TAG_FLOAT, 2.0), (T.TAG_FLOAT, 3.0)]]))
+        self.assertEqual(self.call('arr_column', 2.0), (T.TAG_GRID, [[(T.TAG_FLOAT, 0.0)], [(T.TAG_FLOAT, 1.0)]]))
+        self.assertEqual(self.call('arr_nan')[1][1], [(T.TAG_XLERR, T.XLERR_NUM)])
+        self.assertEqual(self.call('arr_scalar'), (T.TAG_GRID, [[(T.TAG_FLOAT, 2.5)], [(T.TAG_FLOAT, 3.0)], [(T.TAG_BOOL, True)]]))
+        tag, message = self.call('arr_3d')
+        self.assertIn('3-dimensional', message)
+
+    def test_hints_name_the_classes_without_importing_them(self):
+        T = self.boot
+        FakeFrame.__module__ = 'pandas.core.frame'
+        FakeFrame.__name__ = 'DataFrame'
+        self.assertEqual(T._hint(FakeFrame), 'DataFrame')
+        self.assertEqual(T._hint('pd.Series'), 'Series')
+        self.assertEqual(T._hint('numpy.ndarray'), 'ndarray')
+        self.assertEqual(T._hint('list[float]'), list)
+        import numpy.typing
+        self.assertEqual(T._hint(numpy.typing.NDArray[numpy.float64]), 'ndarray')
+
+
+class Pandas(BootTest):
+    def setUp(self):
+        if pandas is None:
+            self.skipTest('pandas is not installed')
+        super().setUp()
+
+    def test_data_frames_both_ways(self):
+        T = self.boot
+        frame = T._data_frame([['x', 'y'], [1.0, 'a'], [2.0, None]])
+        self.assertEqual(list(frame.columns), ['x', 'y'])
+        self.assertEqual(len(frame), 2)
+        self.assertEqual(T._result(frame), (T.TAG_GRID, [[(T.TAG_STR, 'x'), (T.TAG_STR, 'y')],
+                                                         [(T.TAG_FLOAT, 1.0), (T.TAG_STR, 'a')],
+                                                         [(T.TAG_FLOAT, 2.0), (T.TAG_EMPTY, None)]]))
+        named = pandas.DataFrame({'v': [1.5, float('nan')]}, index=pandas.Index(['a', 'b'], name='k'))
+        self.assertEqual(T._result(named), (T.TAG_GRID, [[(T.TAG_STR, 'k'), (T.TAG_STR, 'v')],
+                                                         [(T.TAG_STR, 'a'), (T.TAG_FLOAT, 1.5)],
+                                                         [(T.TAG_STR, 'b'), (T.TAG_EMPTY, None)]]))
+        self.assertEqual(T._result(pandas.Series([1, 2])), (T.TAG_GRID, [[(T.TAG_FLOAT, 1.0)], [(T.TAG_FLOAT, 2.0)]]))
+        stamp = T._result(pandas.Series([pandas.Timestamp('2023-03-15'), pandas.NaT]))
+        self.assertEqual(stamp, (T.TAG_GRID, [[(T.TAG_FLOAT, 45000.0)], [(T.TAG_EMPTY, None)]]))
 
 
 if __name__ == '__main__':

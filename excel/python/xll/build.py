@@ -179,14 +179,14 @@ def build(tool, bits):
                "-I", OUT, "-I", HERE, os.path.join(HERE, "asfpy.c")]
         if bits == 32:
             cmd += [os.path.join(OUT, "slots_x86.S"), "-Wl,--kill-at"]
-        cmd += ["-o", target, "-loleaut32", "-lole32", "-ladvapi32", "-s"]
+        cmd += ["-o", target, "-loleaut32", "-lole32", "-ladvapi32", "-luser32", "-s"]
         subprocess.run(cmd, check=True)
     else:
         obj = os.path.join(OUT, "asfpy%d.obj" % bits)
         msvc_run(bits, ["cl"] + MSVC_FLAGS + ["/LD", "/DASFPY_DEF", "/I", OUT, "/I", HERE, os.path.join(HERE, "asfpy.c"),
                         "/Fo" + obj, "/Fe" + target, "/link", "/DEF:" + os.path.join(OUT, "asfpy.def"),
                         "/IMPLIB:" + os.path.join(OUT, "asfpy%d.lib" % bits),
-                        "oleaut32.lib", "ole32.lib", "advapi32.lib"], cwd=OUT)
+                        "oleaut32.lib", "ole32.lib", "advapi32.lib", "user32.lib"], cwd=OUT)
     exports, imports = exports_and_imports(tool, bits, target)
     slots = [e for e in exports if e.startswith("asfpy_f")]
     others = [e for e in exports if not e.startswith("asfpy_f")]

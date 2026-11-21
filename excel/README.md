@@ -166,6 +166,42 @@ Application.Run "ASF.xlam!ASFSettings.ChangeSetting", "PythonAccess", "call"
 
 A script that asks for more than the setting allows doesn't run at all, so it never fails halfway through. A Python error stops the script; **Why this error?** shows the script's message and Python's. Python can't be sandboxed: `modules` lets library scripts do anything Python can, which is why it is a setting of its own. `PY_CALL` and the Python folder's worksheet functions come from the Python add-in itself and don't depend on `PythonAccess`.
 
+### The Python folder's functions
+
+The modules of the Python folder mark what Excel gets:
+
+```python
+from asfpy import export, xl_app, xl_func, xl_macro
+import numpy, pandas
+
+@xl_func                                  # =zscore(A2:A500), a worksheet function
+def zscore(values: numpy.ndarray):
+    return (values - values.mean()) / values.std()
+
+@xl_func
+def summary(table: pandas.DataFrame):     # the range's first row holds the column names
+    return table.describe()               # back with its column names and index
+
+@xl_func
+async def quote(symbol):                  # asynchronous: Excel goes on with other cells meanwhile
+    ...
+
+@xl_macro                                 # Application.Run "tidy", "Sheet1"
+def tidy(sheet):
+    xl_app().Worksheets(sheet).UsedRange.Columns.AutoFit()   # needs pywin32 in the venv
+
+@export                                   # =PY_CALL("stats.scale", A1:A3, 10), py.call in scripts
+def scale(values: list, factor: float):
+    return [v * factor for v in values]
+```
+
+- **Type hints** convert the arguments: `int`, `float`, `str`, `bool`, `list`, `date`, `datetime`, `numpy.ndarray` (numbers as `float`, empty cells as `nan`; one row or column 1-D), `pandas.DataFrame` (the first row gives the column names) and `pandas.Series`. Without a hint a range is a list of rows, one row or column a flat list.
+- **Results:** a list of rows, a numpy array or a DataFrame fills the cells of an array formula (Excel 365 spills it). A DataFrame comes with its column names, and with its index when the index has a name or isn't whole numbers. Missing values (`NaN`, `NaT`, `None`) are empty cells; `nan` alone is `#NUM!`.
+- **Objects:** any other result, or any result of a function hinted `-> object`, stays in Python, and the cell shows a handle such as `<Counter#12>`. Another function given that cell gets the object. The handle belongs to its cell: calculated again, the cell gets a new object and the old one goes. A handle names nothing in another workbook, or after Excel restarts (calculate the cell again).
+- **Asynchronous functions** (`async def`, or `@xl_func(asynchronous=True)` for a plain function on a thread of the add-in) show `#GETTING_DATA` until they are done; Excel's calculation waits for them.
+- **Commands** (`@xl_macro`) run with `Application.Run "name", arguments...` and give back their result. They run on Excel's main thread, and only they may use `xl_app()`, Excel's `Application` (with pywin32 or comtypes in the venv).
+- `thread_safe=True` lets Excel call a function on its calculation threads, `volatile=True` calculates it on every recalculation.
+
 ## Macros in other workbooks
 
 Add a reference to the add-in (VBA editor: Tools > References > ASFAddIn), then:
