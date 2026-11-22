@@ -10,6 +10,7 @@ Attribute VB_Name = "ASFSettings"
 '   PythonVenv, PythonFolder   the Python of the Python add-in (asfpy64.xll, asfpy32.xll) and its
 '                   folder of modules; the add-in reads them when Excel loads it. Without
 '                   PythonVenv, the add-in uses the Python it carries
+'   PythonTips      "off": no tooltip with a Python function's arguments as a formula is typed
 '   PythonUpdates   when Excel loads the Python add-in, at most once a day: check (the default) offers
 '                   a newer add-in from the project's releases, auto installs it, off doesn't look
 ' Change them from the Immediate window or a macro, for example:

@@ -209,6 +209,30 @@ def scale(values: list, factor: float):
 
 A function takes at most 32 arguments; the add-in registers up to 2,000 functions.
 
+### Help as you type
+
+Excel shows the arguments of its own functions as you type a formula, not an add-in's. The Python add-in does it for the Python folder's functions: while you type `=PY.FORECAST(A2:A25, ` a tooltip under the caret shows `PY.FORECAST(y, [periods], [season])` with the argument you are on in bold, the function's description, and that argument's. While you type a name that only one function of the folder starts with, the tooltip shows that function beside Excel's list. Inside `PY_CALL("module.function", ` it shows the exported function's arguments.
+
+The help comes from your code:
+
+- **The function's description:** the first paragraph of its docstring (Insert Function shows its first line).
+- **Each argument's:** an `Args:` (or `Parameters:`) section of the docstring, as Google and NumPy style write it, or `:param x:` lines. Without one, what its type hint asks for: `float` "a number", `int` "a whole number", `numpy.ndarray` "a range of numbers", `pandas.DataFrame` "a table, its first row the column names", and so on. Insert Function's argument boxes show the same.
+- **Optional arguments**, those with a default value, are shown in `[ ]`.
+
+```python
+@xl_func(name='PY.FORECAST')
+def forecast(y: 'numpy.ndarray', periods: int = 3, season: int = 0):
+    """The next values of a series: its linear trend, plus its seasonal pattern.
+
+    Args:
+        y: the series, oldest first
+        periods: how many values to forecast; 3 by default
+        season: the length of a cycle, such as 12 for months; 0 for none
+    """
+```
+
+The tooltip follows Windows' list separator (`,` or `;`). Excel's own **Ctrl+Shift+A** after the name and `(` also writes the argument names into the formula. To turn the tooltip off, set `PythonTips` to `off`.
+
 ### Arguments
 
 - **Without a type hint:** a cell gives its value (`float`, `str`, `bool`, or `None` when empty); a range gives a list of rows, and one row or one column a flat list.
@@ -327,6 +351,7 @@ The add-in reads its settings when Excel loads it, from `HKEY_CURRENT_USER\Softw
 | `PythonFolder` | `%APPDATA%\ASF\python`: the folder of your Python files |
 | `PythonVenv` | empty: the Python the add-in carries. Otherwise, another Python to use (below) |
 | `PythonAccess` | `off`: read by `ASF.xlam`, for ASF scripts (above) |
+| `PythonTips` | on: a tooltip shows a Python function's arguments as a formula is typed; `off` turns it off ([Help as you type](#help-as-you-type)) |
 | `PythonUpdates` | `check`: look for a newer add-in once a day and ask; `auto`: install it; `off`: don't look ([Updates](#updates)) |
 | `PythonUpdateSource` | empty: GitHub's releases of the project. Otherwise, the address of a copy of them ([Updates](#updates)) |
 

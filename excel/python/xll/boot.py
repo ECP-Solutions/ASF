@@ -6,6 +6,7 @@ import datetime
 import decimal
 import importlib
 import importlib.util
+import inspect
 import itertools
 import math
 import numbers
@@ -329,8 +330,174 @@ def load_folder():
     commands = sum(1 for f in _functions if f[3] == '%')
     _info('%d worksheet functions, %d commands, %d exported functions; load %.0f ms'
           % (len(_functions) - commands, commands, len(_exports), (time.perf_counter() - t0) * 1000))
-    return [(sheet, _arguments(fn), (fn.__doc__ or '').strip().split('\n')[0], flags)
+    _tips.clear()
+    for _, fn, sheet, flags in _functions:
+        if flags != '%':                        # a command isn't typed in a formula
+            _tips[sheet.upper()] = (sheet, fn)
+    return [(sheet, _arguments(fn), (fn.__doc__ or '').strip().split('\n')[0], flags, _argument_help(fn))
             for _, fn, sheet, flags in _functions]
+
+
+# --- help while a formula is typed: the tooltip asfpy.c shows ------------------------------------
+
+_tips = {}               # NAME in capitals: (its name in Excel, the function)
+_HINT_TEXT = {int: 'a whole number', float: 'a number', str: 'a text', bool: 'TRUE or FALSE', list: 'a range',
+              datetime.date: 'a date', datetime.datetime: 'a date and time', 'ndarray': 'a range of numbers',
+              'DataFrame': 'a table, its first row the column names', 'Series': 'a row or column of values'}
+_SECTION = re.compile(r'^\s*(Args|Arguments|Parameters|Params|Returns?|Yields?|Raises|Examples?|Notes?|See Also)\s*:?\s*$', re.I)
+
+
+def _docs(fn):
+    """(the summary of fn's docstring, {argument: its description}). The descriptions come from
+    an Args: or Parameters: section (Google and NumPy styles) or from :param name: lines."""
+    doc = inspect.cleandoc(fn.__doc__ or '')
+    lines = doc.split('\n')
+    summary = []
+    for line in lines:
+        if not line.strip() or _SECTION.match(line) or line.lstrip().startswith(':'):
+            break
+        summary.append(line.strip())
+    names = set(_arguments(fn))
+    found, current, section = {}, None, False
+    for line in lines:
+        m = re.match(r'^\s*:param\s+(?:[^:]*\s)?(\w+)\s*:\s*(.*)$', line)
+        if m and m.group(1) in names:
+            found[m.group(1)], current = m.group(2).strip(), m.group(1)
+            continue
+        head = _SECTION.match(line)
+        if head:
+            section, current = head.group(1).lower() in ('args', 'arguments', 'parameters', 'params'), None
+            continue
+        if not section or re.match(r'^\s*-{3,}\s*$', line):
+            continue
+        m = re.match(r'^\s*\*{0,2}(\w+)\s*(\([^)]*\))?\s*:\s*(.*)$', line)
+        if m and m.group(1) in names:
+            current = m.group(1)
+            text = m.group(3).strip()
+            # NumPy style: "name : type", the description on the lines below
+            found[current] = '' if (text and not m.group(2) and line.count(':') == 1 and ' ' not in text.strip()) else text
+        elif current and line.strip():
+            found[current] = (found[current] + ' ' + line.strip()).strip()
+        elif not line.strip():
+            current = None
+    return ' '.join(summary), found
+
+
+def _argument_help(fn):
+    """A text for each argument, for Insert Function and the tooltip: its description in the
+    docstring, else what its type hint asks for, else nothing."""
+    _, found = _docs(fn)
+    hints = _annotations(fn)
+    out = []
+    for name in _arguments(fn):
+        text = found.get(name) or _HINT_TEXT.get(_hint(hints.get(name)), '')
+        out.append(text[:250])
+    return out
+
+
+def _signature(name, fn):
+    """(name, [argument as shown], summary, [argument help]); arguments with a default in [ ]."""
+    args = _arguments(fn)
+    required = len(args) - len(fn.__defaults__ or ())
+    shown = [a if k < required else '[%s]' % a for k, a in enumerate(args)]
+    return name, shown, _docs(fn)[0], _argument_help(fn)
+
+
+def _call_at(prefix, sep):
+    """(the name the caret ends, or '', the innermost call the caret is in: (its name, the index of
+    the argument the caret is in, [the arguments typed before it]) or None), from the text of a
+    formula up to the caret."""
+    if prefix[:1] not in ('=', '+', '-', '@') or not prefix:
+        return '', None
+    stack, i, n = [], 1, len(prefix)
+
+    def call():
+        while stack and not stack[-1][0]:       # a parenthesis of grouping, not a call
+            stack.pop()
+        return (stack[-1][0], len(stack[-1][1]), stack[-1][1]) if stack else None
+
+    while i < n:
+        c = prefix[i]
+        if c in '"\'':                         # a text, or 'Sheet name'!A1
+            j = i + 1
+            while j < n and not (prefix[j] == c and prefix[j + 1:j + 2] != c):
+                j += 2 if prefix[j] == c else 1
+            if j >= n:
+                return '', call() if c == '"' else None
+            i = j + 1
+            continue
+        if c in '[{':
+            close, depth, j = ']' if c == '[' else '}', 1, i + 1
+            while j < n and depth:
+                depth += (prefix[j] == c) - (prefix[j] == close)
+                j += 1
+            if depth:
+                return '', None
+            i = j
+            continue
+        if c == '(':
+            m = re.search(r'([A-Za-z_\\][A-Za-z0-9_.\\]*)\s*$', prefix[1:i])
+            stack.append([m.group(1) if m else '', [], i + 1])
+        elif c == ')':
+            if stack:
+                stack.pop()
+        elif c == sep and stack:
+            stack[-1][1].append(prefix[stack[-1][2]:i].strip())
+            stack[-1][2] = i + 1
+        i += 1
+    m = re.search(r'(?<![A-Za-z0-9_.\\])([A-Za-z_\\][A-Za-z0-9_.\\]*)$', prefix)
+    return (m.group(1) if m else ''), call()
+
+
+def _lookup(name):
+    if name.upper().startswith('_XLL.'):
+        name = name[5:]
+    found = _tips.get(name.upper())
+    return _signature(found[0], found[1]) if found else None
+
+
+def tip(prefix, sep=','):
+    """The tooltip for a formula typed up to its caret: (signature before the current argument,
+    the current argument, the rest of the signature, the function's summary, the current argument's
+    help), or None. While a name is typed: the function of the Python folder it starts, if only one."""
+    try:
+        word, at = _call_at(prefix, sep)
+    except Exception:
+        return None
+    word = word.upper()
+    if len(word) >= 2:
+        matches = [k for k in _tips if k.startswith(word)]
+        if word in _tips or len(matches) == 1:
+            sig = _lookup(word if word in _tips else matches[0])
+            return ('%s(%s)' % (sig[0], (sep + ' ').join(sig[1])), '', '', sig[2], '')
+    if not at:
+        return None
+    name, index, before = at
+    if name.upper() == 'PY_CALL':
+        target = before[0] if before else ''
+        fn = _exports.get(target[1:-1]) if index >= 1 and len(target) > 1 and target[0] == target[-1] == '"' else None
+        if fn is None:
+            sig = ('PY_CALL', ['name', '[arg1]', '...'], 'Calls a function of the Python folder exported with @export.',
+                   ['"module.function": a function of the Python folder marked with @export'])
+            return _shown(sig, min(index, 1), sep, '')
+        return _shown(_signature('PY_CALL', fn), index - 1, sep, target + sep + ' ')
+    sig = _lookup(name)
+    return _shown(sig, index, sep, '') if sig else None
+
+
+def _shown(sig, index, sep, lead):
+    """The tooltip of a signature with the argument at index current; lead: what PY_CALL's first
+    argument gives."""
+    name, args, summary, helps = sig
+    if not args:
+        return '%s(%s)' % (name, lead.rstrip(sep + ' ')), '', '', summary, ''
+    if index >= len(args):
+        return None
+    join = sep + ' '
+    head = '%s(%s%s' % (name, lead, join.join(args[:index]) + (join if index else ''))
+    tail = (join if index < len(args) - 1 else '') + join.join(args[index + 1:]) + ')'
+    text = helps[index] if index < len(helps) else ''
+    return head, args[index], tail, summary, ('%s: %s' % (args[index].strip('[]'), text) if text else '')
 
 
 # --- arguments: type hints ------------------------------------------------------------------

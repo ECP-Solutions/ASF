@@ -46,7 +46,12 @@ from asfpy import export, xl_func, xl_macro
 
 @xl_func
 def {function}(x: float, factor: float = 2):
-    """What the function gives: Insert Function shows this line."""
+    """What the function gives: Insert Function and the tooltip in Excel show this line.
+
+    Args:
+        x: what x is; Excel shows this while the caret is in x
+        factor: how much to multiply x by; 2 by default
+    """
     return x * factor
 '''
 

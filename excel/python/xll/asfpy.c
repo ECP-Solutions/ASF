@@ -570,7 +570,8 @@ static wchar_t *pytext(PyObject *s, Py_ssize_t *len)
 
 typedef struct {
     wchar_t *name, *args, *help;
-    wchar_t *arghelp[MAX_ARGS];
+    wchar_t *arghelp[MAX_ARGS];   /* each argument's help in Insert Function */
+    wchar_t *argname[MAX_ARGS];
     int nargs;
     wchar_t flags[4];             /* the type's suffixes: ! volatile, # macro equivalent, $ thread-safe */
     int async;                    /* asynchronous: Excel passes a handle after the arguments (X) */
@@ -749,7 +750,10 @@ static void free_functions(void)
         free(f->name);
         free(f->args);
         free(f->help);
-        for (k = 0; k < f->nargs; k++) free(f->arghelp[k]);
+        for (k = 0; k < f->nargs; k++) {
+            free(f->arghelp[k]);
+            free(f->argname[k]);
+        }
         memset(f, 0, sizeof *f);
     }
     g_nfuncs = g_total = 0;
@@ -775,19 +779,31 @@ static void read_functions(PyObject *list)
         f->async = wcschr(flags, L'&') != NULL;      /* boot.py's marks, not Excel's suffixes */
         f->command = wcschr(flags, L'%') != NULL;
         free(flags);
-        for (k = 0; k < na; k++) {
-            f->arghelp[k] = pytext(P.PyList_GetItem(args, k), NULL);
-            len += wcslen(f->arghelp[k]) + 1;
+        {   /* the help of each argument (boot.py: its docstring, or its type hint), else its name */
+            PyObject *helps = P.PyTuple_GetItem(t, 4);
+            if (!helps) P.PyErr_Clear();
+            for (k = 0; k < na; k++) {
+                PyObject *h = helps ? P.PyList_GetItem(helps, k) : NULL;
+                wchar_t *name = pytext(P.PyList_GetItem(args, k), NULL);
+                if (!h) P.PyErr_Clear();
+                f->arghelp[k] = h ? pytext(h, NULL) : NULL;
+                if (!f->arghelp[k] || !f->arghelp[k][0]) {
+                    free(f->arghelp[k]);
+                    f->arghelp[k] = _wcsdup(name);
+                }
+                f->argname[k] = name;
+                len += wcslen(name) + 1;
+            }
         }
         /* Excel takes at most 255 characters of argument names: whole names only */
         f->args = calloc(len + 1, sizeof(wchar_t));
         for (k = 0; k < na; k++) {
-            if (wcslen(f->args) + (k ? 1 : 0) + wcslen(f->arghelp[k]) > 255) {
+            if (wcslen(f->args) + (k ? 1 : 0) + wcslen(f->argname[k]) > 255) {
                 note(L"%ls: the argument names are longer than 255 characters; Excel shows the first %d", f->name, (int)k);
                 break;
             }
             if (k) wcscat(f->args, L",");
-            wcscat(f->args, f->arghelp[k]);
+            wcscat(f->args, f->argname[k]);
         }
     }
     if (g_total > g_nfuncs) {
@@ -1518,6 +1534,257 @@ EXPORT LPXLOPER12 WINAPI asfpy_last_error(void)
     return boot_text("last_traceback", 0, NULL);
 }
 
+/* --- help while a formula is typed ----------------------------------------------------------------
+   Excel shows the arguments of its own functions as a formula is typed, not those of an add-in's.
+   A tooltip of the add-in's does: a timer on Excel's main thread reads the formula being edited
+   and its caret with LPenHelper (XLCALL32.DLL, as the C API documents it for pen input), boot.tip
+   says what to show (the function's signature with the argument the caret is in, its description
+   and that argument's), and the tooltip shows it under the caret. The setting PythonTips off
+   turns it off. */
+typedef struct {
+    int wPointMode;       /* 0: not editing; the rest is undefined then */
+    int cch;              /* the formula's length */
+    wchar_t *lpch;        /* the formula, read only */
+    int ichFirst, ichLim; /* the selection */
+    int ichCaret;         /* the caret */
+    int reserved[4];
+} FMLAINFO12;
+#define xlGetFmlaInfo (14 | 0x4000)
+#define TIP_LINES 5           /* before, current argument, after, description, the argument's help */
+#define TIP_TIMER 1
+typedef int (WINAPI *LPENHELPER)(int, void *);
+static LPENHELPER g_lpen;
+static HWND g_tip;
+static wchar_t g_tip_prefix[2048];
+static wchar_t *g_tip_text[TIP_LINES];
+static HFONT g_tip_font, g_tip_bold;
+static wchar_t g_list_sep = L',';
+
+static void tip_hide(void)
+{
+    if (g_tip && IsWindowVisible(g_tip)) ShowWindow(g_tip, SW_HIDE);
+    g_tip_prefix[0] = 0;
+}
+
+static int tip_line_width(HDC dc, const wchar_t *s, HFONT font)
+{
+    SIZE z = { 0, 0 };
+    SelectObject(dc, font);
+    GetTextExtentPoint32W(dc, s, (int)wcslen(s), &z);
+    return z.cx;
+}
+
+/* the tooltip's size for its text, and its drawing: the signature on the first line, the
+   current argument in bold; then the description and the argument's help, wrapped */
+static SIZE tip_layout(HDC dc, int draw)
+{
+    const int pad = 6, maxw = 560;
+    SIZE size;
+    int x = pad, y = pad, w, k, line;
+    RECT rc;
+    TEXTMETRICW tm;
+    SelectObject(dc, g_tip_font);
+    GetTextMetricsW(dc, &tm);
+    line = tm.tmHeight;
+    w = tip_line_width(dc, g_tip_text[0], g_tip_font) + tip_line_width(dc, g_tip_text[1], g_tip_bold)
+        + tip_line_width(dc, g_tip_text[2], g_tip_font);
+    if (w > maxw) w = maxw;
+    if (w < 240) w = 240;
+    if (draw) {
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, GetSysColor(COLOR_INFOTEXT));
+        for (k = 0; k < 3; k++) {
+            HFONT font = k == 1 ? g_tip_bold : g_tip_font;
+            SelectObject(dc, font);
+            TextOutW(dc, x, y, g_tip_text[k], (int)wcslen(g_tip_text[k]));
+            x += tip_line_width(dc, g_tip_text[k], font);
+        }
+    }
+    y += line;
+    SelectObject(dc, g_tip_font);
+    for (k = 3; k < TIP_LINES; k++) {
+        if (!g_tip_text[k][0]) continue;
+        SetRect(&rc, pad, y + 2, pad + w, y + 2 + 10 * line);
+        DrawTextW(dc, g_tip_text[k], -1, &rc, DT_WORDBREAK | DT_NOPREFIX | DT_CALCRECT);
+        if (draw) {
+            if (k == 4) SetTextColor(dc, GetSysColor(COLOR_GRAYTEXT));
+            DrawTextW(dc, g_tip_text[k], -1, &rc, DT_WORDBREAK | DT_NOPREFIX);
+        }
+        y = rc.bottom;
+    }
+    size.cx = w + 2 * pad;
+    size.cy = y + pad;
+    return size;
+}
+
+static void tip_timer(void);
+
+static LRESULT CALLBACK tip_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
+{
+    switch (msg) {
+    case WM_TIMER:
+        if (wp == TIP_TIMER) tip_timer();
+        return 0;
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(h, &ps);
+        if (g_tip_text[0]) tip_layout(dc, 1);
+        EndPaint(h, &ps);
+        return 0;
+    }
+    case WM_PRINTCLIENT: {                        /* PrintWindow and the like */
+        RECT rc;
+        GetClientRect(h, &rc);
+        FillRect((HDC)wp, &rc, GetSysColorBrush(COLOR_INFOBK));
+        if (g_tip_text[0]) tip_layout((HDC)wp, 1);
+        return 0;
+    }
+    case WM_NCHITTEST:
+        return HTTRANSPARENT;
+    case WM_MOUSEACTIVATE:
+        return MA_NOACTIVATE;
+    }
+    return DefWindowProcW(h, msg, wp, lp);
+}
+
+/* the window of Excel's list of names as a formula is typed, if it shows: the tip goes beside it */
+static BOOL CALLBACK find_list(HWND h, LPARAM lp)
+{
+    wchar_t cls[32];
+    if (IsWindowVisible(h) && GetClassNameW(h, cls, 32) && !wcscmp(cls, L"__XLACOOUTER")) {
+        *(HWND *)lp = h;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static void tip_show(void)
+{
+    GUITHREADINFO gti;
+    POINT pt = { 0, 0 };
+    RECT rc, work;
+    HWND list = NULL;
+    HDC dc;
+    SIZE size;
+    MONITORINFO mi;
+    memset(&gti, 0, sizeof gti);
+    gti.cbSize = sizeof gti;
+    GetGUIThreadInfo(GetCurrentThreadId(), &gti);
+    if (gti.hwndCaret && !IsRectEmpty(&gti.rcCaret)) {
+        pt.x = gti.rcCaret.left;
+        pt.y = gti.rcCaret.bottom;
+        ClientToScreen(gti.hwndCaret, &pt);
+    } else if (gti.hwndFocus && GetWindowRect(gti.hwndFocus, &rc)) {
+        pt.x = rc.left;
+        pt.y = rc.bottom;
+    }
+    pt.y += 4;
+    EnumThreadWindows(GetCurrentThreadId(), find_list, (LPARAM)&list);
+    if (list && GetWindowRect(list, &rc) && !g_tip_text[1][0]) {   /* a name typed: beside Excel's list */
+        pt.x = rc.right + 2;
+        pt.y = rc.top;
+    }
+    dc = GetDC(g_tip);
+    size = tip_layout(dc, 0);
+    ReleaseDC(g_tip, dc);
+    mi.cbSize = sizeof mi;
+    if (GetMonitorInfoW(MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST), &mi)) {
+        work = mi.rcWork;
+        if (pt.x + size.cx > work.right) pt.x = work.right - size.cx;
+        if (pt.x < work.left) pt.x = work.left;
+        if (pt.y + size.cy > work.bottom) pt.y = work.bottom - size.cy;
+    }
+    SetWindowPos(g_tip, HWND_TOPMOST, pt.x, pt.y, size.cx, size.cy, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    InvalidateRect(g_tip, NULL, TRUE);
+}
+
+/* every 150 ms on Excel's main thread: the formula being typed, and its tooltip */
+static void tip_timer(void)
+{
+    FMLAINFO12 fi;
+    wchar_t prefix[2048];
+    HWND fg = GetForegroundWindow();
+    PyGILState_STATE gil;
+    PyObject *r;
+    int k, shown = 0;
+    if (g_started != 1 || !g_lpen || !fg || GetWindowThreadProcessId(fg, NULL) != GetCurrentThreadId()) {
+        tip_hide();
+        return;
+    }
+    memset(&fi, 0, sizeof fi);
+    if (g_lpen(xlGetFmlaInfo, &fi) != 0 || fi.wPointMode == 0 || !fi.lpch || fi.ichCaret <= 0
+        || fi.ichCaret > fi.cch || fi.ichCaret >= 2048) {
+        tip_hide();
+        return;
+    }
+    memcpy(prefix, fi.lpch, fi.ichCaret * sizeof(wchar_t));
+    prefix[fi.ichCaret] = 0;
+    if (!wcscmp(prefix, g_tip_prefix)) return;
+    wcscpy(g_tip_prefix, prefix);
+    gil = P.PyGILState_Ensure();
+    r = boot_call("tip", 2, wstr(prefix), P.PyUnicode_FromWideChar(&g_list_sep, 1));
+    if (r && r != P.None) {
+        for (k = 0; k < TIP_LINES; k++) {
+            free(g_tip_text[k]);
+            g_tip_text[k] = pytext(P.PyTuple_GetItem(r, k), NULL);
+        }
+        shown = 1;
+    }
+    if (r) P.Py_DecRef(r);
+    P.PyGILState_Release(gil);
+    if (shown) tip_show();
+    else if (IsWindowVisible(g_tip)) ShowWindow(g_tip, SW_HIDE);
+}
+
+/* the tooltip's window and its timer, on Excel's main thread, when Excel loads the add-in */
+static void tips_on(HMODULE self)
+{
+    wchar_t mode[16], sep[8];
+    WNDCLASSW wc;
+    NONCLIENTMETRICSW ncm;
+    HMODULE xlcall;
+    setting(L"PythonTips", mode, 16);
+    trim(mode);
+    if (!_wcsicmp(mode, L"off")) return;
+    if (!g_lpen) {
+        xlcall = GetModuleHandleW(L"XLCALL32.DLL");
+        if (!xlcall) xlcall = LoadLibraryW(L"XLCALL32.DLL");
+        g_lpen = xlcall ? (LPENHELPER)(void *)GetProcAddress(xlcall, "LPenHelper") : NULL;
+        if (!g_lpen) {
+            note(L"no LPenHelper in XLCALL32.DLL: no help while formulas are typed");
+            return;
+        }
+    }
+    if (GetLocaleInfoW(LOCALE_USER_DEFAULT, LOCALE_SLIST, sep, 8) > 1 && (sep[0] == L';' || sep[0] == L','))
+        g_list_sep = sep[0];
+    if (!g_tip) {
+        memset(&wc, 0, sizeof wc);
+        wc.lpfnWndProc = tip_proc;
+        wc.hInstance = self;
+        wc.hCursor = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW);
+        wc.hbrBackground = GetSysColorBrush(COLOR_INFOBK);
+        wc.lpszClassName = L"AsfPyTip";
+        wc.style = CS_DROPSHADOW | CS_SAVEBITS;
+        RegisterClassW(&wc);
+        g_tip = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, L"AsfPyTip", L"", WS_POPUP | WS_BORDER,
+                                0, 0, 10, 10, NULL, NULL, self, NULL);
+        memset(&ncm, 0, sizeof ncm);
+        ncm.cbSize = sizeof ncm;
+        SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof ncm, &ncm, 0);
+        g_tip_font = CreateFontIndirectW(&ncm.lfStatusFont);
+        ncm.lfStatusFont.lfWeight = FW_BOLD;
+        g_tip_bold = CreateFontIndirectW(&ncm.lfStatusFont);
+    }
+    if (!g_tip || !SetTimer(g_tip, TIP_TIMER, 150, NULL)) note(L"no tooltip window (error %lu)", GetLastError());
+}
+
+static void tips_off(void)
+{
+    if (!g_tip) return;
+    KillTimer(g_tip, TIP_TIMER);
+    tip_hide();
+}
+
 /* --- the add-in's entry points ----------------------------------------------------------------- */
 
 /* Each time Excel loads the add-in: Python starts the first time only; the functions are
@@ -1539,6 +1806,7 @@ EXPORT int WINAPI xlAutoOpen(void)
         alert(msg);
     }
     updates_on_start();
+    if (g_started == 1) tips_on(self);
     return 1;
 }
 
@@ -1559,6 +1827,7 @@ EXPORT int WINAPI xlAutoClose(void)
     unregister_id(&g_console_id);
     unregister_id(&g_studio_id);
     unregister_id(&g_update_id);
+    tips_off();
     if (n) note(L"unregistered %d functions", n);
     return 1;
 }

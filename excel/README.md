@@ -85,6 +85,7 @@ How array results reach the cells depends on the version:
 | `StepLimit` | `10000000` loop iterations and calls per script; `0` for no limit |
 | `PythonAccess` | `off`. What library scripts that ask for Python may do: `call` (`py.call` of exported functions) or `modules` (`py.module` too). See **Python** below |
 | `PythonVenv`, `PythonFolder` | Read by the Python add-in when Excel loads it: another Python than the one it carries (a venv or an install; empty by default), and its folder of modules (default `%APPDATA%\ASF\python`) |
+| `PythonTips` | Read by the Python add-in: `off` turns off the tooltip that shows a Python function's arguments as a formula is typed |
 | `PythonUpdates`, `PythonUpdateSource` | The Python add-in's updates: `check` (default: once a day, a newer release is offered), `auto` (installed) or `off`; and another address than GitHub's releases, for a copy of them |
 
 The settings are kept with `SaveSetting`: on Windows in `HKEY_CURRENT_USER\Software\VB and VBA Program Settings\ASF\AddIn`, where an administrator can set them by group policy; on Mac in a preferences file. Change one from the Immediate window or a macro:
