@@ -16,7 +16,7 @@ The Python add-in runs Python inside Excel for Windows, on your computer:
 - ASF scripts of your library can call Python through `py`;
 - VBA can call it too.
 
-It is a separate add-in from [`ASF.xlam`](Add-ins.html), which keeps working without Python. It comes as two files: `asfpy64.xll` for 64-bit Excel and `asfpy32.xll` for 32-bit Excel. Each carries its own Python (CPython 3.14, with pip), so there is nothing else to install. Unlike Excel's own `=PY()`, which runs in Microsoft's cloud, everything runs on your computer and works offline.
+It is a separate add-in from [`ASF.xlam`](Add-ins.html), which keeps working without Python. It comes as two files: `asfpy64.xll` for 64-bit Excel and `asfpy32.xll` for 32-bit Excel. Each carries its own Python (CPython 3.14, with pip) and the packages most work needs (numpy, pandas, openpyxl, pywin32), so there is nothing else to install. Unlike Excel's own `=PY()`, which runs in Microsoft's cloud, everything runs on your computer and works offline.
 
 1. TOC
 {:toc}
@@ -58,7 +58,7 @@ Excel refuses add-ins downloaded from the internet.
 
 In Excel: File > Options > Add-ins. At the bottom, choose **Manage: Excel Add-ins** and click **Go**, then **Browse**, pick the `.xll` and click **OK**. Make sure it is ticked.
 
-The first time, the add-in unpacks its Python into `%LOCALAPPDATA%\ASF\runtime` (about 40 MB, once). Excel then loads it every time it starts.
+The first time, the add-in unpacks its Python into `%LOCALAPPDATA%\ASF\runtime` (about 125 MB for 64-bit, 75 MB for 32-bit, once; a few seconds). Excel then loads it every time it starts.
 
 If Python can't start, Excel says why right away. The details are in `%TEMP%\asfpy.log`. See [Troubleshooting](#troubleshooting).
 
@@ -79,7 +79,17 @@ Restart Excel (or, with `ASF.xlam`, click **Reload Python** on the ASF tab). In 
 
 ### 6. Packages
 
-The add-in's Python has the standard library and pip. To add numpy, pandas or any other package:
+The add-in's Python comes with these packages, ready to import:
+
+| Package | For | 64-bit | 32-bit |
+|---|---|---|---|
+| numpy 2.5 | arrays; the `numpy.ndarray` type hint | yes | yes |
+| pandas 3.1 | tables; the `pandas.DataFrame` and `pandas.Series` type hints | yes | no: pandas publishes no 32-bit Windows build for Python 3.14 |
+| openpyxl 3.1 | reading and writing `.xlsx` files, also for `pandas.read_excel` | yes | yes |
+| pywin32 312 | `xl_app()`, Excel's object model in macros; COM | yes | yes |
+| python-dateutil, tzdata | what pandas needs; dates and time zones | yes | yes |
+
+To add another package, or to upgrade one of these:
 
 1. Open the package console: **Python packages** on the ASF tab of `ASF.xlam`, or in the Immediate window of the VBA editor (Alt+F11, then Ctrl+G):
    ```vb
@@ -87,7 +97,7 @@ The add-in's Python has the standard library and pip. To add numpy, pandas or an
    ```
 2. A console window opens with the packages installed so far. Type a pip command and press Enter:
    ```
-   pip> install numpy pandas pywin32
+   pip> install scipy
    ```
    Other commands: `install --upgrade pandas`, `uninstall -y openpyxl`, `list`.
 3. Wait for `pip exited with 0`, then press Enter on an empty line to close the window.

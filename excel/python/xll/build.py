@@ -9,9 +9,10 @@ slots, asfpy.def) and the add-ins to excel/python/xll/build/, then lists each ad
 and imports.
 
 Each add-in carries a Python of its bitness: the CPython that runtime.json pins, python.org's
-build as published on nuget.org (downloaded once to build/downloads and checked against its
-SHA-256), stored as a cabinet in the resource ASFPY_RUNTIME. The add-in unpacks it the first time
-it loads. --no-runtime leaves it out: such an add-in needs the setting PythonVenv.
+build as published on nuget.org, with the packages runtime.json pins (wheels from PyPI, installed
+with this machine's pip for the add-in's platform), all downloaded once to build/downloads and
+checked against their SHA-256, and stored as a cabinet in the resource ASFPY_RUNTIME. The add-in
+unpacks it the first time it loads. --no-runtime leaves it out: such an add-in needs the setting PythonVenv.
 """
 import hashlib
 import json
@@ -58,8 +59,9 @@ LEFT_OUT = ("include/", "libs/", "Lib/ensurepip/")   # C headers, import librari
 CAB_DATE = ((2026 - 1980) << 9) | (1 << 5) | 1        # a fixed date: the same files, the same cabinet
 
 
-def nupkg(pin):
-    """The nuget.org package of a Python, downloaded once and checked."""
+def download(pin):
+    """A file of runtime.json (the nuget.org package of a Python, a wheel), downloaded once and
+    checked against its SHA-256."""
     path = os.path.join(OUT, "downloads", os.path.basename(pin["url"]))
     if not os.path.isfile(path) or hashlib.sha256(open(path, "rb").read()).hexdigest() != pin["sha256"]:
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -99,6 +101,35 @@ def cabinet(files):
     return header + folder + entries + body
 
 
+def packages(bits, version, wheels):
+    """The packages runtime.json pins for a bitness (numpy, pandas, pywin32...), as their files
+    under Lib/site-packages: installed by this Python's pip for the add-in's Python and platform,
+    as pip itself would there (dist-info with RECORD, so pip can upgrade or remove them later).
+    The test suites of numpy and pandas are left out."""
+    if not wheels:
+        return []
+    stage = os.path.join(OUT, "packages%d" % bits)
+    shutil.rmtree(stage, ignore_errors=True)
+    py = "".join(version.split(".")[:2])
+    subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "--disable-pip-version-check", "--root-user-action=ignore",
+                    "--no-index", "--no-deps", "--no-compile", "--only-binary=:all:",
+                    "--target", stage, "--platform", "win_amd64" if bits == 64 else "win32",
+                    "--python-version", version.rsplit(".", 1)[0], "--implementation", "cp",
+                    "--abi", "cp" + py, "--abi", "none"] + [download(w) for w in wheels], check=True)
+    files = []
+    for root, dirs, names in os.walk(stage):
+        dirs.sort()
+        rel = os.path.relpath(root, stage).replace(os.sep, "/")
+        parts = rel.split("/")
+        if parts[0] == "bin" or "__pycache__" in parts or (parts[0] in ("numpy", "pandas") and "tests" in parts):
+            continue                       # scripts made for this machine; caches; test suites
+        for n in sorted(names):
+            path = os.path.join(root, n)
+            files.append(("Lib/site-packages/" + ("" if rel == "." else rel + "/") + n, open(path, "rb").read()))
+    print("packages%d: %s; %d files" % (bits, ", ".join(os.path.basename(w["url"]).split("-")[0] for w in wheels), len(files)))
+    return files
+
+
 def runtime():
     """The cabinets of both bitnesses (runtime64.cab, runtime32.cab), their resource scripts, and
     runtime.h with the folder each unpacks to: the version, the bitness and the cabinet's hash."""
@@ -107,7 +138,7 @@ def runtime():
     folders = {}
     for bits in (64, 32):
         files = []
-        with zipfile.ZipFile(nupkg(pins[str(bits)])) as z:
+        with zipfile.ZipFile(download(pins[str(bits)])) as z:
             for item in sorted(z.infolist(), key=lambda i: i.filename):
                 name = item.filename
                 if not name.startswith("tools/") or name.endswith("/"):
@@ -116,6 +147,7 @@ def runtime():
                 if name.startswith(LEFT_OUT) or "__pycache__/" in name:
                     continue
                 files.append((name, z.read(item)))
+        files += packages(bits, pins["version"], pins.get("packages", {}).get(str(bits), []))
         cab = cabinet(files)
         folders[bits] = "python-%s-%d-%s" % (pins["version"], bits, hashlib.sha256(cab).hexdigest()[:12])
         with open(os.path.join(OUT, "runtime%d.cab" % bits), "wb") as f:

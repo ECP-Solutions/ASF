@@ -34,7 +34,7 @@ The full guide for testers, with downloads, clean-up of earlier runs and fixes f
 2. **Download** `asfpy64.xll` or `asfpy32.xll` (Excel's bitness: File > Account > About Excel), `checks.py` and `AsfPyChecks.bas` as raw files, with exactly those names.
 3. **Put them in place.** Unblock the `.xll` (Properties) and keep it in a folder of your own; `checks.py` alone in `%APPDATA%\ASF\python`. `ASF.xlam` is optional: with it, the checklist also checks ASF scripts with Python.
 4. **Load the add-in:** File > Options > Add-ins > Manage: Excel Add-ins > Go > Browse. The first load unpacks the add-in's Python into `%LOCALAPPDATA%\ASF\runtime`.
-5. **Packages:** `Application.Run "AsfPyPackages"` in the Immediate window, then `install numpy pandas pywin32`, Enter on an empty line, and restart Excel.
+5. **Packages:** none to install: the add-in's Python has numpy, pandas (64-bit only), openpyxl and pywin32. `Application.Run "AsfPyPackages"` lists them.
 6. **Run:** import `AsfPyChecks.bas` into a blank workbook and run `AsfPyTest`, multi-threaded calculation on. The first rows must show `imported checks.py`, `Python: the add-in's own ... yes` and `pip ... installed`.
 7. **Close Excel** with the result open (numpy loaded): no error, no hang. Then open Excel again: the add-in loads by itself.
 
