@@ -38,9 +38,13 @@
                   screentip="Choose the Python, the Python folder and PythonAccess"
                   supertip="Which Python the Python add-in runs (its own, or a venv or install), the folder of your Python modules, and what library scripts may do with Python. Excel needs a restart for the first two."
                   onAction="ASFRibbon.OnPythonSettings"/>
+          <button id="asfPythonUpdates" label="Python updates" imageMso="RefreshAll"
+                  screentip="The add-in's version and its updates"
+                  supertip="Which version of the Python add-in runs, whether a newer one is out, and installing it; and whether Excel looks for one when it starts (PythonUpdates). Opens the Add-in page of Python studio."
+                  onAction="ASFRibbon.OnPythonUpdates"/>
           <button id="asfAboutPython" label="About Python" imageMso="Info"
                   screentip="What runs, and why not"
-                  supertip="The loaded Python add-in, its Python, the settings, what the Python folder gave at start-up, and the log, to open."
+                  supertip="The loaded Python add-in and its version, its Python, the settings, what the Python folder gave at start-up, and the log, to open."
                   onAction="ASFRibbon.OnAboutPython"/>
         </group>
         <group id="asfHelpGroup" label="Help">

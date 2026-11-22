@@ -24,6 +24,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import traceback
@@ -37,6 +38,11 @@ STATIC = os.path.join(HERE, 'static')
 STUBS = os.path.join(HERE, 'stubs')
 IDLE = 120
 NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')
+VIEWS = ('files', 'functions', 'packages', 'addin')
+SETTINGS_KEY = r'Software\VB and VBA Program Settings\ASF\AddIn'      # where the add-in reads them
+SETTINGS = ('PythonUpdates', 'PythonTips', 'PythonUpdateSource', 'PythonVenv', 'PythonFolder')
+EDITABLE = {'PythonUpdates': ('check', 'auto', 'off'), 'PythonTips': ('on', 'off')}
+_no_registry = {}                    # the settings where there is no registry: the tests
 RUNTIME = re.compile(r'^python-[0-9.]+-(?P<bits>32|64)-[0-9a-f]{6,}$')   # a Python of the add-in, unpacked
 TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
          '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png'}
@@ -308,6 +314,34 @@ class Studio:
             self._update(job, output='Not updated: %s\n' % exc)
         self._update(job, state='done' if code == 0 else 'failed', code=code)
 
+    def addin(self):
+        """The add-in's file, its Python, its logs and the settings the studio can change."""
+        values = read_settings()
+        updates = values.get('PythonUpdates', '').strip().lower()
+        return {'xll': self.xll, 'running': self.running, 'python': sys.prefix, 'folder': self.folder,
+                'log': os.path.join(tempfile.gettempdir(), 'asfpy.log'),
+                'updateLog': os.path.join(tempfile.gettempdir(), 'asfpy-update.log'),
+                'releases': self.update_source or update.RELEASES, 'venv': values.get('PythonVenv', ''),
+                'PythonUpdates': updates if updates in EDITABLE['PythonUpdates'] else 'check',
+                'PythonTips': 'off' if values.get('PythonTips', '').strip().lower() == 'off' else 'on'}
+
+    def open_item(self, what):
+        """The add-in's folder (its file selected), a log, or the Python, in Explorer or Notepad."""
+        info = self.addin()
+        if os.name != 'nt':
+            raise OSError('Explorer is on Windows only')
+        if what == 'addin' and info['xll']:
+            subprocess.Popen(['explorer', '/select,', info['xll']])
+        elif what in ('log', 'updateLog'):
+            if not os.path.isfile(info[what]):
+                raise FileNotFoundError('%s is not there yet' % info[what])
+            subprocess.Popen(['notepad.exe', info[what]])
+        elif what == 'python':
+            os.startfile(info['python'])
+        else:
+            raise ValueError('nothing to open: %s' % what)
+        return {'opened': what}
+
     def previous(self):
         return previous(self.prefix)
 
@@ -333,6 +367,42 @@ class Studio:
             if p['folder'] == name:
                 return p
         raise LookupError('no earlier Python named %s' % name)
+
+
+def read_settings():
+    """The add-in's settings, as Excel's add-ins read them from HKEY_CURRENT_USER."""
+    try:
+        import winreg
+    except ImportError:
+        return dict(_no_registry)
+    out = {}
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, SETTINGS_KEY) as k:
+            for name in SETTINGS:
+                try:
+                    out[name] = str(winreg.QueryValueEx(k, name)[0])
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return out
+
+
+def write_setting(name, value):
+    """One of the settings the studio changes (EDITABLE), where the add-in reads it when Excel
+    loads it; ASF.xlam's Python settings changes the same."""
+    value = str(value).strip().lower()
+    if name not in EDITABLE or value not in EDITABLE[name]:
+        raise ValueError('%s takes %s' % (name, ', '.join(EDITABLE.get(name, ()))) if name in EDITABLE
+                         else 'the studio does not change %s' % name)
+    try:
+        import winreg
+    except ImportError:
+        _no_registry[name] = value
+        return {name: value}
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, SETTINGS_KEY) as k:
+        winreg.SetValueEx(k, name, 0, winreg.REG_SZ, value)
+    return {name: value}
 
 
 def _key(name):
@@ -486,7 +556,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if url.path == '/' and 't' in query:
             if not secrets.compare_digest(query['t'][0], self.studio.token):
                 return self._send(403, {'error': 'forbidden'})
-            return self._send(302, b'', 'text/plain', [('Location', '/'), (
+            view = query.get('view', [''])[0]
+            return self._send(302, b'', 'text/plain', [('Location', '/#' + view if view in VIEWS else '/'), (
                 'Set-Cookie', 'asfstudio=%s; HttpOnly; SameSite=Strict; Path=/' % self.studio.token)])
         if not self._cookie_ok():
             return self._send(403, b'Open the studio from Excel: ASF tab, Python studio.', 'text/plain; charset=utf-8')
@@ -536,6 +607,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 result = s.update_status(args.get('live') in ('1', 'true'))
             elif method == 'GET' and name == 'previous':
                 result = s.previous()
+            elif method == 'GET' and name == 'addin':
+                result = s.addin()
+            elif method == 'POST' and name == 'setting':
+                result = write_setting(args.get('name', ''), args.get('value', ''))
+            elif method == 'POST' and name == 'open':
+                result = s.open_item(args.get('what', ''))
             elif method == 'POST' and name == 'ping':
                 result = {'busy': s.busy()}
             elif method == 'POST' and name == 'save':
@@ -653,20 +730,22 @@ def main(argv=None):
     a.add_argument('--xll', default='')
     a.add_argument('--running', default='')
     a.add_argument('--update-source', default='')
+    a.add_argument('--view', default='', help='the view to open: ' + ', '.join(VIEWS))
     a.add_argument('--no-window', action='store_true')
     o = a.parse_args(argv)
     folder = o.folder.strip('"')
     if o.log or sys.stdout is None:           # pythonw: no console to print to
         log = open(o.log or os.path.join(os.environ.get('TEMP', '.'), 'asfpy-studio.log'), 'a', encoding='utf-8')
         sys.stdout = sys.stderr = log
+    view = '&view=' + o.view if o.view in VIEWS else ''
     url = None if o.no_window else _running(folder)
     if url:
-        open_window(url)
+        open_window(url + view)
         return
     studio = Studio(folder, o.idle, o.xll.strip('"'), o.running, o.update_source)
     server = serve(studio, o.port)
     port = server.server_address[1]
-    url = 'http://127.0.0.1:%d/?t=%s' % (port, studio.token)
+    url = 'http://127.0.0.1:%d/?t=%s' % (port, studio.token) + view
     try:
         os.makedirs(os.path.dirname(_state_file()), exist_ok=True)
         with open(_state_file(), 'w', encoding='utf-8') as f:

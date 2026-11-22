@@ -25,6 +25,7 @@
     <button class="act active" data-view="files" title="Files (Ctrl+1)"><svg viewBox="0 0 24 24"><path d="M4 4h7l2 2h7v14H4z"/></svg><span>Files</span></button>
     <button class="act" data-view="functions" title="Functions (Ctrl+2)"><svg viewBox="0 0 24 24"><path d="M9 4c-2 0-3 1-3 3v3H4v2h2v5c0 2 1 3 3 3M15 4c2 0 3 1 3 3v3h2v2h-2v5c0 2-1 3-3 3"/></svg><span>Functions</span></button>
     <button class="act" data-view="packages" title="Packages (Ctrl+3)"><svg viewBox="0 0 24 24"><path d="M12 3l8 4v10l-8 4-8-4V7zM4 7l8 4 8-4M12 11v10"/></svg><span>Packages</span></button>
+    <button class="act" data-view="addin" title="The add-in: its version, updates and settings (Ctrl+4)"><svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.5 7.5 0 0 0-1.7-1L15 3.5h-4l-.4 2.5a7.5 7.5 0 0 0-1.7 1l-2.4-1-2 3.4L6.6 11a7.6 7.6 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7.5 7.5 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7.5 7.5 0 0 0 1.7-1l2.4 1 2-3.4z"/></svg><span>Add-in</span></button>
   </nav>
 
   <aside class="side" id="side">
@@ -70,6 +71,51 @@
         <div class="prompt"><span>&gt;&gt;&gt;</span><textarea id="console-in" rows="1" spellcheck="false" placeholder="Enter runs, Shift+Enter adds a line, Up and Down recall"></textarea><button id="console-restart" title="A new session">Restart</button></div>
       </div>
     </section>
+  </main>
+
+  <main class="main hidden" id="addin-view">
+    <div class="packages">
+      <div class="pk-head">
+        <div>
+          <h1>ASF Python</h1>
+          <p class="muted">The add-in: its version, its updates and its settings.</p>
+        </div>
+      </div>
+      <h2>Version and updates</h2>
+      <div class="panel-card">
+        <table class="facts">
+          <tr><th>This add-in</th><td id="ad-installed">…</td></tr>
+          <tr><th>Latest release</th><td id="ad-latest">…</td></tr>
+        </table>
+        <div class="row">
+          <button id="ad-check">Check for updates</button>
+          <button id="ad-install" class="primary hidden">Install</button>
+          <a id="ad-page" href="#" target="_blank" rel="noopener" class="hidden">What changed</a>
+        </div>
+        <pre id="ad-progress" class="hidden"></pre>
+      </div>
+      <h2>When Excel starts</h2>
+      <div class="panel-card">
+        <p class="muted">The add-in looks for a newer release at most once a day, without making Excel wait (the setting <code>PythonUpdates</code>).</p>
+        <label class="choice"><input type="radio" name="ad-updates" value="check"> <b>Ask</b>: offer a newer add-in, and install it if I say so (the default)</label>
+        <label class="choice"><input type="radio" name="ad-updates" value="auto"> <b>Install</b>: download and install it, then tell me</label>
+        <label class="choice"><input type="radio" name="ad-updates" value="off"> <b>Don't look</b>: only when I ask, here or with About Python</label>
+        <p class="muted" id="ad-source"></p>
+      </div>
+      <h2>Help as you type</h2>
+      <div class="panel-card">
+        <label class="choice"><input type="checkbox" id="ad-tips"> A tooltip shows a Python function's arguments as a formula is typed (the setting <code>PythonTips</code>; from Excel's next start)</label>
+      </div>
+      <h2>Files</h2>
+      <div class="panel-card">
+        <table class="facts">
+          <tr><th>The add-in</th><td id="ad-xll"></td><td class="b"><button data-open="addin">Show</button></td></tr>
+          <tr><th>Its Python</th><td id="ad-python"></td><td class="b"><button data-open="python">Open</button></td></tr>
+          <tr><th>The log</th><td id="ad-log"></td><td class="b"><button data-open="log">Open</button></td></tr>
+          <tr><th>The updates' log</th><td id="ad-update-log"></td><td class="b"><button data-open="updateLog">Open</button></td></tr>
+        </table>
+      </div>
+    </div>
   </main>
 
   <main class="main hidden" id="packages-view">

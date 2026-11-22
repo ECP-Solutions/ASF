@@ -147,7 +147,7 @@ With `appAccess: true` and `args: selection`, `$1` is the `Range` itself, so the
 | **Library folder** | Opens the library folder, made first when it is missing |
 | **Why this error?** | Calculates the active cell again and shows why its `ASF_RUN` or `ASF_CALL` gave `#VALUE!`. With the Python add-in, also the Python error of a `PY_CALL` or Python function |
 | **Reset engine** | Drops the engine of the worksheet functions and their compiled scripts; the next formula reads the settings again |
-| **Python studio**, **Python console**, **Python settings**, **About Python** | The Python group, for the Python add-in: write, run and reload your modules and manage the packages; a prompt apart from Excel; which Python; and what runs. See [Python](Python.html#7-asfxlam-optional) |
+| **Python studio**, **Python console**, **Python settings**, **Python updates**, **About Python** | The Python group, for the Python add-in: write, run and reload your modules and manage the packages; a prompt apart from Excel; which Python; the add-in's version and its updates; and what runs. See [Python](Python.html#7-asfxlam-optional) |
 | **Help** | Opens the add-in's README on GitHub |
 
 ---

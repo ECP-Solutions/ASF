@@ -150,6 +150,26 @@ class Studio(unittest.TestCase):
             self.assertEqual([p['line'] for p in r], [1, 2])
             self.assertIn("undefined name 'undefined_name'", r[1]['message'])
 
+    def test_the_addin_page_and_its_settings(self):
+        status, a, _ = self.get('/api/addin')
+        self.assertEqual((status, a['PythonUpdates'], a['PythonTips']), (200, 'check', 'on'))
+        self.assertTrue(a['log'].endswith('asfpy.log') and a['updateLog'].endswith('asfpy-update.log'))
+        with mock.patch.dict(server._no_registry, clear=True):
+            self.assertEqual(self.post('setting', {'name': 'PythonUpdates', 'value': 'Auto'})[1], {'PythonUpdates': 'auto'})
+            self.assertEqual(self.post('setting', {'name': 'PythonTips', 'value': 'off'})[0], 200)
+            a = self.get('/api/addin')[1]
+            self.assertEqual((a['PythonUpdates'], a['PythonTips']), ('auto', 'off'))
+            self.assertEqual(self.post('setting', {'name': 'PythonUpdates', 'value': 'sometimes'})[0], 400)
+            self.assertEqual(self.post('setting', {'name': 'PythonVenv', 'value': 'C:\\x'})[0], 400)
+        if os.name != 'nt':
+            self.assertEqual(self.post('open', {'what': 'log'})[0], 400)
+
+    def test_the_token_can_open_a_page_of_the_studio(self):
+        _, _, r = self.get('/?t=%s&view=addin' % self.studio.token, cookie=False)
+        self.assertEqual(r.getheader('Location'), '/#addin')
+        _, _, r = self.get('/?t=%s&view=javascript:x' % self.studio.token, cookie=False)
+        self.assertEqual(r.getheader('Location'), '/')
+
     def test_explorer_is_for_windows(self):
         if os.name == 'nt':
             self.skipTest('it would open a window')

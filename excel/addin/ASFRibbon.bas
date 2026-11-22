@@ -93,6 +93,11 @@ Public Sub OnPythonSettings(control As Object)
 End Sub
 
 ' About Python: the add-in, its Python, the settings, the start-up and the log
+' Python updates: the add-in's version, a newer one, and when Excel looks for it
+Public Sub OnPythonUpdates(control As Object)
+    ASFPythonSetup.Updates
+End Sub
+
 Public Sub OnAboutPython(control As Object)
     ASFPythonSetup.About
 End Sub

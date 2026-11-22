@@ -1,6 +1,6 @@
 Attribute VB_Name = "ASFPythonSetup"
 ' The Python buttons of the ASF tab, after the ribbon (ASFRibbon): Python studio, Python console,
-' Python settings and About Python. The Python add-in (asfpy64.xll, asfpy32.xll) opens the studio
+' Python settings, Python updates and About Python. The Python add-in (asfpy64.xll, asfpy32.xll) opens the studio
 ' and the console through its commands AsfPyStudio and AsfPyConsole; the settings are those it
 ' reads when Excel loads it (ASFSettings). Python runs on Excel for Windows only.
 Option Explicit
@@ -76,10 +76,35 @@ Public Sub About()
         If Len(info) > 600 Then info = Left$(info, 600) & "..."
         text = text & info
     End If
-    Select Case MsgBox(text & vbLf & vbLf & "Yes: check for a newer add-in. No: open the log.", _
+    Select Case MsgBox(text & vbLf & vbLf & "Yes: check for a newer add-in (Python updates). No: open the log.", _
                        vbYesNoCancel + vbInformation + vbDefaultButton3, TITLE & ": about")
         Case vbYes: CheckForUpdates
         Case vbNo: OpenText LogPath()
+    End Select
+End Sub
+
+' Python updates: the Add-in page of Python studio, with the version, Check for updates, Install,
+' and when Excel looks; with another Python than the add-in's own (PythonVenv), which has no
+' studio, the same in message boxes
+Public Sub Updates()
+    Dim version As String
+#If Mac Then
+    MsgBox "Python needs the Python add-in, which runs on Excel for Windows.", vbInformation, TITLE
+    Exit Sub
+#End If
+    If LenB(ASFSettings.PythonVenv()) = 0 Then
+        On Error Resume Next
+        Application.Run "AsfPyStudio", "addin"
+        If Err.Number = 0 Then Exit Sub
+        On Error GoTo 0
+    End If
+    version = AddinVersion()
+    Select Case MsgBox(IIf(LenB(version) > 0, "ASF Python " & version, "The Python add-in: " & AddinPath()) & vbLf & _
+                       "When Excel starts (PythonUpdates): " & ASFSettings.PythonUpdates() & vbLf & vbLf & _
+                       "Yes: check for a newer add-in now." & vbLf & "No: change when Excel looks for one.", _
+                       vbYesNoCancel + vbInformation, TITLE & ": updates")
+        Case vbYes: CheckForUpdates
+        Case vbNo: ChooseUpdates
     End Select
 End Sub
 
@@ -105,6 +130,17 @@ Private Function Ready(ByRef py As Object) As Boolean
     Else
         Ready = True
     End If
+End Function
+
+' the version of the loaded add-in (py.startInfo starts with ASF Python x.y.z), or ""
+Private Function AddinVersion() As String
+    Dim py As Object, message As String, info As String
+    Set py = ASFPython.Root(1, message)
+    If py Is Nothing Then Exit Function
+    On Error Resume Next
+    info = CStr(CallByName(py, "startInfo", VbGet))
+    On Error GoTo 0
+    If Left$(info, 11) = "ASF Python " Then AddinVersion = Split(Mid$(info, 12), vbLf)(0)
 End Function
 
 Private Function PythonInUse() As String

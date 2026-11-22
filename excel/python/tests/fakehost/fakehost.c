@@ -573,7 +573,7 @@ int wmain(int argc, wchar_t **argv)
         check(r && r->macro_type == 2, L"AsfPyPackages registered as a command (macro type 2)", r && r->macro_type == 2 ? L"2" : L"not 2");
     }
     type_check(L"AsfPyConsole", L"J");    /* not run: it opens a console window */
-    type_check(L"AsfPyStudio", L"J");     /* not run: it opens a window */
+    type_check(L"AsfPyStudio", L"JQ");    /* not run: it opens a window */
     type_check(L"AsfPyUpdate", L"J");     /* not run: it asks in a message box */
     {
         Reg *r = reg_of(L"AsfPyConsole");

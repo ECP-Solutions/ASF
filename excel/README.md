@@ -107,6 +107,7 @@ The worksheet functions keep one engine and its compiled scripts for the whole s
 | **Python studio** | A window to write the Python folder's modules (`AsfPyStudio`): an editor with completions and problems as you type, saving reloads them in Excel; run a file or a macro in Excel, the functions Excel gets, the folder in Explorer, a console, and the packages to install or upgrade |
 | **Python console** | The Python add-in's Python at its `>>>` prompt, in a console window apart from Excel (`AsfPyConsole`): `pip("install pandas")`, `import pandas`, and the Python folder's modules to try |
 | **Python settings** | Which Python the add-in runs (its own, or a venv or install), the Python folder, `PythonAccess` and `PythonUpdates`, each shown and changed in turn |
+| **Python updates** | The Python add-in's version and a newer release to install, and whether Excel looks for one when it starts: the Add-in page of Python studio (`AsfPyStudio "addin"`); with `PythonVenv`, message boxes |
 | **About Python** | The loaded add-in file and its version, its Python, the settings, the Python folder's start-up and the log; **Yes** checks for a newer add-in (`AsfPyUpdate`) |
 | **Help** | Opens this page |
 

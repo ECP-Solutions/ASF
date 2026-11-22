@@ -713,7 +713,7 @@ static void register_builtins(int started)
                                 L"Lists the commands (@xl_macro) of the Python folder.", 0, NULL);
     g_lasterror_id = register_proc(&dll, L"asfpy_last_error", L"Q", L"AsfPyLastError", L"", 2,
                                    L"The traceback of the last Python error.", 0, NULL);
-    g_studio_id = register_proc(&dll, L"asfpy_studio", L"J", L"AsfPyStudio", L"", 2,
+    g_studio_id = register_proc(&dll, L"asfpy_studio", L"JQ", L"AsfPyStudio", L"view", 2,
                                 L"Opens the Python studio: an editor, a console and the packages.", 0, NULL);
     g_console_id = register_proc(&dll, L"asfpy_console", L"J", L"AsfPyConsole", L"", 2,
                                  L"Opens a console window with the add-in's Python at its prompt.", 0, NULL);
@@ -1362,10 +1362,11 @@ EXPORT int WINAPI asfpy_packages(void)
     return open_console(PACKAGES_PY, L"asfpy-packages.py", L"-I", L"");
 }
 
-/* The command AsfPyStudio (ASF's ribbon: Python studio): the studio (asfpy_studio, in the add-in's
-   own Python) started windowless with pythonw.exe; it opens its window and serves it on the
-   loopback address. A second click opens the window of the studio that runs. */
-EXPORT int WINAPI asfpy_studio(void)
+/* The command AsfPyStudio (ASF's ribbon: Python studio; Python updates gives the view "addin"):
+   the studio (asfpy_studio, in the add-in's own Python) started windowless with pythonw.exe; it
+   opens its window and serves it on the loopback address. A second click opens the window of the
+   studio that runs. view: the page to open, files, functions, packages or addin (optional). */
+EXPORT int WINAPI asfpy_studio(LPXLOPER12 view)
 {
     wchar_t main_py[MAX_PATH], pyw[MAX_PATH], folder[MAX_PATH], log[MAX_PATH], cmd[6 * MAX_PATH], msg[1200], source[512];
     STARTUPINFOW si;
@@ -1392,6 +1393,16 @@ EXPORT int WINAPI asfpy_studio(void)
              pyw, folder, log, g_xll, ASFPY_VERSION);
     if (setting(L"PythonUpdateSource", source, 512))
         swprintf(cmd + wcslen(cmd), 6 * MAX_PATH - wcslen(cmd), L" --update-source \"%ls\"", source);
+    if (view && (view->xltype & 0xFFF) == xltypeStr && view->val.str[0] > 0 && view->val.str[0] < 16) {
+        wchar_t name[16];
+        int n = view->val.str[0], ok = 1;
+        for (k = 0; k < (DWORD)n; k++) ok &= iswalpha(view->val.str[1 + k]) != 0;   /* a name, not an option */
+        if (ok) {
+            memcpy(name, view->val.str + 1, n * sizeof(wchar_t));
+            name[n] = 0;
+            swprintf(cmd + wcslen(cmd), 6 * MAX_PATH - wcslen(cmd), L" --view %ls", name);
+        }
+    }
     if (!CreateProcessW(pyw, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
         note(L"%ls didn't start (error %lu)", cmd, GetLastError());
         return 0;

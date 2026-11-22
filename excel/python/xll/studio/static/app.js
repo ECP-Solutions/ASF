@@ -453,6 +453,7 @@ function showAddin(s) {
   const pill = $('addin-pill');
   pill.classList.remove('hidden', 'new', 'ok');
   state.update = s;
+  const when = s.checked ? 'checked ' + new Date(s.checked * 1000).toLocaleString() : 'not checked yet';
   if (s.restart) {
     pill.textContent = 'ASF Python ' + s.installed + ': restart Excel';
     pill.title = 'The add-in was updated to ' + s.installed + '; this Excel still runs ' + s.running;
@@ -462,37 +463,77 @@ function showAddin(s) {
     pill.classList.add('new');
   } else {
     pill.textContent = 'ASF Python ' + s.installed;
-    pill.title = 'Check for a newer add-in' + (s.checked ? ' (last checked ' + new Date(s.checked * 1000).toLocaleString() + ')' : '');
+    pill.title = 'The add-in: its version, updates and settings';
   }
+  $('ad-installed').textContent = s.installed + (s.restart ? ' (installed; this Excel still runs ' + s.running + ': restart Excel to use it)' : '');
+  $('ad-latest').textContent = s.latest ? s.latest + (s.available ? ' — newer than this add-in' : ' — this add-in is up to date') + ' (' + when + ')'
+                                        : 'not known: ' + when;
+  $('ad-install').classList.toggle('hidden', !s.available);
+  $('ad-install').textContent = 'Install ' + s.latest + (s.size ? ' (' + Math.round(s.size / 1e6) + ' MB)' : '');
+  $('ad-page').classList.toggle('hidden', !s.page);
+  if (s.page) $('ad-page').href = s.page;
 }
 function updateProgress(job) {
-  const pill = $('addin-pill');
+  const pill = $('addin-pill'), box = $('ad-progress');
+  box.classList.remove('hidden');
+  const lines = (job.output || '…').split('\n'), pct = lines.filter(l => /^\d+%$/.test(l)).pop();
+  box.textContent = lines.filter(l => !/^\d+%$/.test(l)).join('\n').trim() + (pct && job.state === 'running' ? '\n' + pct : '');
+  box.scrollTop = box.scrollHeight;
   if (job.state === 'running' || job.state === 'queued') {
     const pct = (job.output.match(/(\d+)%\n$/) || [])[1];
     pill.textContent = 'Updating' + (pct ? ' ' + pct + '%' : '…');
+    $('ad-install').disabled = $('ad-check').disabled = true;
   } else if (!state.updateShown || state.updateShown < job.id) {
     state.updateShown = job.id;
+    $('ad-install').disabled = $('ad-check').disabled = false;
     get('update').then(showAddin).catch(() => {});
     foot(job.state === 'done' ? (job.result ? 'ASF Python ' + job.result.version + ' is installed: restart Excel to use it'
-                                            : 'ASF Python is up to date') : 'The add-in was not updated: see Activity in Packages');
+                                            : 'ASF Python is up to date') : 'The add-in was not updated: see Add-in');
   }
 }
-async function checkAddin() {
-  const s = state.update;
-  if (s && s.restart && !s.available) { message('ASF Python ' + s.installed + ' is installed. Restart Excel to use it.', 'Update'); return; }
-  if (!s || !s.available) {
-    $('addin-pill').textContent = 'Checking…';
-    try { showAddin(await get('update', { live: 1 })); }
-    catch (e) { showAddin(s || { installed: '?' }); message('ASF Python could not check for updates: ' + e.message, 'Update'); return; }
-    if (!state.update.available) { foot('ASF Python ' + state.update.installed + ' is the latest version'); return; }
-  }
+async function checkUpdates() {
+  const button = $('ad-check');
+  button.disabled = true;
+  button.textContent = 'Checking…';
+  try {
+    showAddin(await get('update', { live: 1 }));
+    foot(state.update.available ? 'ASF Python ' + state.update.latest + ' is available' : 'ASF Python ' + state.update.installed + ' is the latest version');
+  } catch (e) { message('ASF Python could not check for updates: ' + e.message, 'Updates'); }
+  button.disabled = false;
+  button.textContent = 'Check for updates';
+}
+async function installUpdate() {
   const u = state.update;
-  if (!await sure('ASF Python ' + u.latest + ' is available; this add-in is ' + u.installed + '.\n\nDownload it (' +
-               Math.round((u.size || 0) / 1e6) + ' MB) and install it now? Excel uses it the next time it starts.\n\nWhat changed: ' + u.page,
-               'Install', 'Update')) return;
-  try { await post('update'); view('packages'); pollJobs(); } catch (e) { message(e.message, 'Update'); }
+  if (!u || !u.available) return;
+  if (!await sure('Download ASF Python ' + u.latest + ' (' + Math.round((u.size || 0) / 1e6) + ' MB) and install it in the place of ' +
+                  u.installed + '? Excel uses it the next time it starts.', 'Install', 'Update')) return;
+  try { await post('update'); pollJobs(); } catch (e) { message(e.message, 'Update'); }
 }
-$('addin-pill').addEventListener('click', checkAddin);
+async function refreshAddin() {
+  get('update').then(showAddin).catch(e => { $('ad-installed').textContent = e.message; });
+  try {
+    const a = await get('addin');
+    document.querySelectorAll('input[name=ad-updates]').forEach(r => { r.checked = r.value === a.PythonUpdates; });
+    $('ad-tips').checked = a.PythonTips !== 'off';
+    $('ad-xll').textContent = a.xll || '(the studio was opened without the add-in)';
+    $('ad-python').textContent = a.python + (a.venv ? ' (Excel runs ' + a.venv + ', the setting PythonVenv)' : '');
+    $('ad-log').textContent = a.log;
+    $('ad-update-log').textContent = a.updateLog;
+    $('ad-source').textContent = 'Releases: ' + a.releases;
+  } catch (e) { foot(e.message); }
+  pollJobs();
+}
+async function saveSetting(name, value) {
+  try { await post('setting', { name, value }); foot(name + ' = ' + value + ': Excel reads it the next time it starts'); }
+  catch (e) { message(e.message, name); refreshAddin(); }
+}
+$('addin-pill').addEventListener('click', () => view('addin'));
+$('ad-check').addEventListener('click', checkUpdates);
+$('ad-install').addEventListener('click', installUpdate);
+document.querySelectorAll('input[name=ad-updates]').forEach(r => r.addEventListener('change', () => saveSetting('PythonUpdates', r.value)));
+$('ad-tips').addEventListener('change', e => saveSetting('PythonTips', e.target.checked ? 'on' : 'off'));
+document.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () =>
+  post('open', { what: b.dataset.open }).catch(e => message(e.message, 'Open'))));
 $('pk-form').addEventListener('submit', async e => {
   e.preventDefault();
   const name = $('pk-name').value.trim();
@@ -513,14 +554,17 @@ $('pk-filter').addEventListener('input', renderInstalled);
 
 // --- views, keys, start ---------------------------------------------------------------------------
 function view(name) {
+  const page = name === 'packages' || name === 'addin';      // a page of its own, without the editor
   document.querySelectorAll('.act').forEach(b => b.classList.toggle('active', b.dataset.view === name));
   $('packages-view').classList.toggle('hidden', name !== 'packages');
-  $('editor-view').classList.toggle('hidden', name === 'packages');
-  $('side').classList.toggle('hidden', name === 'packages');
+  $('addin-view').classList.toggle('hidden', name !== 'addin');
+  $('editor-view').classList.toggle('hidden', page);
+  $('side').classList.toggle('hidden', page);
   document.querySelectorAll('.pane').forEach(p => p.classList.toggle('hidden', p.dataset.pane !== name));
   if (name === 'packages') { refreshPackages(); refreshPrevious(); pollJobs(); }
+  if (name === 'addin') refreshAddin();
   if (name === 'functions') refreshOutline();
-  if (name !== 'packages') editor.refresh();
+  if (!page) editor.refresh();
 }
 document.querySelectorAll('.act').forEach(b => b.addEventListener('click', () => view(b.dataset.view)));
 document.querySelectorAll('.ptab').forEach(b => b.addEventListener('click', () => show(b.dataset.panel)));
@@ -542,7 +586,7 @@ document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); save(); }
   else if (e.key === 'F5') { e.preventDefault(); run(); }
   else if (e.ctrlKey && e.shiftKey && (e.key === 'R' || e.key === 'r')) { e.preventDefault(); reload(); }
-  else if (e.ctrlKey && ['1', '2', '3'].includes(e.key)) { e.preventDefault(); view(['files', 'functions', 'packages'][+e.key - 1]); }
+  else if (e.ctrlKey && ['1', '2', '3', '4'].includes(e.key)) { e.preventDefault(); view(['files', 'functions', 'packages', 'addin'][+e.key - 1]); }
 });
 window.addEventListener('beforeunload', e => {
   if (state.tabs.some(t => t.doc.getValue() !== t.saved)) { e.preventDefault(); e.returnValue = ''; }
@@ -563,6 +607,8 @@ async function start() {
     get('update').then(showAddin).catch(() => {});
     await refreshFiles();
     if (state.files.length) await open(state.files[0]);
+    const asked = location.hash.slice(1);                  // Excel's Python updates button opens #addin
+    if (['functions', 'packages', 'addin'].includes(asked)) view(asked);
     foot('Ready');
   } catch (e) { foot(e.message); }
   setInterval(() => post('ping').catch(() => foot('The studio stopped: open it again from Excel (ASF tab, Python studio).')), 20000);
