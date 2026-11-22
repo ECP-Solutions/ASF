@@ -13,7 +13,8 @@ tests/excel/checks.py and tests/fakehost/zz_slots.py, and a copy of it for 1,000
 On Windows the add-in's settings (PythonVenv and PythonFolder under HKCU) are set for the run and
 put back afterwards, and the add-in's log and the Python it unpacks go to a temporary folder, not
 to your %TEMP% and %LOCALAPPDATA%. On Linux it needs wine (wine32 too for 32-bit) and MinGW-w64;
-WINEPREFIX is used when set, else a prefix in the system's temp folder.
+WINEPREFIX is used when set, else ~/.cache/asfpy-wine (Wine refuses a prefix in a folder
+you don't own, such as /tmp).
 """
 import glob
 import os
@@ -136,7 +137,8 @@ def main():
         if not os.path.isdir(run_dir):   # Wine 9 crashes without it; a CI runner has no login session
             sys.exit("Wine needs %s: sudo install -d -m 700 -o $(id -u) -g $(id -g) %s" % (run_dir, run_dir))
         env["WINEDEBUG"] = "-all"
-        env.setdefault("WINEPREFIX", os.path.join(tempfile.gettempdir(), "asfpy-wine"))
+        env.setdefault("WINEPREFIX", os.path.join(os.path.expanduser("~"), ".cache", "asfpy-wine"))
+        os.makedirs(os.path.dirname(env["WINEPREFIX"]), exist_ok=True)   # Wine makes the prefix, not its parent
 
     def logs():
         if WINDOWS:
