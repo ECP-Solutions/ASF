@@ -308,7 +308,7 @@ def main():
     slots_x86()
     slots_x86_msvc()
     def_file()
-    write("toolchain.txt", tool)     # tests/run_fakehost.py builds the fake host with the same
+    write("toolchain.txt", tool)     # tests/fakehost/run_fakehost.py builds the fake host with the same
     print("toolchain: %s" % tool)
     if carry:
         runtime()

@@ -22,7 +22,7 @@ try:
 except ImportError:
     pandas = None
 
-BOOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'xll', 'boot.py')
+BOOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'xll', 'boot.py')
 
 STATS = '''
 import datetime

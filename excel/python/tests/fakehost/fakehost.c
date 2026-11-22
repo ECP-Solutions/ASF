@@ -12,7 +12,7 @@
 #include <wchar.h>
 #include <io.h>
 #include <fcntl.h>
-#include "../xll/xloper.h"
+#include "../../xll/xloper.h"
 
 #define NSLOTS 1000   /* as in asfpy.c */
 #define NBUILTIN 3    /* PY_CALL and the commands AsfPyReload and AsfPyPackages */
@@ -489,14 +489,14 @@ static SIZE_T private_bytes(void)
 /* n rounds of calls that allocate results: text, a grid, a range in, an array back to VBA */
 static void churn(int n, IDispatch *py)
 {
-    F1 text = (F1)slot_of(L"spike_text"), column = (F1)slot_of(L"spike_column");
-    F2 grid = (F2)slot_of(L"spike_grid");
+    F1 text = (F1)slot_of(L"check_text"), column = (F1)slot_of(L"check_column");
+    F2 grid = (F2)slot_of(L"check_grid");
     XLOPER12 s = str(L"Ωmega"), rows = num(2), cols = num(3), multi, cells[3];
     VARIANT args[3], r;
     int i;
     for (i = 0; i < 3; i++) cells[i] = num(i + 1);
     multi.xltype = xltypeMulti; multi.val.array.lparray = cells; multi.val.array.rows = 3; multi.val.array.columns = 1;
-    args[0] = vstr(L"spike.echo"); args[1] = vstr(L"Ωmega"); args[2] = vlong(7);
+    args[0] = vstr(L"checks.echo"); args[1] = vstr(L"Ωmega"); args[2] = vlong(7);
     for (i = 0; i < n; i++) {
         release(text(&s));
         release(grid(&rows, &cols));
@@ -548,12 +548,12 @@ int wmain(int argc, wchar_t **argv)
         Reg *r = reg_of(L"AsfPyPackages");
         check(r && r->macro_type == 2, L"AsfPyPackages registered as a command (macro type 2)", r && r->macro_type == 2 ? L"2" : L"not 2");
     }
-    type_check(L"spike_add", L"QQQ");
-    type_check(L"spike_version", L"Q");
-    type_check(L"spike_volatile", L"Q!");
-    type_check(L"spike_threadsafe", L"QQ$");
-    check(reg_of(L"spike_refused") == NULL, L"spike_refused ($ with #) not registered",
-          reg_of(L"spike_refused") ? reg_of(L"spike_refused")->type : L"not registered");
+    type_check(L"check_add", L"QQQ");
+    type_check(L"check_version", L"Q");
+    type_check(L"check_volatile", L"Q!");
+    type_check(L"check_threadsafe", L"QQ$");
+    check(reg_of(L"check_refused") == NULL, L"check_refused ($ with #) not registered",
+          reg_of(L"check_refused") ? reg_of(L"check_refused")->type : L"not registered");
 
     /* --- the pool: the last slot, and slots of 0 to 3 arguments (the 32-bit stubs pop them) */
     {
@@ -575,61 +575,61 @@ int wmain(int argc, wchar_t **argv)
     call_check(L"slot_0951", 3, p, L"951006");
     check(reg_of(L"slot_0999") == NULL, L"slot_0999, beyond the pool, not registered", reg_of(L"slot_0999") ? L"registered" : L"not registered");
 
-    call_check(L"spike_version", 0, p, L"Python 3.");
+    call_check(L"check_version", 0, p, L"Python 3.");
     a[0] = num(2); a[1] = num(3.5);
-    call_check(L"spike_add", 2, p, L"5.5");
+    call_check(L"check_add", 2, p, L"5.5");
     a[0] = num(1); a[1] = str(L"x"); a[2] = nil();
-    call_check(L"spike_args3", 3, p, L"1.0 | 'x' | None");
+    call_check(L"check_args3", 3, p, L"1.0 | 'x' | None");
     for (i = 0; i < 7; i++) a[i] = num(i + 1);
     a[3] = nil();
-    call_check(L"spike_sum7", 7, p, L"24");
+    call_check(L"check_sum7", 7, p, L"24");
     a[0] = num(2); a[1] = num(3);
-    call_check(L"spike_grid", 2, p, L"11,12,13;21,22,23");
+    call_check(L"check_grid", 2, p, L"11,12,13;21,22,23");
     for (i = 0; i < 6; i++) cells[i] = num(i + 1);
     cells[4] = str(L"t");
     cells[5] = err(xlerrNA);
     multi.xltype = xltypeMulti; multi.val.array.lparray = cells; multi.val.array.rows = 3; multi.val.array.columns = 2;
     a[0] = multi;
-    call_check(L"spike_shape", 1, p, L"3 rows x 2 columns");
+    call_check(L"check_shape", 1, p, L"3 rows x 2 columns");
     multi.val.array.rows = 1; multi.val.array.columns = 4; a[0] = multi;
-    call_check(L"spike_shape", 1, p, L"list of 4");
+    call_check(L"check_shape", 1, p, L"list of 4");
     multi.val.array.rows = 3; multi.val.array.columns = 1; a[0] = multi;
-    call_check(L"spike_column", 1, p, L"10;20;30");
-    call_check(L"spike_fail", 0, p, L"#15");
+    call_check(L"check_column", 1, p, L"10;20;30");
+    call_check(L"check_fail", 0, p, L"#15");
     a[0] = num(-1);
-    call_check(L"spike_sqrt", 1, p, L"#15");
+    call_check(L"check_sqrt", 1, p, L"#15");
     a[0] = err(xlerrDiv0);
-    call_check(L"spike_sqrt", 1, p, L"#7");
+    call_check(L"check_sqrt", 1, p, L"#7");
     a[0] = num(16);
-    call_check(L"spike_sqrt", 1, p, L"4");
+    call_check(L"check_sqrt", 1, p, L"4");
     a[0] = str(L"Ωmega");
-    call_check(L"spike_text", 1, p, L"Ωmega · ü · 中文 · 5 chars");
+    call_check(L"check_text", 1, p, L"Ωmega · ü · 中文 · 5 chars");
 
     /* --- type hints: int, date, str and list from cell values; a date back as a serial number */
     a[0] = num(2); a[1] = num(45000); a[2] = num(12); a[3] = num(7);
-    call_check(L"spike_hints", 4, p, L"2 | datetime.date(2023, 3, 15) | '12' | [7.0]");
+    call_check(L"check_hints", 4, p, L"2 | datetime.date(2023, 3, 15) | '12' | [7.0]");
     a[0] = num(45000);
-    call_check(L"spike_nextday", 1, p, L"45001");
+    call_check(L"check_nextday", 1, p, L"45001");
 
     /* --- PY_CALL: exported functions by name, never imported; missing arguments at the end dropped */
     {
         XLOPER12 g[4], col[3], missing;
         LPXLOPER12 q[4] = { &g[0], &g[1], &g[2], &g[3] };
         missing.xltype = xltypeMissing;
-        g[0] = str(L"spike.add"); g[1] = num(2); g[2] = num(40);
-        pycall_check(L"PY_CALL(\"spike.add\", 2, 40)", 3, q, L"42");
+        g[0] = str(L"checks.add"); g[1] = num(2); g[2] = num(40);
+        pycall_check(L"PY_CALL(\"checks.add\", 2, 40)", 3, q, L"42");
         for (i = 0; i < 3; i++) col[i] = num(i + 1);
-        g[0] = str(L"spike.scale");
+        g[0] = str(L"checks.scale");
         g[1].xltype = xltypeMulti; g[1].val.array.lparray = col; g[1].val.array.rows = 3; g[1].val.array.columns = 1;
         g[2] = num(10);
-        pycall_check(L"PY_CALL(\"spike.scale\", A1:A3, 10)", 3, q, L"10;20;30");
-        g[0] = str(L"spike.spike_args3"); g[1] = num(1); g[2] = missing; g[3] = str(L"x");
+        pycall_check(L"PY_CALL(\"checks.scale\", A1:A3, 10)", 3, q, L"10;20;30");
+        g[0] = str(L"checks.check_args3"); g[1] = num(1); g[2] = missing; g[3] = str(L"x");
         pycall_check(L"PY_CALL with a missing argument between two", 4, q, L"1.0 | None | 'x'");
         g[0] = str(L"os.system"); g[1] = str(L"calc");
         pycall_check(L"PY_CALL(\"os.system\", \"calc\"): #NAME?", 2, q, L"#29");
-        g[0] = str(L"spike.add"); g[1] = str(L"x"); g[2] = num(1);
+        g[0] = str(L"checks.add"); g[1] = str(L"x"); g[2] = num(1);
         pycall_check(L"PY_CALL raising TypeError: #VALUE!", 3, q, L"#15");
-        g[0] = str(L"spike.add"); g[1] = num(1); g[2] = err(xlerrNA);
+        g[0] = str(L"checks.add"); g[1] = num(1); g[2] = err(xlerrNA);
         pycall_check(L"PY_CALL with #N/A as an argument: #N/A", 3, q, L"#42");
         g[0] = err(xlerrDiv0);
         pycall_check(L"PY_CALL with #DIV/0! as the name: #DIV/0!", 1, q, L"#7");
@@ -638,46 +638,46 @@ int wmain(int argc, wchar_t **argv)
         XLOPER12 col[10];
         for (i = 0; i < 10; i++) col[i] = num(i + 1);
         multi.val.array.lparray = col; multi.val.array.rows = 10; multi.val.array.columns = 1; a[0] = multi;
-        call_check(L"spike_numpy", 1, p, L"9.1");
+        call_check(L"check_numpy", 1, p, L"9.1");
     }
 
-    /* --- phase 4: handles, asynchronous functions, commands */
-    type_check(L"spike_async", L">QX");
-    type_check(L"spike_async_thread", L">QX");
-    type_check(L"spike_macro", L"QQQ");
+    /* --- handles, asynchronous functions, commands */
+    type_check(L"check_async", L">QX");
+    type_check(L"check_async_thread", L">QX");
+    type_check(L"check_macro", L"QQQ");
     {
-        Reg *r = reg_of(L"spike_macro");
-        check(r && r->macro_type == 2, L"spike_macro registered as a command (macro type 2)", r && r->macro_type == 2 ? L"2" : L"not 2");
+        Reg *r = reg_of(L"check_macro");
+        check(r && r->macro_type == 2, L"check_macro registered as a command (macro type 2)", r && r->macro_type == 2 ? L"2" : L"not 2");
     }
     {
         wchar_t handle[64];
         LPXLOPER12 r;
         caller_row = 1; caller_col = 1;         /* A1 */
         a[0] = str(L"abcab");
-        r = ((F1)slot_of(L"spike_counter"))(p[0]);
+        r = ((F1)slot_of(L"check_counter"))(p[0]);
         cell_text(r, handle, 64);
-        check(wcsncmp(handle, L"<Counter#", 9) == 0, L"spike_counter: a handle", handle);
+        check(wcsncmp(handle, L"<Counter#", 9) == 0, L"check_counter: a handle", handle);
         release(r);
         caller_col = 2;                         /* B1 */
         a[0] = str(handle); a[1] = num(1);
-        call_check(L"spike_most", 2, p, L"a");
+        call_check(L"check_most", 2, p, L"a");
         wcscpy(caller_sheet, L"[Book2.xlsx]Sheet1");
-        call_check(L"spike_most", 2, p, L"#15");   /* the handle names nothing in another workbook */
+        call_check(L"check_most", 2, p, L"#15");   /* the handle names nothing in another workbook */
         wcscpy(caller_sheet, L"[Book1.xlsx]Sheet1");
         caller_col = 1;                         /* A1 again: its old handle goes */
         a[0] = str(L"xyy");
-        release(((F1)slot_of(L"spike_counter"))(p[0]));
+        release(((F1)slot_of(L"check_counter"))(p[0]));
         caller_col = 2;
         a[0] = str(handle); a[1] = num(1);
-        call_check(L"spike_most", 2, p, L"#15");
+        call_check(L"check_most", 2, p, L"#15");
         caller_row = caller_col = 0;
     }
-    async_check(L"spike_async", num(21), 1001, L"42");
-    async_check(L"spike_async_thread", num(1), 1002, L"2");
-    async_check(L"spike_async", err(xlerrNA), 1003, L"#42");
+    async_check(L"check_async", num(21), 1001, L"42");
+    async_check(L"check_async_thread", num(1), 1002, L"2");
+    async_check(L"check_async", err(xlerrNA), 1003, L"#42");
     {
         /* 30 at once: each result comes back to its handle */
-        F2 f = (F2)slot_of(L"spike_async");
+        F2 f = (F2)slot_of(L"check_async");
         int bad = 0;
         for (i = 0; f && i < 30; i++) {
             XLOPER12 x = num(i), h = async_handle(2000 + i);
@@ -690,21 +690,21 @@ int wmain(int argc, wchar_t **argv)
             if (wcscmp(got, want) != 0) bad++;
         }
         swprintf(got, 256, L"%d wrong of 30", bad);
-        check(f && bad == 0, L"spike_async, 30 calls at once", got);
+        check(f && bad == 0, L"check_async, 30 calls at once", got);
     }
     a[0] = num(2); a[1] = num(3);
-    call_check(L"spike_macro", 2, p, L"5");
-    call_check(L"spike_app", 0, p, L"#15");    /* no pywin32 or no Excel window: an error, not a crash */
+    call_check(L"check_macro", 2, p, L"5");
+    call_check(L"check_app", 0, p, L"#15");    /* no pywin32 or no Excel window: an error, not a crash */
     if (argc > 2 && wcscmp(argv[2], L"numpy") == 0) {
         XLOPER12 g4[4] = { num(1), num(2), num(3), num(4) };
         multi.xltype = xltypeMulti;
         multi.val.array.lparray = g4; multi.val.array.rows = 2; multi.val.array.columns = 2; a[0] = multi;
-        call_check(L"spike_matrix", 1, p, L"4;6");
+        call_check(L"check_matrix", 1, p, L"4;6");
     }
 
     /* the cost of a call: a function of two arguments, 20,000 times */
     {
-        F2 f = (F2)slot_of(L"spike_add");
+        F2 f = (F2)slot_of(L"check_add");
         a[0] = num(1); a[1] = num(2);
         QueryPerformanceCounter(&t0);
         for (i = 0; i < 20000; i++) release(f(p[0], p[1]));
@@ -714,15 +714,15 @@ int wmain(int argc, wchar_t **argv)
 
     /* --- threads: functions that aren't thread-safe run on the main thread; a thread-safe one
        from 8 threads at once, as Excel's multi-threaded recalculation calls it */
-    call_check(L"spike_thread", 0, p, L"MainThread");
-    if (!slot_of(L"spike_threadsafe")) {
-        check(0, L"spike_threadsafe from 8 threads", L"not registered");
+    call_check(L"check_thread", 0, p, L"MainThread");
+    if (!slot_of(L"check_threadsafe")) {
+        check(0, L"check_threadsafe from 8 threads", L"not registered");
     } else {
         Job jobs[8];
         HANDLE th[8];
         int bad = 0;
         for (i = 0; i < 8; i++) {
-            jobs[i].f = (F1)slot_of(L"spike_threadsafe");
+            jobs[i].f = (F1)slot_of(L"check_threadsafe");
             jobs[i].base = i * 10000;
             jobs[i].bad = 0;
             th[i] = CreateThread(NULL, 0, worker, &jobs[i], 0, NULL);
@@ -733,20 +733,20 @@ int wmain(int argc, wchar_t **argv)
             CloseHandle(th[i]);
         }
         swprintf(got, 256, L"%d wrong results of 16,000", bad);
-        check(bad == 0, L"spike_threadsafe from 8 threads", got);
+        check(bad == 0, L"check_threadsafe from 8 threads", got);
     }
 
     root = (long (WINAPI *)(long, VARIANT *))GetProcAddress(xll, "AsfPy_Root");
     VariantInit(&py);
     i = root(1, &py);
     check(i == 0 && V_VT(&py) == VT_DISPATCH, L"AsfPy_Root(1)", V_VT(&py) == VT_DISPATCH ? L"object" : L"no object");
-    args[0] = vstr(L"spike.add"); args[1] = vnum(2); args[2] = vlong(40);
+    args[0] = vstr(L"checks.add"); args[1] = vnum(2); args[2] = vlong(40);
     com_check(V_DISPATCH(&py), L"call", 3, args, L"42:5", NULL);
     {
         VARIANT r;
         wchar_t got[256], errtext[256] = L"";
         HRESULT hr;
-        args[0] = vstr(L"spike.add");
+        args[0] = vstr(L"checks.add");
         VariantInit(&args[1]); V_VT(&args[1]) = VT_I2; V_I2(&args[1]) = 2;
         VariantInit(&args[2]); V_VT(&args[2]) = VT_I2; V_I2(&args[2]) = 40;
         hr = invoke_vba(V_DISPATCH(&py), L"call", 3, args, &r, errtext);
@@ -755,13 +755,13 @@ int wmain(int argc, wchar_t **argv)
         else variant_text(&r, got, 256);
         check(wcscmp(got, L"42:3") == 0, L"py call, as VBA's CallByName makes it", got);
     }
-    args[0] = vstr(L"spike.echo"); args[1] = vstr(L"Ωmega"); args[2] = vlong(7);
+    args[0] = vstr(L"checks.echo"); args[1] = vstr(L"Ωmega"); args[2] = vlong(7);
     com_check(V_DISPATCH(&py), L"call", 3, args, L"[Ωmega:8,7:3]", NULL);
-    args[0] = vstr(L"spike.squares"); args[1] = vlong(4);
+    args[0] = vstr(L"checks.squares"); args[1] = vlong(4);
     com_check(V_DISPATCH(&py), L"call", 2, args, L"<object>", &obj);
     if (V_VT(&obj) == VT_DISPATCH) enum_check(V_DISPATCH(&obj), 1, L"For Each over a generator, one at a time", L"0:3,1:3,4:3,9:3");
     VariantClear(&obj);
-    args[0] = vstr(L"spike.squares"); args[1] = vlong(3);
+    args[0] = vstr(L"checks.squares"); args[1] = vlong(3);
     com_check(V_DISPATCH(&py), L"call", 2, args, L"<object>", &obj);
     if (V_VT(&obj) == VT_DISPATCH) enum_check(V_DISPATCH(&obj), 8, L"For Each over a generator, 8 at a time", L"0:3,1:3,4:3");
     VariantClear(&obj);
@@ -777,7 +777,7 @@ int wmain(int argc, wchar_t **argv)
                 e = vnum(r * 10 + c);
                 SafeArrayPutElement(sa, ix, &e);
             }
-        args[0] = vstr(L"spike.mean");
+        args[0] = vstr(L"checks.mean");
         VariantInit(&args[1]); V_VT(&args[1]) = VT_ARRAY | VT_VARIANT; V_ARRAY(&args[1]) = sa;
         com_check(V_DISPATCH(&py), L"call", 2, args, L"16.5:5", NULL);
     }
@@ -807,7 +807,7 @@ int wmain(int argc, wchar_t **argv)
     com_check(V_DISPATCH(&py), L"lastError", 0, args, L":8", NULL);       /* empty text after clearError */
     args[0] = vstr(L"math");
     com_check(V_DISPATCH(&py), L"module", 1, args, L"error: AttributeError", NULL);
-    args[0] = vstr(L"spike.echo");
+    args[0] = vstr(L"checks.echo");
     com_check(V_DISPATCH(&py), L"__class__", 0, args, L"error: AttributeError", NULL);
 
     VariantClear(&py);
@@ -833,7 +833,7 @@ int wmain(int argc, wchar_t **argv)
     if (argc > 2 && wcscmp(argv[2], L"numpy") == 0) {
         args[0] = vstr(L"numpy");
         com_check(V_DISPATCH(&py), L"module", 1, args, L"<object>", &mod);
-        args[0] = vstr(L"spike.echo"); args[1] = vlong(1); args[2] = vlong(2);
+        args[0] = vstr(L"checks.echo"); args[1] = vlong(1); args[2] = vlong(2);
         com_check(V_DISPATCH(&py), L"call", 3, args, L"[1:3,2:3]", &obj);
         args[0] = obj; args[1] = vlong(50);
         com_check(V_DISPATCH(&mod), L"percentile", 2, args, L"1.5:5", NULL);
@@ -847,7 +847,7 @@ int wmain(int argc, wchar_t **argv)
     /* the cost of a call through IDispatch, as VBA makes it */
     {
         VARIANT r;
-        args[0] = vstr(L"spike.add"); args[1] = vnum(1); args[2] = vnum(2);
+        args[0] = vstr(L"checks.add"); args[1] = vnum(1); args[2] = vnum(2);
         QueryPerformanceCounter(&t0);
         for (i = 0; i < 20000; i++) { invoke(V_DISPATCH(&py), L"call", 3, args, &r, NULL); VariantClear(&r); }
         QueryPerformanceCounter(&t1);
@@ -878,7 +878,7 @@ int wmain(int argc, wchar_t **argv)
         swprintf(got, 256, L"%d", nregs - before);
         check(nregs - before == NSLOTS + NBUILTIN, L"xlAutoOpen again registers them again", got);
         a[0] = num(2); a[1] = num(3.5);
-        call_check(L"spike_add", 2, p, L"5.5");
+        call_check(L"check_add", 2, p, L"5.5");
     }
 
     /* --- AsfPyReload: a module added, changed (same size, same second) and removed */
@@ -907,7 +907,7 @@ int wmain(int argc, wchar_t **argv)
         if (reload) reload();
         pycall_check(L"PY_CALL(\"aa_reload.version\") after the module went: #NAME?", 1, q, L"#29");
         a[0] = num(2); a[1] = num(3.5);
-        call_check(L"spike_add", 2, p, L"5.5");
+        call_check(L"check_add", 2, p, L"5.5");
     }
 
     /* --- a second copy of the add-in, loaded while the first runs Python */

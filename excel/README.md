@@ -181,7 +181,7 @@ Application.Run "ASF.xlam!ASFSettings.ChangeSetting", "PythonVenv", Environ$("US
 ```
 Packages then go into that venv, with its own pip; **Python packages** runs its `python.exe`.
 
-Python starts once per Excel: after changing the settings or the add-in, restart Excel. After changing a module, **Reload Python** is enough. If Python doesn't start, Excel says why when it loads the add-in, and `%TEMP%\asfpy.log` has the details. `excel/python/spike` holds the checks of each phase.
+Python starts once per Excel: after changing the settings or the add-in, restart Excel. After changing a module, **Reload Python** is enough. If Python doesn't start, Excel says why when it loads the add-in, and `%TEMP%\asfpy.log` has the details. `excel/python/tests` holds the add-in's tests, and the checklist to run in Excel.
 
 ### The Python folder's functions
 

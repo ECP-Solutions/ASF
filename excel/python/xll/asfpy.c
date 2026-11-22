@@ -1,6 +1,6 @@
 /* asfpy.xll: loads Python into Excel's process, registers the worksheet functions of the Python
    folder through a pool of exported slots, and gives VBA a root object (py) through AsfPy_Root.
-   See excel/python/DESIGN.md and spike/README.md.
+   See excel/python/DESIGN.md and tests/README.md.
 
    The Python is the one the add-in carries, unpacked once under %LOCALAPPDATA%\ASF\runtime,
    unless the setting PythonVenv names another.

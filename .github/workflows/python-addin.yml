@@ -1,7 +1,7 @@
-# The Python add-in (excel/python): boot.py's tests without Excel (tests/test_boot.py), then both
-# builds of asfpy.xll, each driven by the fake Excel host (tests/fakehost.c). MinGW-w64 under Wine
+# The Python add-in (excel/python): boot.py's tests without Excel (tests/unit), then both
+# builds of asfpy.xll, each driven by the fake Excel host (tests/fakehost). MinGW-w64 under Wine
 # on Linux, as the design plans; MSVC natively on Windows, where setup-python also gives a 32-bit
-# Python. Real Excel stays a checklist run by hand (excel/python/spike/README.md).
+# Python. Real Excel stays a checklist run by hand (excel/python/tests/excel/README.md).
 name: Python add-in
 
 on:
@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: boot.py without Excel (Linux's own Python)
-        run: python -m unittest discover -s excel/python/tests -p "test_*.py" -v
+        run: python -m unittest discover -s excel/python/tests/unit -p "test_*.py" -v
       - name: MinGW-w64 and Wine
         run: |
           sudo dpkg --add-architecture i386
@@ -50,7 +50,7 @@ jobs:
         run: python excel/python/xll/build.py mingw
       - name: Fake Excel host
         run: >-
-          python excel/python/tests/run_fakehost.py
+          python excel/python/tests/fakehost/run_fakehost.py
           "$RUNNER_TEMP/py/python-3.11.9/tools" "$RUNNER_TEMP/py/python-3.12.10/tools"
           "$RUNNER_TEMP/py/python-3.14.10/tools" "$RUNNER_TEMP/py/pythonx86-3.12.10/tools"
           bundled64 bundled32
@@ -84,14 +84,14 @@ jobs:
       - if: matrix.numpy
         run: python -m pip install -q numpy
       - name: boot.py without Excel
-        run: python -m unittest discover -s excel/python/tests -p "test_*.py"
+        run: python -m unittest discover -s excel/python/tests/unit -p "test_*.py"
       - name: Build
         run: python excel/python/xll/build.py msvc
       - name: Fake Excel host
-        run: python excel/python/tests/run_fakehost.py "$env:pythonLocation"
+        run: python excel/python/tests/fakehost/run_fakehost.py "$env:pythonLocation"
       - name: Fake Excel host, the Python the add-in carries
         if: matrix.python == '3.14'
-        run: python excel/python/tests/run_fakehost.py bundled64 bundled32
+        run: python excel/python/tests/fakehost/run_fakehost.py
       - name: Checksums
         if: matrix.python == '3.14'
         working-directory: excel/python/xll/build

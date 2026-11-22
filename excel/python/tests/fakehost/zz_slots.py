@@ -1,5 +1,5 @@
-"""Test only: 1,000 worksheet functions, which with spike.py's overfill the add-in's pool of 1,000
-slots. Named so that it imports after spike.py, whose functions then take the first slots.
+"""Test only: 1,000 worksheet functions, which with checks.py's overfill the add-in's pool of 1,000
+slots. Named so that it imports after checks.py, whose functions then take the first slots.
 
 slot_NNNN takes NNNN % 4 arguments and returns NNNN * 1000 plus their sum, so a call shows
 both that the right function runs in a slot and that the slot received its arguments."""

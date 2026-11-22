@@ -7,6 +7,9 @@ All notable changes for ASF. This file combines the release notes from the proje
 - **Added**
     - **Python add-in: its own Python** — `asfpy64.xll` and `asfpy32.xll` carry CPython 3.14.10 of their bitness, with pip (python.org's build, pinned with its SHA-256 in `excel/python/xll/runtime.json`), and unpack it into `%LOCALAPPDATA%\ASF\runtime` the first time Excel loads them: no Python to install and no venv to make. **Python packages** on the ASF tab (the add-in's command `AsfPyPackages`) opens a console window with pip for that Python. The setting `PythonVenv` is now optional: it names another Python to use instead. After the approach of [sancarn/xll-python](https://github.com/sancarn/xll-python); no code of it is used.
 
+- **Changed**
+    - **Python add-in: tests** — `excel/python/tests` holds them by kind: `unit` (`boot.py` alone), `fakehost` (the add-ins driven by a stand-in for Excel; without arguments it runs each with the Python it carries) and `excel` (the checklist for Excel, `AsfPyChecks.bas` with `AsfPyTest`, and `checks.py`, which were `spike/AsfPySpike.bas` and `spike/spike.py`; their functions are now `check_*`). The checklist also checks which Python runs and that pip is there. `tests/excel` holds the add-ins built with their Python.
+
 ## [v4.1.0] - 2026-11-20
 https://github.com/ECP-Solutions/ASF/releases/tag/v4.1.0
 
