@@ -224,7 +224,7 @@ class Studio(unittest.TestCase):
         app = App()
         with mock.patch.object(excel, 'call', lambda fn, timeout=600: fn(app)):
             status, r, _ = self.post('excel/macro', {'name': 'check_macro', 'args': [2, 3, None], 'front': True})
-            self.assertEqual((status, r), (200, {'result': '5', 'error': False}))
+            self.assertEqual((status, r), (200, {'result': '5', 'error': False, 'front': False}))   # no Windows here
             self.assertEqual(app.calls[-1], ('check_macro', (2, 3)))     # a trailing blank: the default
             self.assertEqual(self.post('excel/macro', {'name': 'table', 'args': []})[1]['result'], '1\ta\n2.5\t')
             r = self.post('excel/macro', {'name': 'broken', 'args': [None, 1]})[1]

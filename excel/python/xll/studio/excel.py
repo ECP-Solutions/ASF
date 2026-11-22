@@ -83,18 +83,75 @@ def run(name, *args):
 
 def front(app):
     """Excel's window in front, for a macro that shows a dialog (xl_app().InputBox, a message box)
-    or works on the selection; Windows lets a background process do so through SwitchToThisWindow
-    where SetForegroundWindow only flashes the taskbar button."""
+    or works on the selection: True if it is. Windows lets only the program in front (here the
+    studio's window, Edge's) bring another forward; a background process such as this one only
+    makes the taskbar button flash. So, in turn: this thread shares the input of the window in
+    front (AttachThreadInput), then sends an input event of its own (the program that sent the
+    last input may bring a window forward), then switches as Alt+Tab does. If Windows still says
+    no, Excel's taskbar button flashes."""
     try:
         import ctypes
-        user32 = ctypes.windll.user32
+        from ctypes import wintypes
+        user32 = ctypes.WinDLL('user32')
+        kernel32 = ctypes.WinDLL('kernel32')
+    except (ImportError, OSError, AttributeError):
+        return False
+    HWND, DWORD, BOOL = wintypes.HWND, wintypes.DWORD, wintypes.BOOL
+    user32.GetForegroundWindow.restype = HWND
+    user32.GetWindowThreadProcessId.argtypes = [HWND, ctypes.c_void_p]
+    user32.GetWindowThreadProcessId.restype = DWORD
+    user32.AttachThreadInput.argtypes = [DWORD, DWORD, BOOL]
+    for f in ('IsIconic', 'SetForegroundWindow', 'BringWindowToTop', 'SetActiveWindow'):
+        getattr(user32, f).argtypes = [HWND]
+    user32.ShowWindow.argtypes = [HWND, ctypes.c_int]
+    user32.SwitchToThisWindow.argtypes = [HWND, BOOL]
+    try:
         hwnd = int(app.Hwnd)
-        if user32.IsIconic(hwnd):
-            user32.ShowWindow(hwnd, 9)                   # SW_RESTORE
-        if not user32.SetForegroundWindow(hwnd) or user32.GetForegroundWindow() != hwnd:
-            user32.SwitchToThisWindow(hwnd, True)
     except Exception:
-        pass
+        return False
+
+    def in_front():
+        return (user32.GetForegroundWindow() or 0) == hwnd
+
+    if user32.IsIconic(hwnd):
+        user32.ShowWindow(hwnd, 9)                          # SW_RESTORE
+    if in_front():
+        return True
+    me = kernel32.GetCurrentThreadId()
+    fg = user32.GetForegroundWindow()
+    them = user32.GetWindowThreadProcessId(fg, None) if fg else 0
+    attached = bool(them and them != me and user32.AttachThreadInput(me, them, True))
+    try:
+        user32.BringWindowToTop(hwnd)
+        user32.SetForegroundWindow(hwnd)
+        user32.SetActiveWindow(hwnd)
+    finally:
+        if attached:
+            user32.AttachThreadInput(me, them, False)
+    if in_front():
+        return True
+
+    class MOUSEINPUT(ctypes.Structure):
+        _fields_ = [('dx', ctypes.c_long), ('dy', ctypes.c_long), ('mouseData', DWORD), ('dwFlags', DWORD),
+                    ('time', DWORD), ('dwExtraInfo', ctypes.c_size_t)]
+
+    class INPUT(ctypes.Structure):
+        _fields_ = [('type', DWORD), ('mi', MOUSEINPUT)]       # 40 bytes in 64-bit, 28 in 32-bit, as Windows' INPUT
+    move = INPUT(0, MOUSEINPUT(0, 0, 0, 0x0001, 0, 0))       # INPUT_MOUSE, MOUSEEVENTF_MOVE by 0: nothing moves
+    user32.SendInput(1, ctypes.byref(move), ctypes.sizeof(INPUT))
+    user32.SetForegroundWindow(hwnd)
+    if in_front():
+        return True
+    user32.SwitchToThisWindow(hwnd, True)
+    if in_front():
+        return True
+
+    class FLASHWINFO(ctypes.Structure):
+        _fields_ = [('cbSize', ctypes.c_uint), ('hwnd', HWND), ('dwFlags', DWORD), ('uCount', ctypes.c_uint),
+                    ('dwTimeout', DWORD)]
+    flash = FLASHWINFO(ctypes.sizeof(FLASHWINFO), hwnd, 0x3 | 0xC, 0, 0)   # caption and button, until in front
+    user32.FlashWindowEx(ctypes.byref(flash))
+    return False
 
 
 def macro(name, args=(), to_front=False):
@@ -110,8 +167,7 @@ def macro(name, args=(), to_front=False):
         while values and values[-1] is None:
             values.pop()                                  # trailing blanks: the macro's defaults
         values = [Empty if v is None else v for v in values]
-        if to_front:
-            front(app)
+        in_front = front(app) if to_front else None
         out = app.Run(name, *values)
         if isinstance(out, int) and out in ERRORS:
             detail = ''
@@ -120,8 +176,8 @@ def macro(name, args=(), to_front=False):
                     detail = app.Run('AsfPyLastError') or ''
                 except Exception:
                     pass
-            return {'result': ERRORS[out] + ('\n' + detail if detail else ''), 'error': True}
-        return {'result': text(out), 'error': False}
+            return {'result': ERRORS[out] + ('\n' + detail if detail else ''), 'error': True, 'front': in_front}
+        return {'result': text(out), 'error': False, 'front': in_front}
     return call(go)
 
 

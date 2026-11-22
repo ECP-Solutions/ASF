@@ -326,9 +326,12 @@ async function runMacro(f) {
   show('output');
   output('▶ macro ' + f.name + '(' + args.map(v => v === null ? 'blank' : JSON.stringify(v)).join(', ') + ')', 'head');
   foot('Excel runs ' + f.name + '…');
-  const waiting = setTimeout(() => foot('Excel still runs ' + f.name + ': if it shows a dialog, answer it in Excel'), 1500);
+  const waiting = setTimeout(() => foot('Excel still runs ' + f.name + ': if it shows a dialog, answer it in Excel' +
+    (r.__front ? '' : ' (tick Bring Excel to the front next time)')), 1500);
   try {
     const res = await post('excel/macro', { name: f.name, args, front: r.__front });
+    if (r.__front && res.front === false)
+      output('Windows kept Excel behind the studio: its taskbar button flashed. A macro\'s dialog shows there.', 'err');
     output(res.result || '(done: no result)', res.error ? 'err' : 'ok');
     foot(res.error ? f.name + ' failed' : 'Ran ' + f.name);
     message(res.result || 'Done: the macro gave no result.', f.name + (res.error ? ' failed' : ''), true);
