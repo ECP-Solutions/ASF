@@ -22,6 +22,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import tarfile
 import urllib.request
 import zipfile
 import zlib
@@ -31,7 +32,7 @@ OUT = os.path.join(HERE, "build")
 NSLOTS, MAX_ARGS = 2000, 32         # as in asfpy.c and boot.py
 EXPORTS = ["xlAutoOpen", "xlAutoClose", "xlAutoFree12", "xlAddInManagerInfo12", "SetExcel12EntryPt", "AsfPy_Root",
            "asfpy_call", "asfpy_reload", "asfpy_packages", "asfpy_run_script", "asfpy_macros",
-           "asfpy_console"]
+           "asfpy_console", "asfpy_studio"]
 
 
 def write(name, text):
@@ -131,6 +132,38 @@ def packages(bits, version, wheels):
     return files
 
 
+def editor_files(pin):
+    """The files of the code editor the studio uses (CodeMirror), from the package runtime.json pins."""
+    with tarfile.open(download(pin)) as t:
+        return [(f, t.extractfile("package/" + f).read()) for f in pin["files"]]
+
+
+def studio(pins):
+    """The studio (studio/) as the package asfpy_studio of the add-in's Python, with its editor."""
+    root, files = os.path.join(HERE, "studio"), []
+    for path, dirs, names in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if d not in ("__pycache__", "vendor"))
+        for n in sorted(names):
+            rel = os.path.relpath(os.path.join(path, n), root).replace(os.sep, "/")
+            files.append(("Lib/site-packages/asfpy_studio/" + rel, open(os.path.join(path, n), "rb").read()))
+    if "studio" in pins:
+        files += [("Lib/site-packages/asfpy_studio/static/vendor/codemirror/" + f, b) for f, b in editor_files(pins["studio"])]
+    return files
+
+
+def studio_vendor():
+    """--studio-vendor: the editor's files into studio/static/vendor, to run the studio from the
+    sources (its tests, or python -m with studio/ on the path)."""
+    with open(os.path.join(HERE, "runtime.json"), encoding="utf-8") as f:
+        pins = json.load(f)
+    for name, data in editor_files(pins["studio"]):
+        path = os.path.join(HERE, "studio", "static", "vendor", "codemirror", name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(data)
+    print("studio/static/vendor/codemirror: %d files" % len(pins["studio"]["files"]))
+
+
 def runtime():
     """The cabinets of both bitnesses (runtime64.cab, runtime32.cab), their resource scripts, and
     runtime.h with the folder each unpacks to: the version, the bitness and the cabinet's hash."""
@@ -149,6 +182,7 @@ def runtime():
                     continue
                 files.append((name, z.read(item)))
         files += packages(bits, pins["version"], pins.get("packages", {}).get(str(bits), []))
+        files += studio(pins)
         cab = cabinet(files)
         folders[bits] = "python-%s-%d-%s" % (pins["version"], bits, hashlib.sha256(cab).hexdigest()[:12])
         with open(os.path.join(OUT, "runtime%d.cab" % bits), "wb") as f:
@@ -336,6 +370,9 @@ def build(tool, bits, carry):
 
 
 def main():
+    if "--studio-vendor" in sys.argv:
+        os.makedirs(OUT, exist_ok=True)
+        return studio_vendor()
     args = [a for a in sys.argv[1:] if a != "--no-runtime"]
     carry = "--no-runtime" not in sys.argv
     tool = toolchain(args[0] if args else None)

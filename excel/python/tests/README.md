@@ -2,7 +2,7 @@
 
 | Folder | What it checks | Runs |
 |---|---|---|
-| [`unit`](unit) | `xll/boot.py`, the Python side of the add-in, alone: the decorators, the Python folder, conversions, handles, `PY_CALL`'s lookup, reload | anywhere, with any Python from 3.11; in CI |
+| [`unit`](unit) | `xll/boot.py`, the Python side of the add-in, alone: the decorators, the Python folder, conversions, handles, `PY_CALL`'s lookup, reload; the console (`console.py`) and the studio's server (`xll/studio`): its security, files, checks, completions, console and packages | anywhere, with any Python from 3.11; in CI |
 | [`fakehost`](fakehost/README.md) | `asfpy64.xll` and `asfpy32.xll` themselves, driven by a stand-in for Excel: registration, every slot, calls, threads, memory, `py` through `IDispatch`, commands, unticking | Windows natively, Linux under Wine; in CI |
 | [`excel`](excel/README.md) | The add-in in Excel: a checklist in VBA, and the Python module it calls | by hand, in each Excel |
 

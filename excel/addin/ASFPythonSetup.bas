@@ -1,6 +1,6 @@
 Attribute VB_Name = "ASFPythonSetup"
-' The Python buttons of the ASF tab, after the ribbon (ASFRibbon): Run Python script, Python
-' macros, Python console, Python settings and About Python. The Python add-in (asfpy64.xll,
+' The Python buttons of the ASF tab, after the ribbon (ASFRibbon): Python studio, Run Python script,
+' Python macros, Python console, Python settings and About Python. The Python add-in (asfpy64.xll,
 ' asfpy32.xll) does the work through its commands AsfPyRunScript, AsfPyMacros and AsfPyConsole; the settings are those it reads when
 ' Excel loads it (ASFSettings). Python runs on Excel for Windows only.
 Option Explicit
@@ -90,6 +90,17 @@ Public Sub Macros()
     Exit Sub
 Failed:
     MsgBox "Python macros failed: " & Err.Description, vbExclamation, TITLE
+End Sub
+
+' Python studio: the add-in's command AsfPyStudio opens it, or its window when it runs already
+Public Sub Studio()
+    Dim py As Object
+    If Not Ready(py) Then Exit Sub
+    On Error GoTo Failed
+    Application.Run "AsfPyStudio"
+    Exit Sub
+Failed:
+    MsgBox "Python studio failed: " & Err.Description, vbExclamation, TITLE
 End Sub
 
 ' Python console: the add-in's Python at its prompt, in a console window of its own (its command

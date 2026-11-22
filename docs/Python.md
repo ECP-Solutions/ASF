@@ -58,7 +58,7 @@ Excel refuses add-ins downloaded from the internet.
 
 In Excel: File > Options > Add-ins. At the bottom, choose **Manage: Excel Add-ins** and click **Go**, then **Browse**, pick the `.xll` and click **OK**. Make sure it is ticked.
 
-The first time, the add-in unpacks its Python into `%LOCALAPPDATA%\ASF\runtime` (about 125 MB for 64-bit, 75 MB for 32-bit, once; a few seconds). Excel then loads it every time it starts.
+The first time, the add-in unpacks its Python into `%LOCALAPPDATA%\ASF\runtime` (about 160 MB for 64-bit, 110 MB for 32-bit, once; a few seconds). Excel then loads it every time it starts.
 
 If Python can't start, Excel says why right away. The details are in `%TEMP%\asfpy.log`. See [Troubleshooting](#troubleshooting).
 
@@ -88,6 +88,7 @@ The add-in's Python comes with these packages, ready to import:
 | openpyxl 3.1 | reading and writing `.xlsx` files, also for `pandas.read_excel` | yes | yes |
 | pywin32 312 | `xl_app()`, Excel's object model in macros; COM | yes | yes |
 | python-dateutil, tzdata | what pandas needs; dates and time zones | yes | yes |
+| jedi, parso, pyflakes | the completions and the problems of **Python studio** | yes | yes |
 
 To add another package, or to upgrade one of these:
 
@@ -106,6 +107,19 @@ To add another package, or to upgrade one of these:
 pip downloads from PyPI. Behind a company proxy or offline, pip takes the usual options: `install C:\downloads\some_package.whl`, or `install --index-url https://your.mirror/simple numpy`.
 
 Windows locks the files of a package that Excel has loaded: close Excel before you upgrade or remove such a package, and run the console from a new Excel without using Python (or with the add-in unticked).
+
+### Python studio
+
+**Python studio** on the ASF tab (or `Application.Run "AsfPyStudio"`) opens a window to write and try the modules of the Python folder:
+
+- **Files:** the modules of the Python folder, in tabs, with Python highlighting, completions as you type a `.` or press Ctrl+Space (from jedi, which knows your modules, the packages and the `asfpy` decorators), the signature of the function you call, and problems as you type: syntax errors and pyflakes's warnings (undefined names, unused imports), underlined and listed under **Problems**. **+** makes a new module from a template.
+- **Save** (Ctrl+S) writes the file; with **Reload Excel on save**, Excel imports the Python folder again and calculates the workbooks, so a changed function shows in its cells at once.
+- **Run in Excel** (F5) runs the file in Excel's own Python, as **Run Python script** does, and shows what it printed under **Output**.
+- **Functions** lists what Excel gets from the folder: the worksheet functions as formulas, the macros (with a button to run each in Excel) and the exported functions, each with its description; a click opens it.
+- **Console** runs Python apart from Excel, with the Python folder importable: try a package or a function before Excel loads it.
+- **Packages** lists what the add-in's Python has, suggests common packages, looks a package up on PyPI by name, and installs, upgrades or removes them with pip, its output live. Excel uses what changed after a restart.
+
+The studio runs in a process of its own with the add-in's Python (not with `PythonVenv`'s), and shows in a window of Microsoft Edge (the default browser otherwise). It listens only on the computer itself (127.0.0.1), and only the window Excel opened can use it. It closes two minutes after its window. Opening it again while it runs brings its window back.
 
 ### The Python console
 
@@ -129,6 +143,7 @@ With [`ASF.xlam`](Add-ins.html) loaded too, the ASF tab gets two Python groups, 
 
 | Button | What it does |
 |---|---|
+| **Python studio** | A window to write the Python folder's modules: see [Python studio](#python-studio) above |
 | **Run Python script** | Pick a `.py` file: it runs in Excel's Python as `__main__`, with its folder on the import path, and what it prints is shown (in Notepad when it's long). Like a macro, it may use Excel through `xl_app()` |
 | **Python macros** | Lists the `@xl_macro` functions of the Python folder and runs the one you pick, asking for its arguments (up to 5, typed separated by commas) |
 | **Reload Python** | Imports the Python folder again and registers its functions, then calculates the workbooks in full |

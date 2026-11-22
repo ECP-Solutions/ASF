@@ -102,6 +102,7 @@ The worksheet functions keep one engine and its compiled scripts for the whole s
 | **Library folder** | Opens the library folder, made first when it is missing |
 | **Why this error?** | Calculates the active cell again and shows why its `ASF_RUN` or `ASF_CALL` gave `#VALUE!` (with several calls in one formula, the message of the last one). With the Python add-in loaded, also the Python error and traceback of a `PY_CALL` or Python function |
 | **Reset engine** | Drops the engine of the worksheet functions and their compiled scripts; the next formula reads the settings again |
+| **Python studio** | A window to write the Python folder's modules (`AsfPyStudio`): an editor with completions and problems as you type, saving reloads them in Excel; run in Excel, the functions Excel gets, a console, and the packages to install or upgrade |
 | **Run Python script** | Runs a `.py` file you pick in Excel's Python (the Python add-in's command `AsfPyRunScript`) and shows what it printed |
 | **Python macros** | Lists the `@xl_macro` functions of the Python folder (`AsfPyMacros`) and runs the one you pick, asking for its arguments |
 | **Reload Python** | The Python add-in imports its folder again and registers its functions again, then the workbooks are calculated in full |
@@ -176,7 +177,7 @@ A script that asks for more than the setting allows doesn't run at all, so it ne
 
 The add-in carries its own Python (CPython 3.14 of its bitness, with pip) with numpy, pandas (64-bit only: pandas has no 32-bit build), openpyxl and pywin32: nothing else to install, no venv to make.
 
-1. Unblock `asfpy64.xll` (64-bit Excel) or `asfpy32.xll` (32-bit Excel; File > Account > About Excel says which) in its Properties, copy it to a trusted location, and add it under File > Options > Add-ins > Manage: Excel Add-ins > Browse. The first time, it unpacks its Python into `%LOCALAPPDATA%\ASF\runtime` (about 125 MB for 64-bit, 75 MB for 32-bit).
+1. Unblock `asfpy64.xll` (64-bit Excel) or `asfpy32.xll` (32-bit Excel; File > Account > About Excel says which) in its Properties, copy it to a trusted location, and add it under File > Options > Add-ins > Manage: Excel Add-ins > Browse. The first time, it unpacks its Python into `%LOCALAPPDATA%\ASF\runtime` (about 160 MB for 64-bit, 110 MB for 32-bit).
 2. Put your modules in the Python folder, `%APPDATA%\ASF\python` (**Python folder** on the ASF tab opens it).
 3. For packages, **Python packages** on the ASF tab (or `Application.Run "AsfPyPackages"`) opens a console window with pip for that Python: type `install scipy`, for example, then restart Excel. Close Excel before upgrading or removing a package it has loaded.
 

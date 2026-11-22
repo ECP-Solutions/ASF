@@ -669,10 +669,10 @@ static void register_functions(void)
     excel12(xlFree, NULL, 1, op);
 }
 
-/* PY_CALL and the commands AsfPyReload, AsfPyPackages, AsfPyConsole, AsfPyRunScript and
-   AsfPyMacros: the add-in's own, registered once Python runs */
+/* PY_CALL and the commands AsfPyReload, AsfPyPackages, AsfPyConsole, AsfPyStudio, AsfPyRunScript
+   and AsfPyMacros: the add-in's own, registered once Python runs */
 #define PYCALL_ARGS 29          /* PY_CALL(name, 29 arguments): 30 in all, below Excel's 255 */
-static double g_pycall_id, g_reload_id, g_packages_id, g_script_id, g_macros_id, g_console_id;
+static double g_pycall_id, g_reload_id, g_packages_id, g_script_id, g_macros_id, g_console_id, g_studio_id;
 
 static void register_builtins(void)
 {
@@ -696,6 +696,8 @@ static void register_builtins(void)
                                 L"Runs a .py file in Excel's Python and gives back what it printed.", 0, NULL);
     g_macros_id = register_proc(&dll, L"asfpy_macros", L"Q", L"AsfPyMacros", L"", 2,
                                 L"Lists the commands (@xl_macro) of the Python folder.", 0, NULL);
+    g_studio_id = register_proc(&dll, L"asfpy_studio", L"J", L"AsfPyStudio", L"", 2,
+                                L"Opens the Python studio: an editor, a console and the packages.", 0, NULL);
     g_console_id = register_proc(&dll, L"asfpy_console", L"J", L"AsfPyConsole", L"", 2,
                                  L"Opens a console window with the add-in's Python at its prompt.", 0, NULL);
     excel12(xlFree, NULL, 1, op);
@@ -1316,6 +1318,43 @@ EXPORT int WINAPI asfpy_packages(void)
     return open_console(PACKAGES_PY, L"asfpy-packages.py", L"-I", L"");
 }
 
+/* The command AsfPyStudio (ASF's ribbon: Python studio): the studio (asfpy_studio, in the add-in's
+   own Python) started windowless with pythonw.exe; it opens its window and serves it on the
+   loopback address. A second click opens the window of the studio that runs. */
+EXPORT int WINAPI asfpy_studio(void)
+{
+    wchar_t main_py[MAX_PATH], pyw[MAX_PATH], folder[MAX_PATH], log[MAX_PATH], cmd[4 * MAX_PATH], msg[1200];
+    STARTUPINFOW si;
+    PROCESS_INFORMATION pi;
+    DWORD k;
+    memset(&si, 0, sizeof si);
+    si.cb = sizeof si;
+    swprintf(main_py, MAX_PATH, L"%ls\\Lib\\site-packages\\asfpy_studio\\__main__.py", g_home);
+    if (!g_home[0] || GetFileAttributesW(main_py) == INVALID_FILE_ATTRIBUTES) {
+        swprintf(msg, 1200, L"ASF Python: the studio comes with the add-in's own Python%ls. Details: %ls",
+                 g_home[0] ? L"; the setting PythonVenv names another (Python settings on the ASF tab)" : L"", g_log);
+        alert(msg);
+        return 0;
+    }
+    swprintf(pyw, MAX_PATH, L"%ls\\pythonw.exe", g_home);
+    if (GetFileAttributesW(pyw) == INVALID_FILE_ATTRIBUTES) wcscpy(pyw, g_exe);
+    wcsncpy(folder, g_folder, MAX_PATH - 1);
+    folder[MAX_PATH - 1] = 0;
+    for (k = (DWORD)wcslen(folder); k > 3 && folder[k - 1] == L'\\'; k--) folder[k - 1] = 0;
+    k = GetTempPathW(MAX_PATH - 24, log);
+    if (!k) log[0] = 0;
+    wcscat(log, L"asfpy-studio.log");
+    swprintf(cmd, 4 * MAX_PATH, L"\"%ls\" -I -m asfpy_studio --folder \"%ls\" --log \"%ls\"", pyw, folder, log);
+    if (!CreateProcessW(pyw, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        note(L"%ls didn't start (error %lu)", cmd, GetLastError());
+        return 0;
+    }
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    note(L"studio started: %ls", cmd);
+    return 1;
+}
+
 /* The command AsfPyConsole (ASF's ribbon: Python console): the add-in's Python at its prompt, in a
    console window of its own (console.py, then -i), with pip("...") and the Python folder importable.
    A process of its own: what it does can't break Excel's Python. */
@@ -1397,6 +1436,7 @@ EXPORT int WINAPI xlAutoClose(void)
     unregister_id(&g_script_id);
     unregister_id(&g_macros_id);
     unregister_id(&g_console_id);
+    unregister_id(&g_studio_id);
     if (n) note(L"unregistered %d functions", n);
     return 1;
 }

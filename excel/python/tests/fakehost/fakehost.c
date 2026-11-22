@@ -15,7 +15,7 @@
 #include "../../xll/xloper.h"
 
 #define NSLOTS 2000   /* as in asfpy.c */
-#define NBUILTIN 6    /* PY_CALL and the commands AsfPyReload, AsfPyPackages, AsfPyConsole, AsfPyRunScript, AsfPyMacros */
+#define NBUILTIN 7    /* PY_CALL and the commands AsfPyReload, AsfPyPackages, AsfPyConsole, AsfPyStudio, AsfPyRunScript, AsfPyMacros */
 #define SETTINGS_KEY L"Software\\VB and VBA Program Settings\\ASF\\AddIn"
 
 #if defined(_MSC_VER) && !defined(_WIN64)
@@ -542,7 +542,7 @@ int wmain(int argc, wchar_t **argv)
     QueryPerformanceCounter(&t1);
     wprintf(L"     start-up: %.0f ms, %d functions registered\n", (t1.QuadPart - t0.QuadPart) * 1000.0 / fq.QuadPart, nregs);
     swprintf(got, 256, L"%d", nregs);
-    check(nregs == NSLOTS + NBUILTIN, L"registered: one function in each slot, PY_CALL and the 5 commands", got);
+    check(nregs == NSLOTS + NBUILTIN, L"registered: one function in each slot, PY_CALL and the 6 commands", got);
     if (nregs < 20) { wprintf(L"%d checks, %d failed\n", checks, failed); return 1; }
     check(wcsstr(last_alert, L"are not registered") != NULL, L"alert: functions beyond the slots", last_alert);
 
@@ -555,6 +555,7 @@ int wmain(int argc, wchar_t **argv)
         check(r && r->macro_type == 2, L"AsfPyPackages registered as a command (macro type 2)", r && r->macro_type == 2 ? L"2" : L"not 2");
     }
     type_check(L"AsfPyConsole", L"J");    /* not run: it opens a console window */
+    type_check(L"AsfPyStudio", L"J");     /* not run: it opens a window */
     {
         Reg *r = reg_of(L"AsfPyConsole");
         check(r && r->macro_type == 2, L"AsfPyConsole registered as a command (macro type 2)", r && r->macro_type == 2 ? L"2" : L"not 2");

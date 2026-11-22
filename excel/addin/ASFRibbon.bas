@@ -115,6 +115,11 @@ Failed:
     MsgBox "Reload Python failed: " & Err.Description, vbExclamation, TITLE
 End Sub
 
+' Python studio: the editor, console and packages of the Python add-in, in a window of its own
+Public Sub OnPythonStudio(control As Object)
+    ASFPythonSetup.Studio
+End Sub
+
 ' Run Python script: a .py file run in Excel's Python, its output shown (ASFPythonSetup)
 Public Sub OnRunPythonScript(control As Object)
     ASFPythonSetup.RunScript

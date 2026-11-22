@@ -26,11 +26,15 @@
                   onAction="ASFRibbon.OnResetEngine"/>
         </group>
         <group id="asfPython" label="Python">
+          <button id="asfPythonStudio" label="Python studio" size="large" imageMso="VisualBasic"
+                  screentip="Write and run Python for Excel"
+                  supertip="An editor for the modules of the Python folder, with completions and problems as you type; saving reloads them in Excel. Also a console, the functions Excel gets, and the packages to install or upgrade."
+                  onAction="ASFRibbon.OnPythonStudio"/>
           <button id="asfRunPythonScript" label="Run Python script" size="large" imageMso="MacroPlay"
                   screentip="Run a Python script in Excel"
                   supertip="Pick a .py file: it runs in Excel's Python as __main__, with its folder on the import path, and what it prints is shown. Like a Python macro, it may use Excel through xl_app()."
                   onAction="ASFRibbon.OnRunPythonScript"/>
-          <button id="asfPythonMacros" label="Python macros" size="large" imageMso="VisualBasic"
+          <button id="asfPythonMacros" label="Python macros" size="large" imageMso="MacroRecord"
                   screentip="Run a macro of the Python folder"
                   supertip="Lists the functions of the Python folder marked with @xl_macro and runs the one you pick, asking for its arguments when it has some."
                   onAction="ASFRibbon.OnPythonMacros"/>

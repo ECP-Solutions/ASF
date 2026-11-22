@@ -1,0 +1,423 @@
+'use strict';
+// ASF Python Studio: the page. The server (server.py) holds the files, the checks, the console and
+// pip; Excel's commands go through it too.
+
+const $ = id => document.getElementById(id);
+const dark = matchMedia('(prefers-color-scheme: dark)');
+const state = { tabs: [], active: null, folder: '', excel: null, jobsRevision: -1, packages: [], history: [], historyAt: 0 };
+
+async function api(name, body) {
+  const options = body === undefined ? {} :
+    { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Studio': '1' }, body: JSON.stringify(body) };
+  const r = await fetch('/api/' + name, options);
+  const data = await r.json().catch(() => ({ error: 'The studio closed: open it again from Excel.' }));
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+const get = (name, args) => api(name + (args ? '?' + new URLSearchParams(args) : ''));
+const post = (name, body) => api(name, body || {});
+
+function el(tag, attrs, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === 'class') e.className = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v);
+  }
+  for (const c of children) if (c !== null && c !== undefined) e.append(c);
+  return e;
+}
+function foot(text) { $('foot-left').textContent = text; }
+
+// --- output panel ---------------------------------------------------------------------------
+function show(panel) {
+  document.querySelectorAll('.ptab').forEach(b => b.classList.toggle('active', b.dataset.panel === panel));
+  document.querySelectorAll('.panel-body').forEach(b => b.classList.toggle('hidden', b.dataset.body !== panel));
+  if (panel === 'console') $('console-in').focus();
+}
+function output(text, kind) {
+  const out = $('output');
+  out.append(el('span', { class: kind ? 'out-' + kind : '' }, text.endsWith('\n') ? text : text + '\n'));
+  out.scrollTop = out.scrollHeight;
+}
+
+// --- editor ---------------------------------------------------------------------------------
+const editor = CodeMirror($('editor'), {
+  value: '', mode: 'python', lineNumbers: true, indentUnit: 4, tabSize: 4, matchBrackets: true,
+  autoCloseBrackets: true, styleActiveLine: true, theme: dark.matches ? 'material-darker' : 'default',
+  gutters: ['problem-gutter', 'CodeMirror-linenumbers'], readOnly: 'nocursor',
+  extraKeys: {
+    'Ctrl-S': () => save(), 'Cmd-S': () => save(), 'F5': () => run(), 'Ctrl-Space': cm => complete(cm),
+    'Ctrl-/': cm => cm.toggleComment(), 'Tab': cm => cm.somethingSelected() ? cm.indentSelection('add') : cm.execCommand('insertSoftTab'),
+    'Shift-Tab': cm => cm.indentSelection('subtract'),
+  },
+});
+dark.addEventListener('change', e => editor.setOption('theme', e.matches ? 'material-darker' : 'default'));
+
+function tabOf(path) { return state.tabs.find(t => t.path === path); }
+
+async function open(path, line) {
+  let tab = tabOf(path);
+  if (!tab) {
+    const r = await get('file', { path });
+    tab = { path, doc: CodeMirror.Doc(r.text, 'python'), saved: r.text, marks: [], problems: [] };
+    tab.doc.on('change', () => { renderTabs(); lintSoon(tab); });
+    state.tabs.push(tab);
+  }
+  activate(tab);
+  if (line) { editor.setCursor({ line: line - 1, ch: 0 }); editor.scrollIntoView(null, 120); }
+  editor.focus();
+}
+
+function activate(tab) {
+  state.active = tab;
+  $('empty').classList.toggle('hidden', !!tab);
+  if (tab) { editor.swapDoc(tab.doc); editor.setOption('readOnly', false); }
+  else { editor.swapDoc(CodeMirror.Doc('', 'python')); editor.setOption('readOnly', 'nocursor'); }
+  renderTabs(); renderFiles(); renderProblems();
+  editor.refresh();
+}
+
+function renderTabs() {
+  const tabs = $('tabs');
+  tabs.replaceChildren(...state.tabs.map(t => el('div', {
+    class: 'tab' + (t === state.active ? ' active' : '') + (t.doc.getValue() !== t.saved ? ' dirty' : ''),
+    title: t.path, onclick: () => activate(t),
+  }, el('span', { class: 'name' }, t.path.split('/').pop()),
+     el('button', { class: 'x', title: 'Close', onclick: e => { e.stopPropagation(); close(t); } }, '✕'))));
+}
+
+function close(tab) {
+  if (tab.doc.getValue() !== tab.saved && !confirm(tab.path + ' has changes that are not saved. Close it anyway?')) return;
+  const i = state.tabs.indexOf(tab);
+  state.tabs.splice(i, 1);
+  if (state.active === tab) activate(state.tabs[Math.min(i, state.tabs.length - 1)] || null);
+  else renderTabs();
+}
+
+async function save() {
+  const tab = state.active;
+  if (!tab) return;
+  const text = tab.doc.getValue();
+  try {
+    const r = await post('save', { path: tab.path, text });
+    tab.saved = text;
+    setProblems(tab, r.problems);
+    renderTabs();
+    foot('Saved ' + tab.path + (r.problems.length ? ' — ' + r.problems.length + ' problem(s)' : ''));
+    if ($('reload-on-save').checked && state.excel && !tab.path.includes('/')) await reload(true);
+    refreshOutline();
+  } catch (e) { output('Save failed: ' + e.message, 'err'); show('output'); }
+}
+
+async function run() {
+  const tab = state.active;
+  if (!tab) return;
+  if (tab.doc.getValue() !== tab.saved) await save();
+  show('output');
+  output('▶ ' + tab.path + ' in Excel', 'head');
+  foot('Running ' + tab.path + ' in Excel…');
+  try {
+    const r = await post('excel/run', { path: tab.path });
+    output(r.output || '(nothing printed)');
+    foot('Ran ' + tab.path);
+  } catch (e) { output(e.message, 'err'); foot('Not run'); }
+}
+
+async function reload(quiet) {
+  foot('Excel imports the Python folder again…');
+  try {
+    await post('excel/reload');
+    if (!quiet) { show('output'); }
+    output('Excel imported the Python folder again and calculated the workbooks.', 'ok');
+    foot('Reloaded in Excel');
+  } catch (e) { output('Reload: ' + e.message, 'err'); show('output'); foot('Not reloaded'); }
+}
+
+// --- completions and signatures ---------------------------------------------------------------
+function complete(cm) {
+  if (!state.active) return;
+  cm.showHint({ hint: pythonHint, completeSingle: false });
+}
+function pythonHint(cm, callback) {
+  const cur = cm.getCursor(), line = cm.getLine(cur.line);
+  let start = cur.ch;
+  while (start && /\w/.test(line.charAt(start - 1))) start--;
+  post('complete', { text: cm.getValue(), line: cur.line + 1, column: cur.ch, path: state.active.path }).then(r => {
+    callback({
+      list: r.completions.map(c => ({ text: c.text, displayText: c.text + '  · ' + c.type })),
+      from: CodeMirror.Pos(cur.line, start), to: cur,
+    });
+  }).catch(() => callback(null));
+}
+pythonHint.async = true;
+
+let signatureTimer;
+editor.on('inputRead', (cm, change) => {
+  const typed = change.text.join('');
+  if (typed === '.' || /^[A-Za-z_]$/.test(typed) && /\.\w$/.test(cm.getLine(change.from.line).slice(0, change.from.ch + 1))) complete(cm);
+  if (typed === '(' || typed === ',') signature();
+  if (typed === ')') $('signature').textContent = '';
+});
+function signature() {
+  clearTimeout(signatureTimer);
+  signatureTimer = setTimeout(async () => {
+    if (!state.active) return;
+    const cur = editor.getCursor();
+    const r = await post('complete', { text: editor.getValue(), line: cur.line + 1, column: cur.ch, path: state.active.path }).catch(() => null);
+    $('signature').textContent = r && r.signatures.length ? r.signatures[0].label : '';
+  }, 150);
+}
+
+// --- problems ----------------------------------------------------------------------------------
+const lintTimers = new WeakMap();
+function lintSoon(tab) {
+  clearTimeout(lintTimers.get(tab));
+  lintTimers.set(tab, setTimeout(async () => {
+    const r = await post('lint', { text: tab.doc.getValue() }).catch(() => null);
+    if (r) setProblems(tab, r);
+  }, 600));
+}
+function setProblems(tab, problems) {
+  tab.marks.forEach(m => m.clear());
+  tab.marks = [];
+  tab.problems = problems;
+  if (tab === state.active) editor.clearGutter('problem-gutter');
+  for (const p of problems) {
+    const line = Math.max(p.line - 1, 0), text = tab.doc.getLine(line) || '';
+    let end = p.col;
+    while (end < text.length && /\w/.test(text[end])) end++;
+    if (end === p.col) end = Math.min(p.col + 1, text.length);
+    tab.marks.push(tab.doc.markText({ line, ch: p.col }, { line, ch: end }, { className: 'cm-problem-' + p.severity, title: p.message }));
+    if (tab === state.active) {
+      editor.setGutterMarker(line, 'problem-gutter',
+        el('span', { class: 'gutter-mark sev-' + p.severity, title: p.message }, p.severity === 'error' ? '●' : '▲'));
+    }
+  }
+  renderProblems();
+}
+function renderProblems() {
+  const tab = state.active, problems = tab ? tab.problems : [];
+  $('problem-count').textContent = problems.length || '';
+  $('problems').replaceChildren(...problems.map(p => el('li', {
+    class: 'problem', onclick: () => { editor.setCursor({ line: p.line - 1, ch: p.col }); editor.focus(); },
+  }, el('span', { class: 'sev sev-' + p.severity }, p.severity), el('span', {}, p.message),
+     el('span', { class: 'muted' }, tab.path + ':' + p.line))));
+  if (tab) {
+    editor.clearGutter('problem-gutter');
+    for (const p of problems) editor.setGutterMarker(p.line - 1, 'problem-gutter',
+      el('span', { class: 'gutter-mark sev-' + p.severity, title: p.message }, p.severity === 'error' ? '●' : '▲'));
+  }
+}
+
+// --- files and functions --------------------------------------------------------------------------
+async function refreshFiles() {
+  state.files = await get('files');
+  renderFiles();
+}
+function renderFiles() {
+  const files = state.files || [];
+  $('file-list').replaceChildren(...(files.length ? files.map(f => el('li', {
+    class: state.active && state.active.path === f ? 'active' : '', title: f, onclick: () => open(f),
+  }, f)) : [el('li', { class: 'muted' }, 'No modules yet: + makes one.')]));
+}
+async function newFile() {
+  const name = prompt('Name of the new module (a .py file of the Python folder):', 'my_functions.py');
+  if (!name) return;
+  try {
+    const r = await post('new', { path: name.trim() });
+    await refreshFiles();
+    await open(r.path);
+  } catch (e) { alert(e.message); }
+}
+
+async function refreshOutline() {
+  const items = await get('outline').catch(() => []);
+  const groups = [['xl_func', 'Worksheet functions'], ['xl_macro', 'Macros'], ['export', 'For PY_CALL and ASF scripts']];
+  const box = $('outline');
+  box.replaceChildren();
+  for (const [kind, title] of groups) {
+    const these = items.filter(i => i.kind === kind);
+    if (!these.length) continue;
+    box.append(el('div', { class: 'group' }, title + ' (' + these.length + ')'));
+    for (const f of these) {
+      const sig = kind === 'xl_func' ? '=' + f.name + '(' + f.args.join(', ') + ')' :
+                  kind === 'export' ? 'PY_CALL("' + f.name + '"' + f.args.map(a => ', ' + a).join('') + ')' : f.name;
+      const row = el('div', { class: 'fn', title: f.file + ':' + f.line, onclick: () => open(f.file, f.line) },
+        kind === 'xl_macro' ? el('button', { title: 'Run in Excel', onclick: e => { e.stopPropagation(); runMacro(f.name); } }, '▶') : null,
+        el('div', { class: 'sig' }, sig), f.doc ? el('div', { class: 'doc' }, f.doc) : null,
+        el('div', { class: 'where' }, f.file + ':' + f.line));
+      box.append(row);
+    }
+  }
+  if (!box.children.length) box.append(el('p', { class: 'muted', style: 'padding: 0 12px' }, 'No functions marked with @xl_func, @xl_macro or @export yet.'));
+}
+async function runMacro(name) {
+  show('output');
+  output('▶ macro ' + name, 'head');
+  try {
+    const r = await post('excel/macro', { name });
+    output(r.result || '(done)');
+  } catch (e) { output(e.message, 'err'); }
+}
+
+// --- console -----------------------------------------------------------------------------------
+async function consoleRun(restart) {
+  const input = $('console-in'), code = restart ? '' : input.value;
+  const out = $('console-out');
+  if (!restart) {
+    if (!code.trim()) return;
+    out.append(el('span', { class: 'out-head' }, code.split('\n').map((l, i) => (i ? '... ' : '>>> ') + l).join('\n') + '\n'));
+    state.history.push(code);
+    state.historyAt = state.history.length;
+    input.value = '';
+    input.rows = 1;
+  }
+  try {
+    const r = await post('console', { code, restart: !!restart });
+    if (r.output) out.append(el('span', { class: /Traceback|Error/.test(r.output) ? 'out-err' : '' }, r.output));
+  } catch (e) { out.append(el('span', { class: 'out-err' }, e.message + '\n')); }
+  out.scrollTop = out.scrollHeight;
+}
+$('console-in').addEventListener('keydown', e => {
+  const input = e.target;
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); consoleRun(); }
+  else if (e.key === 'Enter') { input.rows = Math.min(input.rows + 1, 8); }
+  else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !input.value.includes('\n')) {
+    const h = state.history;
+    if (!h.length) return;
+    state.historyAt = Math.max(0, Math.min(h.length, state.historyAt + (e.key === 'ArrowUp' ? -1 : 1)));
+    input.value = h[state.historyAt] || '';
+    e.preventDefault();
+  }
+});
+
+// --- packages ----------------------------------------------------------------------------------
+const SUGGESTED = [
+  ['numpy', 'Arrays and maths: the numpy.ndarray type hint'], ['pandas', 'Tables: DataFrame and Series type hints (64-bit)'],
+  ['scipy', 'Statistics, optimization, interpolation, signal processing'], ['statsmodels', 'Regression, time series, statistical tests'],
+  ['scikit-learn', 'Machine learning: models, clustering, preprocessing'], ['matplotlib', 'Charts, saved as images'],
+  ['openpyxl', 'Reading and writing .xlsx files'], ['xlsxwriter', 'Writing formatted .xlsx files'],
+  ['requests', 'HTTP: web APIs and downloads'], ['python-dateutil', 'Dates: parsing and relative deltas'],
+  ['pywin32', 'Windows and COM: xl_app() in macros'], ['sympy', 'Symbolic maths'],
+];
+function installed(name) {
+  const key = n => n.toLowerCase().replace(/[-_.]+/g, '-');
+  return state.packages.find(p => key(p.name) === key(name));
+}
+async function refreshPackages() {
+  state.packages = await get('packages').catch(() => []);
+  $('pk-count').textContent = '(' + state.packages.length + ')';
+  $('pk-suggested').replaceChildren(...SUGGESTED.map(([name, about]) => {
+    const have = installed(name);
+    return el('div', { class: 'card' }, el('div', { class: 't' }, name), el('div', { class: 'd' }, about),
+      el('div', { class: 'a' }, have ? el('span', { class: 'badge' }, '✓ ' + have.version) : el('span'),
+        have ? el('button', { onclick: () => pip('install --upgrade ' + name) }, 'Upgrade')
+             : el('button', { class: 'primary', onclick: () => pip('install ' + name) }, 'Install')));
+  }));
+  renderInstalled();
+}
+function renderInstalled() {
+  const q = $('pk-filter').value.trim().toLowerCase();
+  $('pk-installed').replaceChildren(...state.packages.filter(p => !q || p.name.toLowerCase().includes(q) || p.summary.toLowerCase().includes(q))
+    .map(p => el('tr', {}, el('td', {}, p.name), el('td', {}, p.version), el('td', { class: 'muted' }, p.summary),
+      el('td', {}, el('button', { onclick: () => pip('install --upgrade ' + p.name) }, 'Upgrade'), ' ',
+        p.name.toLowerCase() === 'pip' ? null : el('button', { onclick: () => {
+          if (confirm('Remove ' + p.name + '? Close Excel first if it has imported it.')) pip('uninstall -y ' + p.name);
+        } }, 'Remove')))));
+}
+async function pip(command) {
+  try { await post('pip', { command }); pollJobs(); } catch (e) { alert(e.message); }
+}
+let jobTimer;
+async function pollJobs() {
+  clearTimeout(jobTimer);
+  const r = await get('jobs').catch(() => null);
+  if (!r) return;
+  const busy = r.jobs.some(j => j.state === 'queued' || j.state === 'running');
+  if (r.revision !== state.jobsRevision) {
+    const finished = state.jobsRevision >= 0;
+    state.jobsRevision = r.revision;
+    const box = $('pk-jobs');
+    const opened = new Set([...box.querySelectorAll('details[open]')].map(d => d.dataset.id));
+    box.replaceChildren(...r.jobs.slice().reverse().map(j => el('details', {
+      class: 'job', 'data-id': String(j.id), ...(opened.has(String(j.id)) || j.state === 'running' ? { open: '' } : {}),
+    }, el('summary', {}, el('span', { class: 'state ' + j.state }, j.state), el('code', {}, 'pip ' + j.command),
+        j.code !== null && j.code !== 0 ? el('span', { class: 'sev-error' }, 'exit ' + j.code) : null),
+       el('pre', {}, j.output || '…'))));
+    box.querySelectorAll('pre').forEach(p => { p.scrollTop = p.scrollHeight; });
+    if (finished && !busy) { refreshPackages(); foot('pip finished: restart Excel to use what changed'); }
+  }
+  if (busy) jobTimer = setTimeout(pollJobs, 800);
+}
+$('pk-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const name = $('pk-name').value.trim();
+  if (!name) return;
+  const box = $('pk-lookup');
+  box.classList.remove('hidden');
+  box.replaceChildren(el('span', { class: 'muted' }, 'Looking ' + name + ' up on PyPI…'));
+  try {
+    const p = await get('pypi', { name });
+    const have = installed(p.name);
+    box.replaceChildren(el('div', { class: 't' }, el('b', {}, p.name), ' ', p.version, have ? ' — installed: ' + have.version : ''),
+      el('div', { class: 'muted' }, p.summary), el('div', { style: 'margin-top: 8px' },
+        el('button', { class: 'primary', onclick: () => { pip('install ' + (have ? '--upgrade ' : '') + p.name); box.classList.add('hidden'); } },
+          have ? 'Upgrade to ' + p.version : 'Install ' + p.version)));
+  } catch (err) { box.replaceChildren(el('span', { class: 'sev-error' }, err.message)); }
+});
+$('pk-filter').addEventListener('input', renderInstalled);
+
+// --- views, keys, start ---------------------------------------------------------------------------
+function view(name) {
+  document.querySelectorAll('.act').forEach(b => b.classList.toggle('active', b.dataset.view === name));
+  $('packages-view').classList.toggle('hidden', name !== 'packages');
+  $('editor-view').classList.toggle('hidden', name === 'packages');
+  $('side').classList.toggle('hidden', name === 'packages');
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('hidden', p.dataset.pane !== name));
+  if (name === 'packages') { refreshPackages(); pollJobs(); }
+  if (name === 'functions') refreshOutline();
+  if (name !== 'packages') editor.refresh();
+}
+document.querySelectorAll('.act').forEach(b => b.addEventListener('click', () => view(b.dataset.view)));
+document.querySelectorAll('.ptab').forEach(b => b.addEventListener('click', () => show(b.dataset.panel)));
+$('clear-panel').addEventListener('click', () => {
+  const panel = document.querySelector('.ptab.active').dataset.panel;
+  if (panel === 'output') $('output').replaceChildren();
+  if (panel === 'console') $('console-out').replaceChildren();
+});
+$('save').addEventListener('click', save);
+$('run').addEventListener('click', run);
+$('reload').addEventListener('click', () => reload());
+$('new-file').addEventListener('click', newFile);
+$('refresh-outline').addEventListener('click', refreshOutline);
+$('console-restart').addEventListener('click', () => consoleRun(true));
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); save(); }
+  else if (e.key === 'F5') { e.preventDefault(); run(); }
+  else if (e.ctrlKey && e.shiftKey && (e.key === 'R' || e.key === 'r')) { e.preventDefault(); reload(); }
+  else if (e.ctrlKey && ['1', '2', '3'].includes(e.key)) { e.preventDefault(); view(['files', 'functions', 'packages'][+e.key - 1]); }
+});
+window.addEventListener('beforeunload', e => {
+  if (state.tabs.some(t => t.doc.getValue() !== t.saved)) { e.preventDefault(); e.returnValue = ''; }
+});
+
+async function start() {
+  try {
+    const info = await get('info');
+    state.folder = info.folder;
+    state.excel = info.excel;
+    $('python-pill').textContent = 'Python ' + info.python + ' · ' + info.bits + '-bit';
+    $('python-pill').title = info.prefix;
+    const pill = $('excel-pill');
+    pill.textContent = info.excel ? 'Excel ' + info.excel : 'Excel not reached';
+    pill.className = 'pill ' + (info.excel ? 'ok' : 'off');
+    $('folder-path').textContent = info.folder || 'No Python folder';
+    $('foot-right').textContent = info.folder;
+    await refreshFiles();
+    if (state.files.length) await open(state.files[0]);
+    foot('Ready');
+  } catch (e) { foot(e.message); }
+  setInterval(() => post('ping').catch(() => foot('The studio stopped: open it again from Excel (ASF tab, Python studio).')), 20000);
+}
+start();
