@@ -559,8 +559,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 out = excel.run('AsfPyRunScript', s.path(args['path']))
                 result = {'output': out if isinstance(out, str) else 'The Python add-in has no Python: About Python on the ASF tab says why.'}
             elif method == 'POST' and name == 'excel/macro':
-                out = excel.run(args['name'])
-                result = {'result': '' if out is None else str(out)}
+                values = args.get('args') or []
+                if not isinstance(values, list) or len(values) > 30 or any(
+                        v is not None and not isinstance(v, (str, int, float, bool)) for v in values):
+                    raise ValueError('the arguments of a macro are numbers, texts, TRUE or FALSE, or blank')
+                result = excel.macro(args['name'], values, bool(args.get('front')))
             else:
                 return self._send(404, {'error': 'no such call'})
         except excel.NotReachable as exc:

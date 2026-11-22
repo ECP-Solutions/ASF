@@ -133,5 +133,20 @@ button.pill:hover { border-color: var(--accent); color: var(--text); }
 
 .foot { height: 24px; display: flex; justify-content: space-between; align-items: center; padding: 0 12px; background: var(--accent); color: #fff; font-size: 12px; }
 @media (prefers-color-scheme: dark) { .foot { background: #23402f; } }
+.modal { border: 1px solid var(--line); border-radius: 10px; padding: 0; background: var(--bg); color: var(--text);
+  width: min(520px, calc(100vw - 32px)); box-shadow: 0 12px 40px rgba(0, 0, 0, .28); }
+.modal::backdrop { background: rgba(0, 0, 0, .35); }
+.modal form { display: flex; flex-direction: column; gap: 10px; padding: 18px 20px 16px; }
+.modal h2 { margin: 0; font-size: 15px; }
+.modal-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); }
+.modal-pre { margin: 0; max-height: 50vh; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 12.5px;
+  background: var(--bg2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.modal .field { display: flex; flex-direction: column; gap: 3px; }
+.modal .field span { font-family: var(--mono); font-size: 12px; }
+.modal .field span:empty { display: none; }
+.modal .check { align-items: flex-start; }
+.modal .check input { margin-top: 3px; }
+.modal-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+button.danger { background: var(--err); border-color: var(--err); color: #fff; }
 .CodeMirror-hints { font-family: var(--mono); font-size: 12.5px; z-index: 50; }
 .count:empty { display: none; }

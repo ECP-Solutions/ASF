@@ -36,7 +36,7 @@ OUT = os.path.join(HERE, "build")
 NSLOTS, MAX_ARGS = 2000, 32         # as in asfpy.c and boot.py
 EXPORTS = ["xlAutoOpen", "xlAutoClose", "xlAutoFree12", "xlAddInManagerInfo12", "SetExcel12EntryPt", "AsfPy_Root",
            "asfpy_call", "asfpy_reload", "asfpy_packages", "asfpy_run_script", "asfpy_macros",
-           "asfpy_console", "asfpy_studio", "asfpy_update"]
+           "asfpy_console", "asfpy_studio", "asfpy_update", "asfpy_last_error"]
 
 
 def write(name, text):

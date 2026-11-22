@@ -18,7 +18,8 @@ spec = importlib.util.spec_from_file_location('asfpy_studio', os.path.join(STUDI
 package = importlib.util.module_from_spec(spec)
 sys.modules['asfpy_studio'] = package
 spec.loader.exec_module(package)
-from asfpy_studio import server  # noqa: E402
+from asfpy_studio import excel, server  # noqa: E402
+from unittest import mock  # noqa: E402
 
 try:
     import jedi  # noqa: F401
@@ -185,6 +186,32 @@ class Studio(unittest.TestCase):
         names = [p['name'].lower() for p in self.get('/api/packages')[1]]
         self.assertIn('pip', names)
         self.assertEqual(self.post('pip', {'command': ''})[0], 400)
+
+    def test_a_macro_runs_with_its_arguments_and_says_what_came_of_it(self):
+        class App:
+            Hwnd = 0
+            calls = []
+
+            def Run(self, name, *args):
+                self.calls.append((name, args))
+                if name == 'check_macro':
+                    return float(sum(args))
+                if name == 'table':
+                    return ((1.0, 'a'), (2.5, None))
+                if name == 'AsfPyLastError':
+                    return 'Traceback (most recent call last):\nTypeError: missing b'
+                return -2146826273                     # #VALUE!: the macro failed
+        app = App()
+        with mock.patch.object(excel, 'call', lambda fn, timeout=600: fn(app)):
+            status, r, _ = self.post('excel/macro', {'name': 'check_macro', 'args': [2, 3, None], 'front': True})
+            self.assertEqual((status, r), (200, {'result': '5', 'error': False}))
+            self.assertEqual(app.calls[-1], ('check_macro', (2, 3)))     # a trailing blank: the default
+            self.assertEqual(self.post('excel/macro', {'name': 'table', 'args': []})[1]['result'], '1\ta\n2.5\t')
+            r = self.post('excel/macro', {'name': 'broken', 'args': [None, 1]})[1]
+            self.assertTrue(r['error'])
+            self.assertTrue(r['result'].startswith('#VALUE!\nTraceback'))
+            self.assertEqual(app.calls[-2], ('broken', (None, 1)))     # a blank between: Empty
+        self.assertEqual(self.post('excel/macro', {'name': 'x', 'args': [{'a': 1}]})[0], 400)
 
     def test_excel_out_of_reach_is_an_answer_not_a_crash(self):
         if os.name == 'nt':

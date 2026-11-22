@@ -15,7 +15,7 @@
 #include "../../xll/xloper.h"
 
 #define NSLOTS 2000   /* as in asfpy.c */
-#define NBUILTIN 8    /* PY_CALL and the commands AsfPyReload, AsfPyPackages, AsfPyConsole, AsfPyStudio, AsfPyRunScript, AsfPyMacros, AsfPyUpdate */
+#define NBUILTIN 9    /* PY_CALL and the commands AsfPyReload, AsfPyPackages, AsfPyConsole, AsfPyStudio, AsfPyRunScript, AsfPyMacros, AsfPyLastError, AsfPyUpdate */
 #define SETTINGS_KEY L"Software\\VB and VBA Program Settings\\ASF\\AddIn"
 
 #if defined(_MSC_VER) && !defined(_WIN64)
@@ -550,7 +550,7 @@ int wmain(int argc, wchar_t **argv)
     QueryPerformanceCounter(&t1);
     wprintf(L"     start-up: %.0f ms, %d functions registered\n", (t1.QuadPart - t0.QuadPart) * 1000.0 / fq.QuadPart, nregs);
     swprintf(got, 256, L"%d", nregs);
-    check(nregs == NSLOTS + NBUILTIN, L"registered: one function in each slot, PY_CALL and the 7 commands", got);
+    check(nregs == NSLOTS + NBUILTIN, L"registered: one function in each slot, PY_CALL and the 8 commands", got);
     {
         wchar_t old[MAX_PATH + 16];
         int left;
@@ -662,6 +662,8 @@ int wmain(int argc, wchar_t **argv)
     multi.val.array.rows = 3; multi.val.array.columns = 1; a[0] = multi;
     call_check(L"check_column", 1, p, L"10;20;30");
     call_check(L"check_fail", 0, p, L"#15");
+    type_check(L"AsfPyLastError", L"Q");
+    call_check(L"AsfPyLastError", 0, p, L"Traceback (most recent call last)");
     a[0] = num(-1);
     call_check(L"check_sqrt", 1, p, L"#15");
     a[0] = err(xlerrDiv0);

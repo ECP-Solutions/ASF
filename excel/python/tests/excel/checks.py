@@ -179,6 +179,22 @@ def check_app():
     return xl_app().ActiveSheet.Name
 
 
+@xl_macro
+def check_dialogs():
+    """Excel's InputBox asks for a number, and a message box over Excel shows its square: run it
+    from Python studio (Functions, with Bring Excel to the front) or with Application.Run. Needs
+    pywin32. Not in the checklist, which runs without anyone to answer."""
+    import win32api
+    import win32con
+    app = xl_app()
+    value = app.InputBox('A number to square:', 'check_dialogs', 12, Type=1)
+    if value is False:                     # Cancel
+        return 'cancelled'
+    win32api.MessageBox(app.Hwnd, '%g squared is %g' % (value, value * value), 'check_dialogs',
+                        win32con.MB_ICONINFORMATION)
+    return value * value
+
+
 @export
 def add(a, b):
     return a + b

@@ -24,7 +24,8 @@ Excel itself can't run in CI, so this folder holds the checks that run in Excel,
 | Do handles, asynchronous functions, numpy and pandas hints, and commands work? | the `check_counter`, `check_most`, `check_async`, `check_matrix`, `check_frame`, `check_describe`, `check_macro` and `check_app` rows. `check_matrix` needs numpy, `check_frame` pandas and `check_app` pywin32 (step 2); without them their rows say so |
 | Does `AsfPyReload` read a module added, changed and removed? | the `AsfPyReload` rows (they write and delete `aa_reload.py` in the Python folder) |
 | What does a call cost, and what does start-up cost? | the timing rows; the start-up lines of `%TEMP%\asfpy.log` |
-| Does Excel close cleanly with numpy loaded? | step 6 |
+| Do macros run from Python studio with their arguments, and can they show Excel's InputBox and a message box? | step 7 |
+| Does Excel close cleanly with numpy loaded? | step 8 |
 
 ## Steps
 
@@ -36,7 +37,8 @@ The full guide for testers, with downloads, clean-up of earlier runs and fixes f
 4. **Load the add-in:** File > Options > Add-ins > Manage: Excel Add-ins > Go > Browse. The first load unpacks the add-in's Python into `%LOCALAPPDATA%\ASF\runtime`.
 5. **Packages:** none to install: the add-in's Python has numpy, pandas (64-bit only), openpyxl and pywin32. `Application.Run "AsfPyPackages"` lists them.
 6. **Run:** import `AsfPyChecks.bas` into a blank workbook and run `AsfPyTest`, multi-threaded calculation on. The first rows must show `imported checks.py`, `Python: the add-in's own ... yes` and `pip ... installed`.
-7. **Close Excel** with the result open (numpy loaded): no error, no hang. Then open Excel again: the add-in loads by itself.
+7. **Macros from Python studio** (`Application.Run "AsfPyStudio"`, or **Python studio** on the ASF tab): in **Functions**, ▶ `check_macro` asks for `a` and `b`: 2 and 3 give a box saying 5; leaving `b` blank gives `check_macro failed` with Python's `TypeError`. ▶ `check_dialogs` with **Bring Excel to the front** ticked: Excel comes forward with its InputBox; 7 gives a message box over Excel saying `7 squared is 49`, and the studio then shows 49 (Cancel: `cancelled`).
+8. **Close Excel** with the result open (numpy loaded): no error, no hang. Then open Excel again: the add-in loads by itself.
 
 To check another Python instead (a venv, or a python.org install of Excel's bitness, 3.11 or later), run `AsfPySetup` and give its folder; leave the folder empty to go back to the add-in's own Python. Packages then go into that Python, with its own pip.
 

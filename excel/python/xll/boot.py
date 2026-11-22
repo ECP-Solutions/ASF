@@ -238,6 +238,11 @@ def macro_list():
     return (TAG_STR, '\n'.join(lines))
 
 
+def last_traceback():
+    """The command AsfPyLastError: the traceback of the last Python exception."""
+    return (TAG_STR, _last_traceback)
+
+
 def _same_file(a, b):
     return bool(a) and os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
 

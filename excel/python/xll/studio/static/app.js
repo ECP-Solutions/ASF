@@ -29,6 +29,44 @@ function el(tag, attrs, ...children) {
 }
 function foot(text) { $('foot-left').textContent = text; }
 
+// --- dialogs: in the page, since an app window may not show the browser's own ------------------
+// ask({ title, text, fields: [{ name, label, value, hint }], checks: [{ name, label, value }], ok, cancel, pre })
+// resolves to the fields' and checks' values on OK, to null on Cancel or Esc
+function ask(o) {
+  return new Promise(resolve => {
+    const d = el('dialog', { class: 'modal', 'aria-label': o.title || 'ASF Python Studio' });
+    const inputs = (o.fields || []).map(f => el('input', { name: f.name, value: f.value ?? '', spellcheck: 'false', autocomplete: 'off' }));
+    const checks = (o.checks || []).map(c => { const i = el('input', { type: 'checkbox', name: c.name }); i.checked = !!c.value; return i; });
+    let answer = null;
+    const form = el('form', { method: 'dialog' },
+      o.title ? el('h2', {}, o.title) : null,
+      o.text ? el(o.pre ? 'pre' : 'p', { class: o.pre ? 'modal-pre' : 'modal-text' }, o.text) : null,
+      ...(o.fields || []).map((f, k) => el('label', { class: 'field' }, el('span', {}, f.label || f.name), inputs[k],
+        f.hint ? el('small', { class: 'muted' }, f.hint) : null)),
+      ...(o.checks || []).map((c, k) => el('label', { class: 'check' }, checks[k], ' ', c.label)),
+      el('div', { class: 'modal-buttons' },
+        o.cancel === null ? null : el('button', { type: 'button', onclick: () => d.close() }, o.cancel || 'Cancel'),
+        el('button', { type: 'submit', class: o.danger ? 'danger' : 'primary' }, o.ok || 'OK')));
+    form.addEventListener('submit', () => {
+      answer = {};
+      (o.fields || []).forEach((f, k) => { answer[f.name] = inputs[k].value; });
+      (o.checks || []).forEach((c, k) => { answer[c.name] = checks[k].checked; });
+    });
+    d.append(form);
+    d.addEventListener('close', () => { d.remove(); resolve(answer); });
+    document.body.append(d);
+    d.showModal();
+    (inputs[0] || form.querySelector('button[type=submit]')).focus();
+    if (inputs[0]) inputs[0].select();
+  });
+}
+const message = (text, title, pre) => ask({ title, text, pre, ok: 'OK', cancel: null });
+const sure = async (text, ok, title) => (await ask({ title, text, ok: ok || 'OK', danger: /remove|delete|close/i.test(ok || '') })) !== null;
+async function input(text, value, title) {
+  const r = await ask({ title, text, fields: [{ name: 'value', label: '', value }] });
+  return r ? r.value : null;
+}
+
 // --- output panel ---------------------------------------------------------------------------
 function show(panel) {
   document.querySelectorAll('.ptab').forEach(b => b.classList.toggle('active', b.dataset.panel === panel));
@@ -87,8 +125,8 @@ function renderTabs() {
      el('button', { class: 'x', title: 'Close', onclick: e => { e.stopPropagation(); close(t); } }, '✕'))));
 }
 
-function close(tab) {
-  if (tab.doc.getValue() !== tab.saved && !confirm(tab.path + ' has changes that are not saved. Close it anyway?')) return;
+async function close(tab) {
+  if (tab.doc.getValue() !== tab.saved && !await sure(tab.path + ' has changes that are not saved.', 'Close without saving')) return;
   const i = state.tabs.indexOf(tab);
   state.tabs.splice(i, 1);
   if (state.active === tab) activate(state.tabs[Math.min(i, state.tabs.length - 1)] || null);
@@ -222,13 +260,14 @@ function renderFiles() {
   }, f)) : [el('li', { class: 'muted' }, 'No modules yet: + makes one.')]));
 }
 async function newFile() {
-  const name = prompt('Name of the new module (a .py file of the Python folder):', 'my_functions.py');
-  if (!name) return;
+  const name = await input('A .py file of the Python folder; a name with / makes a subfolder, which Excel does not load.',
+                           'my_functions.py', 'New module');
+  if (!name || !name.trim()) return;
   try {
     const r = await post('new', { path: name.trim() });
     await refreshFiles();
     await open(r.path);
-  } catch (e) { alert(e.message); }
+  } catch (e) { message(e.message, 'New module'); }
 }
 
 async function refreshOutline() {
@@ -244,7 +283,7 @@ async function refreshOutline() {
       const sig = kind === 'xl_func' ? '=' + f.name + '(' + f.args.join(', ') + ')' :
                   kind === 'export' ? 'PY_CALL("' + f.name + '"' + f.args.map(a => ', ' + a).join('') + ')' : f.name;
       const row = el('div', { class: 'fn', title: f.file + ':' + f.line, onclick: () => open(f.file, f.line) },
-        kind === 'xl_macro' ? el('button', { title: 'Run in Excel', onclick: e => { e.stopPropagation(); runMacro(f.name); } }, '▶') : null,
+        kind === 'xl_macro' ? el('button', { title: 'Run in Excel', onclick: e => { e.stopPropagation(); runMacro(f); } }, '▶') : null,
         el('div', { class: 'sig' }, sig), f.doc ? el('div', { class: 'doc' }, f.doc) : null,
         el('div', { class: 'where' }, f.file + ':' + f.line));
       box.append(row);
@@ -252,13 +291,52 @@ async function refreshOutline() {
   }
   if (!box.children.length) box.append(el('p', { class: 'muted', style: 'padding: 0 12px' }, 'No functions marked with @xl_func, @xl_macro or @export yet.'));
 }
-async function runMacro(name) {
+// a typed argument as Excel would take it from a cell: a number, TRUE or FALSE, blank, or a text
+// ("quoted" keeps a text that looks like a number)
+function cellValue(text) {
+  const t = text.trim();
+  if (!t) return null;
+  if (/^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(t)) return Number(t);
+  if (/^(true|false)$/i.test(t)) return t.toLowerCase() === 'true';
+  if (t.length > 1 && t.startsWith('"') && t.endsWith('"')) return t.slice(1, -1);
+  return text;
+}
+function remembered(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch (e) { return fallback; }
+}
+function remember(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* not kept: no harm */ }
+}
+async function runMacro(f) {
+  const last = remembered('macro:' + f.name, {});
+  const r = await ask({
+    title: 'Run ' + f.name + ' in Excel',
+    text: (f.doc ? f.doc + '\n' : '') + (f.args.length ? 'Its arguments, as in a cell: 2.5, TRUE, a text, "007" for a text of digits; blank for its default.' : 'It takes no arguments.'),
+    fields: f.args.map(a => ({ name: a, label: a, value: last[a] ?? '' })),
+    checks: [{ name: '__front', label: 'Bring Excel to the front: for a macro that shows a dialog (xl_app().InputBox, a message box) or works on the selection',
+               value: remembered('macro:front', false) }],
+    ok: '▶ Run',
+  });
+  if (!r) return;
+  const values = {};
+  f.args.forEach(a => { values[a] = r[a]; });
+  remember('macro:' + f.name, values);
+  remember('macro:front', r.__front);
+  const args = f.args.map(a => cellValue(r[a]));
   show('output');
-  output('▶ macro ' + name, 'head');
+  output('▶ macro ' + f.name + '(' + args.map(v => v === null ? 'blank' : JSON.stringify(v)).join(', ') + ')', 'head');
+  foot('Excel runs ' + f.name + '…');
+  const waiting = setTimeout(() => foot('Excel still runs ' + f.name + ': if it shows a dialog, answer it in Excel'), 1500);
   try {
-    const r = await post('excel/macro', { name });
-    output(r.result || '(done)');
-  } catch (e) { output(e.message, 'err'); }
+    const res = await post('excel/macro', { name: f.name, args, front: r.__front });
+    output(res.result || '(done: no result)', res.error ? 'err' : 'ok');
+    foot(res.error ? f.name + ' failed' : 'Ran ' + f.name);
+    message(res.result || 'Done: the macro gave no result.', f.name + (res.error ? ' failed' : ''), true);
+  } catch (e) {
+    output(e.message, 'err');
+    foot(f.name + ' did not run');
+    message(e.message, f.name + ' did not run');
+  } finally { clearTimeout(waiting); }
 }
 
 // --- console -----------------------------------------------------------------------------------
@@ -323,11 +401,12 @@ function renderInstalled() {
     .map(p => el('tr', {}, el('td', {}, p.name), el('td', {}, p.version), el('td', { class: 'muted' }, p.summary),
       el('td', {}, el('button', { onclick: () => pip('install --upgrade ' + p.name) }, 'Upgrade'), ' ',
         p.name.toLowerCase() === 'pip' ? null : el('button', { onclick: () => {
-          if (confirm('Remove ' + p.name + '? Close Excel first if it has imported it.')) pip('uninstall -y ' + p.name);
+          sure('Remove ' + p.name + ' from the add-in\'s Python? Close Excel first if it has imported it.', 'Remove')
+            .then(yes => { if (yes) pip('uninstall -y ' + p.name); });
         } }, 'Remove')))));
 }
 async function pip(command) {
-  try { await post('pip', { command }); pollJobs(); } catch (e) { alert(e.message); }
+  try { await post('pip', { command }); pollJobs(); } catch (e) { message(e.message, 'pip'); }
 }
 let jobTimer;
 async function pollJobs() {
@@ -362,10 +441,10 @@ async function refreshPrevious() {
                         : 'No package this Python lacks.', ' ', p.mb + ' MB on disk.'),
     el('div', { class: 'a' },
       p.packages.length ? el('button', { class: 'primary', onclick: () => post('previous/install', { folder: p.folder })
-        .then(pollJobs).catch(e => alert(e.message)) }, 'Install them here') : el('span'),
-      el('button', { onclick: () => {
-        if (!confirm('Delete ' + p.folder + ' (' + p.mb + ' MB)? An Excel still running the older add-in uses it: close it first.')) return;
-        post('previous/remove', { folder: p.folder }).then(refreshPrevious).catch(e => alert(e.message));
+        .then(pollJobs).catch(e => message(e.message, 'Packages')) }, 'Install them here') : el('span'),
+      el('button', { onclick: async () => {
+        if (!await sure('Delete ' + p.folder + ' (' + p.mb + ' MB)? An Excel still running the older add-in uses it: close it first.', 'Remove')) return;
+        post('previous/remove', { folder: p.folder }).then(refreshPrevious).catch(e => message(e.message, 'Remove'));
       } }, 'Remove')))));
 }
 
@@ -400,17 +479,18 @@ function updateProgress(job) {
 }
 async function checkAddin() {
   const s = state.update;
-  if (s && s.restart && !s.available) { alert('ASF Python ' + s.installed + ' is installed. Restart Excel to use it.'); return; }
+  if (s && s.restart && !s.available) { message('ASF Python ' + s.installed + ' is installed. Restart Excel to use it.', 'Update'); return; }
   if (!s || !s.available) {
     $('addin-pill').textContent = 'Checking…';
     try { showAddin(await get('update', { live: 1 })); }
-    catch (e) { showAddin(s || { installed: '?' }); alert('ASF Python could not check for updates: ' + e.message); return; }
+    catch (e) { showAddin(s || { installed: '?' }); message('ASF Python could not check for updates: ' + e.message, 'Update'); return; }
     if (!state.update.available) { foot('ASF Python ' + state.update.installed + ' is the latest version'); return; }
   }
   const u = state.update;
-  if (!confirm('ASF Python ' + u.latest + ' is available; this add-in is ' + u.installed + '.\n\nDownload it (' +
-               Math.round((u.size || 0) / 1e6) + ' MB) and install it now? Excel uses it the next time it starts.\n\nWhat changed: ' + u.page)) return;
-  try { await post('update'); view('packages'); pollJobs(); } catch (e) { alert(e.message); }
+  if (!await sure('ASF Python ' + u.latest + ' is available; this add-in is ' + u.installed + '.\n\nDownload it (' +
+               Math.round((u.size || 0) / 1e6) + ' MB) and install it now? Excel uses it the next time it starts.\n\nWhat changed: ' + u.page,
+               'Install', 'Update')) return;
+  try { await post('update'); view('packages'); pollJobs(); } catch (e) { message(e.message, 'Update'); }
 }
 $('addin-pill').addEventListener('click', checkAddin);
 $('pk-form').addEventListener('submit', async e => {
@@ -458,6 +538,7 @@ $('reveal').addEventListener('click', () => post('reveal').then(() => foot('Open
 $('refresh-outline').addEventListener('click', refreshOutline);
 $('console-restart').addEventListener('click', () => consoleRun(true));
 document.addEventListener('keydown', e => {
+  if (document.querySelector('dialog[open]')) return;     // a dialog's keys are its own
   if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); save(); }
   else if (e.key === 'F5') { e.preventDefault(); run(); }
   else if (e.ctrlKey && e.shiftKey && (e.key === 'R' || e.key === 'r')) { e.preventDefault(); reload(); }

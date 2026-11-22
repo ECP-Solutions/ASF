@@ -676,11 +676,11 @@ static void register_functions(void)
     excel12(xlFree, NULL, 1, op);
 }
 
-/* PY_CALL and the commands AsfPyReload, AsfPyPackages, AsfPyConsole, AsfPyStudio, AsfPyRunScript
-   and AsfPyMacros: the add-in's own, registered once Python runs; AsfPyUpdate also when Python
+/* PY_CALL and the commands AsfPyReload, AsfPyPackages, AsfPyConsole, AsfPyStudio, AsfPyRunScript,
+   AsfPyMacros and AsfPyLastError: the add-in's own, registered once Python runs; AsfPyUpdate also when Python
    didn't start, since an update may be what it needs */
 #define PYCALL_ARGS 29          /* PY_CALL(name, 29 arguments): 30 in all, below Excel's 255 */
-static double g_pycall_id, g_reload_id, g_packages_id, g_script_id, g_macros_id, g_console_id, g_studio_id, g_update_id;
+static double g_pycall_id, g_reload_id, g_packages_id, g_script_id, g_macros_id, g_console_id, g_studio_id, g_update_id, g_lasterror_id;
 
 static void register_builtins(int started)
 {
@@ -710,6 +710,8 @@ static void register_builtins(int started)
                                 L"Runs a .py file in Excel's Python and gives back what it printed.", 0, NULL);
     g_macros_id = register_proc(&dll, L"asfpy_macros", L"Q", L"AsfPyMacros", L"", 2,
                                 L"Lists the commands (@xl_macro) of the Python folder.", 0, NULL);
+    g_lasterror_id = register_proc(&dll, L"asfpy_last_error", L"Q", L"AsfPyLastError", L"", 2,
+                                   L"The traceback of the last Python error.", 0, NULL);
     g_studio_id = register_proc(&dll, L"asfpy_studio", L"J", L"AsfPyStudio", L"", 2,
                                 L"Opens the Python studio: an editor, a console and the packages.", 0, NULL);
     g_console_id = register_proc(&dll, L"asfpy_console", L"J", L"AsfPyConsole", L"", 2,
@@ -1508,6 +1510,14 @@ EXPORT LPXLOPER12 WINAPI asfpy_macros(void)
     return boot_text("macro_list", 0, NULL);
 }
 
+/* The command AsfPyLastError (VBA, or the studio through COM: Application.Run("AsfPyLastError")):
+   the traceback of the last Python error, as py.lastTraceback gives it; a failed macro returns
+   only #VALUE! to Application.Run */
+EXPORT LPXLOPER12 WINAPI asfpy_last_error(void)
+{
+    return boot_text("last_traceback", 0, NULL);
+}
+
 /* --- the add-in's entry points ----------------------------------------------------------------- */
 
 /* Each time Excel loads the add-in: Python starts the first time only; the functions are
@@ -1545,6 +1555,7 @@ EXPORT int WINAPI xlAutoClose(void)
     unregister_id(&g_packages_id);
     unregister_id(&g_script_id);
     unregister_id(&g_macros_id);
+    unregister_id(&g_lasterror_id);
     unregister_id(&g_console_id);
     unregister_id(&g_studio_id);
     unregister_id(&g_update_id);
