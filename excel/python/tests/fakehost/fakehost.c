@@ -15,7 +15,7 @@
 #include "../../xll/xloper.h"
 
 #define NSLOTS 2000   /* as in asfpy.c */
-#define NBUILTIN 9    /* PY_CALL and the commands AsfPyReload, AsfPyPackages, AsfPyConsole, AsfPyStudio, AsfPyRunScript, AsfPyMacros, AsfPyLastError, AsfPyUpdate */
+#define NBUILTIN 10   /* PY_CALL and the commands AsfPyReload, AsfPyPackages, AsfPyConsole, AsfPyStudio, AsfPyRunScript, AsfPyMacros, AsfPyLastError, AsfPyRunMacro, AsfPyUpdate */
 #define SETTINGS_KEY L"Software\\VB and VBA Program Settings\\ASF\\AddIn"
 
 #if defined(_MSC_VER) && !defined(_WIN64)
@@ -25,7 +25,9 @@
 typedef struct { wchar_t proc[32], name[64], type[48]; int nargs, macro_type; } Reg;
 static Reg regs[8 * NSLOTS];
 static int nregs, nunregs, checks, failed;
-static wchar_t xll_path[MAX_PATH], last_alert[1024];
+static wchar_t xll_path[MAX_PATH], last_alert[1024], last_input[512];
+static XLOPER12 answers[8];      /* what the fake INPUT gives, in turn; FALSE is Cancel */
+static int nanswers, nasked, last_alert_type;
 static HMODULE xll;
 
 /* the cell xlfCaller gives, and its sheet's name; row 0: no cell (a call from VBA) */
@@ -105,7 +107,17 @@ __declspec(dllexport) int WINAPI MdCallBack12(int fn, int n, LPXLOPER12 *op, LPX
         res->xltype = xltypeBool;
         res->val.xbool = TRUE;
         return xlretSuccess;
+    case 104:              /* xlfInput: Excel's input box, answered from answers[] */
+        copy_text(last_input, op[0], 512);
+        if (nasked >= nanswers) { res->xltype = xltypeBool; res->val.xbool = FALSE; return xlretSuccess; }
+        *res = answers[nasked++];
+        if (res->xltype == xltypeStr) {
+            res->val.str = xstr(answers[nasked - 1].val.str + 1);
+            res->xltype |= xlbitXLFree;
+        }
+        return xlretSuccess;
     case 118 | 0x8000:     /* xlcAlert */
+        last_alert_type = n > 1 && (op[1]->xltype & 0xFFF) == xltypeNum ? (int)op[1]->val.num : 2;
         copy_text(last_alert, op[0], 1024);
         wprintf(L"ALERT: %ls\n", last_alert);
         return xlretSuccess;
@@ -550,7 +562,7 @@ int wmain(int argc, wchar_t **argv)
     QueryPerformanceCounter(&t1);
     wprintf(L"     start-up: %.0f ms, %d functions registered\n", (t1.QuadPart - t0.QuadPart) * 1000.0 / fq.QuadPart, nregs);
     swprintf(got, 256, L"%d", nregs);
-    check(nregs == NSLOTS + NBUILTIN, L"registered: one function in each slot, PY_CALL and the 8 commands", got);
+    check(nregs == NSLOTS + NBUILTIN, L"registered: one function in each slot, PY_CALL and the 9 commands", got);
     {
         wchar_t old[MAX_PATH + 16];
         int left;
@@ -762,6 +774,30 @@ int wmain(int argc, wchar_t **argv)
     }
     a[0] = num(2); a[1] = num(3);
     call_check(L"check_macro", 2, p, L"5");
+    {   /* AsfPyRunMacro: Excel's input box asks for each argument, the alert shows the result */
+        wchar_t two[] = L"\x0001" L"2";
+        type_check(L"AsfPyRunMacro", L"QQ");
+        answers[0] = num(2);
+        answers[1].xltype = xltypeStr; answers[1].val.str = two;     /* typed as text: '2' */
+        nanswers = 2; nasked = 0; last_alert[0] = 0;
+        a[0] = str(L"check_macro");
+        call_check(L"AsfPyRunMacro", 1, p, L"");
+        swprintf(got, 256, L"%d asked; alert %d: %ls; prompt: %ls", nasked, last_alert_type, last_alert, last_input);
+        check(nasked == 2 && last_alert_type == 3 && wcsstr(last_alert, L"check_macro failed") && wcsstr(last_input, L"b"),
+              L"AsfPyRunMacro: a text where a number goes fails in Excel's alert", got);
+        answers[1] = num(3);
+        nanswers = 2; nasked = 0; last_alert[0] = 0;
+        call_check(L"AsfPyRunMacro", 1, p, L"5");
+        swprintf(got, 256, L"alert %d: %ls", last_alert_type, last_alert);
+        check(last_alert_type == 2 && !wcscmp(last_alert, L"5"), L"AsfPyRunMacro: the result in Excel's alert", got);
+        nanswers = 1; nasked = 0; last_alert[0] = 0;               /* Cancel at the second input box */
+        call_check(L"AsfPyRunMacro", 1, p, L"");
+        check(nasked == 1 && !last_alert[0], L"AsfPyRunMacro: Cancel runs nothing, says nothing", last_alert);
+        a[0] = str(L"no_such_macro");
+        call_check(L"AsfPyRunMacro", 1, p, L"#29");
+        check(wcsstr(last_alert, L"no macro 'no_such_macro'") != NULL, L"AsfPyRunMacro: an unknown macro, in Excel's alert", last_alert);
+        a[0] = num(2);
+    }
     call_check(L"check_app", 0, p, L"#15");    /* no pywin32 or no Excel window: an error, not a crash */
     if (argc > 2 && wcscmp(argv[2], L"numpy") == 0) {
         XLOPER12 g4[4] = { num(1), num(2), num(3), num(4) };

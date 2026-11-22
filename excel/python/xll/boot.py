@@ -239,6 +239,79 @@ def macro_list():
     return (TAG_STR, '\n'.join(lines))
 
 
+def _command(name):
+    for _, fn, sheet, flags in _functions:
+        if flags == '%' and isinstance(name, str) and sheet.upper() == name.upper():
+            return sheet, fn
+    return None, None
+
+
+def macro_dialog(name):
+    """For the command AsfPyRunMacro: (the dialogs' title, a prompt for each argument) of the
+    command (@xl_macro) named name, or the text of why not."""
+    sheet, fn = _command(name)
+    if fn is None:
+        return "ASF Python: no macro '%s' in the Python folder" % (name,)
+    args = _arguments(fn)
+    required = len(args) - len(fn.__defaults__ or ())
+    summary, helps = _docs(fn)[0], _argument_help(fn)
+    prompts = []
+    for k, a in enumerate(args):
+        text = a + (': ' + helps[k] if helps[k] else '')
+        if k >= required:
+            text += '\n(Optional: leave it blank for its default.)'
+        if k == 0 and summary:
+            text = summary + '\n\n' + text
+        prompts.append(text[:255])                      # Excel's INPUT takes 255 characters
+    return 'ASF Python: ' + sheet, prompts
+
+
+def run_macro(name, values):
+    """For the command AsfPyRunMacro: the command named name with the values typed in Excel's
+    input boxes, blanks at the end leaving their defaults: (True, its result as text) or (False,
+    the error), each as (a line for Excel's alert, the whole text)."""
+    global _macro_depth
+    sheet, fn = _command(name)
+    if fn is None:
+        text = "no macro '%s' in the Python folder" % (name,)
+        return False, text, text
+    values = list(values)
+    while values and values[-1] in ('', None):
+        values.pop()
+    values = [None if v == '' else v for v in values]
+    _macro_depth += 1
+    try:
+        result = fn(*_cell_arguments(fn, values, _Call()))
+        if isinstance(result, types.CoroutineType):
+            result = _await(result)
+        text = _plain_text(result)
+        return True, (text or 'Done.')[:250], text
+    except BaseException as exc:
+        _fail(exc)
+        return False, ('%s failed: %s' % (sheet, _last_error))[:250], _last_traceback
+    finally:
+        _macro_depth -= 1
+
+
+def _plain_text(value):
+    """A result as text: a table as tab-separated rows."""
+    kind = _kind(type(value))
+    if kind == 'ndarray':
+        value = _array_rows(value)
+    elif kind:
+        value = _frame_rows(value, kind)
+    if isinstance(value, (list, tuple)):
+        rows = [r if isinstance(r, (list, tuple)) else [r] for r in value]
+        return '\n'.join('\t'.join(_plain_text(c) for c in r) for r in rows)
+    if value is None:
+        return ''
+    if isinstance(value, bool):
+        return 'TRUE' if value else 'FALSE'
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
 def last_traceback():
     """The command AsfPyLastError: the traceback of the last Python exception."""
     return (TAG_STR, _last_traceback)

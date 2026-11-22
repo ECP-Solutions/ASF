@@ -681,7 +681,8 @@ static void register_functions(void)
    AsfPyMacros and AsfPyLastError: the add-in's own, registered once Python runs; AsfPyUpdate also when Python
    didn't start, since an update may be what it needs */
 #define PYCALL_ARGS 29          /* PY_CALL(name, 29 arguments): 30 in all, below Excel's 255 */
-static double g_pycall_id, g_reload_id, g_packages_id, g_script_id, g_macros_id, g_console_id, g_studio_id, g_update_id, g_lasterror_id;
+static double g_pycall_id, g_reload_id, g_packages_id, g_script_id, g_macros_id, g_console_id, g_studio_id, g_update_id, g_lasterror_id,
+              g_runmacro_id;
 
 static void register_builtins(int started)
 {
@@ -713,6 +714,8 @@ static void register_builtins(int started)
                                 L"Lists the commands (@xl_macro) of the Python folder.", 0, NULL);
     g_lasterror_id = register_proc(&dll, L"asfpy_last_error", L"Q", L"AsfPyLastError", L"", 2,
                                    L"The traceback of the last Python error.", 0, NULL);
+    g_runmacro_id = register_proc(&dll, L"asfpy_run_macro", L"QQ", L"AsfPyRunMacro", L"name", 2,
+                                  L"Runs a macro of the Python folder in Excel: its arguments asked in Excel's input box, its result in an alert.", 0, NULL);
     g_studio_id = register_proc(&dll, L"asfpy_studio", L"JQ", L"AsfPyStudio", L"view", 2,
                                 L"Opens the Python studio: an editor, a console and the packages.", 0, NULL);
     g_console_id = register_proc(&dll, L"asfpy_console", L"J", L"AsfPyConsole", L"", 2,
@@ -1537,6 +1540,125 @@ EXPORT LPXLOPER12 WINAPI asfpy_macros(void)
     return boot_text("macro_list", 0, NULL);
 }
 
+#define xlfInput 104          /* INPUT(message, type, title): Excel's input box, for commands */
+
+static void alert_kind(const wchar_t *msg, int kind)      /* ALERT's type: 2 information, 3 error */
+{
+    XLOPER12 text, type, res;
+    LPXLOPER12 op[2] = { &text, &type };
+    xltext(&text, msg);
+    type.xltype = xltypeNum;
+    type.val.num = kind;
+    excel12(118 | 0x8000 /* xlcAlert */, &res, 2, op);
+    free(text.val.str);
+}
+
+/* a str as a tagged text for tag_to_result: a new reference */
+static PyObject *tagged_text(PyObject *s)
+{
+    PyObject *t = P.PyTuple_New(2);
+    P.PyTuple_SetItem(t, 0, P.PyLong_FromLong(TAG_STR));
+    if (s) P.Py_IncRef(s); else s = P.PyUnicode_FromString("");
+    P.PyTuple_SetItem(t, 1, s);
+    return t;
+}
+
+/* The command AsfPyRunMacro (Application.Run "AsfPyRunMacro", "name"; the studio's ▶ of a macro):
+   a macro of the Python folder run in Excel, as the user sees it there: Excel's input box asks
+   for each of its arguments (a number, a text or TRUE/FALSE; blank for a default), and its result
+   or its error shows in Excel's alert. Gives back the whole result, or the traceback; "" when an
+   input box was cancelled. */
+EXPORT LPXLOPER12 WINAPI asfpy_run_macro(LPXLOPER12 name)
+{
+    PyGILState_STATE gil;
+    PyObject *info, *values, *r, *t;
+    wchar_t *title = NULL, **prompts = NULL, *line = NULL;
+    XLOPER12 *typed;
+    Py_ssize_t i, n = 0, asked = 0;
+    int cancelled = 0, ok = 0;
+    LPXLOPER12 result;
+    if (g_started != 1) return xlerror(xlerrName);
+    gil = P.PyGILState_Ensure();
+    info = boot_call("macro_dialog", 1, cell_to_py(name));
+    if (info && P.PyTuple_GetItem(info, 1)) {
+        PyObject *list = P.PyTuple_GetItem(info, 1);
+        title = pytext(P.PyTuple_GetItem(info, 0), NULL);
+        n = P.PyList_Size(list);
+        prompts = calloc(n + 1, sizeof(wchar_t *));
+        for (i = 0; i < n; i++) prompts[i] = pytext(P.PyList_GetItem(list, i), NULL);
+    } else {
+        P.PyErr_Clear();
+        line = info ? pytext(info, NULL) : _wcsdup(L"ASF Python: the macro can't run: see the log");
+    }
+    if (info) P.Py_DecRef(info);
+    P.PyGILState_Release(gil);
+    if (line) {
+        alert_kind(line, 3);
+        free(line);
+        return xlerror(xlerrName);
+    }
+    typed = calloc(n + 1, sizeof(XLOPER12));
+    for (i = 0; i < n && !cancelled; i++) {          /* without the GIL: an input box may wait long */
+        XLOPER12 x[3], res;
+        LPXLOPER12 op[3] = { &x[0], &x[1], &x[2] }, fr[1] = { &res };
+        xltext(&x[0], prompts[i]);
+        x[1].xltype = xltypeNum;
+        x[1].val.num = 1 + 2 + 4;                      /* a number, a text or a logical value */
+        xltext(&x[2], title);
+        if (excel12(xlfInput, &res, 3, op) != xlretSuccess) {
+            note(L"%ls: Excel's input box didn't open", title);
+            cancelled = 1;
+        } else {
+            if ((res.xltype & 0xFFF) == xltypeBool && !res.val.xbool) {
+                cancelled = 1;                          /* Cancel */
+            } else if ((res.xltype & 0xFFF) == xltypeStr) {    /* a copy: Excel frees its own */
+                typed[i].xltype = xltypeStr;
+                typed[i].val.str = malloc((res.val.str[0] + 1) * sizeof(XCHAR));
+                memcpy(typed[i].val.str, res.val.str, (res.val.str[0] + 1) * sizeof(XCHAR));
+            } else {
+                typed[i] = res;
+                typed[i].xltype &= 0xFFF;
+            }
+            excel12(xlFree, NULL, 1, fr);
+            if (!cancelled) asked++;
+        }
+        free(x[0].val.str);
+        free(x[2].val.str);
+    }
+    gil = P.PyGILState_Ensure();
+    if (cancelled) {
+        t = tagged_text(NULL);
+    } else {
+        values = P.PyList_New(asked);
+        for (i = 0; i < asked; i++) P.PyList_SetItem(values, i, cell_to_py(&typed[i]));
+        r = boot_call("run_macro", 2, cell_to_py(name), values);
+        if (r) {
+            ok = P.PyObject_IsTrue(P.PyTuple_GetItem(r, 0));
+            line = pytext(P.PyTuple_GetItem(r, 1), NULL);
+            t = tagged_text(P.PyTuple_GetItem(r, 2));
+            P.Py_DecRef(r);
+        } else {
+            line = _wcsdup(L"ASF Python: the macro can't run: see the log");
+            t = tagged_text(NULL);
+        }
+    }
+    result = tag_to_result(t);
+    P.Py_DecRef(t);
+    P.PyGILState_Release(gil);
+    if (line) {
+        alert_kind(line, ok ? 2 : 3);
+        free(line);
+    }
+    for (i = 0; i < n; i++) {
+        free(prompts[i]);
+        if (typed[i].xltype == xltypeStr) free(typed[i].val.str);
+    }
+    free(prompts);
+    free(typed);
+    free(title);
+    return result;
+}
+
 /* The command AsfPyLastError (VBA, or the studio through COM: Application.Run("AsfPyLastError")):
    the traceback of the last Python error, as py.lastTraceback gives it; a failed macro returns
    only #VALUE! to Application.Run */
@@ -1835,6 +1957,7 @@ EXPORT int WINAPI xlAutoClose(void)
     unregister_id(&g_script_id);
     unregister_id(&g_macros_id);
     unregister_id(&g_lasterror_id);
+    unregister_id(&g_runmacro_id);
     unregister_id(&g_console_id);
     unregister_id(&g_studio_id);
     unregister_id(&g_update_id);

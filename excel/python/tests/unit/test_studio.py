@@ -224,7 +224,7 @@ class Studio(unittest.TestCase):
         app = App()
         with mock.patch.object(excel, 'call', lambda fn, timeout=600: fn(app)):
             status, r, _ = self.post('excel/macro', {'name': 'check_macro', 'args': [2, 3, None], 'front': True})
-            self.assertEqual((status, r), (200, {'result': '5', 'error': False}))
+            self.assertEqual((status, r), (200, {'result': '5', 'error': False, 'front': False}))   # no Windows here
             self.assertEqual(app.calls[-1], ('check_macro', (2, 3)))     # a trailing blank: the default
             self.assertEqual(self.post('excel/macro', {'name': 'table', 'args': []})[1]['result'], '1\ta\n2.5\t')
             r = self.post('excel/macro', {'name': 'broken', 'args': [None, 1]})[1]
@@ -232,6 +232,27 @@ class Studio(unittest.TestCase):
             self.assertTrue(r['result'].startswith('#VALUE!\nTraceback'))
             self.assertEqual(app.calls[-2], ('broken', (None, 1)))     # a blank between: Empty
         self.assertEqual(self.post('excel/macro', {'name': 'x', 'args': [{'a': 1}]})[0], 400)
+
+    def test_a_macro_run_with_excels_own_dialogs(self):
+        answers = {'check_macro': '5', 'cancelled': '', 'broken': 'Traceback (most recent call last):\nTypeError: x',
+                   'unknown': -2146826259}
+
+        class App:
+            Hwnd = 0
+            calls = []
+
+            def Run(self, name, *args):
+                self.calls.append((name, args))
+                return answers[args[0]]
+        app = App()
+        with mock.patch.object(excel, 'call', lambda fn, timeout=600: fn(app)):
+            r = self.post('excel/macro-in-excel', {'name': 'check_macro'})[1]
+            self.assertEqual(r, {'result': '5', 'error': False, 'cancelled': False, 'front': False})
+            self.assertEqual(app.calls[-1], ('AsfPyRunMacro', ('check_macro',)))
+            self.assertTrue(self.post('excel/macro-in-excel', {'name': 'cancelled'})[1]['cancelled'])
+            self.assertTrue(self.post('excel/macro-in-excel', {'name': 'broken'})[1]['error'])
+            r = self.post('excel/macro-in-excel', {'name': 'unknown'})[1]
+            self.assertEqual((r['error'], r['result'][:6]), (True, '#NAME?'))
 
     def test_excel_out_of_reach_is_an_answer_not_a_crash(self):
         if os.name == 'nt':

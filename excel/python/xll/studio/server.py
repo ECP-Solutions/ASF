@@ -640,6 +640,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             elif method == 'POST' and name == 'excel/run':
                 out = excel.run('AsfPyRunScript', s.path(args['path']))
                 result = {'output': out if isinstance(out, str) else 'The Python add-in has no Python: About Python on the ASF tab says why.'}
+            elif method == 'POST' and name == 'excel/macro-in-excel':
+                result = excel.macro_in_excel(args['name'])
             elif method == 'POST' and name == 'excel/macro':
                 values = args.get('args') or []
                 if not isinstance(values, list) or len(values) > 30 or any(
