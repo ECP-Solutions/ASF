@@ -147,8 +147,7 @@ With `appAccess: true` and `args: selection`, `$1` is the `Range` itself, so the
 | **Library folder** | Opens the library folder, made first when it is missing |
 | **Why this error?** | Calculates the active cell again and shows why its `ASF_RUN` or `ASF_CALL` gave `#VALUE!`. With the Python add-in, also the Python error of a `PY_CALL` or Python function |
 | **Reset engine** | Drops the engine of the worksheet functions and their compiled scripts; the next formula reads the settings again |
-| **Run Python script**, **Python macros**, **Reload Python** | The Python group, for the Python add-in: see [Python](Python.html#7-asfxlam-optional) |
-| **Python settings**, **Python packages**, **Python console**, **Python folder**, **About Python** | The Python setup group: which Python, its packages, its prompt, the folder of your modules, and what runs |
+| **Python studio**, **Python console**, **Python settings**, **Python updates**, **About Python** | The Python group, for the Python add-in: write, run and reload your modules and manage the packages; a prompt apart from Excel; which Python; the add-in's version and its updates; and what runs. See [Python](Python.html#7-asfxlam-optional) |
 | **Help** | Opens the add-in's README on GitHub |
 
 ---
@@ -161,7 +160,7 @@ With `appAccess: true` and `args: selection`, `$1` is the `Range` itself, so the
 | `RunEnabled` | `1`. With `0`, `ASF_RUN` gives `#VALUE!` and only library scripts run |
 | `StepLimit` | `10000000` loop iterations and calls per script; `0` for no limit |
 | `PythonAccess` | `off`. What library scripts that ask for Python may do: `call` or `modules`. See [Python](Python.html) |
-| `PythonVenv`, `PythonFolder` | Read by the Python add-in. See [Python](Python.html) |
+| `PythonVenv`, `PythonFolder`, `PythonUpdates`, `PythonUpdateSource` | Read by the Python add-in: which Python, its folder of modules, and its updates. See [Python](Python.html#settings) |
 
 The settings are kept with `SaveSetting`: on Windows in `HKEY_CURRENT_USER\Software\VB and VBA Program Settings\ASF\AddIn`, where an administrator can set them by group policy; on Mac in a preferences file. Change one from the Immediate window of the VBA editor (Alt+F11, then Ctrl+G):
 

@@ -58,7 +58,7 @@ Excel refuses add-ins downloaded from the internet.
 
 In Excel: File > Options > Add-ins. At the bottom, choose **Manage: Excel Add-ins** and click **Go**, then **Browse**, pick the `.xll` and click **OK**. Make sure it is ticked.
 
-The first time, the add-in unpacks its Python into `%LOCALAPPDATA%\ASF\runtime` (about 125 MB for 64-bit, 75 MB for 32-bit, once; a few seconds). Excel then loads it every time it starts.
+The first time, the add-in unpacks its Python into `%LOCALAPPDATA%\ASF\runtime` (about 160 MB for 64-bit, 110 MB for 32-bit, once; a few seconds). Excel then loads it every time it starts.
 
 If Python can't start, Excel says why right away. The details are in `%TEMP%\asfpy.log`. See [Troubleshooting](#troubleshooting).
 
@@ -75,7 +75,7 @@ def hello(name):
     return 'Hello, ' + name
 ```
 
-Restart Excel (or, with `ASF.xlam`, click **Reload Python** on the ASF tab). In a cell, `=hello("world")` gives `Hello, world`. Until a file of the folder gives a function, Excel shows a message when it loads the add-in.
+Restart Excel (or, with `ASF.xlam`, write the file in **Python studio** on the ASF tab: saving it reloads the folder in Excel). In a cell, `=hello("world")` gives `Hello, world`. Until a file of the folder gives a function, Excel shows a message when it loads the add-in.
 
 ### 6. Packages
 
@@ -88,10 +88,11 @@ The add-in's Python comes with these packages, ready to import:
 | openpyxl 3.1 | reading and writing `.xlsx` files, also for `pandas.read_excel` | yes | yes |
 | pywin32 312 | `xl_app()`, Excel's object model in macros; COM | yes | yes |
 | python-dateutil, tzdata | what pandas needs; dates and time zones | yes | yes |
+| jedi, parso, pyflakes | the completions and the problems of **Python studio** | yes | yes |
 
-To add another package, or to upgrade one of these:
+To add another package, or to upgrade one of these, use **Packages** in [Python studio](#python-studio) (below), or `pip("install scipy")` in the [Python console](#the-python-console). Without `ASF.xlam`, the package console does it:
 
-1. Open the package console: **Python packages** on the ASF tab of `ASF.xlam`, or in the Immediate window of the VBA editor (Alt+F11, then Ctrl+G):
+1. Open it in the Immediate window of the VBA editor (Alt+F11, then Ctrl+G):
    ```vb
    Application.Run "AsfPyPackages"
    ```
@@ -106,6 +107,19 @@ To add another package, or to upgrade one of these:
 pip downloads from PyPI. Behind a company proxy or offline, pip takes the usual options: `install C:\downloads\some_package.whl`, or `install --index-url https://your.mirror/simple numpy`.
 
 Windows locks the files of a package that Excel has loaded: close Excel before you upgrade or remove such a package, and run the console from a new Excel without using Python (or with the add-in unticked).
+
+### Python studio
+
+**Python studio** on the ASF tab (or `Application.Run "AsfPyStudio"`) opens a window to write and try the modules of the Python folder:
+
+- **Files:** the modules of the Python folder, in tabs, with Python highlighting, completions as you type a `.` or press Ctrl+Space (from jedi, which knows your modules, the packages and the `asfpy` decorators), the signature of the function you call, and problems as you type: syntax errors and pyflakes's warnings (undefined names, unused imports), underlined and listed under **Problems**. **+** makes a new module from a template; the folder button opens the Python folder in Explorer, to copy modules in or out.
+- **Save** (Ctrl+S) writes the file; with **Reload Excel on save**, Excel imports the Python folder again and calculates the workbooks, so a changed function shows in its cells at once.
+- **Run in Excel** (F5) runs the file in Excel's own Python as `__main__`, with its folder on the import path, and shows what it printed under **Output**. Like a macro, it may use Excel through `xl_app()`. **Reload Excel** imports the Python folder again and calculates the workbooks in full.
+- **Functions** lists what Excel gets from the folder: the worksheet functions as formulas, the macros and the exported functions, each with its description; a click opens it. A macro's ▶ asks for its arguments (typed as in a cell: `2.5`, `TRUE`, a text, `"007"` for a text of digits, blank for its default; the studio remembers them), runs it in Excel as `Application.Run` does, and shows its result, or Python's traceback when it fails. Tick **Bring Excel to the front** for a macro that shows a dialog or works on the selection: its dialog then shows over Excel, and the studio waits for your answer there.
+- **Console** runs Python apart from Excel, with the Python folder importable: try a package or a function before Excel loads it.
+- **Packages** lists what the add-in's Python has, suggests common packages, looks a package up on PyPI by name, and installs, upgrades or removes them with pip, its output live. Excel uses what changed after a restart.
+
+The studio runs in a process of its own with the add-in's Python (not with `PythonVenv`'s), and shows in a window of Microsoft Edge (the default browser otherwise). It listens only on the computer itself (127.0.0.1), and only the window Excel opened can use it. It closes two minutes after its window. Opening it again while it runs brings its window back.
 
 ### The Python console
 
@@ -123,34 +137,42 @@ The Python folder is on the import path, and `from asfpy import xl_func` works t
 
 ### 7. ASF.xlam (optional)
 
-With [`ASF.xlam`](Add-ins.html) loaded too, the ASF tab gets two Python groups, ASF scripts of your library can call Python, and **Why this error?** shows Python's error and traceback.
-
-**Python**
+With [`ASF.xlam`](Add-ins.html) loaded too, the ASF tab gets a Python group, ASF scripts of your library can call Python, and **Why this error?** shows Python's error and traceback.
 
 | Button | What it does |
 |---|---|
-| **Run Python script** | Pick a `.py` file: it runs in Excel's Python as `__main__`, with its folder on the import path, and what it prints is shown (in Notepad when it's long). Like a macro, it may use Excel through `xl_app()` |
-| **Python macros** | Lists the `@xl_macro` functions of the Python folder and runs the one you pick, asking for its arguments (up to 5, typed separated by commas) |
-| **Reload Python** | Imports the Python folder again and registers its functions, then calculates the workbooks in full |
+| **Python studio** | A window to write, run and reload the Python folder's modules, run its macros, open the folder, and manage the packages: see [Python studio](#python-studio) above |
+| **Python console** | Opens the add-in's Python at its `>>>` prompt, in a console window apart from Excel: see [The Python console](#the-python-console) above |
+| **Python settings** | Shows and changes the settings: which Python (the add-in's own, or a venv or install you pick), the Python folder, `PythonAccess` and `PythonUpdates`. Restart Excel after changing the first two |
+| **Python updates** | The add-in's version, a newer release to install, and whether Excel looks for one when it starts: the Add-in page of Python studio ([Updates](#updates)) |
+| **About Python** | The loaded add-in file and its version, the Python it runs, the settings, what the Python folder gave at start-up, and the log, which it offers to open; it also checks for a newer add-in. The first place to look when something doesn't work |
 
-**Python setup**
+The add-in's commands also run from VBA, a button of your own or a keyboard shortcut, with `Application.Run`: `AsfPyStudio`, `AsfPyConsole`, `AsfPyReload` (import the Python folder again), `AsfPyPackages` (the package console), `AsfPyRunScript` (run a `.py` file you pick), `AsfPyMacros` (list the `@xl_macro` functions), `AsfPyLastError` (the traceback of the last Python error) and `AsfPyUpdate` (check for a newer add-in).
 
-| Button | What it does |
-|---|---|
-| **Python settings** | Shows and changes the three settings: which Python (the add-in's own, or a venv or install you pick), the Python folder, and `PythonAccess`. Restart Excel after changing the first two |
-| **Python packages** | Opens the package console |
-| **Python console** | Opens the add-in's Python at its `>>>` prompt, in a console window apart from Excel (below) |
-| **Python folder** | Opens the Python folder, made first when it is missing |
-| **About Python** | The loaded add-in file, the Python it runs, the settings, what the Python folder gave at start-up, and the log, which it offers to open. The first place to look when something doesn't work |
+### Updates
 
-### Updating and removing
+The add-in keeps itself up to date from the [project's releases](https://github.com/ECP-Solutions/ASF/releases):
 
-- **Update:** close Excel, replace the `.xll`, start Excel. A new add-in with a newer Python unpacks it into a new folder, which starts without packages: install them again. (Before updating, `list` in the package console shows what you had.)
+- **When Excel loads it**, at most once a day, it looks for a newer release, apart from Excel (Excel doesn't wait). The setting `PythonUpdates` says what then: `check` (the default) asks whether to install it; `auto` installs it and says so; `off` doesn't look. After **No**, the same version is offered again a week later.
+- **When you ask:** **Python updates** on the ASF tab opens the **Add-in** page of Python studio (also the gear on its left, or the version at its top right, which reads **Update to …** when a newer add-in is out). It shows the add-in's version and the latest release, with **Check for updates**, **Install** and the download's progress, and the choice of what Excel does when it starts (`PythonUpdates`), the tooltip's setting (`PythonTips`), and the add-in's file, its Python and its logs. With `PythonVenv` set, which has no studio, **Python updates** asks in message boxes instead. `Application.Run "AsfPyUpdate"` checks too.
+
+An update is the release's `asfpy64.xll` or `asfpy32.xll`, whichever you have. Before it replaces anything, its SHA-256 must match the one GitHub publishes for that file, and it must be an add-in of your Excel's bitness whose version is the release's. Then it takes the place of your `.xll`, under the same name, so Excel loads it the next time it starts: **restart Excel to use it**. The old file is kept as `asfpy64.xll.old` until then, and the new add-in deletes it. If the add-in's folder can't be written to (a folder an administrator manages), the update is downloaded to `%LOCALAPPDATA%\ASF\updates` and you are told where to copy it.
+
+The new add-in brings a newer Python, unpacked into a folder of its own, without the packages you added with pip. **Packages** in Python studio then shows **From the previous Python**: the packages the old Python has and the new one lacks, with **Install them here**, and **Remove** to delete the old Python (about 160 MB) once no Excel uses it.
+
+Only `api.github.com` and GitHub's downloads are contacted, with no information about you or your workbooks. In an organisation that keeps its own copy of the releases, the setting `PythonUpdateSource` names its address (a releases API answering as GitHub's `releases/latest` does); `PythonUpdates` set to `off` by policy turns updates off. What the updater did is in `%TEMP%\asfpy-update.log`.
+
+### Updating by hand and removing
+
+- **Update by hand:** close Excel, replace the `.xll`, start Excel. As above, the new Python starts without the packages you added.
 - **Remove:** untick the add-in in File > Options > Add-ins (Excel Add-ins), close Excel and delete the `.xll`. Delete `%LOCALAPPDATA%\ASF\runtime` to remove the Python and its packages. Your Python folder stays.
 
 ---
 
 ## Writing functions
+
+[examples/python-in-excel](https://github.com/ECP-Solutions/ASF/tree/main/examples/python-in-excel) has worked examples to copy into the Python folder, with a workbook that uses them: statistics with numpy, tables with pandas, finance, text, macros, scripts, and an ASF script calling Python.
+
 
 Every `.py` file of the Python folder is imported when Excel loads the add-in. Decorators from the `asfpy` module mark what Excel gets:
 
@@ -183,10 +205,34 @@ def scale(values: list, factor: float):
 | Decorator | Makes |
 |---|---|
 | `@xl_func` | A worksheet function named as the Python function, in the **Python** category of Insert Function, with its docstring as the description. Options: `name=`, `volatile=True` (calculated on every recalculation), `thread_safe=True` (may run on Excel's calculation threads), `asynchronous=True` (a plain function run on a thread of the add-in; `async def` is asynchronous by itself) |
-| `@xl_macro` | A command: `Application.Run "name", arguments...` runs it and gives back its result. It runs on Excel's main thread, and only commands may use `xl_app()`, Excel's `Application` (needs the package `pywin32` or `comtypes`). Option: `name=` |
+| `@xl_macro` | A command: `Application.Run "name", arguments...` runs it and gives back its result. It runs on Excel's main thread, and only commands may use `xl_app()`, Excel's `Application` (needs the package `pywin32` or `comtypes`). A command may ask and tell through Excel: `xl_app().InputBox("A number:", Type=1)` (`False` on Cancel), and `win32api.MessageBox(xl_app().Hwnd, "Done", "Title")` for a message box over Excel. Option: `name=` |
 | `@export` | A function `PY_CALL` and ASF scripts may call, as `"module.function"`, without making it a worksheet function. They may call `@xl_func` and `@xl_macro` functions the same way |
 
 A function takes at most 32 arguments; the add-in registers up to 2,000 functions.
+
+### Help as you type
+
+Excel shows the arguments of its own functions as you type a formula, not an add-in's. The Python add-in does it for the Python folder's functions: while you type `=PY.FORECAST(A2:A25, ` a tooltip under the caret shows `PY.FORECAST(y, [periods], [season])` with the argument you are on in bold, the function's description, and that argument's. While you type a name that only one function of the folder starts with, the tooltip shows that function beside Excel's list. Inside `PY_CALL("module.function", ` it shows the exported function's arguments.
+
+The help comes from your code:
+
+- **The function's description:** the first paragraph of its docstring (Insert Function shows its first line).
+- **Each argument's:** an `Args:` (or `Parameters:`) section of the docstring, as Google and NumPy style write it, or `:param x:` lines. Without one, what its type hint asks for: `float` "a number", `int` "a whole number", `numpy.ndarray` "a range of numbers", `pandas.DataFrame` "a table, its first row the column names", and so on. Insert Function's argument boxes show the same.
+- **Optional arguments**, those with a default value, are shown in `[ ]`.
+
+```python
+@xl_func(name='PY.FORECAST')
+def forecast(y: 'numpy.ndarray', periods: int = 3, season: int = 0):
+    """The next values of a series: its linear trend, plus its seasonal pattern.
+
+    Args:
+        y: the series, oldest first
+        periods: how many values to forecast; 3 by default
+        season: the length of a cycle, such as 12 for months; 0 for none
+    """
+```
+
+The tooltip follows Windows' list separator (`,` or `;`). Excel's own **Ctrl+Shift+A** after the name and `(` also writes the argument names into the formula. To turn the tooltip off, set `PythonTips` to `off`.
 
 ### Arguments
 
@@ -211,7 +257,7 @@ A function takes at most 32 arguments; the add-in registers up to 2,000 function
 
 ### Changing your code
 
-Python starts once per Excel session. After changing a file of the Python folder, **Reload Python** on the ASF tab (or `Application.Run "AsfPyReload"`) imports the folder again and registers its functions; then press Ctrl+Alt+F9 to calculate everything again. Packages stay loaded: after installing or upgrading one, restart Excel.
+Python starts once per Excel session. After changing a file of the Python folder, saving it in **Python studio** (or **Reload Excel** there, or `Application.Run "AsfPyReload"`) imports the folder again and registers its functions; then press Ctrl+Alt+F9 to calculate everything again. Packages stay loaded: after installing or upgrading one, restart Excel.
 
 ---
 
@@ -270,6 +316,7 @@ Commands run with `Application.Run`, the Python folder's and the add-in's own:
 Debug.Print Application.Run("tidy", "Sheet1")
 Debug.Print Application.Run("AsfPyRunScript", "C:\work\report.py")   ' what the script printed
 Debug.Print Application.Run("AsfPyMacros")       ' a line per @xl_macro: name, arguments it needs, description
+Debug.Print Application.Run("AsfPyLastError")    ' the traceback of the last Python error, as after a failed macro
 Application.Run "AsfPyReload"                    ' the Python folder again
 Application.Run "AsfPyPackages"                  ' the package console
 ```
@@ -305,6 +352,9 @@ The add-in reads its settings when Excel loads it, from `HKEY_CURRENT_USER\Softw
 | `PythonFolder` | `%APPDATA%\ASF\python`: the folder of your Python files |
 | `PythonVenv` | empty: the Python the add-in carries. Otherwise, another Python to use (below) |
 | `PythonAccess` | `off`: read by `ASF.xlam`, for ASF scripts (above) |
+| `PythonTips` | on: a tooltip shows a Python function's arguments as a formula is typed; `off` turns it off ([Help as you type](#help-as-you-type)) |
+| `PythonUpdates` | `check`: look for a newer add-in once a day and ask; `auto`: install it; `off`: don't look ([Updates](#updates)) |
+| `PythonUpdateSource` | empty: GitHub's releases of the project. Otherwise, the address of a copy of them ([Updates](#updates)) |
 
 With `ASF.xlam` loaded, **Python settings** on the ASF tab shows and changes them. Or set them from the Immediate window:
 

@@ -10,7 +10,7 @@ tried with the add-in of its bitness. Run excel/python/xll/build.py first: the f
 with the same toolchain. The Python folder of the run is a temporary folder with
 tests/excel/checks.py and tests/fakehost/zz_slots.py, and a copy of it for 1,000 more functions.
 
-On Windows the add-in's settings (PythonVenv and PythonFolder under HKCU) are set for the run and
+On Windows the add-in's settings (PythonVenv, PythonFolder and PythonUpdates, off, under HKCU) are set for the run and
 put back afterwards, and the add-in's log and the Python it unpacks go to a temporary folder, not
 to your %TEMP% and %LOCALAPPDATA%. On Linux it needs wine (wine32 too for 32-bit) and MinGW-w64;
 WINEPREFIX is used when set, else ~/.cache/asfpy-wine (Wine refuses a prefix in a folder
@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.join(PYDIR, "xll"))
 import build  # noqa: E402  (its toolchains)
 
 KEY = r"Software\VB and VBA Program Settings\ASF\AddIn"
-NAMES = ("PythonVenv", "PythonFolder")
+NAMES = ("PythonVenv", "PythonFolder", "PythonUpdates")
 WINDOWS = os.name == "nt"
 
 
@@ -175,7 +175,7 @@ def main():
             b = bits(python)
             print("=== %s (%d-bit, %s)" % (python, b, tool), flush=True)
             bundled = python.startswith("bundled")
-            values = {"PythonFolder": native(folder)}
+            values = {"PythonFolder": native(folder), "PythonUpdates": "off"}   # no updater on the network
             if not bundled:
                 values["PythonVenv"] = native(python)
             if WINDOWS:

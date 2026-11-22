@@ -2,3 +2,5 @@
 build/*
 !build/asfpy64.xll
 !build/asfpy32.xll
+# the studio's editor, from runtime.json (build.py --studio-vendor)
+studio/static/vendor/

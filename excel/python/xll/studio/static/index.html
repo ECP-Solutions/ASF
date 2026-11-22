@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASF Python Studio</title>
+<link rel="stylesheet" href="vendor/codemirror/lib/codemirror.css">
+<link rel="stylesheet" href="vendor/codemirror/addon/hint/show-hint.css">
+<link rel="stylesheet" href="vendor/codemirror/addon/dialog/dialog.css">
+<link rel="stylesheet" href="vendor/codemirror/theme/material-darker.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">ASF</span> Python Studio</div>
+  <div class="status" id="status">
+    <button class="pill hidden" id="addin-pill" title="Check for a newer add-in">ASF Python</button>
+    <span class="pill" id="python-pill">Python</span>
+    <span class="pill" id="excel-pill" title="Excel, reached through COM">Excel</span>
+  </div>
+</header>
+
+<div class="body">
+  <nav class="activity" aria-label="Views">
+    <button class="act active" data-view="files" title="Files (Ctrl+1)"><svg viewBox="0 0 24 24"><path d="M4 4h7l2 2h7v14H4z"/></svg><span>Files</span></button>
+    <button class="act" data-view="functions" title="Functions (Ctrl+2)"><svg viewBox="0 0 24 24"><path d="M9 4c-2 0-3 1-3 3v3H4v2h2v5c0 2 1 3 3 3M15 4c2 0 3 1 3 3v3h2v2h-2v5c0 2-1 3-3 3"/></svg><span>Functions</span></button>
+    <button class="act" data-view="packages" title="Packages (Ctrl+3)"><svg viewBox="0 0 24 24"><path d="M12 3l8 4v10l-8 4-8-4V7zM4 7l8 4 8-4M12 11v10"/></svg><span>Packages</span></button>
+    <button class="act" data-view="addin" title="The add-in: its version, updates and settings (Ctrl+4)"><svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.5 7.5 0 0 0-1.7-1L15 3.5h-4l-.4 2.5a7.5 7.5 0 0 0-1.7 1l-2.4-1-2 3.4L6.6 11a7.6 7.6 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7.5 7.5 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7.5 7.5 0 0 0 1.7-1l2.4 1 2-3.4z"/></svg><span>Add-in</span></button>
+  </nav>
+
+  <aside class="side" id="side">
+    <section class="pane" data-pane="files">
+      <div class="pane-head"><h2>Python folder</h2><span class="buttons"><button class="icon" id="reveal" title="Open the folder in Explorer, to copy modules in or out">&#x1F4C2;&#xFE0E;</button><button class="icon" id="new-file" title="New module">+</button></span></div>
+      <div class="folder" id="folder-path"></div>
+      <ul class="list" id="file-list"></ul>
+    </section>
+    <section class="pane hidden" data-pane="functions">
+      <div class="pane-head"><h2>What Excel gets</h2><button class="icon" id="refresh-outline" title="Read the files again">&#x21bb;</button></div>
+      <div id="outline"></div>
+    </section>
+  </aside>
+
+  <main class="main" id="editor-view">
+    <div class="tabs" id="tabs"></div>
+    <div class="toolbar">
+      <button id="save" title="Save (Ctrl+S)">Save</button>
+      <button id="run" class="primary" title="Run this file in Excel's Python (F5)">&#9654; Run in Excel</button>
+      <button id="reload" title="Import the Python folder again in Excel and calculate (Ctrl+Shift+R)">Reload Excel</button>
+      <label class="check"><input type="checkbox" id="reload-on-save" checked> Reload Excel on save</label>
+      <span class="hint" id="signature"></span>
+    </div>
+    <div class="editor" id="editor"><div class="empty" id="empty">
+      <h1>Python for Excel</h1>
+      <p>Open a module of the Python folder on the left, or make a new one with <b>+</b>.</p>
+      <p>Functions marked <code>@xl_func</code> become worksheet functions; <code>@xl_macro</code>, macros; <code>@export</code>, callable by <code>PY_CALL</code> and ASF scripts.</p>
+      <p class="keys"><kbd>Ctrl</kbd>+<kbd>S</kbd> save &nbsp; <kbd>F5</kbd> run in Excel &nbsp; <kbd>Ctrl</kbd>+<kbd>Space</kbd> complete &nbsp; <kbd>Ctrl</kbd>+<kbd>/</kbd> comment</p>
+    </div></div>
+    <section class="panel" id="panel">
+      <div class="panel-tabs">
+        <button class="ptab active" data-panel="output">Output</button>
+        <button class="ptab" data-panel="problems">Problems <span class="count" id="problem-count"></span></button>
+        <button class="ptab" data-panel="console">Console</button>
+        <span class="spacer"></span>
+        <button class="icon small" id="clear-panel" title="Clear">&#x2715;</button>
+      </div>
+      <div class="panel-body" data-body="output"><pre id="output"></pre></div>
+      <div class="panel-body hidden" data-body="problems"><ul class="list" id="problems"></ul></div>
+      <div class="panel-body hidden" data-body="console">
+        <pre id="console-out">Python apart from Excel: try packages and the modules of the Python folder here.
+</pre>
+        <div class="prompt"><span>&gt;&gt;&gt;</span><textarea id="console-in" rows="1" spellcheck="false" placeholder="Enter runs, Shift+Enter adds a line, Up and Down recall"></textarea><button id="console-restart" title="A new session">Restart</button></div>
+      </div>
+    </section>
+  </main>
+
+  <main class="main hidden" id="addin-view">
+    <div class="packages">
+      <div class="pk-head">
+        <div>
+          <h1>ASF Python</h1>
+          <p class="muted">The add-in: its version, its updates and its settings.</p>
+        </div>
+      </div>
+      <h2>Version and updates</h2>
+      <div class="panel-card">
+        <table class="facts">
+          <tr><th>This add-in</th><td id="ad-installed">…</td></tr>
+          <tr><th>Latest release</th><td id="ad-latest">…</td></tr>
+        </table>
+        <div class="row">
+          <button id="ad-check">Check for updates</button>
+          <button id="ad-install" class="primary hidden">Install</button>
+          <a id="ad-page" href="#" target="_blank" rel="noopener" class="hidden">What changed</a>
+        </div>
+        <pre id="ad-progress" class="hidden"></pre>
+      </div>
+      <h2>When Excel starts</h2>
+      <div class="panel-card">
+        <p class="muted">The add-in looks for a newer release at most once a day, without making Excel wait (the setting <code>PythonUpdates</code>).</p>
+        <label class="choice"><input type="radio" name="ad-updates" value="check"> <b>Ask</b>: offer a newer add-in, and install it if I say so (the default)</label>
+        <label class="choice"><input type="radio" name="ad-updates" value="auto"> <b>Install</b>: download and install it, then tell me</label>
+        <label class="choice"><input type="radio" name="ad-updates" value="off"> <b>Don't look</b>: only when I ask, here or with About Python</label>
+        <p class="muted" id="ad-source"></p>
+      </div>
+      <h2>Help as you type</h2>
+      <div class="panel-card">
+        <label class="choice"><input type="checkbox" id="ad-tips"> A tooltip shows a Python function's arguments as a formula is typed (the setting <code>PythonTips</code>; from Excel's next start)</label>
+      </div>
+      <h2>Files</h2>
+      <div class="panel-card">
+        <table class="facts">
+          <tr><th>The add-in</th><td id="ad-xll" class="path"></td><td class="b"><button data-open="addin">Show</button></td></tr>
+          <tr><th>Its Python</th><td id="ad-python" class="path"></td><td class="b"><button data-open="python">Open</button></td></tr>
+          <tr><th>The log</th><td id="ad-log" class="path"></td><td class="b"><button data-open="log">Open</button></td></tr>
+          <tr><th>The updates' log</th><td id="ad-update-log" class="path"></td><td class="b"><button data-open="updateLog">Open</button></td></tr>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <main class="main hidden" id="packages-view">
+    <div class="packages">
+      <div class="pk-head">
+        <div>
+          <h1>Packages</h1>
+          <p class="muted">Installed in the add-in's Python. Excel uses a new or upgraded package after a restart.</p>
+        </div>
+        <form id="pk-form" class="pk-search">
+          <input id="pk-name" placeholder="Package name on PyPI, such as scipy" autocomplete="off" spellcheck="false">
+          <button type="submit" class="primary">Install</button>
+        </form>
+      </div>
+      <div id="pk-lookup" class="pk-lookup hidden"></div>
+      <section id="pk-previous" class="hidden">
+        <h2>From the previous Python</h2>
+        <p class="muted">An update of the add-in brings a new Python; the one before stays on disk with the packages you added to it.</p>
+        <div id="pk-previous-list" class="cards"></div>
+      </section>
+      <h2>Suggested</h2>
+      <div class="cards" id="pk-suggested"></div>
+      <h2>Installed <span class="muted" id="pk-count"></span></h2>
+      <input id="pk-filter" class="filter" placeholder="Filter" spellcheck="false">
+      <table class="pk-table"><thead><tr><th>Package</th><th>Version</th><th>About</th><th></th></tr></thead><tbody id="pk-installed"></tbody></table>
+      <h2>Activity</h2>
+      <div id="pk-jobs" class="jobs"><p class="muted">pip's commands and their output show here.</p></div>
+    </div>
+  </main>
+</div>
+
+<footer class="foot"><span id="foot-left">Ready</span><span id="foot-right"></span></footer>
+
+<script src="vendor/codemirror/lib/codemirror.js"></script>
+<script src="vendor/codemirror/mode/python/python.js"></script>
+<script src="vendor/codemirror/addon/edit/matchbrackets.js"></script>
+<script src="vendor/codemirror/addon/edit/closebrackets.js"></script>
+<script src="vendor/codemirror/addon/selection/active-line.js"></script>
+<script src="vendor/codemirror/addon/hint/show-hint.js"></script>
+<script src="vendor/codemirror/addon/comment/comment.js"></script>
+<script src="vendor/codemirror/addon/search/searchcursor.js"></script>
+<script src="vendor/codemirror/addon/dialog/dialog.js"></script>
+<script src="vendor/codemirror/addon/search/search.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,95 +1,22 @@
 Attribute VB_Name = "ASFPythonSetup"
-' The Python buttons of the ASF tab, after the ribbon (ASFRibbon): Run Python script, Python
-' macros, Python console, Python settings and About Python. The Python add-in (asfpy64.xll,
-' asfpy32.xll) does the work through its commands AsfPyRunScript, AsfPyMacros and AsfPyConsole; the settings are those it reads when
-' Excel loads it (ASFSettings). Python runs on Excel for Windows only.
+' The Python buttons of the ASF tab, after the ribbon (ASFRibbon): Python studio, Python console,
+' Python settings, Python updates and About Python. The Python add-in (asfpy64.xll, asfpy32.xll) opens the studio
+' and the console through its commands AsfPyStudio and AsfPyConsole; the settings are those it
+' reads when Excel loads it (ASFSettings). Python runs on Excel for Windows only.
 Option Explicit
 Option Private Module
 
 Private Const TITLE As String = "ASF Python"
-Private Const MAX_SHOWN As Long = 900    ' a message box holds about 1024 characters
-Private Const MAX_LISTED As Long = 30    ' and an InputBox prompt as much
-Private Const MAX_ARGS As Long = 5       ' arguments typed for a macro of the list
 
-' Run Python script: a .py file, picked in the Python folder, runs in Excel's Python as __main__;
-' its output comes back. It may use Excel's object model (xl_app), as a command does.
-Public Sub RunScript()
-    Dim py As Object, path As String, out As Variant
-    If Not Ready(py) Then Exit Sub
-    path = PickFile(ASFSettings.PythonFolder())
-    If LenB(path) = 0 Then Exit Sub
-    On Error GoTo Failed
-    out = Application.Run("AsfPyRunScript", path)
-    On Error GoTo 0
-    If IsError(out) Then
-        MsgBox "The script didn't run: the Python add-in has no Python. About Python says why.", vbExclamation, TITLE
-        Exit Sub
-    End If
-    ShowOutput "Run Python script: " & Mid$(path, InStrRev(path, "\") + 1), CStr(out), "The script ran and printed nothing."
-    Exit Sub
-Failed:
-    MsgBox "Run Python script failed: " & Err.Description, vbExclamation, TITLE
-End Sub
-
-' Python macros: the commands (@xl_macro) of the Python folder; runs the one picked, asking for
-' its arguments when it needs some
-Public Sub Macros()
-    Dim py As Object, list As Variant, lines() As String, parts() As String, prompt As String
-    Dim i As Long, n As Long, choice As String, needed As Long, args As Variant, result As Variant
+' Python studio: the add-in's command AsfPyStudio opens it, or its window when it runs already
+Public Sub Studio()
+    Dim py As Object
     If Not Ready(py) Then Exit Sub
     On Error GoTo Failed
-    list = Application.Run("AsfPyMacros")
-    On Error GoTo 0
-    If IsError(list) Then Exit Sub
-    If LenB(list) = 0 Then
-        MsgBox "The Python folder has no macros. A function of a module there becomes one with @xl_macro:" & vbLf & vbLf & _
-               "from asfpy import xl_macro" & vbLf & vbLf & "@xl_macro" & vbLf & "def tidy():" & vbLf & "    ...", vbInformation, TITLE
-        Exit Sub
-    End If
-    lines = Split(list, vbLf)
-    n = UBound(lines) + 1
-    If n > MAX_LISTED Then n = MAX_LISTED
-    For i = 0 To n - 1
-        parts = Split(lines(i), vbTab)
-        prompt = prompt & (i + 1) & ". " & parts(0)
-        If parts(1) <> "0" Then prompt = prompt & " (" & parts(1) & " arguments)"
-        If UBound(parts) >= 2 Then If LenB(parts(2)) > 0 Then prompt = prompt & ": " & parts(2)
-        prompt = prompt & vbLf
-    Next i
-    choice = InputBox(prompt & vbLf & "Number of the macro to run:", TITLE & ": Python macros")
-    If Not IsNumeric(choice) Then Exit Sub
-    If CLng(choice) < 1 Or CLng(choice) > n Then Exit Sub
-    parts = Split(lines(CLng(choice) - 1), vbTab)
-    needed = CLng(parts(1))
-    If needed > MAX_ARGS Then
-        MsgBox parts(0) & " needs " & needed & " arguments: run it from VBA with Application.Run """ & parts(0) & """, ...", vbInformation, TITLE
-        Exit Sub
-    End If
-    If needed > 0 Then
-        args = MacroArguments(parts(0), needed)
-        If IsEmpty(args) Then Exit Sub
-    End If
-    ASFPython.ClearError py
-    On Error GoTo Failed
-    Select Case needed
-        Case 0: result = Application.Run(parts(0))
-        Case 1: result = Application.Run(parts(0), args(0))
-        Case 2: result = Application.Run(parts(0), args(0), args(1))
-        Case 3: result = Application.Run(parts(0), args(0), args(1), args(2))
-        Case 4: result = Application.Run(parts(0), args(0), args(1), args(2), args(3))
-        Case Else: result = Application.Run(parts(0), args(0), args(1), args(2), args(3), args(4))
-    End Select
-    On Error GoTo 0
-    If IsError(result) Then
-        MsgBox parts(0) & " failed:" & vbLf & vbLf & Left$(ASFPython.ErrorReport(py), MAX_SHOWN), vbExclamation, TITLE
-    ElseIf IsEmpty(result) Or IsArray(result) Then
-        MsgBox parts(0) & " ran.", vbInformation, TITLE
-    Else
-        MsgBox parts(0) & " ran and gave:" & vbLf & vbLf & Left$(CStr(result), MAX_SHOWN), vbInformation, TITLE
-    End If
+    Application.Run "AsfPyStudio"
     Exit Sub
 Failed:
-    MsgBox "Python macros failed: " & Err.Description, vbExclamation, TITLE
+    MsgBox "Python studio failed: " & Err.Description, vbExclamation, TITLE
 End Sub
 
 ' Python console: the add-in's Python at its prompt, in a console window of its own (its command
@@ -104,8 +31,8 @@ Failed:
     MsgBox "Python console failed: " & Err.Description, vbExclamation, TITLE
 End Sub
 
-' Python settings: which Python, the Python folder and PythonAccess, each shown with its value;
-' the add-in reads the first two when Excel loads it
+' Python settings: which Python, the Python folder, PythonAccess and PythonUpdates, each shown with
+' its value; the add-in reads the first two when Excel loads it
 Public Sub Settings()
     Dim choice As String, restart As Boolean
 #If Mac Then
@@ -115,25 +42,29 @@ Public Sub Settings()
     Do
         choice = InputBox("1. Python: " & PythonInUse() & vbLf & _
                           "2. Python folder: " & ASFSettings.PythonFolder() & vbLf & _
-                          "3. Python for library scripts (PythonAccess): " & ASFSettings.PythonAccess() & vbLf & vbLf & _
+                          "3. Python for library scripts (PythonAccess): " & ASFSettings.PythonAccess() & vbLf & _
+                          "4. Updates of the Python add-in (PythonUpdates): " & ASFSettings.PythonUpdates() & vbLf & vbLf & _
                           "Number of the setting to change (Cancel when done):", TITLE & ": settings")
         Select Case Trim$(choice)
             Case "": Exit Do
             Case "1": If ChoosePython() Then restart = True
             Case "2": If ChooseFolder() Then restart = True
             Case "3": ChooseAccess
+            Case "4": ChooseUpdates
         End Select
     Loop
     If restart Then MsgBox "Restart Excel to use the new settings: the Python add-in reads the Python and the Python folder when Excel loads it.", vbInformation, TITLE
 End Sub
 
-' About Python: the add-in, its Python, the settings and what the Python folder gave; offers the log
+' About Python: the add-in, its version and Python, the settings and what the Python folder gave;
+' offers to check for a newer add-in (its command AsfPyUpdate) or to open the log
 Public Sub About()
     Dim py As Object, message As String, text As String, info As String
     text = "Add-in: " & AddinPath() & vbLf & _
            "Python: " & PythonInUse() & vbLf & _
            "Python folder: " & ASFSettings.PythonFolder() & vbLf & _
            "PythonAccess: " & ASFSettings.PythonAccess() & vbLf & _
+           "PythonUpdates: " & ASFSettings.PythonUpdates() & vbLf & _
            "Log: " & LogPath() & vbLf & vbLf
     Set py = ASFPython.Root(1, message)
     If py Is Nothing Then
@@ -145,9 +76,47 @@ Public Sub About()
         If Len(info) > 600 Then info = Left$(info, 600) & "..."
         text = text & info
     End If
-    If MsgBox(text & vbLf & vbLf & "Open the log?", vbYesNo + vbInformation + vbDefaultButton2, TITLE & ": about") = vbYes Then
-        OpenText LogPath()
+    Select Case MsgBox(text & vbLf & vbLf & "Yes: check for a newer add-in (Python updates). No: open the log.", _
+                       vbYesNoCancel + vbInformation + vbDefaultButton3, TITLE & ": about")
+        Case vbYes: CheckForUpdates
+        Case vbNo: OpenText LogPath()
+    End Select
+End Sub
+
+' Python updates: the Add-in page of Python studio, with the version, Check for updates, Install,
+' and when Excel looks; with another Python than the add-in's own (PythonVenv), which has no
+' studio, the same in message boxes
+Public Sub Updates()
+    Dim version As String
+#If Mac Then
+    MsgBox "Python needs the Python add-in, which runs on Excel for Windows.", vbInformation, TITLE
+    Exit Sub
+#End If
+    If LenB(ASFSettings.PythonVenv()) = 0 Then
+        On Error Resume Next
+        Application.Run "AsfPyStudio", "addin"
+        If Err.Number = 0 Then Exit Sub
+        On Error GoTo 0
     End If
+    version = AddinVersion()
+    Select Case MsgBox(IIf(LenB(version) > 0, "ASF Python " & version, "The Python add-in: " & AddinPath()) & vbLf & _
+                       "When Excel starts (PythonUpdates): " & ASFSettings.PythonUpdates() & vbLf & vbLf & _
+                       "Yes: check for a newer add-in now." & vbLf & "No: change when Excel looks for one.", _
+                       vbYesNoCancel + vbInformation, TITLE & ": updates")
+        Case vbYes: CheckForUpdates
+        Case vbNo: ChooseUpdates
+    End Select
+End Sub
+
+' The add-in's command AsfPyUpdate: it asks the project's releases, offers a newer add-in, and says
+' what came of it in a message box of its own, apart from Excel
+Public Sub CheckForUpdates()
+    On Error GoTo Failed
+    Application.Run "AsfPyUpdate"
+    Exit Sub
+Failed:
+    MsgBox "The Python add-in isn't loaded, or is older than its updates: the releases are at" & vbLf & _
+           "https://github.com/ECP-Solutions/ASF/releases", vbExclamation, TITLE
 End Sub
 
 ' --- helpers ---------------------------------------------------------------------------------------
@@ -161,6 +130,17 @@ Private Function Ready(ByRef py As Object) As Boolean
     Else
         Ready = True
     End If
+End Function
+
+' the version of the loaded add-in (py.startInfo starts with ASF Python x.y.z), or ""
+Private Function AddinVersion() As String
+    Dim py As Object, message As String, info As String
+    Set py = ASFPython.Root(1, message)
+    If py Is Nothing Then Exit Function
+    On Error Resume Next
+    info = CStr(CallByName(py, "startInfo", VbGet))
+    On Error GoTo 0
+    If Left$(info, 11) = "ASF Python " Then AddinVersion = Split(Mid$(info, 12), vbLf)(0)
 End Function
 
 Private Function PythonInUse() As String
@@ -189,7 +169,7 @@ End Function
 Private Function ChoosePython() As Boolean
     Dim answer As Long, folder As String
     answer = MsgBox("Which Python should the Python add-in run?" & vbLf & vbLf & _
-                    "Yes: the Python the add-in carries (recommended). Its packages come from Python packages." & vbLf & vbLf & _
+                    "Yes: the Python the add-in carries (recommended). Packages in Python studio adds packages to it." & vbLf & vbLf & _
                     "No: another Python of Excel's bitness, 3.11 or later: a venv or a python.org install, picked next.", _
                     vbYesNoCancel + vbQuestion, TITLE & ": Python")
     If answer = vbYes Then
@@ -234,41 +214,22 @@ Private Sub ChooseAccess()
     End Select
 End Sub
 
-' the arguments of a macro, typed separated by commas: numbers as numbers, TRUE and FALSE as
-' booleans, the rest as text; Empty when cancelled or too few
-Private Function MacroArguments(ByVal name As String, ByVal needed As Long) As Variant
-    Dim typed As String, parts() As String, args() As Variant, i As Long, v As String
-    typed = InputBox(name & " needs " & needed & " arguments. Type them separated by commas:", TITLE & ": " & name)
-    If LenB(typed) = 0 Then Exit Function
-    parts = Split(typed, ",")
-    If UBound(parts) + 1 < needed Then
-        MsgBox name & " needs " & needed & " arguments.", vbExclamation, TITLE
-        Exit Function
-    End If
-    ReDim args(0 To UBound(parts))
-    For i = 0 To UBound(parts)
-        v = Trim$(parts(i))
-        If IsNumeric(v) Then
-            args(i) = Val(v)
-        ElseIf UCase$(v) = "TRUE" Or UCase$(v) = "FALSE" Then
-            args(i) = (UCase$(v) = "TRUE")
-        Else
-            args(i) = v
-        End If
-    Next i
-    MacroArguments = args
-End Function
-
-Private Function PickFile(ByVal folder As String) As String
-    Dim fd As Object
-    Set fd = Application.FileDialog(3)          ' msoFileDialogFilePicker
-    fd.Title = TITLE & ": Python script to run"
-    fd.AllowMultiSelect = False
-    fd.Filters.Clear
-    fd.Filters.Add "Python scripts", "*.py"
-    If LenB(folder) > 0 Then fd.InitialFileName = folder & "\"
-    If fd.Show = -1 Then PickFile = fd.SelectedItems(1)
-End Function
+' PythonUpdates applies the next time Excel loads the add-in
+Private Sub ChooseUpdates()
+    Dim choice As String, current As String
+    current = IIf(ASFSettings.PythonUpdates() = "check", "1", IIf(ASFSettings.PythonUpdates() = "auto", "2", "3"))
+    choice = InputBox("When Excel loads the Python add-in, at most once a day:" & vbLf & vbLf & _
+                      "1. check: offer a newer add-in from the project's releases (the default)" & vbLf & _
+                      "2. auto: download and install it, then say so" & vbLf & _
+                      "3. off: don't look; About Python still checks when asked" & vbLf & vbLf & _
+                      "An update is checked (SHA-256, bitness, version) before it replaces the add-in, and Excel uses it after a restart.", _
+                      TITLE & ": PythonUpdates", current)
+    Select Case Trim$(choice)
+        Case "1": ASFSettings.ChangeSetting "PythonUpdates", "check"
+        Case "2": ASFSettings.ChangeSetting "PythonUpdates", "auto"
+        Case "3": ASFSettings.ChangeSetting "PythonUpdates", "off"
+    End Select
+End Sub
 
 Private Function PickFolder(ByVal caption As String, ByVal start As String) As String
     Dim fd As Object
@@ -277,24 +238,6 @@ Private Function PickFolder(ByVal caption As String, ByVal start As String) As S
     If LenB(start) > 0 Then fd.InitialFileName = start & "\"
     If fd.Show = -1 Then PickFolder = fd.SelectedItems(1)
 End Function
-
-' what a script printed: in a message box, or in Notepad when it's longer than one holds
-Private Sub ShowOutput(ByVal caption As String, ByVal text As String, ByVal whenEmpty As String)
-    Dim path As String, f As Integer
-    If LenB(text) = 0 Then
-        MsgBox whenEmpty, vbInformation, caption
-    ElseIf Len(text) <= MAX_SHOWN Then
-        MsgBox text, vbInformation, caption
-    Else
-        path = Environ$("TEMP") & "\asfpy-output.txt"
-        f = FreeFile
-        Open path For Output As #f
-        Print #f, text;
-        Close #f
-        OpenText path
-        MsgBox Left$(text, MAX_SHOWN) & "..." & vbLf & vbLf & "All of it is in " & path & ", opened in Notepad.", vbInformation, caption
-    End If
-End Sub
 
 Private Sub OpenText(ByVal path As String)
     On Error Resume Next

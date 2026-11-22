@@ -37,6 +37,18 @@ def double(x):
     return x * 2
 
 
+@xl_func(name='STATS.ZSCORE')
+def zscore(values: list, ddof: int = 0, label=''):
+    """How far each value is from the mean, in standard deviations.
+
+    Args:
+        values: the numbers, a row or a column
+        ddof: delta degrees of freedom,
+            0 for a population
+    """
+    return values
+
+
 @xl_func(volatile=True, thread_safe=True)
 def flags_vt():
     return 1
@@ -258,10 +270,47 @@ class BootTest(unittest.TestCase):
         return self.boot.root(1).startInfo
 
 
+class Tips(BootTest):
+    """The tooltip asfpy.c shows as a formula is typed: boot.tip(formula up to the caret, list separator)."""
+    def test_the_argument_the_caret_is_in(self):
+        self.assertEqual(self.boot.tip('=stats.zscore('),
+                         ('STATS.ZSCORE(', 'values', ', [ddof], [label])',
+                          'How far each value is from the mean, in standard deviations.',
+                          'values: the numbers, a row or a column'))
+        tip = self.boot.tip('=SUM(1, STATS.ZSCORE(A1:A9, ')
+        self.assertEqual(tip[:3], ('STATS.ZSCORE(values, ', '[ddof]', ', [label])'))
+        self.assertEqual(tip[4], 'ddof: delta degrees of freedom, 0 for a population')
+        self.assertEqual(self.boot.tip('=STATS.ZSCORE(A1:A9;', ';')[:2], ('STATS.ZSCORE(values; ', '[ddof]'))
+        self.assertEqual(self.boot.tip('=double(')[1:], ('x', ')', 'Twice x.', ''))
+
+    def test_texts_sheets_arrays_and_nesting_dont_count_as_arguments(self):
+        for formula in ('=STATS.ZSCORE("a, (b", ', "=STATS.ZSCORE('My, sheet'!A1:A3, ", '=STATS.ZSCORE({1,2,3}, ',
+                        '=STATS.ZSCORE(SUM(1, 2), ', '=STATS.ZSCORE((A1, A2), ', '=STATS.ZSCORE(Table1[[a],[b]], '):
+            self.assertEqual(self.boot.tip(formula)[1], '[ddof]', formula)
+        self.assertIsNone(self.boot.tip('=STATS.ZSCORE(1, 2, MAX('))        # Excel's own function: its own help
+
+    def test_a_name_being_typed(self):
+        self.assertEqual(self.boot.tip('=stats.z'), ('STATS.ZSCORE(values, [ddof], [label])', '', '',
+                                                     'How far each value is from the mean, in standard deviations.', ''))
+        self.assertIsNone(self.boot.tip('=stats.'))       # several functions start so: Excel's own list shows them
+        self.assertIsNone(self.boot.tip('=s'))
+
+    def test_py_call_shows_the_exported_function(self):
+        self.assertEqual(self.boot.tip('=PY_CALL(')[1], 'name')
+        self.assertEqual(self.boot.tip('=PY_CALL("stats.scale", A1:A3, ')[:3], ('PY_CALL("stats.scale", values, ', 'factor', ')'))
+        self.assertEqual(self.boot.tip('=PY_CALL("nothing.here", ')[1], '[arg1]')
+
+    def test_nothing_outside_the_python_folder(self):
+        for formula in ('=SUM(', '=', 'text', '=SUM(1)+', '=STATS.ZSCORE(1, 2, 3, ', '=STATS.ZSCORE(1)'):
+            self.assertIsNone(self.boot.tip(formula), formula)
+
+
 class Start(BootTest):
     def test_functions_their_arguments_descriptions_and_suffixes(self):
         by_name = {f[0]: f for f in self.functions}
-        self.assertEqual(by_name['double'], ('double', ['x'], 'Twice x.', ''))
+        self.assertEqual(by_name['double'], ('double', ['x'], 'Twice x.', '', ['']))
+        self.assertEqual(by_name['STATS.ZSCORE'][4], ['the numbers, a row or a column', 'delta degrees of freedom, 0 for a population', ''])
+        self.assertEqual(by_name['STATS.HINTS'][4][:3], ['a whole number', 'a date', 'a text'])
         self.assertEqual(by_name['flags_vt'][3], '!$')
         self.assertEqual(by_name['STATS.HINTS'][1], ['n', 'when', 'text', 'values', 'f', 'b', 'dt'])
         self.assertNotIn('refused', by_name)
@@ -487,7 +536,8 @@ class Async(BootTest):
 class Commands(BootTest):
     def test_a_command_is_registered_and_runs(self):
         by_name = {f[0]: f for f in self.functions}
-        self.assertEqual(by_name['command'], ('command', ['a', 'b'], '', '%'))
+        self.assertEqual(by_name['command'], ('command', ['a', 'b'], '', '%', ['', '']))
+        self.assertIsNone(self.boot.tip('=command('))          # a command isn't typed in a formula
         self.assertEqual(by_name['TryApp'][3], '%')
         self.assertEqual(self.call('command', 2.0, 3.0), (self.boot.TAG_FLOAT, 5.0))
 

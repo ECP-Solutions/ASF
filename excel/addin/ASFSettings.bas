@@ -10,6 +10,9 @@ Attribute VB_Name = "ASFSettings"
 '   PythonVenv, PythonFolder   the Python of the Python add-in (asfpy64.xll, asfpy32.xll) and its
 '                   folder of modules; the add-in reads them when Excel loads it. Without
 '                   PythonVenv, the add-in uses the Python it carries
+'   PythonTips      "off": no tooltip with a Python function's arguments as a formula is typed
+'   PythonUpdates   when Excel loads the Python add-in, at most once a day: check (the default) offers
+'                   a newer add-in from the project's releases, auto installs it, off doesn't look
 ' Change them from the Immediate window or a macro, for example:
 '   Application.Run "ASF.xlam!ASFSettings.ChangeSetting", "RunEnabled", "0"
 Option Explicit
@@ -54,6 +57,12 @@ End Function
 ' Another Python than the Python add-in's own (a venv or an install), or "" for its own
 Public Function PythonVenv() As String
     PythonVenv = Setting("PythonVenv", vbNullString)
+End Function
+
+' check, auto or off: anything else is check
+Public Function PythonUpdates() As String
+    PythonUpdates = LCase$(Trim$(Setting("PythonUpdates", "check")))
+    If PythonUpdates <> "auto" And PythonUpdates <> "off" Then PythonUpdates = "check"
 End Function
 
 ' Saves a setting; the worksheet functions use it from their next call

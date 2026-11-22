@@ -6,9 +6,9 @@ name: Python add-in
 
 on:
   push:
-    paths: ['excel/python/**', '.github/workflows/python-addin.yml']
+    paths: ['excel/python/**', 'examples/python-in-excel/**', '.github/workflows/python-addin.yml']
   pull_request:
-    paths: ['excel/python/**', '.github/workflows/python-addin.yml']
+    paths: ['excel/python/**', 'examples/python-in-excel/**', '.github/workflows/python-addin.yml']
   workflow_dispatch:
 
 permissions:
@@ -26,8 +26,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: boot.py without Excel (Linux's own Python)
-        run: python -m unittest discover -s excel/python/tests/unit -p "test_*.py" -v
+      - name: boot.py and the studio without Excel (Linux's own Python)
+        run: |
+          python -m pip install -q jedi pyflakes
+          python -m unittest discover -s excel/python/tests/unit -p "test_*.py" -v
+      - name: The examples of examples/python-in-excel, through boot.py
+        run: |
+          python -m pip install -q numpy pandas
+          python examples/python-in-excel/tools/check.py
       - name: MinGW-w64 and Wine
         run: |
           sudo dpkg --add-architecture i386
@@ -85,8 +91,10 @@ jobs:
           architecture: ${{ matrix.arch }}
       - if: matrix.numpy
         run: python -m pip install -q numpy
-      - name: boot.py without Excel
-        run: python -m unittest discover -s excel/python/tests/unit -p "test_*.py"
+      - name: boot.py and the studio without Excel
+        run: |
+          python -m pip install -q jedi pyflakes
+          python -m unittest discover -s excel/python/tests/unit -p "test_*.py"
       - name: Build
         run: python excel/python/xll/build.py msvc
       - name: Fake Excel host

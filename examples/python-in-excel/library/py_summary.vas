@@ -1,0 +1,14 @@
+// @asf name: Summary of a column, by Python
+// @asf python: call
+// A column of numbers ($1) summarized by xl_stats.summary in the Python folder, as a table:
+//   =ASF_CALL("py_summary", Data!F2:F61)
+// Needs the Python add-in and the setting PythonAccess at call or modules.
+let s = py.call('xl_stats.summary', $1);
+return [
+    ['count', s.count],
+    ['mean', s.mean],
+    ['std', s.std],
+    ['min', s.min],
+    ['max', s.max],
+    ['range', s.max - s.min]
+];

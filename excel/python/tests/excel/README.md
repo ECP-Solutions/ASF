@@ -13,7 +13,7 @@ Excel itself can't run in CI, so this folder holds the checks that run in Excel,
 | Question | Where the answer shows |
 |---|---|
 | Does Python start inside Excel 2016 (32-bit and 64-bit) and Microsoft 365? | the first rows |
-| Is it the add-in's own Python, unpacked under `%LOCALAPPDATA%\ASF\runtime`, with pip for **Python packages**? | the `Python:` rows (with `PythonVenv` set, the row shows that Python instead) |
+| Is it the add-in's own Python, unpacked under `%LOCALAPPDATA%\ASF\runtime`, with pip for its packages? | the `Python:` rows (with `PythonVenv` set, the row shows that Python instead) |
 | Do the slots work, including the 32-bit stubs, for 0 to 7 arguments? | the `check_*` rows, and Excel doesn't crash |
 | Does `py` work from VBA through `CallByName`, as ASF uses it? | the `py.*` rows |
 | Does `For Each` go through a Python object, and does `x = obj` give its text? | the `For Each` and `x = obj` rows |
@@ -24,7 +24,9 @@ Excel itself can't run in CI, so this folder holds the checks that run in Excel,
 | Do handles, asynchronous functions, numpy and pandas hints, and commands work? | the `check_counter`, `check_most`, `check_async`, `check_matrix`, `check_frame`, `check_describe`, `check_macro` and `check_app` rows. `check_matrix` needs numpy, `check_frame` pandas and `check_app` pywin32 (step 2); without them their rows say so |
 | Does `AsfPyReload` read a module added, changed and removed? | the `AsfPyReload` rows (they write and delete `aa_reload.py` in the Python folder) |
 | What does a call cost, and what does start-up cost? | the timing rows; the start-up lines of `%TEMP%\asfpy.log` |
-| Does Excel close cleanly with numpy loaded? | step 6 |
+| Does a tooltip show a Python function's arguments as a formula is typed? | step 7 |
+| Do macros run from Python studio with their arguments, and can they show Excel's InputBox and a message box? | step 8 |
+| Does Excel close cleanly with numpy loaded? | step 9 |
 
 ## Steps
 
@@ -36,7 +38,9 @@ The full guide for testers, with downloads, clean-up of earlier runs and fixes f
 4. **Load the add-in:** File > Options > Add-ins > Manage: Excel Add-ins > Go > Browse. The first load unpacks the add-in's Python into `%LOCALAPPDATA%\ASF\runtime`.
 5. **Packages:** none to install: the add-in's Python has numpy, pandas (64-bit only), openpyxl and pywin32. `Application.Run "AsfPyPackages"` lists them.
 6. **Run:** import `AsfPyChecks.bas` into a blank workbook and run `AsfPyTest`, multi-threaded calculation on. The first rows must show `imported checks.py`, `Python: the add-in's own ... yes` and `pip ... installed`.
-7. **Close Excel** with the result open (numpy loaded): no error, no hang. Then open Excel again: the add-in loads by itself.
+7. **Help as you type:** in a cell, type `=check_add(` then `1, `: a tooltip under the caret shows `check_add(a, b)` with `a`, then `b`, in bold, and `Adds two numbers.`; it goes on Esc or Enter. Typing `=check_ad` shows it beside Excel's list; in the formula bar too. Insert Function (Shift+F3) on `check_add` shows each argument's help.
+8. **Macros from Python studio** (`Application.Run "AsfPyStudio"`, or **Python studio** on the ASF tab): in **Functions**, ▶ `check_macro` asks for `a` and `b`: 2 and 3 give a box saying 5; leaving `b` blank gives `check_macro failed` with Python's `TypeError`. ▶ `check_dialogs` with **Bring Excel to the front** ticked: Excel comes forward with its InputBox; 7 gives a message box over Excel saying `7 squared is 49`, and the studio then shows 49 (Cancel: `cancelled`). Then the studio's **Add-in** page (the gear, or **Python updates** on the ASF tab): it shows this add-in's version, **Check for updates** names the latest release, and choosing **Don't look** under When Excel starts sets `PythonUpdates` to `off` (Python settings shows it).
+9. **Close Excel** with the result open (numpy loaded): no error, no hang. Then open Excel again: the add-in loads by itself.
 
 To check another Python instead (a venv, or a python.org install of Excel's bitness, 3.11 or later), run `AsfPySetup` and give its folder; leave the folder empty to go back to the add-in's own Python. Packages then go into that Python, with its own pip.
 
