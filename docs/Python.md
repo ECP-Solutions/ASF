@@ -151,7 +151,7 @@ The add-in's commands also run from VBA, a button of your own or a keyboard shor
 
 ### Updates
 
-The add-in keeps itself up to date from the [project's releases](https://github.com/ECP-Solutions/ASF/releases):
+The add-in keeps itself up to date from the [project's releases](https://github.com/ECP-Solutions/ASF/releases), since v4.1.2 (an add-in of v4.1.1 or earlier is replaced by hand once, as below):
 
 - **When Excel loads it**, at most once a day, it looks for a newer release, apart from Excel (Excel doesn't wait). The setting `PythonUpdates` says what then: `check` (the default) asks whether to install it; `auto` installs it and says so; `off` doesn't look. After **No**, the same version is offered again a week later.
 - **When you ask:** **Python updates** on the ASF tab opens the **Add-in** page of Python studio (also the gear on its left, or the version at its top right, which reads **Update to …** when a newer add-in is out). It shows the add-in's version and the latest release, with **Check for updates**, **Install** and the download's progress, and the choice of what Excel does when it starts (`PythonUpdates`), the tooltip's setting (`PythonTips`), and the add-in's file, its Python and its logs. With `PythonVenv` set, which has no studio, **Python updates** asks in message boxes instead. `Application.Run "AsfPyUpdate"` checks too.
