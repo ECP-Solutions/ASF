@@ -283,7 +283,9 @@ async function refreshOutline() {
       const sig = kind === 'xl_func' ? '=' + f.name + '(' + f.args.join(', ') + ')' :
                   kind === 'export' ? 'PY_CALL("' + f.name + '"' + f.args.map(a => ', ' + a).join('') + ')' : f.name;
       const row = el('div', { class: 'fn', title: f.file + ':' + f.line, onclick: () => open(f.file, f.line) },
-        kind === 'xl_macro' ? el('button', { title: 'Run in Excel', onclick: e => { e.stopPropagation(); runMacro(f); } }, '▶') : null,
+        kind === 'xl_macro' ? el('button', {
+          title: 'Run in Excel: Excel comes to the front, asks for the arguments and shows the result (Shift+click: type them here)',
+          onclick: e => { e.stopPropagation(); e.shiftKey ? runMacro(f) : runMacroInExcel(f); } }, '▶') : null,
         el('div', { class: 'sig' }, sig), f.doc ? el('div', { class: 'doc' }, f.doc) : null,
         el('div', { class: 'where' }, f.file + ':' + f.line));
       box.append(row);
@@ -291,6 +293,24 @@ async function refreshOutline() {
   }
   if (!box.children.length) box.append(el('p', { class: 'muted', style: 'padding: 0 12px' }, 'No functions marked with @xl_func, @xl_macro or @export yet.'));
 }
+// ▶: the macro runs in Excel as its users see it: Excel's input boxes, Excel's alert (AsfPyRunMacro)
+async function runMacroInExcel(f) {
+  show('output');
+  output('▶ macro ' + f.name + ' in Excel', 'head');
+  foot(f.args.length ? 'Excel asks for the arguments of ' + f.name : 'Excel runs ' + f.name);
+  try {
+    const res = await post('excel/macro-in-excel', { name: f.name });
+    if (res.front === false)
+      output('Windows kept Excel behind the studio: click Excel\'s flashing taskbar button to answer it.', 'err');
+    if (res.cancelled) { output('(cancelled)'); foot(f.name + ': cancelled'); return; }
+    output(res.result || '(done: no result)', res.error ? 'err' : 'ok');
+    foot(res.error ? f.name + ' failed: Excel showed why' : 'Ran ' + f.name + ' in Excel');
+  } catch (e) {
+    output(e.message, 'err');
+    foot(f.name + ' did not run');
+  }
+}
+
 // a typed argument as Excel would take it from a cell: a number, TRUE or FALSE, blank, or a text
 // ("quoted" keeps a text that looks like a number)
 function cellValue(text) {
@@ -310,7 +330,7 @@ function remember(key, value) {
 async function runMacro(f) {
   const last = remembered('macro:' + f.name, {});
   const r = await ask({
-    title: 'Run ' + f.name + ' in Excel',
+    title: 'Run ' + f.name + ' in Excel, its arguments typed here',
     text: (f.doc ? f.doc + '\n' : '') + (f.args.length ? 'Its arguments, as in a cell: 2.5, TRUE, a text, "007" for a text of digits; blank for its default.' : 'It takes no arguments.'),
     fields: f.args.map(a => ({ name: a, label: a, value: last[a] ?? '' })),
     checks: [{ name: '__front', label: 'Bring Excel to the front: for a macro that shows a dialog (xl_app().InputBox, a message box) or works on the selection',

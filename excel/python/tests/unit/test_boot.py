@@ -162,6 +162,16 @@ def command(a, b):
     return a + b
 
 
+@xl_macro(name='Scale')
+def scale_macro(x: float, factor: float = 2):
+    """Multiplies x.
+
+    Args:
+        x: the number
+    """
+    return [[x * factor, 'times']]
+
+
 @xl_macro(name='TryApp')
 def try_app():
     return repr(xl_app())
@@ -540,6 +550,24 @@ class Commands(BootTest):
         self.assertIsNone(self.boot.tip('=command('))          # a command isn't typed in a formula
         self.assertEqual(by_name['TryApp'][3], '%')
         self.assertEqual(self.call('command', 2.0, 3.0), (self.boot.TAG_FLOAT, 5.0))
+
+    def test_excel_asks_for_the_arguments_and_shows_the_result(self):
+        """AsfPyRunMacro: macro_dialog gives the input boxes' prompts, run_macro runs the macro with
+        what was typed there."""
+        title, prompts = self.boot.macro_dialog('scale')
+        self.assertEqual(title, 'ASF Python: Scale')
+        self.assertEqual(prompts[0], 'Multiplies x.\n\nx: the number')
+        self.assertEqual(prompts[1], 'factor: a number\n(Optional: leave it blank for its default.)')
+        self.assertEqual(self.boot.run_macro('Scale', [3.0, '']), (True, '6\ttimes', '6\ttimes'))   # blank: the default
+        self.assertEqual(self.boot.run_macro('Scale', [3.0, 10.0])[2], '30\ttimes')
+        self.assertEqual(self.boot.run_macro('command', [2.0, 3.0]), (True, '5', '5'))
+        ok, line, whole = self.boot.run_macro('command', [2.0, 'x'])
+        self.assertFalse(ok)
+        self.assertTrue(line.startswith('command failed: TypeError'))
+        self.assertIn('Traceback', whole)
+        self.assertEqual(self.boot._macro_depth, 0)
+        self.assertIn("no macro 'nothing'", self.boot.macro_dialog('nothing'))
+        self.assertIn("no macro 'double'", self.boot.macro_dialog('double'))       # a worksheet function, not a macro
 
     def test_xl_app_in_a_command_only(self):
         T = self.boot

@@ -233,6 +233,27 @@ class Studio(unittest.TestCase):
             self.assertEqual(app.calls[-2], ('broken', (None, 1)))     # a blank between: Empty
         self.assertEqual(self.post('excel/macro', {'name': 'x', 'args': [{'a': 1}]})[0], 400)
 
+    def test_a_macro_run_with_excels_own_dialogs(self):
+        answers = {'check_macro': '5', 'cancelled': '', 'broken': 'Traceback (most recent call last):\nTypeError: x',
+                   'unknown': -2146826259}
+
+        class App:
+            Hwnd = 0
+            calls = []
+
+            def Run(self, name, *args):
+                self.calls.append((name, args))
+                return answers[args[0]]
+        app = App()
+        with mock.patch.object(excel, 'call', lambda fn, timeout=600: fn(app)):
+            r = self.post('excel/macro-in-excel', {'name': 'check_macro'})[1]
+            self.assertEqual(r, {'result': '5', 'error': False, 'cancelled': False, 'front': False})
+            self.assertEqual(app.calls[-1], ('AsfPyRunMacro', ('check_macro',)))
+            self.assertTrue(self.post('excel/macro-in-excel', {'name': 'cancelled'})[1]['cancelled'])
+            self.assertTrue(self.post('excel/macro-in-excel', {'name': 'broken'})[1]['error'])
+            r = self.post('excel/macro-in-excel', {'name': 'unknown'})[1]
+            self.assertEqual((r['error'], r['result'][:6]), (True, '#NAME?'))
+
     def test_excel_out_of_reach_is_an_answer_not_a_crash(self):
         if os.name == 'nt':
             self.skipTest('Excel may run here')

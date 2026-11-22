@@ -181,6 +181,20 @@ def macro(name, args=(), to_front=False):
     return call(go)
 
 
+def macro_in_excel(name):
+    """A macro of the Python folder run in Excel as its user sees it (the add-in's AsfPyRunMacro):
+    Excel comes to the front, its input box asks for each argument, its alert shows the result.
+    {'result': the whole result or the traceback, 'error': bool, 'cancelled': bool, 'front': bool}."""
+    def go(app):
+        in_front = front(app)
+        out = app.Run('AsfPyRunMacro', name)
+        if isinstance(out, int) and out in ERRORS:
+            return {'result': ERRORS[out] + ": Excel's alert says why", 'error': True, 'cancelled': False, 'front': in_front}
+        out = text(out)
+        return {'result': out, 'error': out.startswith('Traceback'), 'cancelled': out == '', 'front': in_front}
+    return call(go)
+
+
 def text(value):
     """A result of Application.Run as text: a range of values as tab-separated rows."""
     if value is None:
