@@ -35,6 +35,9 @@ kbd { border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4p
 .pill { border: 1px solid var(--line); border-radius: 999px; padding: 1px 10px; font-size: 12px; color: var(--muted); background: var(--bg); }
 .pill.ok { color: var(--accent); border-color: var(--accent); background: var(--accent-bg); }
 .pill.off { color: var(--warn); border-color: var(--warn); }
+button.pill { font-size: 12px; cursor: pointer; }
+button.pill:hover { border-color: var(--accent); color: var(--text); }
+.pill.new { color: #fff; background: var(--accent); border-color: var(--accent); }
 
 .body { flex: 1; display: flex; min-height: 0; }
 .activity { width: 64px; background: var(--bg2); border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 6px 0; gap: 2px; }

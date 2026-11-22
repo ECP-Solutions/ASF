@@ -20,6 +20,7 @@
 #include <wchar.h>
 #include "xloper.h"
 #include "boot_py.h"
+#include "version.h"
 #ifdef ASFPY_RUNTIME          /* build.py: the add-in carries a Python, in the resource ASFPY_RUNTIME */
 #include <fdi.h>
 #include "runtime.h"
@@ -35,6 +36,11 @@
 #define EXPORT __declspec(dllexport)
 #endif
 #define ASFPY_SCODE 0x800403E9   /* VBA's Err.Number: vbObjectError + 1001 */
+#define RELEASES L"https://github.com/ECP-Solutions/ASF/releases"
+
+/* the version, as the updater (studio/update.py) reads it in an add-in file */
+static const char g_version_mark[] = "ASFPY-VERSION:" ASFPY_VERSION ";";
+static const char *volatile g_version = g_version_mark;     /* read at run time: the mark stays in the file */
 
 enum { TAG_EMPTY, TAG_BOOL, TAG_FLOAT, TAG_INT, TAG_STR, TAG_LIST, TAG_OBJECT, TAG_FAIL, TAG_XLERR, TAG_GRID, TAG_STOP };
 
@@ -105,6 +111,7 @@ static wchar_t g_home[MAX_PATH];  /* kept: Py_SetPythonHome holds the pointer */
 static wchar_t g_log[MAX_PATH];
 static wchar_t g_exe[MAX_PATH];   /* the python.exe of the Python, for pip and the console */
 static wchar_t g_folder[MAX_PATH];   /* the Python folder, for the console */
+static wchar_t g_xll[MAX_PATH];      /* this add-in's file, for its updates */
 
 /* --- the log, %TEMP%\asfpy.log ---------------------------------------------------------------- */
 
@@ -670,11 +677,12 @@ static void register_functions(void)
 }
 
 /* PY_CALL and the commands AsfPyReload, AsfPyPackages, AsfPyConsole, AsfPyStudio, AsfPyRunScript
-   and AsfPyMacros: the add-in's own, registered once Python runs */
+   and AsfPyMacros: the add-in's own, registered once Python runs; AsfPyUpdate also when Python
+   didn't start, since an update may be what it needs */
 #define PYCALL_ARGS 29          /* PY_CALL(name, 29 arguments): 30 in all, below Excel's 255 */
-static double g_pycall_id, g_reload_id, g_packages_id, g_script_id, g_macros_id, g_console_id, g_studio_id;
+static double g_pycall_id, g_reload_id, g_packages_id, g_script_id, g_macros_id, g_console_id, g_studio_id, g_update_id;
 
-static void register_builtins(void)
+static void register_builtins(int started)
 {
     XLOPER12 dll;
     LPXLOPER12 op[1] = { &dll };
@@ -683,6 +691,12 @@ static void register_builtins(void)
                          L"an argument of the function; a range arrives as a list" };
     int k;
     if (excel12(xlGetName, &dll, 0, NULL) != xlretSuccess) return;
+    g_update_id = register_proc(&dll, L"asfpy_update", L"J", L"AsfPyUpdate", L"", 2,
+                                L"Checks for a newer Python add-in, and installs it if you say so.", 0, NULL);
+    if (!started) {
+        excel12(xlFree, NULL, 1, op);
+        return;
+    }
     for (k = 0; k < PYCALL_ARGS + 2; k++) type[k] = L'Q';
     type[PYCALL_ARGS + 2] = 0;
     for (k = 1; k <= PYCALL_ARGS; k++) swprintf(args + wcslen(args), 256 - wcslen(args), L",arg%d", k);
@@ -795,7 +809,7 @@ static void start_python(void)
     PyObject *code, *dict, *builtins, *exec, *args, *r, *list;
 
     QueryPerformanceCounter(&t0);
-    note(L"--- %ls, %d-bit", ADDIN_NAME, (int)sizeof(void *) * 8);
+    note(L"--- %ls %hs, %d-bit: %ls", ADDIN_NAME, ASFPY_VERSION, (int)sizeof(void *) * 8, g_xll);
     if (setting(L"PythonVenv", venv, MAX_PATH)) {
         note(L"PythonVenv: %ls", venv);
     } else {
@@ -868,6 +882,18 @@ static void start_python(void)
     }
     P.Py_DecRef(r);
     set_natives();
+    {   /* boot.ADDIN_VERSION, for py.startInfo */
+        char v[32];
+        PyObject *ver;
+        strncpy(v, g_version + 14, sizeof v - 1);
+        v[sizeof v - 1] = 0;
+        if (strchr(v, ';')) *strchr(v, ';') = 0;
+        ver = P.PyUnicode_FromString(v);
+        if (ver) {
+            P.PyObject_SetAttrString(g_boot, "ADDIN_VERSION", ver);
+            P.Py_DecRef(ver);
+        }
+    }
     list = boot_call("start", 4, wstr(folder), wstr(site), wstr(exe), wstr(g_log));
     if (!list) {
         start_failed(L"the start of the Python folder failed");
@@ -1323,7 +1349,7 @@ EXPORT int WINAPI asfpy_packages(void)
    loopback address. A second click opens the window of the studio that runs. */
 EXPORT int WINAPI asfpy_studio(void)
 {
-    wchar_t main_py[MAX_PATH], pyw[MAX_PATH], folder[MAX_PATH], log[MAX_PATH], cmd[4 * MAX_PATH], msg[1200];
+    wchar_t main_py[MAX_PATH], pyw[MAX_PATH], folder[MAX_PATH], log[MAX_PATH], cmd[6 * MAX_PATH], msg[1200], source[512];
     STARTUPINFOW si;
     PROCESS_INFORMATION pi;
     DWORD k;
@@ -1344,7 +1370,10 @@ EXPORT int WINAPI asfpy_studio(void)
     k = GetTempPathW(MAX_PATH - 24, log);
     if (!k) log[0] = 0;
     wcscat(log, L"asfpy-studio.log");
-    swprintf(cmd, 4 * MAX_PATH, L"\"%ls\" -I -m asfpy_studio --folder \"%ls\" --log \"%ls\"", pyw, folder, log);
+    swprintf(cmd, 6 * MAX_PATH, L"\"%ls\" -I -m asfpy_studio --folder \"%ls\" --log \"%ls\" --xll \"%ls\" --running %hs",
+             pyw, folder, log, g_xll, ASFPY_VERSION);
+    if (setting(L"PythonUpdateSource", source, 512))
+        swprintf(cmd + wcslen(cmd), 6 * MAX_PATH - wcslen(cmd), L" --update-source \"%ls\"", source);
     if (!CreateProcessW(pyw, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
         note(L"%ls didn't start (error %lu)", cmd, GetLastError());
         return 0;
@@ -1361,6 +1390,85 @@ EXPORT int WINAPI asfpy_studio(void)
 EXPORT int WINAPI asfpy_console(void)
 {
     return open_console(CONSOLE_PY, L"asfpy-console.py", L"-I -i", g_folder);
+}
+
+/* The updater (studio/update.py, UPDATE_PY) written to %TEMP%, run windowless by the Python's
+   pythonw.exe, apart from Excel: it may wait on the network and on the user's answer. how: --ask
+   (AsfPyUpdate) or --mode check|auto (Excel's start). The setting PythonUpdateSource names
+   another releases API, such as a company mirror. */
+static int run_updater(const wchar_t *how)
+{
+    wchar_t script[MAX_PATH], exe[MAX_PATH], cmd[4 * MAX_PATH], source[512];
+    STARTUPINFOW si;
+    PROCESS_INFORMATION pi;
+    HANDLE f;
+    DWORD put, k = GetTempPathW(MAX_PATH - 40, script);
+    memset(&si, 0, sizeof si);
+    si.cb = sizeof si;
+    if (!k || !g_xll[0]) return 0;
+    swprintf(script + k, MAX_PATH - k, L"asfpy-update-%hs.py", ASFPY_VERSION);
+    swprintf(exe, MAX_PATH, L"%ls\\pythonw.exe", g_home);
+    if (!g_home[0] || !file_exists(exe)) wcscpy(exe, g_exe);
+    if (!exe[0] || !file_exists(exe)) return 0;
+    f = CreateFileW(script, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (f != INVALID_HANDLE_VALUE) {     /* else another Excel is writing the same file */
+        WriteFile(f, UPDATE_PY, (DWORD)strlen(UPDATE_PY), &put, NULL);
+        CloseHandle(f);
+    }
+    swprintf(cmd, 4 * MAX_PATH, L"\"%ls\" -I \"%ls\" --xll \"%ls\" --running %hs %ls", exe, script, g_xll, ASFPY_VERSION, how);
+    if (setting(L"PythonUpdateSource", source, 512))
+        swprintf(cmd + wcslen(cmd), 4 * MAX_PATH - wcslen(cmd), L" --source \"%ls\"", source);
+    if (!CreateProcessW(exe, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        note(L"%ls didn't start (error %lu)", cmd, GetLastError());
+        return 0;
+    }
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    note(L"updater: %ls", how);
+    return 1;
+}
+
+/* The command AsfPyUpdate (VBA: Application.Run "AsfPyUpdate"; the studio's version button
+   does the same): checks now for a newer add-in, offers it, and says what came of it */
+EXPORT int WINAPI asfpy_update(void)
+{
+    wchar_t msg[1200];
+    if (run_updater(L"--ask")) return 1;
+    swprintf(msg, 1200, L"ASF Python %hs: no Python to check for updates with (%ls). The releases: %ls",
+             ASFPY_VERSION, g_start_error[0] ? g_start_error : L"see the log", RELEASES);
+    alert(msg);
+    return 0;
+}
+
+/* When Excel loads the add-in, once a session: the files an update left (NAME.old, NAME.N.old,
+   which an Excel still running the old add-in keeps), then the check the setting PythonUpdates
+   asks for: check (the default) offers a newer add-in, auto installs it, off doesn't look */
+static void updates_on_start(void)
+{
+    static int done;
+    wchar_t pattern[MAX_PATH + 8], dir[MAX_PATH], path[2 * MAX_PATH], mode[16], *slash;
+    WIN32_FIND_DATAW fd;
+    HANDLE h;
+    if (done || !g_xll[0]) return;
+    done = 1;
+    wcscpy(dir, g_xll);
+    slash = wcsrchr(dir, L'\\');
+    if (slash) {
+        slash[1] = 0;
+        swprintf(pattern, MAX_PATH + 8, L"%ls*.old", g_xll);
+        h = FindFirstFileW(pattern, &fd);
+        if (h != INVALID_HANDLE_VALUE) {
+            do {
+                swprintf(path, 2 * MAX_PATH, L"%ls%ls", dir, fd.cFileName);
+                note(DeleteFileW(path) ? L"deleted %ls, left by an update" : L"%ls, left by an update, is in use", path);
+            } while (FindNextFileW(h, &fd));
+            FindClose(h);
+        }
+    }
+    setting(L"PythonUpdates", mode, 16);
+    trim(mode);
+    if (!_wcsicmp(mode, L"off")) return;
+    run_updater(!_wcsicmp(mode, L"auto") ? L"--mode auto" : L"--mode check");
 }
 
 /* A text from boot.py (run_script, macro_list): a new reference or NULL; #NAME? before Python runs */
@@ -1410,15 +1518,17 @@ EXPORT int WINAPI xlAutoOpen(void)
     wchar_t msg[1200];
     /* pinned: Excel can't unload code that Python and VBA's proxies still use */
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN, (LPCWSTR)(void *)xlAutoOpen, &self);
+    if (!g_xll[0] && !GetModuleFileNameW(self, g_xll, MAX_PATH)) g_xll[0] = 0;
     if (!g_started) start_python();
+    register_builtins(g_started == 1);
     if (g_started == 1) {
-        register_builtins();
         register_functions();
         report_functions();
     } else {
         swprintf(msg, 1200, L"ASF Python: %ls. Details: %ls", g_start_error, g_log);
         alert(msg);
     }
+    updates_on_start();
     return 1;
 }
 
@@ -1437,6 +1547,7 @@ EXPORT int WINAPI xlAutoClose(void)
     unregister_id(&g_macros_id);
     unregister_id(&g_console_id);
     unregister_id(&g_studio_id);
+    unregister_id(&g_update_id);
     if (n) note(L"unregistered %d functions", n);
     return 1;
 }

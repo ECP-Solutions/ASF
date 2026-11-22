@@ -31,8 +31,8 @@ Failed:
     MsgBox "Python console failed: " & Err.Description, vbExclamation, TITLE
 End Sub
 
-' Python settings: which Python, the Python folder and PythonAccess, each shown with its value;
-' the add-in reads the first two when Excel loads it
+' Python settings: which Python, the Python folder, PythonAccess and PythonUpdates, each shown with
+' its value; the add-in reads the first two when Excel loads it
 Public Sub Settings()
     Dim choice As String, restart As Boolean
 #If Mac Then
@@ -42,25 +42,29 @@ Public Sub Settings()
     Do
         choice = InputBox("1. Python: " & PythonInUse() & vbLf & _
                           "2. Python folder: " & ASFSettings.PythonFolder() & vbLf & _
-                          "3. Python for library scripts (PythonAccess): " & ASFSettings.PythonAccess() & vbLf & vbLf & _
+                          "3. Python for library scripts (PythonAccess): " & ASFSettings.PythonAccess() & vbLf & _
+                          "4. Updates of the Python add-in (PythonUpdates): " & ASFSettings.PythonUpdates() & vbLf & vbLf & _
                           "Number of the setting to change (Cancel when done):", TITLE & ": settings")
         Select Case Trim$(choice)
             Case "": Exit Do
             Case "1": If ChoosePython() Then restart = True
             Case "2": If ChooseFolder() Then restart = True
             Case "3": ChooseAccess
+            Case "4": ChooseUpdates
         End Select
     Loop
     If restart Then MsgBox "Restart Excel to use the new settings: the Python add-in reads the Python and the Python folder when Excel loads it.", vbInformation, TITLE
 End Sub
 
-' About Python: the add-in, its Python, the settings and what the Python folder gave; offers the log
+' About Python: the add-in, its version and Python, the settings and what the Python folder gave;
+' offers to check for a newer add-in (its command AsfPyUpdate) or to open the log
 Public Sub About()
     Dim py As Object, message As String, text As String, info As String
     text = "Add-in: " & AddinPath() & vbLf & _
            "Python: " & PythonInUse() & vbLf & _
            "Python folder: " & ASFSettings.PythonFolder() & vbLf & _
            "PythonAccess: " & ASFSettings.PythonAccess() & vbLf & _
+           "PythonUpdates: " & ASFSettings.PythonUpdates() & vbLf & _
            "Log: " & LogPath() & vbLf & vbLf
     Set py = ASFPython.Root(1, message)
     If py Is Nothing Then
@@ -72,9 +76,22 @@ Public Sub About()
         If Len(info) > 600 Then info = Left$(info, 600) & "..."
         text = text & info
     End If
-    If MsgBox(text & vbLf & vbLf & "Open the log?", vbYesNo + vbInformation + vbDefaultButton2, TITLE & ": about") = vbYes Then
-        OpenText LogPath()
-    End If
+    Select Case MsgBox(text & vbLf & vbLf & "Yes: check for a newer add-in. No: open the log.", _
+                       vbYesNoCancel + vbInformation + vbDefaultButton3, TITLE & ": about")
+        Case vbYes: CheckForUpdates
+        Case vbNo: OpenText LogPath()
+    End Select
+End Sub
+
+' The add-in's command AsfPyUpdate: it asks the project's releases, offers a newer add-in, and says
+' what came of it in a message box of its own, apart from Excel
+Public Sub CheckForUpdates()
+    On Error GoTo Failed
+    Application.Run "AsfPyUpdate"
+    Exit Sub
+Failed:
+    MsgBox "The Python add-in isn't loaded, or is older than its updates: the releases are at" & vbLf & _
+           "https://github.com/ECP-Solutions/ASF/releases", vbExclamation, TITLE
 End Sub
 
 ' --- helpers ---------------------------------------------------------------------------------------
@@ -116,7 +133,7 @@ End Function
 Private Function ChoosePython() As Boolean
     Dim answer As Long, folder As String
     answer = MsgBox("Which Python should the Python add-in run?" & vbLf & vbLf & _
-                    "Yes: the Python the add-in carries (recommended). Its packages come from Python packages." & vbLf & vbLf & _
+                    "Yes: the Python the add-in carries (recommended). Packages in Python studio adds packages to it." & vbLf & vbLf & _
                     "No: another Python of Excel's bitness, 3.11 or later: a venv or a python.org install, picked next.", _
                     vbYesNoCancel + vbQuestion, TITLE & ": Python")
     If answer = vbYes Then
@@ -158,6 +175,23 @@ Private Sub ChooseAccess()
         Case "1": ASFSettings.ChangeSetting "PythonAccess", "off"
         Case "2": ASFSettings.ChangeSetting "PythonAccess", "call"
         Case "3": ASFSettings.ChangeSetting "PythonAccess", "modules"
+    End Select
+End Sub
+
+' PythonUpdates applies the next time Excel loads the add-in
+Private Sub ChooseUpdates()
+    Dim choice As String, current As String
+    current = IIf(ASFSettings.PythonUpdates() = "check", "1", IIf(ASFSettings.PythonUpdates() = "auto", "2", "3"))
+    choice = InputBox("When Excel loads the Python add-in, at most once a day:" & vbLf & vbLf & _
+                      "1. check: offer a newer add-in from the project's releases (the default)" & vbLf & _
+                      "2. auto: download and install it, then say so" & vbLf & _
+                      "3. off: don't look; About Python still checks when asked" & vbLf & vbLf & _
+                      "An update is checked (SHA-256, bitness, version) before it replaces the add-in, and Excel uses it after a restart.", _
+                      TITLE & ": PythonUpdates", current)
+    Select Case Trim$(choice)
+        Case "1": ASFSettings.ChangeSetting "PythonUpdates", "check"
+        Case "2": ASFSettings.ChangeSetting "PythonUpdates", "auto"
+        Case "3": ASFSettings.ChangeSetting "PythonUpdates", "off"
     End Select
 End Sub
 

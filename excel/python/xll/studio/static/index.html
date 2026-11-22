@@ -14,6 +14,7 @@
 <header class="top">
   <div class="brand"><span class="logo">ASF</span> Python Studio</div>
   <div class="status" id="status">
+    <button class="pill hidden" id="addin-pill" title="Check for a newer add-in">ASF Python</button>
     <span class="pill" id="python-pill">Python</span>
     <span class="pill" id="excel-pill" title="Excel, reached through COM">Excel</span>
   </div>
@@ -84,6 +85,11 @@
         </form>
       </div>
       <div id="pk-lookup" class="pk-lookup hidden"></div>
+      <section id="pk-previous" class="hidden">
+        <h2>From the previous Python</h2>
+        <p class="muted">An update of the add-in brings a new Python; the one before stays on disk with the packages you added to it.</p>
+        <div id="pk-previous-list" class="cards"></div>
+      </section>
       <h2>Suggested</h2>
       <div class="cards" id="pk-suggested"></div>
       <h2>Installed <span class="muted" id="pk-count"></span></h2>

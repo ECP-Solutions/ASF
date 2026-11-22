@@ -324,6 +324,7 @@ Decided:
 - Python in ASF scripts needs two keys: the script's `python` header and the host's `PythonAccess` setting (3.4).
 - Phases 2 and 3 start after the `.xll` is done (phase 1). No pywin32 stand-in.
 - `PY_CALL` and `@xl_func` functions work whenever the `.xll` is loaded; `PythonAccess` governs only `py` in ASF scripts.
+- Updating: the add-in carries ASF's version and looks for a newer release once a day (`PythonUpdates`), in a separate process (`studio/update.py`): the asset is checked (GitHub's SHA-256, bitness, version mark) and swapped in by renaming the loaded `.xll`, for the next Excel.
 - Installing: the `.xll` carries its Python and unpacks it on first load; pip runs from Python studio's Packages, the Python console or `AsfPyPackages`. `PythonVenv` is optional (3.1).
 - The two keys are for Python only. Python's power can't be sandboxed or easily delegated to users; `appAccess` keeps working as it does now.
 

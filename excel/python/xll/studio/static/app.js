@@ -342,14 +342,77 @@ async function pollJobs() {
     const opened = new Set([...box.querySelectorAll('details[open]')].map(d => d.dataset.id));
     box.replaceChildren(...r.jobs.slice().reverse().map(j => el('details', {
       class: 'job', 'data-id': String(j.id), ...(opened.has(String(j.id)) || j.state === 'running' ? { open: '' } : {}),
-    }, el('summary', {}, el('span', { class: 'state ' + j.state }, j.state), el('code', {}, 'pip ' + j.command),
+    }, el('summary', {}, el('span', { class: 'state ' + j.state }, j.state), el('code', {}, (j.kind ? '' : 'pip ') + j.command),
         j.code !== null && j.code !== 0 ? el('span', { class: 'sev-error' }, 'exit ' + j.code) : null),
        el('pre', {}, j.output || '…'))));
     box.querySelectorAll('pre').forEach(p => { p.scrollTop = p.scrollHeight; });
     if (finished && !busy) { refreshPackages(); foot('pip finished: restart Excel to use what changed'); }
+    const upd = r.jobs.filter(j => j.kind === 'update').pop();
+    if (upd) updateProgress(upd);
   }
   if (busy) jobTimer = setTimeout(pollJobs, 800);
 }
+async function refreshPrevious() {
+  const list = await get('previous').catch(() => []);
+  const found = list.filter(p => p.packages.length || p.mb);
+  $('pk-previous').classList.toggle('hidden', !found.length);
+  $('pk-previous-list').replaceChildren(...found.map(p => el('div', { class: 'card' },
+    el('div', { class: 't' }, p.folder), el('div', { class: 'd' },
+      p.packages.length ? 'Packages this Python lacks: ' + p.packages.map(k => k.name + ' ' + k.version).join(', ')
+                        : 'No package this Python lacks.', ' ', p.mb + ' MB on disk.'),
+    el('div', { class: 'a' },
+      p.packages.length ? el('button', { class: 'primary', onclick: () => post('previous/install', { folder: p.folder })
+        .then(pollJobs).catch(e => alert(e.message)) }, 'Install them here') : el('span'),
+      el('button', { onclick: () => {
+        if (!confirm('Delete ' + p.folder + ' (' + p.mb + ' MB)? An Excel still running the older add-in uses it: close it first.')) return;
+        post('previous/remove', { folder: p.folder }).then(refreshPrevious).catch(e => alert(e.message));
+      } }, 'Remove')))));
+}
+
+// --- the add-in's updates --------------------------------------------------------------------------
+function showAddin(s) {
+  const pill = $('addin-pill');
+  pill.classList.remove('hidden', 'new', 'ok');
+  state.update = s;
+  if (s.restart) {
+    pill.textContent = 'ASF Python ' + s.installed + ': restart Excel';
+    pill.title = 'The add-in was updated to ' + s.installed + '; this Excel still runs ' + s.running;
+  } else if (s.available) {
+    pill.textContent = 'Update to ' + s.latest;
+    pill.title = 'ASF Python ' + s.latest + ' is available; this add-in is ' + s.installed;
+    pill.classList.add('new');
+  } else {
+    pill.textContent = 'ASF Python ' + s.installed;
+    pill.title = 'Check for a newer add-in' + (s.checked ? ' (last checked ' + new Date(s.checked * 1000).toLocaleString() + ')' : '');
+  }
+}
+function updateProgress(job) {
+  const pill = $('addin-pill');
+  if (job.state === 'running' || job.state === 'queued') {
+    const pct = (job.output.match(/(\d+)%\n$/) || [])[1];
+    pill.textContent = 'Updating' + (pct ? ' ' + pct + '%' : '…');
+  } else if (!state.updateShown || state.updateShown < job.id) {
+    state.updateShown = job.id;
+    get('update').then(showAddin).catch(() => {});
+    foot(job.state === 'done' ? (job.result ? 'ASF Python ' + job.result.version + ' is installed: restart Excel to use it'
+                                            : 'ASF Python is up to date') : 'The add-in was not updated: see Activity in Packages');
+  }
+}
+async function checkAddin() {
+  const s = state.update;
+  if (s && s.restart && !s.available) { alert('ASF Python ' + s.installed + ' is installed. Restart Excel to use it.'); return; }
+  if (!s || !s.available) {
+    $('addin-pill').textContent = 'Checking…';
+    try { showAddin(await get('update', { live: 1 })); }
+    catch (e) { showAddin(s || { installed: '?' }); alert('ASF Python could not check for updates: ' + e.message); return; }
+    if (!state.update.available) { foot('ASF Python ' + state.update.installed + ' is the latest version'); return; }
+  }
+  const u = state.update;
+  if (!confirm('ASF Python ' + u.latest + ' is available; this add-in is ' + u.installed + '.\n\nDownload it (' +
+               Math.round((u.size || 0) / 1e6) + ' MB) and install it now? Excel uses it the next time it starts.\n\nWhat changed: ' + u.page)) return;
+  try { await post('update'); view('packages'); pollJobs(); } catch (e) { alert(e.message); }
+}
+$('addin-pill').addEventListener('click', checkAddin);
 $('pk-form').addEventListener('submit', async e => {
   e.preventDefault();
   const name = $('pk-name').value.trim();
@@ -375,7 +438,7 @@ function view(name) {
   $('editor-view').classList.toggle('hidden', name === 'packages');
   $('side').classList.toggle('hidden', name === 'packages');
   document.querySelectorAll('.pane').forEach(p => p.classList.toggle('hidden', p.dataset.pane !== name));
-  if (name === 'packages') { refreshPackages(); pollJobs(); }
+  if (name === 'packages') { refreshPackages(); refreshPrevious(); pollJobs(); }
   if (name === 'functions') refreshOutline();
   if (name !== 'packages') editor.refresh();
 }
@@ -416,6 +479,7 @@ async function start() {
     pill.className = 'pill ' + (info.excel ? 'ok' : 'off');
     $('folder-path').textContent = info.folder || 'No Python folder';
     $('foot-right').textContent = info.folder;
+    get('update').then(showAddin).catch(() => {});
     await refreshFiles();
     if (state.files.length) await open(state.files[0]);
     foot('Ready');

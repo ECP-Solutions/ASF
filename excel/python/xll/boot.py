@@ -32,6 +32,7 @@ _python_folder = ''
 _last_error = ''
 _last_traceback = ''
 _log = None
+ADDIN_VERSION = ''        # the add-in's version, set by the add-in before start()
 _start_info = []         # what the last load of the Python folder found, for py.startInfo and the log
 _handles = {}            # handle number -> (workbook, object): results that aren't cell values
 _owned = {}              # calling cell -> the numbers of the handles its last result made
@@ -756,8 +757,9 @@ class _Root:
 
     @property
     def startInfo(self):
-        return 'Python %s, %d-bit: %s\n%s' % (sys.version.split()[0], 64 if sys.maxsize > 2 ** 32 else 32,
-                                               sys.prefix, '\n'.join(_start_info))
+        return 'ASF Python %s\nPython %s, %d-bit: %s\n%s' % (ADDIN_VERSION or '?', sys.version.split()[0],
+                                                             64 if sys.maxsize > 2 ** 32 else 32, sys.prefix,
+                                                             '\n'.join(_start_info))
 
     def __repr__(self):
         return '<py>'

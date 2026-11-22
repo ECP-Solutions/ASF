@@ -143,14 +143,27 @@ With [`ASF.xlam`](Add-ins.html) loaded too, the ASF tab gets a Python group, ASF
 |---|---|
 | **Python studio** | A window to write, run and reload the Python folder's modules, run its macros, open the folder, and manage the packages: see [Python studio](#python-studio) above |
 | **Python console** | Opens the add-in's Python at its `>>>` prompt, in a console window apart from Excel: see [The Python console](#the-python-console) above |
-| **Python settings** | Shows and changes the three settings: which Python (the add-in's own, or a venv or install you pick), the Python folder, and `PythonAccess`. Restart Excel after changing the first two |
-| **About Python** | The loaded add-in file, the Python it runs, the settings, what the Python folder gave at start-up, and the log, which it offers to open. The first place to look when something doesn't work |
+| **Python settings** | Shows and changes the settings: which Python (the add-in's own, or a venv or install you pick), the Python folder, `PythonAccess` and `PythonUpdates`. Restart Excel after changing the first two |
+| **About Python** | The loaded add-in file and its version, the Python it runs, the settings, what the Python folder gave at start-up, and the log, which it offers to open; it also checks for a newer add-in. The first place to look when something doesn't work |
 
-The add-in's commands also run from VBA, a button of your own or a keyboard shortcut, with `Application.Run`: `AsfPyStudio`, `AsfPyConsole`, `AsfPyReload` (import the Python folder again), `AsfPyPackages` (the package console), `AsfPyRunScript` (run a `.py` file you pick) and `AsfPyMacros` (list the `@xl_macro` functions and run one).
+The add-in's commands also run from VBA, a button of your own or a keyboard shortcut, with `Application.Run`: `AsfPyStudio`, `AsfPyConsole`, `AsfPyReload` (import the Python folder again), `AsfPyPackages` (the package console), `AsfPyRunScript` (run a `.py` file you pick), `AsfPyMacros` (list the `@xl_macro` functions and run one) and `AsfPyUpdate` (check for a newer add-in).
 
-### Updating and removing
+### Updates
 
-- **Update:** close Excel, replace the `.xll`, start Excel. A new add-in with a newer Python unpacks it into a new folder, which starts without packages: install them again. (Before updating, `list` in the package console shows what you had.)
+The add-in keeps itself up to date from the [project's releases](https://github.com/ECP-Solutions/ASF/releases):
+
+- **When Excel loads it**, at most once a day, it looks for a newer release, apart from Excel (Excel doesn't wait). The setting `PythonUpdates` says what then: `check` (the default) asks whether to install it; `auto` installs it and says so; `off` doesn't look. After **No**, the same version is offered again a week later.
+- **When you ask:** the version button at the top right of **Python studio** (it shows **Update to …** when a newer add-in is out, and the download's progress), **About Python** on the ASF tab (**Yes** checks), or `Application.Run "AsfPyUpdate"`.
+
+An update is the release's `asfpy64.xll` or `asfpy32.xll`, whichever you have. Before it replaces anything, its SHA-256 must match the one GitHub publishes for that file, and it must be an add-in of your Excel's bitness whose version is the release's. Then it takes the place of your `.xll`, under the same name, so Excel loads it the next time it starts: **restart Excel to use it**. The old file is kept as `asfpy64.xll.old` until then, and the new add-in deletes it. If the add-in's folder can't be written to (a folder an administrator manages), the update is downloaded to `%LOCALAPPDATA%\ASF\updates` and you are told where to copy it.
+
+The new add-in brings a newer Python, unpacked into a folder of its own, without the packages you added with pip. **Packages** in Python studio then shows **From the previous Python**: the packages the old Python has and the new one lacks, with **Install them here**, and **Remove** to delete the old Python (about 160 MB) once no Excel uses it.
+
+Only `api.github.com` and GitHub's downloads are contacted, with no information about you or your workbooks. In an organisation that keeps its own copy of the releases, the setting `PythonUpdateSource` names its address (a releases API answering as GitHub's `releases/latest` does); `PythonUpdates` set to `off` by policy turns updates off. What the updater did is in `%TEMP%\asfpy-update.log`.
+
+### Updating by hand and removing
+
+- **Update by hand:** close Excel, replace the `.xll`, start Excel. As above, the new Python starts without the packages you added.
 - **Remove:** untick the add-in in File > Options > Add-ins (Excel Add-ins), close Excel and delete the `.xll`. Delete `%LOCALAPPDATA%\ASF\runtime` to remove the Python and its packages. Your Python folder stays.
 
 ---
@@ -313,6 +326,8 @@ The add-in reads its settings when Excel loads it, from `HKEY_CURRENT_USER\Softw
 | `PythonFolder` | `%APPDATA%\ASF\python`: the folder of your Python files |
 | `PythonVenv` | empty: the Python the add-in carries. Otherwise, another Python to use (below) |
 | `PythonAccess` | `off`: read by `ASF.xlam`, for ASF scripts (above) |
+| `PythonUpdates` | `check`: look for a newer add-in once a day and ask; `auto`: install it; `off`: don't look ([Updates](#updates)) |
+| `PythonUpdateSource` | empty: GitHub's releases of the project. Otherwise, the address of a copy of them ([Updates](#updates)) |
 
 With `ASF.xlam` loaded, **Python settings** on the ASF tab shows and changes them. Or set them from the Immediate window:
 

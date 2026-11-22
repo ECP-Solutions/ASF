@@ -4,9 +4,10 @@ packages of this Python, and Excel's commands, as a JSON API for the page in sta
 It listens on 127.0.0.1 only. Every request must come for that host and port, with the session's
 cookie, set when the window opens the page with the session's token; a POST must also carry the
 X-Studio header, which another site's page can't send. The server stops when no window has
-called for IDLE seconds and no pip command runs.
+called for IDLE seconds and no pip command or update runs.
 
-    python -m asfpy_studio --folder PYTHON_FOLDER [--no-window] [--port N] [--log FILE]
+    python -m asfpy_studio --folder PYTHON_FOLDER [--xll ADDIN --running VERSION] [--update-source URL]
+                           [--no-window] [--port N] [--log FILE]
 """
 import argparse
 import ast
@@ -20,6 +21,7 @@ import queue
 import re
 import secrets
 import shlex
+import shutil
 import subprocess
 import sys
 import threading
@@ -28,13 +30,14 @@ import traceback
 import urllib.parse
 import urllib.request
 
-from . import excel
+from . import excel, update
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(HERE, 'static')
 STUBS = os.path.join(HERE, 'stubs')
 IDLE = 120
 NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')
+RUNTIME = re.compile(r'^python-[0-9.]+-(?P<bits>32|64)-[0-9a-f]{6,}$')   # a Python of the add-in, unpacked
 TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
          '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png'}
 TEMPLATE = '''"""{module}: functions for Excel."""
@@ -53,8 +56,10 @@ def _local_app_data():
 
 
 class Studio:
-    def __init__(self, folder, idle=IDLE):
+    def __init__(self, folder, idle=IDLE, xll='', running='', update_source=None):
         self.folder = os.path.abspath(folder) if folder else ''
+        self.xll, self.running, self.update_source = xll, running, update_source or None
+        self.prefix = sys.prefix                # the Python whose earlier versions previous() lists
         self.token = secrets.token_urlsafe(32)
         self.idle = idle
         self.seen = time.time()
@@ -234,6 +239,141 @@ class Studio:
     def busy(self):
         return any(j['state'] in ('queued', 'running') for j in self.jobs)
 
+    # --- updates of the add-in, and the Python an update left -----------------------------------
+
+    def update_status(self, live=False):
+        """The add-in's version and the latest release: from GitHub when live, else as the last
+        check (Excel's start, or this) left it."""
+        if not self.xll:
+            raise ValueError('the studio was opened without the add-in to update')
+        installed = update.file_version(self.xll) or self.running
+        state = update.load_state()
+        if live:
+            status = update.check(self.xll, self.running, self.update_source)
+            del status['release']
+            state.update(checked=time.time(), latest=status['latest'], page=status['page'], size=status['size'])
+            update.save_state(state)
+        else:
+            latest = state.get('latest') or ''
+            status = {'running': self.running or installed, 'installed': installed, 'latest': latest,
+                      'page': state.get('page') or update.RELEASES, 'available': update.newer(latest, installed),
+                      'restart': bool(self.running) and update.newer(installed, self.running), 'size': state.get('size', 0)}
+        status['checked'] = state.get('checked')
+        return status
+
+    def update(self):
+        """The latest release installed in the add-in's place, as a job of the Activity list."""
+        if not self.xll:
+            raise ValueError('the studio was opened without the add-in to update')
+        with self.lock:
+            if any(j.get('kind') == 'update' and j['state'] in ('queued', 'running') for j in self.jobs):
+                raise ValueError('the add-in is being updated')
+            job = {'id': len(self.jobs) + 1, 'kind': 'update', 'command': 'update ASF Python', 'state': 'queued',
+                   'code': None, 'output': ''}
+            self.jobs.append(job)
+            self.revision += 1
+        threading.Thread(target=self._update_worker, args=(job,), name='update', daemon=True).start()
+        return job
+
+    def _update_worker(self, job):
+        self._update(job, state='running')
+        code = 1
+        try:
+            with update.Lock() as lock:
+                if not lock.held:
+                    raise update.UpdateError('another Excel is updating the add-in')
+                info = update.latest(self.update_source, update.dll_bits(self.xll) or update.bits())
+                current = update.file_version(self.xll) or self.running
+                if not update.newer(info['version'], current):
+                    self._update(job, output='ASF Python %s is the latest version.\n' % current)
+                else:
+                    self._update(job, output='Downloading ASF Python %s (%.1f MB): %s\n' % (info['version'], info['size'] / 1e6, info['url']))
+                    shown = [0]
+
+                    def progress(done, total):
+                        percent = done * 100 // total if total else 0
+                        if percent >= shown[0] + 10:
+                            shown[0] = percent - percent % 10
+                            self._update(job, output='%d%%\n' % shown[0])
+                    result = update.install(self.xll, info, progress)
+                    self._update(job, output='SHA-256 and version checked.\n' + update.outcome(result, self.xll) + '\n')
+                    job['result'] = result
+                code = 0
+        except (update.UpdateError, OSError) as exc:
+            self._update(job, output='Not updated: %s\n' % exc)
+        self._update(job, state='done' if code == 0 else 'failed', code=code)
+
+    def previous(self):
+        return previous(self.prefix)
+
+    def previous_install(self, name):
+        packages = [p['name'] for p in self._previous(name)['packages']]
+        if not packages:
+            raise ValueError('that Python has no package this one lacks')
+        return self.pip('install ' + ' '.join(packages))
+
+    def previous_remove(self, name):
+        """A Python an update left, removed: renamed first, which fails while an Excel still uses it."""
+        folder = os.path.join(os.path.dirname(os.path.abspath(self.prefix)), self._previous(name)['folder'])
+        gone = folder + '-removing'
+        try:
+            os.rename(folder, gone)
+        except OSError:
+            raise PermissionError('%s is in use: close every Excel that runs the older add-in, then try again' % name)
+        shutil.rmtree(gone, ignore_errors=True)
+        return {'removed': name, 'left': os.path.exists(gone)}
+
+    def _previous(self, name):
+        for p in previous(self.prefix):
+            if p['folder'] == name:
+                return p
+        raise LookupError('no earlier Python named %s' % name)
+
+
+def _key(name):
+    return re.sub(r'[-_.]+', '-', name).lower()
+
+
+def _site(prefix):
+    for site in (os.path.join(prefix, 'Lib', 'site-packages'), os.path.join(prefix, 'lib', 'site-packages')):
+        if os.path.isdir(site):
+            return site
+    return os.path.join(prefix, 'Lib', 'site-packages')
+
+
+def previous(prefix):
+    """The other Pythons of the add-in, of this bitness, beside the one at prefix (an update's new
+    add-in unpacks a new one): their size and the packages they have that this one lacks."""
+    prefix = os.path.abspath(prefix)
+    root, me = os.path.split(prefix)
+    mine = RUNTIME.match(me)
+    if not mine or not os.path.isdir(root):
+        return []
+    have = {_key(d.metadata.get('Name') or '') for d in importlib.metadata.distributions(path=[_site(prefix)])}
+    out = []
+    for name in sorted(os.listdir(root)):
+        folder = os.path.join(root, name)
+        if name.endswith('-removing'):              # what a removal couldn't delete
+            shutil.rmtree(folder, ignore_errors=True)
+            continue
+        m = RUNTIME.match(name)
+        if not m or name == me or m.group('bits') != mine.group('bits') or not os.path.isdir(folder):
+            continue
+        extra = {}
+        for d in importlib.metadata.distributions(path=[_site(folder)]):
+            n = d.metadata.get('Name') or ''
+            if n and _key(n) not in have:
+                extra[_key(n)] = {'name': n, 'version': d.version}
+        size = 0
+        for path, _, files in os.walk(folder):
+            for f in files:
+                try:
+                    size += os.path.getsize(os.path.join(path, f))
+                except OSError:
+                    pass
+        out.append({'folder': name, 'mb': round(size / 1e6), 'packages': sorted(extra.values(), key=lambda p: p['name'].lower())})
+    return out
+
 
 def _python():
     """python.exe beside this one: pip's output reaches the page either way, and the windowless
@@ -387,6 +527,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     result = {'revision': s.revision, 'jobs': [dict(j) for j in s.jobs]}
             elif method == 'GET' and name == 'pypi':
                 result = pypi(args.get('name', ''))
+            elif method == 'GET' and name == 'update':
+                result = s.update_status(args.get('live') in ('1', 'true'))
+            elif method == 'GET' and name == 'previous':
+                result = s.previous()
             elif method == 'POST' and name == 'ping':
                 result = {'busy': s.busy()}
             elif method == 'POST' and name == 'save':
@@ -403,6 +547,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 result = s.console(args.get('code', ''), bool(args.get('restart')))
             elif method == 'POST' and name == 'pip':
                 result = s.pip(args.get('command', ''))
+            elif method == 'POST' and name == 'update':
+                result = s.update()
+            elif method == 'POST' and name == 'previous/install':
+                result = s.previous_install(args.get('folder', ''))
+            elif method == 'POST' and name == 'previous/remove':
+                result = s.previous_remove(args.get('folder', ''))
             elif method == 'POST' and name == 'excel/reload':
                 result = {'done': excel.reload()}
             elif method == 'POST' and name == 'excel/run':
@@ -415,6 +565,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._send(404, {'error': 'no such call'})
         except excel.NotReachable as exc:
             return self._send(503, {'error': str(exc)})
+        except update.UpdateError as exc:
+            return self._send(502, {'error': str(exc)})
         except (PermissionError, ValueError, LookupError, KeyError, OSError, FileExistsError) as exc:
             return self._send(400, {'error': str(exc) or type(exc).__name__})
         return self._send(200, result)
@@ -490,6 +642,9 @@ def main(argv=None):
     a.add_argument('--port', type=int, default=0)
     a.add_argument('--idle', type=int, default=IDLE)
     a.add_argument('--log', default='')
+    a.add_argument('--xll', default='')
+    a.add_argument('--running', default='')
+    a.add_argument('--update-source', default='')
     a.add_argument('--no-window', action='store_true')
     o = a.parse_args(argv)
     folder = o.folder.strip('"')
@@ -500,7 +655,7 @@ def main(argv=None):
     if url:
         open_window(url)
         return
-    studio = Studio(folder, o.idle)
+    studio = Studio(folder, o.idle, o.xll.strip('"'), o.running, o.update_source)
     server = serve(studio, o.port)
     port = server.server_address[1]
     url = 'http://127.0.0.1:%d/?t=%s' % (port, studio.token)

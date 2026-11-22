@@ -56,7 +56,7 @@ def cells(boot, tagged):
 def main():
     boot, names = load_boot()
     info = boot.root(1).startInfo
-    print(info.split('\n')[0])
+    print(info.split('\n')[1])
 
     def call(name, *args):
         return cells(boot, boot.xl_call(names.index(name), list(args)))

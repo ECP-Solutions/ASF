@@ -15,7 +15,7 @@
 #include "../../xll/xloper.h"
 
 #define NSLOTS 2000   /* as in asfpy.c */
-#define NBUILTIN 7    /* PY_CALL and the commands AsfPyReload, AsfPyPackages, AsfPyConsole, AsfPyStudio, AsfPyRunScript, AsfPyMacros */
+#define NBUILTIN 8    /* PY_CALL and the commands AsfPyReload, AsfPyPackages, AsfPyConsole, AsfPyStudio, AsfPyRunScript, AsfPyMacros, AsfPyUpdate */
 #define SETTINGS_KEY L"Software\\VB and VBA Program Settings\\ASF\\AddIn"
 
 #if defined(_MSC_VER) && !defined(_WIN64)
@@ -533,6 +533,14 @@ int wmain(int argc, wchar_t **argv)
     _setmode(_fileno(stdout), _O_U8TEXT);
     QueryPerformanceFrequency(&fq);
 
+    {   /* what an update leaves next to the add-in: the add-in deletes it when it loads */
+        wchar_t old[MAX_PATH + 16];
+        FILE *f;
+        swprintf(old, MAX_PATH + 16, L"%ls.old", xll_path);
+        if ((f = _wfopen(old, L"w")) != NULL) fclose(f);
+        swprintf(old, MAX_PATH + 16, L"%ls.7.old", xll_path);
+        if ((f = _wfopen(old, L"w")) != NULL) fclose(f);
+    }
     xll = LoadLibraryW(xll_path);
     if (!xll) { wprintf(L"FAIL load %ls: %lu\n", xll_path, GetLastError()); return 1; }
     open = (int (WINAPI *)(void))GetProcAddress(xll, "xlAutoOpen");
@@ -542,7 +550,17 @@ int wmain(int argc, wchar_t **argv)
     QueryPerformanceCounter(&t1);
     wprintf(L"     start-up: %.0f ms, %d functions registered\n", (t1.QuadPart - t0.QuadPart) * 1000.0 / fq.QuadPart, nregs);
     swprintf(got, 256, L"%d", nregs);
-    check(nregs == NSLOTS + NBUILTIN, L"registered: one function in each slot, PY_CALL and the 6 commands", got);
+    check(nregs == NSLOTS + NBUILTIN, L"registered: one function in each slot, PY_CALL and the 7 commands", got);
+    {
+        wchar_t old[MAX_PATH + 16];
+        int left;
+        swprintf(old, MAX_PATH + 16, L"%ls.old", xll_path);
+        left = GetFileAttributesW(old) != INVALID_FILE_ATTRIBUTES;
+        swprintf(old, MAX_PATH + 16, L"%ls.7.old", xll_path);
+        left += GetFileAttributesW(old) != INVALID_FILE_ATTRIBUTES;
+        swprintf(got, 256, L"%d left", left);
+        check(left == 0, L"xlAutoOpen deletes the .old files an update left", got);
+    }
     if (nregs < 20) { wprintf(L"%d checks, %d failed\n", checks, failed); return 1; }
     check(wcsstr(last_alert, L"are not registered") != NULL, L"alert: functions beyond the slots", last_alert);
 
@@ -556,6 +574,7 @@ int wmain(int argc, wchar_t **argv)
     }
     type_check(L"AsfPyConsole", L"J");    /* not run: it opens a console window */
     type_check(L"AsfPyStudio", L"J");     /* not run: it opens a window */
+    type_check(L"AsfPyUpdate", L"J");     /* not run: it asks in a message box */
     {
         Reg *r = reg_of(L"AsfPyConsole");
         check(r && r->macro_type == 2, L"AsfPyConsole registered as a command (macro type 2)", r && r->macro_type == 2 ? L"2" : L"not 2");
