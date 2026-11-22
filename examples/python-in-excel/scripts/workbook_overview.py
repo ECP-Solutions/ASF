@@ -1,5 +1,6 @@
-"""Run Python script: an overview of the active workbook, printed: each sheet with its used range,
-how many cells hold formulas, and the functions its formulas call, most used first."""
+"""A script for Run in Excel (Python studio, F5): an overview of the active workbook, printed: each
+sheet with its used range, how many cells hold formulas, and the functions its formulas call, most
+used first."""
 import re
 
 from asfpy import xl_app

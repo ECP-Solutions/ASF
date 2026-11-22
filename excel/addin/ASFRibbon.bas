@@ -77,57 +77,9 @@ Public Sub OnWhyError(control As Object)
     End If
 End Sub
 
-' Python folder: opens the Python add-in's folder of modules, made first when it is missing
-Public Sub OnPythonFolder(control As Object)
-    Dim folder As String: folder = ASFSettings.PythonFolder()
-    If LenB(folder) = 0 Then
-        MsgBox "Python needs the Python add-in, which runs on Excel for Windows.", vbInformation, TITLE
-        Exit Sub
-    End If
-    If Not ASFLibrary.EnsureFolder(folder) Then
-        MsgBox "The Python folder can't be made:" & vbLf & folder, vbExclamation, TITLE
-        Exit Sub
-    End If
-    On Error GoTo ShowPath
-    ThisWorkbook.FollowHyperlink folder
-    Exit Sub
-ShowPath:
-    MsgBox "The Python folder is" & vbLf & folder, vbInformation, TITLE
-End Sub
-
-' Reload Python: the Python add-in imports the modules of its folder again (its command
-' AsfPyReload), then the open workbooks are calculated in full: a cell keeps its old value otherwise
-Public Sub OnReloadPython(control As Object)
-    Dim py As Object, message As String, info As String
-    Set py = ASFPython.Root(1, message)
-    If py Is Nothing Then
-        MsgBox message, vbExclamation, TITLE
-        Exit Sub
-    End If
-    On Error GoTo Failed
-    Application.Run "AsfPyReload"
-    Application.CalculateFull
-    info = CStr(CallByName(py, "startInfo", VbGet))
-    If Len(info) > 900 Then info = Left$(info, 900) & "..."
-    MsgBox "The Python folder was imported again, and the workbooks calculated." & vbLf & vbLf & info, vbInformation, TITLE
-    Exit Sub
-Failed:
-    MsgBox "Reload Python failed: " & Err.Description, vbExclamation, TITLE
-End Sub
-
 ' Python studio: the editor, console and packages of the Python add-in, in a window of its own
 Public Sub OnPythonStudio(control As Object)
     ASFPythonSetup.Studio
-End Sub
-
-' Run Python script: a .py file run in Excel's Python, its output shown (ASFPythonSetup)
-Public Sub OnRunPythonScript(control As Object)
-    ASFPythonSetup.RunScript
-End Sub
-
-' Python macros: the commands (@xl_macro) of the Python folder; runs the one picked
-Public Sub OnPythonMacros(control As Object)
-    ASFPythonSetup.Macros
 End Sub
 
 ' Python console: the Python add-in's Python at its prompt, in a console window (ASFPythonSetup)
@@ -143,21 +95,6 @@ End Sub
 ' About Python: the add-in, its Python, the settings, the start-up and the log
 Public Sub OnAboutPython(control As Object)
     ASFPythonSetup.About
-End Sub
-
-' Python packages: pip for the Python add-in's Python, in a console window (its command AsfPyPackages)
-Public Sub OnPythonPackages(control As Object)
-    Dim py As Object, message As String
-    Set py = ASFPython.Root(1, message)
-    If py Is Nothing Then
-        MsgBox message, vbExclamation, TITLE
-        Exit Sub
-    End If
-    On Error GoTo Failed
-    Application.Run "AsfPyPackages"
-    Exit Sub
-Failed:
-    MsgBox "Python packages failed: " & Err.Description, vbExclamation, TITLE
 End Sub
 
 ' Reset engine: drops the engine of the worksheet functions and their compiled scripts

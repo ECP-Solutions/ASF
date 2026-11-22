@@ -1310,7 +1310,7 @@ static int open_console(const char *script_text, const wchar_t *name, const wcha
     return 1;
 }
 
-/* The command AsfPyPackages (VBA: Application.Run "AsfPyPackages"; ASF's ribbon: Python packages):
+/* The command AsfPyPackages (VBA: Application.Run "AsfPyPackages"):
    pip for the Python of the add-in, in a console window of its own (packages.py), so downloads
    never block Excel. */
 EXPORT int WINAPI asfpy_packages(void)
@@ -1378,8 +1378,8 @@ static LPXLOPER12 boot_text(const char *name, int n, PyObject *arg)
     return res;
 }
 
-/* The command AsfPyRunScript (VBA: Application.Run("AsfPyRunScript", path); ASF's ribbon: Run
-   Python script): a .py file run as __main__ in Excel's Python (boot.run_script). Its result is
+/* The command AsfPyRunScript (VBA: Application.Run("AsfPyRunScript", path); the studio's Run in
+   Excel): a .py file run as __main__ in Excel's Python (boot.run_script). Its result is
    what the script printed, with the traceback if it failed. A command, so the script may use
    Excel's object model through xl_app(). */
 EXPORT LPXLOPER12 WINAPI asfpy_run_script(LPXLOPER12 path)
@@ -1393,7 +1393,7 @@ EXPORT LPXLOPER12 WINAPI asfpy_run_script(LPXLOPER12 path)
     return boot_text("run_script", 1, p);
 }
 
-/* The command AsfPyMacros (ASF's ribbon: Python macros): a line for each command (@xl_macro) of
+/* The command AsfPyMacros (VBA: Application.Run("AsfPyMacros")): a line for each command (@xl_macro) of
    the Python folder: its name, the number of arguments it needs, its description, tab-separated */
 EXPORT LPXLOPER12 WINAPI asfpy_macros(void)
 {

@@ -13,7 +13,7 @@ Excel itself can't run in CI, so this folder holds the checks that run in Excel,
 | Question | Where the answer shows |
 |---|---|
 | Does Python start inside Excel 2016 (32-bit and 64-bit) and Microsoft 365? | the first rows |
-| Is it the add-in's own Python, unpacked under `%LOCALAPPDATA%\ASF\runtime`, with pip for **Python packages**? | the `Python:` rows (with `PythonVenv` set, the row shows that Python instead) |
+| Is it the add-in's own Python, unpacked under `%LOCALAPPDATA%\ASF\runtime`, with pip for its packages? | the `Python:` rows (with `PythonVenv` set, the row shows that Python instead) |
 | Do the slots work, including the 32-bit stubs, for 0 to 7 arguments? | the `check_*` rows, and Excel doesn't crash |
 | Does `py` work from VBA through `CallByName`, as ASF uses it? | the `py.*` rows |
 | Does `For Each` go through a Python object, and does `x = obj` give its text? | the `For Each` and `x = obj` rows |

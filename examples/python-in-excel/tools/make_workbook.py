@@ -87,8 +87,8 @@ def main():
         ('Python in Excel: examples', TITLE),
         ('These sheets call Python functions of the Python folder from formulas. To make them work:', None),
         ('1. Load the Python add-in (asfpy64.xll or asfpy32.xll): it carries Python with numpy, pandas, openpyxl and pywin32.', None),
-        ('2. Copy the .py files of examples/python-in-excel/python into the Python folder (ASF tab: Python folder).', None),
-        ('3. ASF tab: Reload Python, or restart Excel. Then Ctrl+Alt+F9 to calculate everything.', None),
+        ('2. Copy the .py files of examples/python-in-excel/python into the Python folder (ASF tab: Python studio, its folder button).', None),
+        ('3. Python studio: Reload Excel, or restart Excel. Then Ctrl+Alt+F9 to calculate everything.', None),
         ('4. For the Scripts sheet: ASF.xlam, py_summary.vas in the library folder, and PythonAccess at call.', None),
         ('', None),
         ('Data: sample orders, a monthly series, a table of regions and names as typed.', None),
@@ -97,7 +97,7 @@ def main():
         ('Finance: a loan schedule, growth rate, and a Monte Carlo simulation that runs asynchronously.', None),
         ('Text: names tidied, accents removed, company names matched despite typos.', None),
         ('Scripts: an ASF script calling Python (ASF_CALL), and PY_CALL.', None),
-        ('Macros (ASF tab: Python macros): SummarizeSelection, ImportCsv, FitAllColumns.', None),
+        ('Macros (Python studio: Functions): SummarizeSelection, ImportCsv, FitAllColumns.', None),
         ('Python in a cell turns #NAME? until the add-in is loaded and the modules are in the Python folder.', NOTE),
     ]
     for i, (text, font) in enumerate(lines, 1):

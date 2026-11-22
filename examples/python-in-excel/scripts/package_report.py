@@ -1,4 +1,4 @@
-"""Run Python script: which Python runs inside Excel, and which packages it has, with versions."""
+"""A script for Run in Excel (Python studio, F5): which Python runs inside Excel, and which packages it has, with versions."""
 import sys
 from importlib import metadata
 

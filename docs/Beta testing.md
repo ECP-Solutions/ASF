@@ -95,7 +95,7 @@ The add-in's Python already has numpy, pandas (64-bit only: pandas has no 32-bit
    ```vb
    Application.Run "AsfPyPackages"
    ```
-   If your `ASF.xlam` has a **Python packages** button on the ASF tab, it does the same. Its **Python settings** button also shows and clears `PythonVenv` (step 1.2), and **About Python** shows which add-in and Python are loaded.
+   With `ASF.xlam`, **Packages** in **Python studio** on the ASF tab does the same. Its **Python settings** button also shows and clears `PythonVenv` (step 1.2), and **About Python** shows which add-in and Python are loaded.
 2. A black console window opens and lists the packages installed: numpy, pandas (64-bit), openpyxl and pywin32 among them. If one is missing, type `install` and its name after `pip>`, wait for `pip exited with 0`, and restart Excel afterwards.
 3. Press Enter on the empty `pip>` line: the window closes.
 

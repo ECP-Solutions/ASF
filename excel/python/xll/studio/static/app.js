@@ -390,6 +390,8 @@ $('save').addEventListener('click', save);
 $('run').addEventListener('click', run);
 $('reload').addEventListener('click', () => reload());
 $('new-file').addEventListener('click', newFile);
+$('reveal').addEventListener('click', () => post('reveal').then(() => foot('Opened the Python folder in Explorer'))
+  .catch(e => { output(e.message, 'err'); show('output'); }));
 $('refresh-outline').addEventListener('click', refreshOutline);
 $('console-restart').addEventListener('click', () => consoleRun(true));
 document.addEventListener('keydown', e => {

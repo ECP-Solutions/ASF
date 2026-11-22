@@ -192,7 +192,7 @@ def reload():
 
 
 def run_script(path):
-    """The command AsfPyRunScript (ASF tab: Run Python script): a .py file run as __main__ in
+    """The command AsfPyRunScript (the studio's Run in Excel): a .py file run as __main__ in
     Excel's Python, as a command, so xl_app() works in it. Its folder is first on sys.path while
     it runs. Returns what it printed, and the traceback if it failed."""
     global _macro_depth
@@ -225,7 +225,7 @@ def run_script(path):
 
 
 def macro_list():
-    """The command AsfPyMacros (ASF tab: Python macros): one line per command (@xl_macro) of the
+    """The command AsfPyMacros: one line per command (@xl_macro) of the
     Python folder, as its Excel name, the number of arguments it needs and its description,
     separated by tabs."""
     lines = []

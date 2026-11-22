@@ -45,6 +45,7 @@ kbd { border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4p
 
 .side { width: 260px; background: var(--bg2); border-right: 1px solid var(--line); overflow: auto; }
 .pane-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 10px 4px 12px; }
+.pane-head .buttons { display: flex; gap: 4px; }
 .pane-head h2 { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
 .folder { padding: 0 12px 8px; font-size: 11px; color: var(--muted); word-break: break-all; }
 .list { list-style: none; margin: 0; padding: 0; }

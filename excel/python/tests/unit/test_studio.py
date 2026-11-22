@@ -149,6 +149,13 @@ class Studio(unittest.TestCase):
             self.assertEqual([p['line'] for p in r], [1, 2])
             self.assertIn("undefined name 'undefined_name'", r[1]['message'])
 
+    def test_explorer_is_for_windows(self):
+        if os.name == 'nt':
+            self.skipTest('it would open a window')
+        status, r, _ = self.post('reveal', {})
+        self.assertEqual(status, 400)
+        self.assertIn('Windows', r['error'])
+
     def test_the_outline_reads_the_decorators(self):
         items = {(i['kind'], i['name']) for i in self.get('/api/outline')[1]}
         self.assertTrue({('xl_func', 'PY.DOUBLE'), ('xl_macro', 'tidy'), ('export', 'stats.half')} <= items)

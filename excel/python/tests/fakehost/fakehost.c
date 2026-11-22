@@ -562,7 +562,7 @@ int wmain(int argc, wchar_t **argv)
     }
     type_check(L"AsfPyRunScript", L"QQ");
     type_check(L"AsfPyMacros", L"Q");
-    {   /* the ribbon's Python macros: a line per command; Run Python script: a .py file's output */
+    {   /* AsfPyMacros: a line per command; AsfPyRunScript: a .py file's output */
         Reg *r1 = reg_of(L"AsfPyRunScript"), *r2 = reg_of(L"AsfPyMacros");
         wchar_t path[MAX_PATH];
         FILE *f;

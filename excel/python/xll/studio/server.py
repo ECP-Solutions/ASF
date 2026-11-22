@@ -108,6 +108,16 @@ class Studio:
         function = re.sub(r'\W', '_', stem).lower() or 'example'
         return self.save(rel, TEMPLATE.format(module=stem, function='%s_example' % function))
 
+    def reveal(self):
+        """The Python folder in Windows Explorer, made first when it is missing."""
+        if not self.folder:
+            raise PermissionError('no Python folder')
+        if os.name != 'nt':
+            raise OSError('Explorer is on Windows only')
+        os.makedirs(self.folder, exist_ok=True)
+        os.startfile(self.folder)
+        return {'folder': self.folder}
+
     def outline(self):
         """The functions of the Python folder that Excel gets: worksheet functions, macros and
         exported ones, read from the source, never imported."""
@@ -383,6 +393,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 result = s.save(args['path'], args['text'])
             elif method == 'POST' and name == 'new':
                 result = s.new(args['path'])
+            elif method == 'POST' and name == 'reveal':
+                result = s.reveal()
             elif method == 'POST' and name == 'lint':
                 result = lint(args['text'])
             elif method == 'POST' and name == 'complete':

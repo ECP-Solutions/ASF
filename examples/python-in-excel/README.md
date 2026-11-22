@@ -10,14 +10,14 @@ Python functions in worksheet formulas, macros that work on the workbook, script
 | Text | `python/xl_text.py` | the standard library alone: names tidied, accents removed, company names matched despite typos |
 | Macros | `python/xl_macros.py` | Excel's object model from Python (`xl_app()`): summarize the selection, import a CSV with pandas, fit every column |
 | ASF | `library/py_summary.vas` | an ASF script of the library calling Python (`py.call`), and `PY_CALL` in a cell |
-| Scripts | `scripts/*.py` | for **Run Python script**: an overview of the workbook, the packages of the add-in's Python |
+| Scripts | `scripts/*.py` | for **Run in Excel** in Python studio: an overview of the workbook, the packages of the add-in's Python |
 
 `PythonExamples.xlsx` has the sample data and one sheet per theme with the formulas.
 
 ## Setting up
 
 1. **The Python add-in**, `asfpy64.xll` or `asfpy32.xll`, loaded in Excel for Windows: see [Python](../../docs/Python.md) for installing it. Its Python has every package these examples use. In 32-bit Excel the pandas examples (`xl_tables.py`, `SummarizeSelection`, `ImportCsv`) fail: pandas has no 32-bit build.
-2. **Copy the files of `python/`** into the Python folder: **Python folder** on the ASF tab opens it (`%APPDATA%\ASF\python` by default). Then **Reload Python**, or restart Excel.
+2. **Copy the files of `python/`** into the Python folder: the folder button of **Python studio** on the ASF tab opens it (`%APPDATA%\ASF\python` by default). Then **Reload Excel** in the studio, or restart Excel.
 3. **Open `PythonExamples.xlsx`** and press Ctrl+Alt+F9 to calculate everything.
 4. **For the Scripts sheet:** `ASF.xlam` loaded, `library/py_summary.vas` in the library folder (**Library folder** on the ASF tab), and the setting `PythonAccess` at `call` (**Python settings** on the ASF tab).
 
@@ -68,7 +68,7 @@ Each result that fills several cells is an array formula over its cells, which w
 | `=PY.FUZZY("Umbrela Corp", Data!R2:R6, 0.5)` | `Umbrella Corporation`: the closest entry of the list, or empty below the cutoff |
 | `=PY.SIMILARITY("Initech LLC", "initech llc")` | `1`: how alike two texts are, from 0 to 1 |
 
-**Macros** (`xl_macros.py`): **Python macros** on the ASF tab lists and runs them; VBA runs them with `Application.Run`.
+**Macros** (`xl_macros.py`): **Functions** in Python studio lists them, with a button to run each; VBA runs them with `Application.Run`.
 
 | Macro | Does |
 |---|---|
@@ -81,7 +81,7 @@ Each result that fills several cells is an array formula over its cells, which w
 - `=ASF_CALL("py_summary", Data!G2:G61)` runs `library/py_summary.vas`, whose `// @asf python: call` header gets it `py`: it calls `xl_stats.summary`, marked `@export`, and builds a table from the object it returns (`s.mean`, `s.max`...).
 - `=PY_CALL("xl_stats.above_mean", Data!G2:G61)` calls an exported function from a cell, without registering it as a worksheet function.
 
-**Scripts** (`scripts/`): **Run Python script** on the ASF tab runs one and shows what it printed.
+**Scripts** (`scripts/`): open one in Python studio and **Run in Excel** (F5): it shows what the script printed.
 
 - `workbook_overview.py`: each sheet of the active workbook with its used range and number of formulas, and the functions the formulas call, most used first.
 - `package_report.py`: the Python inside Excel and every package it has, with versions.
@@ -91,7 +91,7 @@ Each result that fills several cells is an array formula over its cells, which w
 - A module of the Python folder imports `from asfpy import xl_func, xl_macro, export, xl_app`.
 - Type hints convert the arguments: `numpy.ndarray` (a range as an array, empty cells as `nan`), `pandas.DataFrame` (a range with its header row), `int`, `float`, `str`, `list`, `date`.
 - Return a list of rows, a numpy array or a DataFrame to fill several cells; return `-> object` (or any non-cell value) to keep it in Python as a handle.
-- After changing a module, **Reload Python** on the ASF tab. **Python console** on the ASF tab imports the modules of the Python folder too, to try a function before Excel loads it.
+- After changing a module, save it in Python studio (with **Reload Excel on save**), or **Reload Excel** there. **Python console** on the ASF tab imports the modules of the Python folder too, to try a function before Excel loads it.
 
 [docs/Python.md](../../docs/Python.md) describes all of it.
 

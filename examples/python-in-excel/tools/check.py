@@ -135,12 +135,12 @@ def main():
     vas = open(os.path.join(EXAMPLE, 'library', 'py_summary.vas'), encoding='utf-8').read()
     check('py_summary.vas asks for python: call', '// @asf python: call' in vas, True)
 
-    # --- scripts for Run Python script: compiled; the package report run as the add-in runs it
+    # --- scripts for Run in Excel: compiled; the package report run as the add-in runs it
     for name in ('workbook_overview.py', 'package_report.py'):
         path = os.path.join(EXAMPLE, 'scripts', name)
         compile(open(path, encoding='utf-8').read(), path, 'exec')
     out = cells(boot, boot.run_script(os.path.join(EXAMPLE, 'scripts', 'package_report.py')))
-    check('Run Python script: package_report.py', out.split('\n')[0], lambda line: line.startswith('Python 3.'))
+    check('Run in Excel: package_report.py', out.split('\n')[0], lambda line: line.startswith('Python 3.'))
     check('  it lists numpy and pandas', ('numpy ' in out, 'pandas ' in out), (True, True))
 
     # --- macros: registered as commands; they need Excel's window (xl_app), so not run here

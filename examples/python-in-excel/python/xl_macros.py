@@ -1,5 +1,5 @@
 """Macros that work on the workbook through Excel's object model (xl_app, with pywin32). They run
-from the ASF tab (Python macros), from VBA (Application.Run "name"), or from a button."""
+from Python studio (Functions), from VBA (Application.Run "name"), or from a button."""
 import pandas
 from asfpy import xl_app, xl_macro
 
