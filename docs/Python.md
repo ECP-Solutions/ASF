@@ -45,7 +45,7 @@ From the [latest release](https://github.com/ECP-Solutions/ASF/releases/latest),
 The other one doesn't load in your Excel.
 
 {: .note }
-The add-in files of v4.1.0 don't carry Python yet: with them, install a Python and set it as described in [Using another Python](#using-another-python).
+The add-ins carry their Python since v4.1.1. Those of v4.1.0 don't: with them, install a Python and set it as described in [Using another Python](#using-another-python).
 
 ### 3. Unblock it and put it in a trusted location
 

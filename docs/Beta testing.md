@@ -57,10 +57,10 @@ Download with these links. They give the files themselves: don't use the browser
 
 | File | For | Link |
 |---|---|---|
-| `asfpy64.xll` | 64-bit Excel | [download](https://github.com/ECP-Solutions/ASF/raw/asfpy-phase1a/excel/python/tests/excel/asfpy64.xll) |
-| `asfpy32.xll` | 32-bit Excel | [download](https://github.com/ECP-Solutions/ASF/raw/asfpy-phase1a/excel/python/tests/excel/asfpy32.xll) |
-| `checks.py` | the Python functions the checklist calls | [download](https://github.com/ECP-Solutions/ASF/raw/asfpy-phase1a/excel/python/tests/excel/checks.py) |
-| `AsfPyChecks.bas` | the checklist | [download](https://github.com/ECP-Solutions/ASF/raw/asfpy-phase1a/excel/python/tests/excel/AsfPyChecks.bas) |
+| `asfpy64.xll` | 64-bit Excel | [download](https://github.com/ECP-Solutions/ASF/raw/main/excel/python/tests/excel/asfpy64.xll) |
+| `asfpy32.xll` | 32-bit Excel | [download](https://github.com/ECP-Solutions/ASF/raw/main/excel/python/tests/excel/asfpy32.xll) |
+| `checks.py` | the Python functions the checklist calls | [download](https://github.com/ECP-Solutions/ASF/raw/main/excel/python/tests/excel/checks.py) |
+| `AsfPyChecks.bas` | the checklist | [download](https://github.com/ECP-Solutions/ASF/raw/main/excel/python/tests/excel/AsfPyChecks.bas) |
 | `ASF.xlam` | optional: the rows for ASF scripts | [latest release](https://github.com/ECP-Solutions/ASF/releases/latest/download/ASF.xlam) |
 
 Check the names in your Downloads folder. A browser that already had a file of that name saves `checks (1).py`; rename it to exactly `checks.py`. If Windows hides extensions, `checks.py.txt` shows as `checks.py`: turn on View > **File name extensions** in File Explorer to be sure.
