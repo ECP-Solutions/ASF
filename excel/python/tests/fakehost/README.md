@@ -1,6 +1,6 @@
 # The fake Excel host
 
-`fakehost.c` stands in for Excel. It answers the C API calls the add-in makes, calls the registered functions through their slots and drives `py` through `IDispatch` as VBA does. It also fills all 2,000 slots (with `zz_slots.py`), checks the registered types, calls a thread-safe function from 8 threads at once, checks that 100,000 rounds of calls don't grow the process's memory, unticks and ticks the add-in again, and loads a second copy of it. It calls `PY_CALL` with 30 arguments as Excel does, checks the type hints, and runs `AsfPyReload` with a module added, changed and removed. It also answers `xlfCaller`, `xlSheetNm` and `xlAsyncReturn`, and checks handles (one cell's object for another, none across workbooks, the old one gone when its cell is calculated again), asynchronous functions (`async def` and a thread, an error argument, 30 calls at once), the type `>QX` of an asynchronous function, commands registered with macro type 2 and run (the add-in's `AsfPyReload` and `AsfPyPackages`, and `@xl_macro` functions), and `xl_app()` failing cleanly without Excel's window. `run_fakehost.py` runs it natively on Windows and under Wine on Linux.
+`fakehost.c` stands in for Excel. It answers the C API calls the add-in makes, calls the registered functions through their slots and drives `py` through `IDispatch` as VBA does. It also fills all 2,000 slots (with `zz_slots.py` and the copy `run_fakehost.py` makes of it, 2,000 functions), checks the registered types, calls a thread-safe function from 8 threads at once, checks that 100,000 rounds of calls don't grow the process's memory, unticks and ticks the add-in again, and loads a second copy of it. It calls `PY_CALL` with 30 arguments as Excel does, checks the type hints, and runs `AsfPyReload` with a module added, changed and removed. It also answers `xlfCaller`, `xlSheetNm` and `xlAsyncReturn`, and checks handles (one cell's object for another, none across workbooks, the old one gone when its cell is calculated again), asynchronous functions (`async def` and a thread, an error argument, 30 calls at once), the type `>QX` of an asynchronous function, commands registered with macro type 2 and run (the add-in's `AsfPyReload` and `AsfPyPackages`, and `@xl_macro` functions), and `xl_app()` failing cleanly without Excel's window. `run_fakehost.py` runs it natively on Windows and under Wine on Linux.
 
 Natively on Windows 10, with the MSVC build of commit ea28f45 (fewer checks then):
 
@@ -11,7 +11,7 @@ Natively on Windows 10, with the MSVC build of commit ea28f45 (fewer checks then
 | 3.13, 64-bit (start-up through the global flags) | asfpy64.xll | 88 of 88 | 4 µs | 5 µs | 1,020 ms |
 | 3.12.10, 32-bit (nuget.org's `pythonx86`) | asfpy32.xll | 82 of 82 | 6 µs | 6 µs | 1,440 ms |
 
-Start-up compiles the folder's modules from their source; most of it is `zz_slots.py`'s functions (1,000 then; 2,000 now, for 2,000 slots).
+Start-up compiles the folder's modules from their source; most of it is `zz_slots.py`'s 1,000 functions. `zz_slots.py` is for the fake host only: in Excel's Python folder it only makes the checklist slower.
 
 The same way, with the MSVC build of commit 7466591:
 

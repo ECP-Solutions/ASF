@@ -551,6 +551,17 @@ int wmain(int argc, wchar_t **argv)
     type_check(L"check_add", L"QQQ");
     type_check(L"check_version", L"Q");
     type_check(L"check_volatile", L"Q!");
+    {   /* a volatile function counts its calls: two calls, two numbers, the second larger */
+        F0 f = (F0)slot_of(L"check_volatile");
+        LPXLOPER12 r1 = f ? f() : NULL, r2;
+        double n1 = r1 && (r1->xltype & 0xFFF) == xltypeNum ? r1->val.num : -1, n2;
+        if (r1) release(r1);
+        r2 = f ? f() : NULL;
+        n2 = r2 && (r2->xltype & 0xFFF) == xltypeNum ? r2->val.num : -1;
+        if (r2) release(r2);
+        swprintf(got, 256, L"%g then %g", n1, n2);
+        check(n1 >= 1 && n2 > n1, L"check_volatile counts its calls", got);
+    }
     type_check(L"check_threadsafe", L"QQ$");
     check(reg_of(L"check_refused") == NULL, L"check_refused ($ with #) not registered",
           reg_of(L"check_refused") ? reg_of(L"check_refused")->type : L"not registered");

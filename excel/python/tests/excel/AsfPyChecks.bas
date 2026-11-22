@@ -11,6 +11,7 @@ Private Declare PtrSafe Function AsfPy_Root Lib "asfpy32.xll" (ByVal level As Lo
 #End If
 
 Private ws As Object, row As Long, failures As Long, lastFailure As String, lastRaised As String
+Private pyMain As Variant   ' py, for Python's error beside a failed check
 
 ' Optional: another Python than the add-in's own (a venv or a Python install), and the Python
 ' folder. The add-in reads them when it loads.
@@ -37,6 +38,7 @@ End Sub
 Public Sub AsfPyTest()
     Dim py As Variant, py2 As Variant, m As Variant, v As Variant, a(1 To 2, 1 To 2) As Variant
     Dim i As Long, t As Double, code As Long, numpy As Boolean, x As Variant, s2 As String, folder As String
+    Dim started As Double: started = Timer
     Set ws = Workbooks.Add.Worksheets(1)
     ws.Name = "Checks"
     row = 1
@@ -55,9 +57,11 @@ Public Sub AsfPyTest()
         Put3 "AsfPy_Root", "", "Python didn't start: " & py & ". See " & Environ$("TEMP") & "\asfpy.log"
         Exit Sub
     End If
+    Set pyMain = py
     Put3 "Start-up of the Python folder", CallPy(py, "startInfo", VbGet), ""
     ' each call goes through CallPy or PyObj: an error shows in the sheet, with its number and text
     Check "py.call add", CallPy(py, "call", VbMethod, "checks.add", 2, 40), 42
+    If failures > 0 Then Put3 "  checks.py", "isn't loaded from the Python folder: copy it there (README, step 3) and restart Excel", "FAIL"
     v = CallPy(py, "call", VbMethod, "checks.echo", ChrW(937) & "mega", 7)
     If IsArray(v) Then
         Check "py.call echo: an array back", LBound(v) & ":" & UBound(v) & ":" & v(0) & ":" & v(1), "0:1:" & ChrW(937) & "mega:7"
@@ -162,7 +166,12 @@ Public Sub AsfPyTest()
     s.Range("E15").Formula = "=check_volatile()"
     v = s.Range("E15").Value
     Application.Calculate
-    Check "=check_volatile() counts each recalculation", IIf(s.Range("E15").Value > v, "more", "the same: " & s.Range("E15").Value & " after " & v), "more"
+    x = s.Range("E15").Value
+    If IsError(v) Or IsError(x) Then   ' an error value can't be compared: the check shows it
+        Check "=check_volatile() counts each recalculation", IIf(IsError(x), x, v), "more"
+    Else
+        Check "=check_volatile() counts each recalculation", IIf(x > v, "more", "the same: " & x & " after " & v), "more"
+    End If
     ' a thread-safe function on Excel's calculation threads: 20,000 cells, multi-threaded
     Put3 "Multi-threaded calculation", IIf(Application.MultiThreadedCalculation.Enabled, Application.MultiThreadedCalculation.ThreadCount & " threads", "off: File > Options > Advanced > Formulas"), ""
     s.Range("O1:O20000").Formula = "=check_threadsafe(ROW())"
@@ -188,6 +197,7 @@ Public Sub AsfPyTest()
 
     ' --- AsfPyReload, with a module added, changed and removed in the Python folder
     folder = GetSetting("ASF", "AddIn", "PythonFolder", Environ$("APPDATA") & "\ASF\python")
+    t = Timer
     WriteReloadModule folder & "\aa_reload.py", 1
     Check "AsfPyReload, aa_reload.py added", Reload(), "done"
     Formula s, "E21", "=reload_check()", 1
@@ -203,6 +213,7 @@ Public Sub AsfPyTest()
     Recalc s.Range("E22")
     Check "=PY_CALL(""aa_reload.version"") after the removal", s.Range("E22").Value, CVErr(xlErrName)
     Formula s, "E23", "=check_add(2,3.5)", 5.5
+    Put3 "  the reload checks, ms (three reloads, each registering every function again)", Format((Timer - t) * 1000, "0"), ""
 
     ' --- library scripts with py, through ASF.xlam
     ScriptChecks s
@@ -231,8 +242,9 @@ Public Sub AsfPyTest()
     End If
 
     Put3 IIf(failures = 0, "All checks pass", failures & " checks fail"), "", ""
+    Put3 "The whole checklist, seconds", Format(Timer - started, "0.0"), ""
     Put3 "The add-in's log", Environ$("TEMP") & "\asfpy.log", ""
-    ws.Columns("A:C").AutoFit
+    ws.Columns("A:D").AutoFit
     ws.Activate
 End Sub
 
@@ -487,8 +499,18 @@ Private Sub Check(what As String, got As Variant, want As Variant)
     ws.Cells(row, 1).Value = Label(what)
     ws.Cells(row, 2).Value = IIf(IsError(got), CStr(got), got)
     ws.Cells(row, 3).Value = IIf(ok, "ok", "FAIL, expected " & CStr(want))
+    If Not ok And IsError(got) Then ws.Cells(row, 4).Value = Label(ErrorHint(got))
     row = row + 1
 End Sub
+
+' Why a cell gave an error: #NAME? is a function Excel doesn't know; otherwise Python's last error
+Private Function ErrorHint(got As Variant) As String
+    If CStr(got) = CStr(CVErr(xlErrName)) Then
+        ErrorHint = "not registered: is checks.py in the Python folder? See the first rows and the log"
+    ElseIf IsObject(pyMain) Then
+        ErrorHint = "Python's last error: " & CallPy(pyMain, "lastError", VbGet)
+    End If
+End Function
 
 Private Sub Formula(s As Object, cell As String, f As String, want As Variant)
     s.Range(cell).Formula = f

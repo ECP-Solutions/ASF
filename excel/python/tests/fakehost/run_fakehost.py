@@ -8,7 +8,7 @@ PythonVenv unset). A PYTHON folder is a Windows Python instead (python3XX.dll, L
 a venv made from one, or the tools folder of the "python" or "pythonx86" package on nuget.org,
 tried with the add-in of its bitness. Run excel/python/xll/build.py first: the fake host is built
 with the same toolchain. The Python folder of the run is a temporary folder with
-tests/excel/checks.py and tests/fakehost/zz_slots.py.
+tests/excel/checks.py and tests/fakehost/zz_slots.py, and a copy of it for 1,000 more functions.
 
 On Windows the add-in's settings (PythonVenv and PythonFolder under HKCU) are set for the run and
 put back afterwards, and the add-in's log and the Python it unpacks go to a temporary folder, not
@@ -118,6 +118,11 @@ def main():
     os.makedirs(folder)
     shutil.copy(os.path.join(PYDIR, "tests", "excel", "checks.py"), folder)
     shutil.copy(os.path.join(HERE, "zz_slots.py"), folder)
+    # 1,000 more functions, so that the folder's 2,025 overfill the 2,000 slots
+    with open(os.path.join(HERE, "zz_slots.py"), encoding="utf-8") as f:
+        more = f.read().replace("FIRST, LAST = 0, 1000", "FIRST, LAST = 1000, 2000")
+    with open(os.path.join(folder, "zz_slots_more.py"), "w", encoding="utf-8") as f:
+        f.write(more)
     env = dict(os.environ)
     if WINDOWS:
         temp = os.path.join(tmp, "temp")
