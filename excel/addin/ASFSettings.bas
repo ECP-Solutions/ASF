@@ -51,9 +51,22 @@ Public Function PythonFolder() As String
 #End If
 End Function
 
+' Another Python than the Python add-in's own (a venv or an install), or "" for its own
+Public Function PythonVenv() As String
+    PythonVenv = Setting("PythonVenv", vbNullString)
+End Function
+
 ' Saves a setting; the worksheet functions use it from their next call
 Public Sub ChangeSetting(ByVal name As String, ByVal value As String)
     SaveSetting APP_NAME, SECTION_NAME, name, value
+    ASFEngine.ResetEngine
+End Sub
+
+' Removes a setting, so that its default applies again
+Public Sub ClearSetting(ByVal name As String)
+    On Error Resume Next
+    DeleteSetting APP_NAME, SECTION_NAME, name
+    On Error GoTo 0
     ASFEngine.ResetEngine
 End Sub
 

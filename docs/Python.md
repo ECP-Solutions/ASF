@@ -99,13 +99,24 @@ Windows locks the files of a package that Excel has loaded: close Excel before y
 
 ### 7. ASF.xlam (optional)
 
-With [`ASF.xlam`](Add-ins.html) loaded too, the ASF tab gets a Python group, ASF scripts of your library can call Python, and **Why this error?** shows Python's error and traceback:
+With [`ASF.xlam`](Add-ins.html) loaded too, the ASF tab gets two Python groups, ASF scripts of your library can call Python, and **Why this error?** shows Python's error and traceback.
+
+**Python**
 
 | Button | What it does |
 |---|---|
-| **Python folder** | Opens the Python folder, made first when it is missing |
+| **Run Python script** | Pick a `.py` file: it runs in Excel's Python as `__main__`, with its folder on the import path, and what it prints is shown (in Notepad when it's long). Like a macro, it may use Excel through `xl_app()` |
+| **Python macros** | Lists the `@xl_macro` functions of the Python folder and runs the one you pick, asking for its arguments (up to 5, typed separated by commas) |
 | **Reload Python** | Imports the Python folder again and registers its functions, then calculates the workbooks in full |
+
+**Python setup**
+
+| Button | What it does |
+|---|---|
+| **Python settings** | Shows and changes the three settings: which Python (the add-in's own, or a venv or install you pick), the Python folder, and `PythonAccess`. Restart Excel after changing the first two |
 | **Python packages** | Opens the package console |
+| **Python folder** | Opens the Python folder, made first when it is missing |
+| **About Python** | The loaded add-in file, the Python it runs, the settings, what the Python folder gave at start-up, and the log, which it offers to open. The first place to look when something doesn't work |
 
 ### Updating and removing
 
@@ -228,10 +239,14 @@ Python can't be sandboxed: `modules` lets library scripts do anything Python can
 
 ## From VBA
 
-Commands run with `Application.Run`:
+Commands run with `Application.Run`, the Python folder's and the add-in's own:
 
 ```vb
 Debug.Print Application.Run("tidy", "Sheet1")
+Debug.Print Application.Run("AsfPyRunScript", "C:\work\report.py")   ' what the script printed
+Debug.Print Application.Run("AsfPyMacros")       ' a line per @xl_macro: name, arguments it needs, description
+Application.Run "AsfPyReload"                    ' the Python folder again
+Application.Run "AsfPyPackages"                  ' the package console
 ```
 
 For `py`, declare the add-in's function and ask for a root object: level 1 has `py.call`, level 2 also `py.module`.
@@ -266,7 +281,7 @@ The add-in reads its settings when Excel loads it, from `HKEY_CURRENT_USER\Softw
 | `PythonVenv` | empty: the Python the add-in carries. Otherwise, another Python to use (below) |
 | `PythonAccess` | `off`: read by `ASF.xlam`, for ASF scripts (above) |
 
-With `ASF.xlam` loaded, set them from the Immediate window:
+With `ASF.xlam` loaded, **Python settings** on the ASF tab shows and changes them. Or set them from the Immediate window:
 
 ```vb
 Application.Run "ASF.xlam!ASFSettings.ChangeSetting", "PythonFolder", "D:\work\python"

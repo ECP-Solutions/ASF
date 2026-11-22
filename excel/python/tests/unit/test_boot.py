@@ -515,6 +515,63 @@ class Commands(BootTest):
         tag, message = self.call('TryApp')
         self.assertIn('works inside Excel only', message)
 
+    def test_the_list_of_macros(self):
+        tag, text = self.boot.macro_list()
+        self.assertEqual(tag, self.boot.TAG_STR)
+        lines = text.split('\n')
+        self.assertIn('command\t2\t', lines)
+        self.assertIn('TryApp\t0\t', lines)
+        self.assertFalse(any(line.startswith('add\t') for line in lines))   # worksheet functions aren't listed
+
+
+class RunScript(BootTest):
+    def script(self, name, text):
+        folder = os.path.join(self.tmp, 'scripts')
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, name)
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(textwrap.dedent(text))
+        return path
+
+    def test_runs_as_main_with_its_folder_on_the_path(self):
+        self.script('neighbour.py', 'WORD = "next door"\n')
+        path = self.script('report.py', '''
+            import sys
+            import neighbour
+            print(__name__, neighbour.WORD, len(sys.argv))
+            sys.stderr.write('a warning\\n')
+            ''')
+        out, err, before = sys.stdout, sys.stderr, sys.path[:]
+        tag, text = self.boot.run_script(path)
+        self.assertEqual(tag, self.boot.TAG_STR)
+        self.assertEqual(text, '__main__ next door 1\na warning\n')
+        self.assertEqual((sys.stdout, sys.stderr, sys.path), (out, err, before))
+        self.assertEqual(self.boot._macro_depth, 0)
+
+    def test_a_command_so_xl_app_is_allowed(self):
+        path = self.script('app.py', '''
+            import asfpy
+            try:
+                asfpy.xl_app()
+            except Exception as exc:
+                print(exc)
+            ''')
+        tag, text = self.boot.run_script(path)
+        self.assertIn('works inside Excel only', text)     # not 'works in a command only'
+
+    def test_an_exception_gives_its_traceback(self):
+        path = self.script('fails.py', 'print("before")\nraise ValueError("on purpose")\n')
+        tag, text = self.boot.run_script(path)
+        self.assertTrue(text.startswith('before\n'))
+        self.assertIn('ValueError: on purpose', text)
+        self.assertEqual(self.boot.root(1).lastError, 'ValueError: on purpose')
+
+    def test_exit_codes_and_not_a_script(self):
+        self.assertEqual(self.boot.run_script(self.script('quiet.py', 'raise SystemExit\n'))[1], '')
+        self.assertEqual(self.boot.run_script(self.script('three.py', 'raise SystemExit(3)\n'))[1], '\nexit code 3')
+        self.assertIn('not a .py file', self.boot.run_script(os.path.join(self.tmp, 'missing.py'))[1])
+        self.assertIn('not a .py file', self.boot.run_script(42)[1])
+
 
 class FakeFrame:
     """Stands in for pandas in _kind: only the module and the name are read."""

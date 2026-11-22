@@ -668,10 +668,10 @@ static void register_functions(void)
     excel12(xlFree, NULL, 1, op);
 }
 
-/* PY_CALL and the commands AsfPyReload and AsfPyPackages: the add-in's own, registered once
-   Python runs */
+/* PY_CALL and the commands AsfPyReload, AsfPyPackages, AsfPyRunScript and AsfPyMacros: the
+   add-in's own, registered once Python runs */
 #define PYCALL_ARGS 29          /* PY_CALL(name, 29 arguments): 30 in all, below Excel's 255 */
-static double g_pycall_id, g_reload_id, g_packages_id;
+static double g_pycall_id, g_reload_id, g_packages_id, g_script_id, g_macros_id;
 
 static void register_builtins(void)
 {
@@ -691,6 +691,10 @@ static void register_builtins(void)
                                 L"Imports the modules of the Python folder again and registers their functions.", 0, NULL);
     g_packages_id = register_proc(&dll, L"asfpy_packages", L"J", L"AsfPyPackages", L"", 2,
                                   L"Opens a console window with pip for the Python of the add-in.", 0, NULL);
+    g_script_id = register_proc(&dll, L"asfpy_run_script", L"QQ", L"AsfPyRunScript", L"path", 2,
+                                L"Runs a .py file in Excel's Python and gives back what it printed.", 0, NULL);
+    g_macros_id = register_proc(&dll, L"asfpy_macros", L"Q", L"AsfPyMacros", L"", 2,
+                                L"Lists the commands (@xl_macro) of the Python folder.", 0, NULL);
     excel12(xlFree, NULL, 1, op);
 }
 
@@ -1298,6 +1302,43 @@ EXPORT int WINAPI asfpy_packages(void)
     return 1;
 }
 
+/* A text from boot.py (run_script, macro_list): a new reference or NULL; #NAME? before Python runs */
+static LPXLOPER12 boot_text(const char *name, int n, PyObject *arg)
+{
+    PyGILState_STATE gil;
+    PyObject *r;
+    LPXLOPER12 res;
+    if (g_started != 1) return xlerror(xlerrName);
+    gil = P.PyGILState_Ensure();
+    r = n ? boot_call(name, 1, arg) : boot_call(name, 0);
+    res = r ? tag_to_result(r) : xlerror(xlerrValue);
+    if (r) P.Py_DecRef(r);
+    P.PyGILState_Release(gil);
+    return res;
+}
+
+/* The command AsfPyRunScript (VBA: Application.Run("AsfPyRunScript", path); ASF's ribbon: Run
+   Python script): a .py file run as __main__ in Excel's Python (boot.run_script). Its result is
+   what the script printed, with the traceback if it failed. A command, so the script may use
+   Excel's object model through xl_app(). */
+EXPORT LPXLOPER12 WINAPI asfpy_run_script(LPXLOPER12 path)
+{
+    PyGILState_STATE gil;
+    PyObject *p;
+    if (g_started != 1) return xlerror(xlerrName);
+    gil = P.PyGILState_Ensure();
+    p = cell_to_py(path);
+    P.PyGILState_Release(gil);
+    return boot_text("run_script", 1, p);
+}
+
+/* The command AsfPyMacros (ASF's ribbon: Python macros): a line for each command (@xl_macro) of
+   the Python folder: its name, the number of arguments it needs, its description, tab-separated */
+EXPORT LPXLOPER12 WINAPI asfpy_macros(void)
+{
+    return boot_text("macro_list", 0, NULL);
+}
+
 /* --- the add-in's entry points ----------------------------------------------------------------- */
 
 /* Each time Excel loads the add-in: Python starts the first time only; the functions are
@@ -1331,6 +1372,8 @@ EXPORT int WINAPI xlAutoClose(void)
     unregister_id(&g_pycall_id);
     unregister_id(&g_reload_id);
     unregister_id(&g_packages_id);
+    unregister_id(&g_script_id);
+    unregister_id(&g_macros_id);
     if (n) note(L"unregistered %d functions", n);
     return 1;
 }

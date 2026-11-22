@@ -92,7 +92,7 @@ Check the names in your Downloads folder. A browser that already had a file of t
    ```vb
    Application.Run "AsfPyPackages"
    ```
-   If your `ASF.xlam` has a **Python packages** button on the ASF tab, it does the same.
+   If your `ASF.xlam` has a **Python packages** button on the ASF tab, it does the same. Its **Python settings** button also shows and clears `PythonVenv` (step 1.2), and **About Python** shows which add-in and Python are loaded.
 2. A black console window opens and lists the packages installed so far. After `pip>`, type this and press Enter:
    ```
    install numpy pandas pywin32

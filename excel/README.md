@@ -102,9 +102,13 @@ The worksheet functions keep one engine and its compiled scripts for the whole s
 | **Library folder** | Opens the library folder, made first when it is missing |
 | **Why this error?** | Calculates the active cell again and shows why its `ASF_RUN` or `ASF_CALL` gave `#VALUE!` (with several calls in one formula, the message of the last one). With the Python add-in loaded, also the Python error and traceback of a `PY_CALL` or Python function |
 | **Reset engine** | Drops the engine of the worksheet functions and their compiled scripts; the next formula reads the settings again |
-| **Python folder** | Opens the Python add-in's folder of modules, made first when it is missing |
+| **Run Python script** | Runs a `.py` file you pick in Excel's Python (the Python add-in's command `AsfPyRunScript`) and shows what it printed |
+| **Python macros** | Lists the `@xl_macro` functions of the Python folder (`AsfPyMacros`) and runs the one you pick, asking for its arguments |
 | **Reload Python** | The Python add-in imports its folder again and registers its functions again, then the workbooks are calculated in full |
+| **Python settings** | Which Python the add-in runs (its own, or a venv or install), the Python folder, and `PythonAccess`, each shown and changed in turn |
 | **Python packages** | A console window with pip for the Python add-in's Python (`install numpy`); Excel uses new packages after a restart |
+| **Python folder** | Opens the Python add-in's folder of modules, made first when it is missing |
+| **About Python** | The loaded add-in file, its Python, the settings, the Python folder's start-up and the log |
 | **Help** | Opens this page |
 
 A library script may start with a header of comment lines. It says how **Run script** lists and runs it; the worksheet functions ignore it.
