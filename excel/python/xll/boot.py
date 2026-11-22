@@ -1,7 +1,7 @@
 # The Python side of asfpy.xll, compiled into the add-in (build.py turns it into boot_py.h).
 # asfpy.c runs it once, after Python starts, and then calls only the functions below whose names
 # don't start with an underscore. Values cross to C as tagged pairs (TAG_*), so that the C side
-# needs no type checks of its own. It imports no Windows module: tests/test_boot.py runs it on any OS.
+# needs no type checks of its own. It imports no Windows module: tests/unit/test_boot.py runs it on any OS.
 import datetime
 import decimal
 import importlib
@@ -44,7 +44,7 @@ _async_pool = None       # the threads of functions marked asynchronous=True
 _async_results = {}      # token -> tagged result, when no native async_return is set (tests)
 CO_COROUTINE = 0x0080    # inspect.CO_COROUTINE, without importing inspect
 
-# set by asfpy.c after this file runs; None outside Excel (tests/test_boot.py sets fakes)
+# set by asfpy.c after this file runs; None outside Excel (tests/unit/test_boot.py sets fakes)
 _native_caller = None        # () -> '[Book1.xlsx]Sheet1!R2C3', or '' when no cell called
 _native_async_return = None  # (token, tagged result) -> bool: xlAsyncReturn
 _native_app = None           # () -> the address of Excel's Application (IDispatch, one reference)
@@ -121,7 +121,7 @@ def _make_api():
 
 def xl_app():
     """Excel's Application object, inside a command (@xl_macro) only: a worksheet function must not
-    use Excel's object model. Needs pywin32 (or comtypes) in the venv."""
+    use Excel's object model. Needs the package pywin32 (or comtypes)."""
     if _native_app is None:
         raise RuntimeError('xl_app() works inside Excel only')
     if _macro_depth <= 0:
@@ -137,7 +137,7 @@ def xl_app():
             import comtypes.client.dynamic
             wrap = 'comtypes'
         except ImportError:
-            raise ImportError('xl_app() needs pywin32 (pip install pywin32) or comtypes in the venv') from None
+            raise ImportError('xl_app() needs pywin32 or comtypes (ASF tab: Python packages, install pywin32)') from None
     address = _native_app()
     if isinstance(address, str):
         raise RuntimeError(address)

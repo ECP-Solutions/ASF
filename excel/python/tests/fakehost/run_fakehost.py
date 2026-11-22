@@ -1,18 +1,20 @@
-"""Runs asfpy64.xll and asfpy32.xll in tests/fakehost.c, a stand-in for Excel: natively on Windows,
+"""Runs asfpy64.xll and asfpy32.xll in fakehost.c, a stand-in for Excel: natively on Windows,
 under Wine on Linux.
 
-    python excel/python/tests/run_fakehost.py PYTHON [PYTHON...]
+    python excel/python/tests/fakehost/run_fakehost.py [PYTHON...]
 
-PYTHON is a folder with a Windows Python (python3XX.dll, Lib): an install, a venv made from one,
-or the tools folder of the "python" or "pythonx86" package on nuget.org. Each is tried with the
-add-in of its bitness. Run excel/python/xll/build.py first: the fake host is built with the same
-toolchain. The Python folder of the run is a temporary folder with spike/spike.py and
-tests/zz_slots.py.
+Without PYTHON, each add-in runs with the Python it carries: bundled64 and bundled32 (the setting
+PythonVenv unset). A PYTHON folder is a Windows Python instead (python3XX.dll, Lib): an install,
+a venv made from one, or the tools folder of the "python" or "pythonx86" package on nuget.org,
+tried with the add-in of its bitness. Run excel/python/xll/build.py first: the fake host is built
+with the same toolchain. The Python folder of the run is a temporary folder with
+tests/excel/checks.py and tests/fakehost/zz_slots.py, and a copy of it for 1,000 more functions.
 
 On Windows the add-in's settings (PythonVenv and PythonFolder under HKCU) are set for the run and
-put back afterwards, and the add-in's log goes to a temporary folder, not to your %TEMP%. On Linux
-it needs wine (wine32 too for 32-bit) and MinGW-w64; WINEPREFIX is used when set, else a prefix
-in the system's temp folder.
+put back afterwards, and the add-in's log and the Python it unpacks go to a temporary folder, not
+to your %TEMP% and %LOCALAPPDATA%. On Linux it needs wine (wine32 too for 32-bit) and MinGW-w64;
+WINEPREFIX is used when set, else ~/.cache/asfpy-wine (Wine refuses a prefix in a folder
+you don't own, such as /tmp).
 """
 import glob
 import os
@@ -23,7 +25,7 @@ import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PYDIR = os.path.dirname(HERE)
+PYDIR = os.path.dirname(os.path.dirname(HERE))
 BUILD = os.path.join(PYDIR, "xll", "build")
 sys.path.insert(0, os.path.join(PYDIR, "xll"))
 import build  # noqa: E402  (its toolchains)
@@ -41,6 +43,8 @@ def native(path):
 
 def bits(python):
     """32 or 64: the machine of the python3XX.dll of an install, or of the home of a venv."""
+    if python in ("bundled64", "bundled32"):
+        return int(python[-2:])
     home = python
     cfg = os.path.join(python, "pyvenv.cfg")
     if os.path.isfile(cfg):
@@ -103,29 +107,38 @@ def write_settings(values, old=None):
 
 
 def main():
-    if len(sys.argv) < 2:
-        sys.exit(__doc__)
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # the checks print Ω and 中文
     try:
         tool = build.toolchain(open(os.path.join(BUILD, "toolchain.txt")).read().strip())
     except FileNotFoundError:
         sys.exit("run excel/python/xll/build.py first")
-    pythons = sys.argv[1:]
+    pythons = sys.argv[1:] or ["bundled64", "bundled32"]
     exes = {b: build_fakehost(tool, b) for b in sorted({bits(p) for p in pythons})}
     tmp = tempfile.mkdtemp(prefix="asfpy-test-")
     folder = os.path.join(tmp, "python")
     os.makedirs(folder)
-    shutil.copy(os.path.join(PYDIR, "spike", "spike.py"), folder)
+    shutil.copy(os.path.join(PYDIR, "tests", "excel", "checks.py"), folder)
     shutil.copy(os.path.join(HERE, "zz_slots.py"), folder)
+    # 1,000 more functions, so that the folder's 2,025 overfill the 2,000 slots
+    with open(os.path.join(HERE, "zz_slots.py"), encoding="utf-8") as f:
+        more = f.read().replace("FIRST, LAST = 0, 1000", "FIRST, LAST = 1000, 2000")
+    with open(os.path.join(folder, "zz_slots_more.py"), "w", encoding="utf-8") as f:
+        f.write(more)
     env = dict(os.environ)
     if WINDOWS:
         temp = os.path.join(tmp, "temp")
         os.makedirs(temp)
         env["TEMP"] = env["TMP"] = temp
+        env["LOCALAPPDATA"] = os.path.join(tmp, "local")
+        os.makedirs(env["LOCALAPPDATA"])
         old = read_settings()
     else:
+        run_dir = "/run/user/%d" % os.getuid()
+        if not os.path.isdir(run_dir):   # Wine 9 crashes without it; a CI runner has no login session
+            sys.exit("Wine needs %s: sudo install -d -m 700 -o $(id -u) -g $(id -g) %s" % (run_dir, run_dir))
         env["WINEDEBUG"] = "-all"
-        env.setdefault("WINEPREFIX", os.path.join(tempfile.gettempdir(), "asfpy-wine"))
+        env.setdefault("WINEPREFIX", os.path.join(os.path.expanduser("~"), ".cache", "asfpy-wine"))
+        os.makedirs(os.path.dirname(env["WINEPREFIX"]), exist_ok=True)   # Wine makes the prefix, not its parent
 
     def logs():
         if WINDOWS:
@@ -137,16 +150,24 @@ def main():
         for python in pythons:
             b = bits(python)
             print("=== %s (%d-bit, %s)" % (python, b, tool), flush=True)
-            values = {"PythonVenv": native(python), "PythonFolder": native(folder)}
+            bundled = python.startswith("bundled")
+            values = {"PythonFolder": native(folder)}
+            if not bundled:
+                values["PythonVenv"] = native(python)
             if WINDOWS:
-                write_settings(values)
+                write_settings(values, {})
             else:
+                if bundled:
+                    subprocess.run(["wine", "reg", "delete", "HKCU\\" + KEY, "/v", "PythonVenv", "/f"], env=env,
+                                   capture_output=True)
                 for name, value in values.items():
-                    subprocess.run(["wine", "reg", "add", "HKCU\\" + KEY, "/v", name, "/d", value, "/f"], env=env,
-                                   check=True, capture_output=True)
+                    r = subprocess.run(["wine", "reg", "add", "HKCU\\" + KEY, "/v", name, "/d", value, "/f"], env=env,
+                                       capture_output=True, text=True, errors="replace")
+                    if r.returncode:
+                        sys.exit("wine reg add failed (%d): %s%s" % (r.returncode, r.stdout, r.stderr))
             for log in logs():
                 os.remove(log)
-            numpy = glob.glob(os.path.join(python, "Lib", "site-packages", "numpy"))
+            numpy = not bundled and glob.glob(os.path.join(python, "Lib", "site-packages", "numpy"))
             cmd = ([] if WINDOWS else ["wine"]) + [exes[b], native(os.path.join(BUILD, "asfpy%d.xll" % b))]
             r = subprocess.run(cmd + (["numpy"] if numpy else []), env=env, capture_output=True, text=True,
                                encoding="utf-8", errors="replace", timeout=900)

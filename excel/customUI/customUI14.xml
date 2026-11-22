@@ -34,6 +34,10 @@
                   screentip="Import the Python folder again"
                   supertip="The Python add-in imports the modules of its folder again and registers their functions, then the workbooks are calculated in full. Python and its packages stay loaded."
                   onAction="ASFRibbon.OnReloadPython"/>
+          <button id="asfPythonPackages" label="Python packages" size="large" imageMso="ComAddInsDialog"
+                  screentip="Install Python packages"
+                  supertip="Opens a console window with pip for the Python of the Python add-in, such as install numpy. Excel uses new packages after a restart."
+                  onAction="ASFRibbon.OnPythonPackages"/>
         </group>
         <group id="asfHelpGroup" label="Help">
           <button id="asfHelp" label="Help" size="large" imageMso="Help"

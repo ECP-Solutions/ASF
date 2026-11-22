@@ -84,7 +84,7 @@ How array results reach the cells depends on the version:
 | `RunEnabled` | `1`. With `0`, `ASF_RUN` gives `#VALUE!` and only library scripts run |
 | `StepLimit` | `10000000` loop iterations and calls per script; `0` for no limit |
 | `PythonAccess` | `off`. What library scripts that ask for Python may do: `call` (`py.call` of exported functions) or `modules` (`py.module` too). See **Python** below |
-| `PythonVenv`, `PythonFolder` | Read by the Python add-in when Excel loads it: its venv, and its folder of modules (default `%APPDATA%\ASF\python`) |
+| `PythonVenv`, `PythonFolder` | Read by the Python add-in when Excel loads it: another Python than the one it carries (a venv or an install; empty by default), and its folder of modules (default `%APPDATA%\ASF\python`) |
 
 The settings are kept with `SaveSetting`: on Windows in `HKEY_CURRENT_USER\Software\VB and VBA Program Settings\ASF\AddIn`, where an administrator can set them by group policy; on Mac in a preferences file. Change one from the Immediate window or a macro:
 
@@ -104,6 +104,7 @@ The worksheet functions keep one engine and its compiled scripts for the whole s
 | **Reset engine** | Drops the engine of the worksheet functions and their compiled scripts; the next formula reads the settings again |
 | **Python folder** | Opens the Python add-in's folder of modules, made first when it is missing |
 | **Reload Python** | The Python add-in imports its folder again and registers its functions again, then the workbooks are calculated in full |
+| **Python packages** | A console window with pip for the Python add-in's Python (`install numpy`); Excel uses new packages after a restart |
 | **Help** | Opens this page |
 
 A library script may start with a header of comment lines. It says how **Run script** lists and runs it; the worksheet functions ignore it.
@@ -168,20 +169,19 @@ A script that asks for more than the setting allows doesn't run at all, so it ne
 
 ### Installing the Python add-in
 
-1. Install a python.org Python 3.11 or later of Excel's bitness (File > Account > About Excel says which), and make a venv with the packages your functions use:
-   ```
-   py -3.12 -m venv %USERPROFILE%\asfpy-venv
-   %USERPROFILE%\asfpy-venv\Scripts\python -m pip install numpy pandas pywin32
-   ```
-   The Microsoft Store Python and free-threaded builds don't work.
-2. Tell the add-in where the venv is (the Immediate window, Ctrl+G, takes it), with `ASF.xlam` loaded:
-   ```vb
-   Application.Run "ASF.xlam!ASFSettings.ChangeSetting", "PythonVenv", Environ$("USERPROFILE") & "\asfpy-venv"
-   ```
-3. Put your modules in the Python folder, `%APPDATA%\ASF\python` (**Python folder** on the ASF tab opens it).
-4. Unblock `asfpy64.xll` (64-bit Excel) or `asfpy32.xll` (32-bit Excel) in its Properties, copy it to a trusted location, and add it under File > Options > Add-ins > Manage: Excel Add-ins > Browse.
+The add-in carries its own Python (CPython 3.14 of its bitness, with pip): nothing else to install, no venv to make.
 
-Python starts once per Excel: after changing the settings or the add-in, restart Excel. After changing a module, **Reload Python** is enough. If Python doesn't start, Excel says why when it loads the add-in, and `%TEMP%\asfpy.log` has the details. `excel/python/spike` holds the checks of each phase.
+1. Unblock `asfpy64.xll` (64-bit Excel) or `asfpy32.xll` (32-bit Excel; File > Account > About Excel says which) in its Properties, copy it to a trusted location, and add it under File > Options > Add-ins > Manage: Excel Add-ins > Browse. The first time, it unpacks its Python into `%LOCALAPPDATA%\ASF\runtime` (about 40 MB).
+2. Put your modules in the Python folder, `%APPDATA%\ASF\python` (**Python folder** on the ASF tab opens it).
+3. For packages, **Python packages** on the ASF tab (or `Application.Run "AsfPyPackages"`) opens a console window with pip for that Python: type `install numpy pandas pywin32`, then restart Excel. Close Excel before upgrading or removing a package it has loaded.
+
+To use another Python instead, such as a venv with pinned packages: a python.org Python 3.11 or later of Excel's bitness (not the Microsoft Store Python, nor a free-threaded build), set with the Immediate window (Ctrl+G) and `ASF.xlam` loaded:
+```vb
+Application.Run "ASF.xlam!ASFSettings.ChangeSetting", "PythonVenv", Environ$("USERPROFILE") & "\asfpy-venv"
+```
+Packages then go into that venv, with its own pip; **Python packages** runs its `python.exe`.
+
+Python starts once per Excel: after changing the settings or the add-in, restart Excel. After changing a module, **Reload Python** is enough. If Python doesn't start, Excel says why when it loads the add-in, and `%TEMP%\asfpy.log` has the details. `excel/python/tests` holds the add-in's tests, and the checklist to run in Excel.
 
 ### The Python folder's functions
 
@@ -205,7 +205,7 @@ async def quote(symbol):                  # asynchronous: Excel goes on with oth
 
 @xl_macro                                 # Application.Run "tidy", "Sheet1"
 def tidy(sheet):
-    xl_app().Worksheets(sheet).UsedRange.Columns.AutoFit()   # needs pywin32 in the venv
+    xl_app().Worksheets(sheet).UsedRange.Columns.AutoFit()   # needs pywin32 (Python packages)
 
 @export                                   # =PY_CALL("stats.scale", A1:A3, 10), py.call in scripts
 def scale(values: list, factor: float):
@@ -216,7 +216,7 @@ def scale(values: list, factor: float):
 - **Results:** a list of rows, a numpy array or a DataFrame fills the cells of an array formula (Excel 365 spills it). A DataFrame comes with its column names, and with its index when the index has a name or isn't whole numbers. Missing values (`NaN`, `NaT`, `None`) are empty cells; `nan` alone is `#NUM!`.
 - **Objects:** any other result, or any result of a function hinted `-> object`, stays in Python, and the cell shows a handle such as `<Counter#12>`. Another function given that cell gets the object. The handle belongs to its cell: calculated again, the cell gets a new object and the old one goes. A handle names nothing in another workbook, or after Excel restarts (calculate the cell again).
 - **Asynchronous functions** (`async def`, or `@xl_func(asynchronous=True)` for a plain function on a thread of the add-in) show `#GETTING_DATA` until they are done; Excel's calculation waits for them.
-- **Commands** (`@xl_macro`) run with `Application.Run "name", arguments...` and give back their result. They run on Excel's main thread, and only they may use `xl_app()`, Excel's `Application` (with pywin32 or comtypes in the venv).
+- **Commands** (`@xl_macro`) run with `Application.Run "name", arguments...` and give back their result. They run on Excel's main thread, and only they may use `xl_app()`, Excel's `Application` (with the package pywin32 or comtypes).
 - `thread_safe=True` lets Excel call a function on its calculation threads, `volatile=True` calculates it on every recalculation.
 
 ## Macros in other workbooks

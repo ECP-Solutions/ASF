@@ -19,3 +19,9 @@ Dim engine As New ASF
 engine.Run engine.Compile("return [1,2,3,4,5].filter(fun(x){ return x > 2 }).reduce(fun(a,x){ return a+x }, 0)")
 Debug.Print engine.OUTPUT_  ' => 12
 ```
+
+## Ready-made add-ins
+
+- **[Excel add-in and LibreOffice extension](Add-ins.html):** `ASF.xlam` runs ASF scripts in worksheet functions (`=ASF_RUN("return $1 * 2;", A1)`), from a script library and from the ASF tab of the ribbon; `ASF.oxt` brings the engine to LibreOffice. Installation in a few steps.
+- **[Python](Python.html):** functions written in Python as worksheet functions, with numpy and pandas, running inside Excel for Windows. The add-in carries its own Python: one file to install.
+- **[Beta testing](Beta%20testing.html):** testing the Python add-in in Excel, step by step, from a clean set-up to the results to send back.

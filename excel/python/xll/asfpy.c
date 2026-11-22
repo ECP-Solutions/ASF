@@ -1,6 +1,9 @@
-/* asfpy.xll: loads the Python of a venv into Excel's process, registers the
-   worksheet functions of the Python folder through a pool of exported slots, and gives VBA a
-   root object (py) through AsfPy_Root. See excel/python/DESIGN.md and spike/README.md.
+/* asfpy.xll: loads Python into Excel's process, registers the worksheet functions of the Python
+   folder through a pool of exported slots, and gives VBA a root object (py) through AsfPy_Root.
+   See excel/python/DESIGN.md and tests/README.md.
+
+   The Python is the one the add-in carries, unpacked once under %LOCALAPPDATA%\ASF\runtime,
+   unless the setting PythonVenv names another.
 
    Python is reached only through GetProcAddress: the add-in imports no Python DLL, so one
    build works with every Python from 3.11 of its bitness. Python values cross to C as the
@@ -17,8 +20,12 @@
 #include <wchar.h>
 #include "xloper.h"
 #include "boot_py.h"
+#ifdef ASFPY_RUNTIME          /* build.py: the add-in carries a Python, in the resource ASFPY_RUNTIME */
+#include <fdi.h>
+#include "runtime.h"
+#endif
 
-#define NSLOTS    1000       /* asfpy_f0000 to asfpy_f0999, as build.py generates them */
+#define NSLOTS    2000       /* asfpy_f0000 to asfpy_f1999, as build.py generates them */
 #define MAX_ARGS  32
 #define SETTINGS_KEY L"Software\\VB and VBA Program Settings\\ASF\\AddIn"
 #define ADDIN_NAME L"ASF Python"
@@ -96,6 +103,7 @@ static int g_started;             /* 1: Python runs; -1: it failed to start */
 static wchar_t g_start_error[1024];
 static wchar_t g_home[MAX_PATH];  /* kept: Py_SetPythonHome holds the pointer */
 static wchar_t g_log[MAX_PATH];
+static wchar_t g_exe[MAX_PATH];   /* the python.exe of the Python, for pip */
 
 /* --- the log, %TEMP%\asfpy.log ---------------------------------------------------------------- */
 
@@ -246,6 +254,160 @@ static WORD dll_machine(const wchar_t *path)
     CloseHandle(f);
     return machine;
 }
+
+/* --- the Python the add-in carries --------------------------------------------------------------- */
+
+#ifdef ASFPY_RUNTIME
+/* FDI (cabinet.dll) reads the cabinet from the resource and writes the files. A stream is the
+   cabinet in memory, or a file being written. */
+typedef struct { const BYTE *mem; DWORD size, pos; HANDLE file; } Stream;
+static const BYTE *g_cab;
+static DWORD g_cabsize;
+static wchar_t g_unpack[MAX_PATH];
+
+static FNALLOC(fdi_alloc) { return malloc(cb); }
+static FNFREE(fdi_free) { free(pv); }
+
+static FNOPEN(fdi_open)
+{
+    Stream *s = calloc(1, sizeof *s);
+    (void)pszFile; (void)oflag; (void)pmode;   /* the only file FDI opens is the cabinet */
+    s->mem = g_cab;
+    s->size = g_cabsize;
+    return (INT_PTR)s;
+}
+
+static FNREAD(fdi_read)
+{
+    Stream *s = (Stream *)hf;
+    DWORD got = 0;
+    if (s->file) return ReadFile(s->file, pv, cb, &got, NULL) ? got : (UINT)-1;
+    if (cb > s->size - s->pos) cb = s->size - s->pos;
+    memcpy(pv, s->mem + s->pos, cb);
+    s->pos += cb;
+    return cb;
+}
+
+static FNWRITE(fdi_write)
+{
+    Stream *s = (Stream *)hf;
+    DWORD put = 0;
+    return s->file && WriteFile(s->file, pv, cb, &put, NULL) ? put : (UINT)-1;
+}
+
+static FNCLOSE(fdi_close)
+{
+    Stream *s = (Stream *)hf;
+    if (s->file) CloseHandle(s->file);
+    free(s);
+    return 0;
+}
+
+static FNSEEK(fdi_seek)
+{
+    Stream *s = (Stream *)hf;
+    LONG base = seektype == SEEK_CUR ? (LONG)s->pos : seektype == SEEK_END ? (LONG)s->size : 0;
+    if (s->file) return SetFilePointer(s->file, dist, NULL, seektype);
+    s->pos = (DWORD)(base + dist);
+    return s->pos;
+}
+
+static FNFDINOTIFY(fdi_notify)
+{
+    wchar_t path[MAX_PATH], *p;
+    size_t n;
+    Stream *s;
+    switch (fdint) {
+    case fdintCOPY_FILE:
+        n = wcslen(g_unpack);
+        swprintf(path, MAX_PATH, L"%ls\\", g_unpack);
+        if (!MultiByteToWideChar(CP_UTF8, 0, pfdin->psz1, -1, path + n + 1, MAX_PATH - (int)n - 1)) return -1;
+        for (p = path + n + 1; *p; p++)
+            if (*p == L'\\') { *p = 0; CreateDirectoryW(path, NULL); *p = L'\\'; }
+        s = calloc(1, sizeof *s);
+        s->file = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (s->file == INVALID_HANDLE_VALUE) { free(s); return -1; }
+        return (INT_PTR)s;
+    case fdintCLOSE_FILE_INFO:
+        fdi_close(pfdin->hf);
+        return TRUE;
+    case fdintNEXT_CABINET:
+        return -1;
+    default:
+        return 0;
+    }
+}
+
+static void remove_tree(const wchar_t *dir)
+{
+    wchar_t pattern[MAX_PATH], path[MAX_PATH];
+    WIN32_FIND_DATAW fd;
+    HANDLE h;
+    swprintf(pattern, MAX_PATH, L"%ls\\*", dir);
+    h = FindFirstFileW(pattern, &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (!wcscmp(fd.cFileName, L".") || !wcscmp(fd.cFileName, L"..")) continue;
+            swprintf(path, MAX_PATH, L"%ls\\%ls", dir, fd.cFileName);
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) remove_tree(path); else DeleteFileW(path);
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+    }
+    RemoveDirectoryW(dir);
+}
+
+/* %LOCALAPPDATA%\ASF\runtime\RUNTIME_FOLDER, unpacked the first time: into a temporary folder,
+   renamed when complete, so a folder of that name is always whole. Pip installs packages there. */
+static int unpack_runtime(wchar_t *home)
+{
+    HMODULE self = NULL;
+    HRSRC res;
+    HANDLE mutex;
+    HFDI fdi;
+    ERF erf;
+    LARGE_INTEGER t0;
+    wchar_t base[MAX_PATH];
+    char cab[] = "runtime.cab", path[] = "";
+    int ok;
+    DWORD k = GetEnvironmentVariableW(L"LOCALAPPDATA", base, MAX_PATH);
+    memset(&erf, 0, sizeof erf);
+    if (!k || k > MAX_PATH - 80) {
+        start_failed(L"%%LOCALAPPDATA%% isn't set");
+        return 0;
+    }
+    wcscat(base, L"\\ASF");
+    CreateDirectoryW(base, NULL);
+    wcscat(base, L"\\runtime");
+    CreateDirectoryW(base, NULL);
+    swprintf(home, MAX_PATH, L"%ls\\%ls", base, RUNTIME_FOLDER);
+    if (GetFileAttributesW(home) != INVALID_FILE_ATTRIBUTES) return 1;
+
+    mutex = CreateMutexW(NULL, FALSE, L"Local\\ASF.Python.Runtime");   /* two Excels starting at once */
+    if (mutex) WaitForSingleObject(mutex, INFINITE);
+    ok = GetFileAttributesW(home) != INVALID_FILE_ATTRIBUTES;
+    if (!ok) {
+        QueryPerformanceCounter(&t0);
+        GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           (LPCWSTR)(void *)unpack_runtime, &self);
+        res = FindResourceW(self, L"ASFPY_RUNTIME", (LPCWSTR)RT_RCDATA);
+        g_cab = res ? LockResource(LoadResource(self, res)) : NULL;
+        g_cabsize = res ? SizeofResource(self, res) : 0;
+        swprintf(g_unpack, MAX_PATH, L"%ls.part%lu", home, GetCurrentProcessId());
+        remove_tree(g_unpack);
+        CreateDirectoryW(g_unpack, NULL);
+        fdi = g_cab ? FDICreate(fdi_alloc, fdi_free, fdi_open, fdi_read, fdi_write, fdi_close, fdi_seek, cpuUNKNOWN, &erf) : NULL;
+        ok = fdi && FDICopy(fdi, cab, path, 0, fdi_notify, NULL, NULL);
+        if (fdi) FDIDestroy(fdi);
+        if (ok && !MoveFileExW(g_unpack, home, 0)) ok = GetFileAttributesW(home) != INVALID_FILE_ATTRIBUTES;
+        if (ok) note(L"unpacked the Python of the add-in into %ls in %.0f ms", home, ms_since(t0));
+        else start_failed(L"the Python of the add-in didn't unpack into %ls (%ls, FDI error %d)", g_unpack,
+                          g_cab ? L"cabinet" : L"no resource", erf.erfOper);
+        remove_tree(g_unpack);
+    }
+    if (mutex) { ReleaseMutex(mutex); CloseHandle(mutex); }
+    return ok;
+}
+#endif
 
 static const wchar_t *python_in_process(void)
 {
@@ -506,9 +668,10 @@ static void register_functions(void)
     excel12(xlFree, NULL, 1, op);
 }
 
-/* PY_CALL and the command AsfPyReload: the add-in's own, registered once Python runs */
+/* PY_CALL and the commands AsfPyReload and AsfPyPackages: the add-in's own, registered once
+   Python runs */
 #define PYCALL_ARGS 29          /* PY_CALL(name, 29 arguments): 30 in all, below Excel's 255 */
-static double g_pycall_id, g_reload_id;
+static double g_pycall_id, g_reload_id, g_packages_id;
 
 static void register_builtins(void)
 {
@@ -526,6 +689,8 @@ static void register_builtins(void)
                                 L"Calls a function of the Python folder exported with @export, by its module and name.", 2, help);
     g_reload_id = register_proc(&dll, L"asfpy_reload", L"J", L"AsfPyReload", L"", 2,
                                 L"Imports the modules of the Python folder again and registers their functions.", 0, NULL);
+    g_packages_id = register_proc(&dll, L"asfpy_packages", L"J", L"AsfPyPackages", L"", 2,
+                                  L"Opens a console window with pip for the Python of the add-in.", 0, NULL);
     excel12(xlFree, NULL, 1, op);
 }
 
@@ -622,9 +787,15 @@ static void start_python(void)
 
     QueryPerformanceCounter(&t0);
     note(L"--- %ls, %d-bit", ADDIN_NAME, (int)sizeof(void *) * 8);
-    if (!setting(L"PythonVenv", venv, MAX_PATH)) {
+    if (setting(L"PythonVenv", venv, MAX_PATH)) {
+        note(L"PythonVenv: %ls", venv);
+    } else {
+#ifdef ASFPY_RUNTIME
+        if (!unpack_runtime(venv)) return;
+#else
         start_failed(L"no Python is set: run AsfPySetup in VBA, or set PythonVenv under HKCU\\%ls", SETTINGS_KEY);
         return;
+#endif
     }
     if (!setting(L"PythonFolder", folder, MAX_PATH)) {
         DWORD k = GetEnvironmentVariableW(L"APPDATA", folder, MAX_PATH);
@@ -634,6 +805,7 @@ static void start_python(void)
         start_failed(L"%ls\\pyvenv.cfg names no home", venv);
         return;
     }
+    wcscpy(g_exe, exe);
     if (!python_dll(g_home, dll)) {
         start_failed(L"no python3XX.dll in %ls", g_home);
         return;
@@ -1093,6 +1265,39 @@ EXPORT int WINAPI asfpy_reload(void)
     return 1;
 }
 
+/* The command AsfPyPackages (VBA: Application.Run "AsfPyPackages"; ASF's ribbon: Python packages):
+   pip for the Python of the add-in, in a console window of its own (packages.py), so downloads
+   never block Excel. */
+EXPORT int WINAPI asfpy_packages(void)
+{
+    wchar_t script[MAX_PATH], cmd[3 * MAX_PATH], msg[1200];
+    STARTUPINFOW si;
+    PROCESS_INFORMATION pi;
+    HANDLE f;
+    DWORD put, k = GetTempPathW(MAX_PATH - 24, script);
+    memset(&si, 0, sizeof si);
+    si.cb = sizeof si;
+    if (!g_exe[0] || GetFileAttributesW(g_exe) == INVALID_FILE_ATTRIBUTES) {
+        swprintf(msg, 1200, L"ASF Python: no python.exe for pip (%ls). Details: %ls", g_exe[0] ? g_exe : g_start_error, g_log);
+        alert(msg);
+        return 0;
+    }
+    if (!k) return 0;
+    wcscat(script, L"asfpy-packages.py");
+    f = CreateFileW(script, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (f == INVALID_HANDLE_VALUE) return 0;
+    WriteFile(f, PACKAGES_PY, (DWORD)strlen(PACKAGES_PY), &put, NULL);
+    CloseHandle(f);
+    swprintf(cmd, 3 * MAX_PATH, L"\"%ls\" -I \"%ls\"", g_exe, script);
+    if (!CreateProcessW(g_exe, cmd, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi)) {
+        note(L"%ls didn't start (error %lu)", cmd, GetLastError());
+        return 0;
+    }
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return 1;
+}
+
 /* --- the add-in's entry points ----------------------------------------------------------------- */
 
 /* Each time Excel loads the add-in: Python starts the first time only; the functions are
@@ -1125,6 +1330,7 @@ EXPORT int WINAPI xlAutoClose(void)
     int n = unregister_functions();
     unregister_id(&g_pycall_id);
     unregister_id(&g_reload_id);
+    unregister_id(&g_packages_id);
     if (n) note(L"unregistered %d functions", n);
     return 1;
 }
