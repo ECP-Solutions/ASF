@@ -58,10 +58,21 @@ Public Sub AsfPyTest()
         Exit Sub
     End If
     Set pyMain = py
-    Put3 "Start-up of the Python folder", CallPy(py, "startInfo", VbGet), ""
+    v = CallPy(py, "startInfo", VbGet)
+    Put3 "Start-up of the Python folder", v, ""
+    ' every check needs checks.py: without it they all fail, slowly (each failed call raises)
+    If InStr(1, v, "imported checks.py", vbTextCompare) = 0 Then
+        Put3 "checks.py", "isn't in the Python folder, or didn't import (see above): copy it to " & _
+             GetSetting("ASF", "AddIn", "PythonFolder", Environ$("APPDATA") & "\ASF\python") & _
+             IIf(InStr(1, v, "spike.py", vbTextCompare) > 0, ", delete spike.py (the old name)", "") & _
+             " and restart Excel. The checks stop here.", "FAIL"
+        ws.Columns("A:C").AutoFit
+        ws.Activate
+        Exit Sub
+    End If
+    If InStr(1, v, "spike.py", vbTextCompare) > 0 Then Put3 "spike.py", "is still in the Python folder: delete it (checks.py replaces it)", ""
     ' each call goes through CallPy or PyObj: an error shows in the sheet, with its number and text
     Check "py.call add", CallPy(py, "call", VbMethod, "checks.add", 2, 40), 42
-    If failures > 0 Then Put3 "  checks.py", "isn't loaded from the Python folder: copy it there (README, step 3) and restart Excel", "FAIL"
     v = CallPy(py, "call", VbMethod, "checks.echo", ChrW(937) & "mega", 7)
     If IsArray(v) Then
         Check "py.call echo: an array back", LBound(v) & ":" & UBound(v) & ":" & v(0) & ":" & v(1), "0:1:" & ChrW(937) & "mega:7"
@@ -261,7 +272,7 @@ Private Sub PythonChecks(py2 As Variant)
     If LenB(GetSetting("ASF", "AddIn", "PythonVenv", "")) = 0 Then
         Check "Python: the add-in's own (PythonVenv unset)", IIf(InStr(1, prefix, "\ASF\runtime\python-", vbTextCompare) > 0, "yes", prefix), "yes"
     Else
-        Put3 "Python: PythonVenv's", prefix, ""
+        Put3 "Python: PythonVenv's, not the add-in's own", prefix & " (to check the add-in's own Python, run AsfPySetup, leave the folder empty and restart Excel)", ""
     End If
     Set m = PyObj(py2, "module", "importlib.util")
     If m Is Nothing Then
