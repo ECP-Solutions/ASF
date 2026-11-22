@@ -33,12 +33,20 @@ Under Wine on a Linux container, with the MinGW build of commit 8699144 (30 chec
 
 The times aren't Excel's: Excel adds its own cost per call, so they only show that the add-in's part is small. numpy 2.x doesn't load under Wine 9 (Wine's C runtime lacks `crealf`), which is a Wine limit; numpy 1.26 does. Natively, numpy 2.x works.
 
-The add-in's own Python, under Wine on a Linux container with the MinGW build of commit 1f0d2bc (its first load unpacked it in 430 ms; pip in that Python installed a package from PyPI into its `Lib\site-packages`):
+The add-in's own Python and the CI's Pythons, under Wine 9 on a Linux container with the MinGW build, 2,000 slots, in a fresh Wine prefix (the first load unpacked the add-in's Python in about 450 ms; pip in that Python installed a package from PyPI into its `Lib\site-packages`):
 
 | Python | Add-in | Checks |
 |---|---|---|
-| the add-in's own, 3.14.10, 32-bit | asfpy32.xll | 98 of 98 |
-| the add-in's own, 3.14.10, 64-bit | asfpy64.xll | the checks pass until an asynchronous call crashes Wine's 64-bit process, as it does with any Python on this container, also before the add-in carried Python |
+| the add-in's own, 3.14.10, 64-bit | asfpy64.xll | 100 of 100 |
+| the add-in's own, 3.14.10, 32-bit | asfpy32.xll | 100 of 100 |
+| 3.11.9, 64-bit | asfpy64.xll | 100 of 100 |
+| 3.12.10 venv with numpy 1.26.4, 64-bit | asfpy64.xll | 107 of 107 |
+| 3.14.10, 64-bit | asfpy64.xll | 100 of 100 |
+| 3.12.10, 32-bit | asfpy32.xll | 100 of 100 |
+
+Two things the fake host must do as Excel does, or Wine fails where Excel doesn't:
+- **Stack above a call.** A 64-bit slot reads all 32 argument places from its caller's stack, whatever the function takes. Excel always calls from deep in its own frames; the fake host's threads keep 1 KB of room above their calls for that. Without it, a fresh thread under Wine read past the top of its stack.
+- **Wine's runtime folder.** Wine 9 crashes on its first command without `/run/user/<uid>`, which a CI runner, having no login session, lacks: the workflow makes it, and `run_fakehost.py` says so when it's missing.
 
 The GitHub workflow `.github/workflows/python-addin.yml` runs `../unit/test_boot.py` and these checks on every change to `excel/python`: the MinGW build under Wine with Pythons 3.11, 3.12 (with numpy 1.26), 3.14 and 32-bit 3.12, and the MSVC build natively with Pythons 3.11, 3.13 (with numpy), 3.14 and 32-bit 3.12.
 

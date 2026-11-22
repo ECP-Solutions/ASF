@@ -33,6 +33,8 @@ jobs:
           sudo dpkg --add-architecture i386
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends gcc-mingw-w64 wine wine64 wine32:i386
+          # Wine 9 crashes without the user's runtime folder, which a runner without a login session lacks
+          sudo install -d -m 700 -o "$(id -u)" -g "$(id -g)" "/run/user/$(id -u)"
       - name: Windows Pythons from nuget.org (python.org builds), numpy 1.26 in one
         run: |
           set -e

@@ -465,17 +465,23 @@ static void value_check(IDispatch *d, const wchar_t *what, const wchar_t *want)
 
 typedef struct { F1 f; int base, bad; } Job;
 
+/* Excel calls worksheet functions from deep in its own frames. A 64-bit slot reads all 32 of
+   its argument places from the caller's stack (asfpy.c), whatever the function takes, so a thread
+   that calls one needs that much stack above the call, as Excel's threads have: room is it. A
+   fresh thread under Wine starts too near the top of its stack without it. */
 static DWORD WINAPI worker(LPVOID arg)
 {
     Job *j = (Job *)arg;
+    volatile char room[1024];
     int i;
+    room[0] = 0;
     for (i = 0; i < 2000; i++) {
         XLOPER12 x = num(j->base + i);
         LPXLOPER12 r = j->f(&x);
         if ((r->xltype & 0xFFF) != xltypeNum || r->val.num != 2.0 * (j->base + i)) j->bad++;
         release(r);
     }
-    return 0;
+    return room[0];
 }
 
 static SIZE_T private_bytes(void)

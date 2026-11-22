@@ -132,6 +132,9 @@ def main():
         os.makedirs(env["LOCALAPPDATA"])
         old = read_settings()
     else:
+        run_dir = "/run/user/%d" % os.getuid()
+        if not os.path.isdir(run_dir):   # Wine 9 crashes without it; a CI runner has no login session
+            sys.exit("Wine needs %s: sudo install -d -m 700 -o $(id -u) -g $(id -g) %s" % (run_dir, run_dir))
         env["WINEDEBUG"] = "-all"
         env.setdefault("WINEPREFIX", os.path.join(tempfile.gettempdir(), "asfpy-wine"))
 
@@ -156,8 +159,10 @@ def main():
                     subprocess.run(["wine", "reg", "delete", "HKCU\\" + KEY, "/v", "PythonVenv", "/f"], env=env,
                                    capture_output=True)
                 for name, value in values.items():
-                    subprocess.run(["wine", "reg", "add", "HKCU\\" + KEY, "/v", name, "/d", value, "/f"], env=env,
-                                   check=True, capture_output=True)
+                    r = subprocess.run(["wine", "reg", "add", "HKCU\\" + KEY, "/v", name, "/d", value, "/f"], env=env,
+                                       capture_output=True, text=True, errors="replace")
+                    if r.returncode:
+                        sys.exit("wine reg add failed (%d): %s%s" % (r.returncode, r.stdout, r.stderr))
             for log in logs():
                 os.remove(log)
             numpy = not bundled and glob.glob(os.path.join(python, "Lib", "site-packages", "numpy"))
