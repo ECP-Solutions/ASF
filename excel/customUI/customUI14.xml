@@ -26,18 +26,40 @@
                   onAction="ASFRibbon.OnResetEngine"/>
         </group>
         <group id="asfPython" label="Python">
-          <button id="asfPythonFolder" label="Python folder" size="large" imageMso="FileOpen"
-                  screentip="Open the Python folder"
-                  supertip="The folder of the Python modules whose functions the Python add-in (asfpy64.xll or asfpy32.xll) registers and PY_CALL calls."
-                  onAction="ASFRibbon.OnPythonFolder"/>
+          <button id="asfRunPythonScript" label="Run Python script" size="large" imageMso="MacroPlay"
+                  screentip="Run a Python script in Excel"
+                  supertip="Pick a .py file: it runs in Excel's Python as __main__, with its folder on the import path, and what it prints is shown. Like a Python macro, it may use Excel through xl_app()."
+                  onAction="ASFRibbon.OnRunPythonScript"/>
+          <button id="asfPythonMacros" label="Python macros" size="large" imageMso="VisualBasic"
+                  screentip="Run a macro of the Python folder"
+                  supertip="Lists the functions of the Python folder marked with @xl_macro and runs the one you pick, asking for its arguments when it has some."
+                  onAction="ASFRibbon.OnPythonMacros"/>
           <button id="asfReloadPython" label="Reload Python" size="large" imageMso="RefreshAll"
                   screentip="Import the Python folder again"
                   supertip="The Python add-in imports the modules of its folder again and registers their functions, then the workbooks are calculated in full. Python and its packages stay loaded."
                   onAction="ASFRibbon.OnReloadPython"/>
+        </group>
+        <group id="asfPythonSetup" label="Python setup">
+          <button id="asfPythonSettings" label="Python settings" size="large" imageMso="PropertySheet"
+                  screentip="Choose the Python, the Python folder and PythonAccess"
+                  supertip="Which Python the Python add-in runs (its own, or a venv or install), the folder of your Python modules, and what library scripts may do with Python. Excel needs a restart for the first two."
+                  onAction="ASFRibbon.OnPythonSettings"/>
           <button id="asfPythonPackages" label="Python packages" size="large" imageMso="ComAddInsDialog"
                   screentip="Install Python packages"
                   supertip="Opens a console window with pip for the Python of the Python add-in, such as install numpy. Excel uses new packages after a restart."
                   onAction="ASFRibbon.OnPythonPackages"/>
+          <button id="asfPythonConsole" label="Python console" size="large" imageMso="ViewCode"
+                  screentip="The add-in's Python at its prompt"
+                  supertip="A console window with the Python of the Python add-in, apart from Excel: pip(&quot;install numpy&quot;) manages the packages, and the modules of the Python folder import, to try a package or a function before Excel loads it."
+                  onAction="ASFRibbon.OnPythonConsole"/>
+          <button id="asfPythonFolder" label="Python folder" size="large" imageMso="FileOpen"
+                  screentip="Open the Python folder"
+                  supertip="The folder of the Python modules whose functions the Python add-in (asfpy64.xll or asfpy32.xll) registers and PY_CALL calls."
+                  onAction="ASFRibbon.OnPythonFolder"/>
+          <button id="asfAboutPython" label="About Python" size="large" imageMso="Info"
+                  screentip="What runs, and why not"
+                  supertip="The loaded Python add-in, its Python, the settings, what the Python folder gave at start-up, and the log, to open."
+                  onAction="ASFRibbon.OnAboutPython"/>
         </group>
         <group id="asfHelpGroup" label="Help">
           <button id="asfHelp" label="Help" size="large" imageMso="Help"

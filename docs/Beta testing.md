@@ -86,22 +86,20 @@ Check the names in your Downloads folder. A browser that already had a file of t
 
 ---
 
-## Step 5. Install the packages
+## Step 5. Check the packages
+
+The add-in's Python already has numpy, pandas (64-bit only: pandas has no 32-bit build), openpyxl and pywin32, which the checklist uses. This step only checks that the package console opens.
+
 
 1. Open the VBA editor (**Alt+F11**) and the Immediate window (**Ctrl+G**). Paste this line and press Enter:
    ```vb
    Application.Run "AsfPyPackages"
    ```
-   If your `ASF.xlam` has a **Python packages** button on the ASF tab, it does the same.
-2. A black console window opens and lists the packages installed so far. After `pip>`, type this and press Enter:
-   ```
-   install numpy pandas pywin32
-   ```
-3. Wait for `pip exited with 0`. It can take a minute.
-4. Press Enter on the empty `pip>` line: the window closes.
-5. **Close Excel and start it again.** The add-in loads by itself, and the new packages are available.
+   If your `ASF.xlam` has a **Python packages** button on the ASF tab, it does the same. Its **Python settings** button also shows and clears `PythonVenv` (step 1.2), and **About Python** shows which add-in and Python are loaded.
+2. A black console window opens and lists the packages installed: numpy, pandas (64-bit), openpyxl and pywin32 among them. If one is missing, type `install` and its name after `pip>`, wait for `pip exited with 0`, and restart Excel afterwards.
+3. Press Enter on the empty `pip>` line: the window closes.
 
-If the install fails (no internet, a company proxy), go on: the rows that need those packages will say "skipped".
+In 32-bit Excel the pandas rows of the checklist say "skipped": that's expected.
 
 ---
 

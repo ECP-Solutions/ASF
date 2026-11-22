@@ -106,6 +106,30 @@ def write_settings(values, old=None):
                     pass
 
 
+# what the add-in's own Python must import: the packages runtime.json pins (pandas has no 32-bit
+# build). numpy 2 needs crealf, which Wine 9's C runtime lacks, so under Wine pywin32 only.
+IMPORTS = {64: "numpy, pandas, openpyxl, dateutil, tzdata, win32api, win32com.client",
+           32: "numpy, openpyxl, dateutil, tzdata, win32api, win32com.client"}
+
+
+def package_imports(b, env):
+    """The packages of the add-in's own Python, unpacked by the run, imported by its python.exe."""
+    if WINDOWS:
+        base = os.path.join(env["LOCALAPPDATA"], "ASF", "runtime")
+    else:
+        base = glob.glob(os.path.join(env["WINEPREFIX"], "drive_c", "users", "*", "AppData", "Local", "ASF", "runtime"))[0]
+    homes = sorted(glob.glob(os.path.join(base, "python-*-%d-*" % b)), key=os.path.getmtime)
+    names = IMPORTS[b] if WINDOWS else "win32api, win32com.client"
+    code = "import %s; print('imported')" % names
+    exe = os.path.join(homes[-1], "python.exe")
+    cmd = [exe, "-I", "-c", code] if WINDOWS else ["wine", native(exe), "-I", "-c", code]
+    r = subprocess.run(cmd, env=env, capture_output=True, text=True, errors="replace", timeout=300)
+    ok = r.returncode == 0 and "imported" in r.stdout
+    print("%s the add-in's own Python imports %s%s" % ("ok  " if ok else "FAIL", names,
+                                                       "" if ok else ": " + (r.stdout + r.stderr)[-1500:]))
+    return ok
+
+
 def main():
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # the checks print Ω and 中文
     try:
@@ -179,6 +203,8 @@ def main():
                 for log in logs():
                     print("--- %s" % log)
                     print(open(log, encoding="utf-8", errors="replace").read()[-4000:])
+            if bundled and not r.returncode and not package_imports(b, env):
+                failed += 1
     finally:
         if WINDOWS:
             write_settings(old, old)

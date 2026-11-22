@@ -15,7 +15,7 @@
 #include "../../xll/xloper.h"
 
 #define NSLOTS 2000   /* as in asfpy.c */
-#define NBUILTIN 3    /* PY_CALL and the commands AsfPyReload and AsfPyPackages */
+#define NBUILTIN 6    /* PY_CALL and the commands AsfPyReload, AsfPyPackages, AsfPyConsole, AsfPyRunScript, AsfPyMacros */
 #define SETTINGS_KEY L"Software\\VB and VBA Program Settings\\ASF\\AddIn"
 
 #if defined(_MSC_VER) && !defined(_WIN64)
@@ -542,7 +542,7 @@ int wmain(int argc, wchar_t **argv)
     QueryPerformanceCounter(&t1);
     wprintf(L"     start-up: %.0f ms, %d functions registered\n", (t1.QuadPart - t0.QuadPart) * 1000.0 / fq.QuadPart, nregs);
     swprintf(got, 256, L"%d", nregs);
-    check(nregs == NSLOTS + NBUILTIN, L"registered: one function in each slot, PY_CALL, AsfPyReload and AsfPyPackages", got);
+    check(nregs == NSLOTS + NBUILTIN, L"registered: one function in each slot, PY_CALL and the 5 commands", got);
     if (nregs < 20) { wprintf(L"%d checks, %d failed\n", checks, failed); return 1; }
     check(wcsstr(last_alert, L"are not registered") != NULL, L"alert: functions beyond the slots", last_alert);
 
@@ -553,6 +553,33 @@ int wmain(int argc, wchar_t **argv)
     {
         Reg *r = reg_of(L"AsfPyPackages");
         check(r && r->macro_type == 2, L"AsfPyPackages registered as a command (macro type 2)", r && r->macro_type == 2 ? L"2" : L"not 2");
+    }
+    type_check(L"AsfPyConsole", L"J");    /* not run: it opens a console window */
+    {
+        Reg *r = reg_of(L"AsfPyConsole");
+        check(r && r->macro_type == 2, L"AsfPyConsole registered as a command (macro type 2)", r && r->macro_type == 2 ? L"2" : L"not 2");
+    }
+    type_check(L"AsfPyRunScript", L"QQ");
+    type_check(L"AsfPyMacros", L"Q");
+    {   /* the ribbon's Python macros: a line per command; Run Python script: a .py file's output */
+        Reg *r1 = reg_of(L"AsfPyRunScript"), *r2 = reg_of(L"AsfPyMacros");
+        wchar_t path[MAX_PATH];
+        FILE *f;
+        check(r1 && r2 && r1->macro_type == 2 && r2->macro_type == 2, L"AsfPyRunScript and AsfPyMacros are commands",
+              r1 && r2 && r1->macro_type == 2 && r2->macro_type == 2 ? L"2, 2" : L"not commands");
+        call_check(L"AsfPyMacros", 0, p, L"check_app\t0\t");
+        GetTempPathW(MAX_PATH - 40, path);
+        wcscat(path, L"asfpy-fakehost-script.py");
+        f = _wfopen(path, L"w");
+        if (f) {
+            fputs("import sys\nprint('ran', __name__, sys.argv[0].endswith('.py'))\n", f);
+            fclose(f);
+        }
+        a[0] = str(path);
+        call_check(L"AsfPyRunScript", 1, p, L"ran __main__ True");
+        a[0] = str(L"no-such-script.py");
+        call_check(L"AsfPyRunScript", 1, p, L"not a .py file");
+        DeleteFileW(path);
     }
     type_check(L"check_add", L"QQQ");
     type_check(L"check_version", L"Q");
@@ -892,7 +919,7 @@ int wmain(int argc, wchar_t **argv)
         nunregs = 0;
         close();
         swprintf(got, 256, L"%d", nunregs);
-        check(nunregs == NSLOTS + NBUILTIN, L"xlAutoClose unregisters every function, PY_CALL and AsfPyReload", got);
+        check(nunregs == NSLOTS + NBUILTIN, L"xlAutoClose unregisters every function, PY_CALL and the commands", got);
         open();
         swprintf(got, 256, L"%d", nregs - before);
         check(nregs - before == NSLOTS + NBUILTIN, L"xlAutoOpen again registers them again", got);

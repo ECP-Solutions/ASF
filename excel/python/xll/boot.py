@@ -191,6 +191,52 @@ def reload():
     return load_folder()
 
 
+def run_script(path):
+    """The command AsfPyRunScript (ASF tab: Run Python script): a .py file run as __main__ in
+    Excel's Python, as a command, so xl_app() works in it. Its folder is first on sys.path while
+    it runs. Returns what it printed, and the traceback if it failed."""
+    global _macro_depth
+    import io
+    import runpy
+    if not isinstance(path, str) or not path.lower().endswith('.py') or not os.path.isfile(path):
+        return (TAG_STR, 'not a .py file: %s' % (path,))
+    out = io.StringIO()
+    folder = os.path.dirname(os.path.abspath(path))
+    saved = sys.stdout, sys.stderr, sys.argv
+    sys.path.insert(0, folder)
+    sys.stdout = sys.stderr = out
+    sys.argv = [path]
+    _macro_depth += 1
+    _note('run script %s' % path)
+    try:
+        runpy.run_path(path, run_name='__main__')
+    except SystemExit as exc:
+        if exc.code not in (None, 0):
+            out.write('\nexit code %s' % (exc.code,))
+    except BaseException as exc:
+        _fail(exc)
+        out.write(_last_traceback)
+    finally:
+        _macro_depth -= 1
+        sys.stdout, sys.stderr, sys.argv = saved
+        if folder in sys.path:
+            sys.path.remove(folder)
+    return (TAG_STR, out.getvalue())
+
+
+def macro_list():
+    """The command AsfPyMacros (ASF tab: Python macros): one line per command (@xl_macro) of the
+    Python folder, as its Excel name, the number of arguments it needs and its description,
+    separated by tabs."""
+    lines = []
+    for _, fn, name, flags in _functions:
+        if flags == '%':
+            needed = fn.__code__.co_argcount - len(fn.__defaults__ or ())
+            doc = (fn.__doc__ or '').strip().split('\n')[0].replace('\t', ' ')
+            lines.append('%s\t%d\t%s' % (name, needed, doc))
+    return (TAG_STR, '\n'.join(lines))
+
+
 def _same_file(a, b):
     return bool(a) and os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
 
@@ -710,7 +756,8 @@ class _Root:
 
     @property
     def startInfo(self):
-        return 'Python %s\n%s' % (sys.version.split()[0], '\n'.join(_start_info))
+        return 'Python %s, %d-bit: %s\n%s' % (sys.version.split()[0], 64 if sys.maxsize > 2 ** 32 else 32,
+                                               sys.prefix, '\n'.join(_start_info))
 
     def __repr__(self):
         return '<py>'

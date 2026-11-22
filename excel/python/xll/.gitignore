@@ -1,1 +1,4 @@
-build/
+# the build output, but for the two add-ins, kept in git: the latest build
+build/*
+!build/asfpy64.xll
+!build/asfpy32.xll

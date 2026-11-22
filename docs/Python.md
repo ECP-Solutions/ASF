@@ -16,7 +16,7 @@ The Python add-in runs Python inside Excel for Windows, on your computer:
 - ASF scripts of your library can call Python through `py`;
 - VBA can call it too.
 
-It is a separate add-in from [`ASF.xlam`](Add-ins.html), which keeps working without Python. It comes as two files: `asfpy64.xll` for 64-bit Excel and `asfpy32.xll` for 32-bit Excel. Each carries its own Python (CPython 3.14, with pip), so there is nothing else to install. Unlike Excel's own `=PY()`, which runs in Microsoft's cloud, everything runs on your computer and works offline.
+It is a separate add-in from [`ASF.xlam`](Add-ins.html), which keeps working without Python. It comes as two files: `asfpy64.xll` for 64-bit Excel and `asfpy32.xll` for 32-bit Excel. Each carries its own Python (CPython 3.14, with pip) and the packages most work needs (numpy, pandas, openpyxl, pywin32), so there is nothing else to install. Unlike Excel's own `=PY()`, which runs in Microsoft's cloud, everything runs on your computer and works offline.
 
 1. TOC
 {:toc}
@@ -58,7 +58,7 @@ Excel refuses add-ins downloaded from the internet.
 
 In Excel: File > Options > Add-ins. At the bottom, choose **Manage: Excel Add-ins** and click **Go**, then **Browse**, pick the `.xll` and click **OK**. Make sure it is ticked.
 
-The first time, the add-in unpacks its Python into `%LOCALAPPDATA%\ASF\runtime` (about 40 MB, once). Excel then loads it every time it starts.
+The first time, the add-in unpacks its Python into `%LOCALAPPDATA%\ASF\runtime` (about 125 MB for 64-bit, 75 MB for 32-bit, once; a few seconds). Excel then loads it every time it starts.
 
 If Python can't start, Excel says why right away. The details are in `%TEMP%\asfpy.log`. See [Troubleshooting](#troubleshooting).
 
@@ -79,7 +79,17 @@ Restart Excel (or, with `ASF.xlam`, click **Reload Python** on the ASF tab). In 
 
 ### 6. Packages
 
-The add-in's Python has the standard library and pip. To add numpy, pandas or any other package:
+The add-in's Python comes with these packages, ready to import:
+
+| Package | For | 64-bit | 32-bit |
+|---|---|---|---|
+| numpy 2.5 | arrays; the `numpy.ndarray` type hint | yes | yes |
+| pandas 3.1 | tables; the `pandas.DataFrame` and `pandas.Series` type hints | yes | no: pandas publishes no 32-bit Windows build for Python 3.14 |
+| openpyxl 3.1 | reading and writing `.xlsx` files, also for `pandas.read_excel` | yes | yes |
+| pywin32 312 | `xl_app()`, Excel's object model in macros; COM | yes | yes |
+| python-dateutil, tzdata | what pandas needs; dates and time zones | yes | yes |
+
+To add another package, or to upgrade one of these:
 
 1. Open the package console: **Python packages** on the ASF tab of `ASF.xlam`, or in the Immediate window of the VBA editor (Alt+F11, then Ctrl+G):
    ```vb
@@ -87,7 +97,7 @@ The add-in's Python has the standard library and pip. To add numpy, pandas or an
    ```
 2. A console window opens with the packages installed so far. Type a pip command and press Enter:
    ```
-   pip> install numpy pandas pywin32
+   pip> install scipy
    ```
    Other commands: `install --upgrade pandas`, `uninstall -y openpyxl`, `list`.
 3. Wait for `pip exited with 0`, then press Enter on an empty line to close the window.
@@ -97,15 +107,41 @@ pip downloads from PyPI. Behind a company proxy or offline, pip takes the usual 
 
 Windows locks the files of a package that Excel has loaded: close Excel before you upgrade or remove such a package, and run the console from a new Excel without using Python (or with the add-in unticked).
 
+### The Python console
+
+**Python console** on the ASF tab (or `Application.Run "AsfPyConsole"`) opens a console window with the add-in's Python at its `>>>` prompt. It runs apart from Excel, so nothing typed there can break Excel's Python. Use it to manage packages and try them:
+
+```python
+>>> pip("install pandas")          # pip for this Python: install, list, show, uninstall -y ...
+>>> pip("list")
+>>> import pandas; pandas.__version__   # the version Excel will load after a restart
+>>> import stats                   # a module of your Python folder, before Excel loads it
+>>> stats.zscore([1, 2, 3])
+```
+
+The Python folder is on the import path, and `from asfpy import xl_func` works there: the decorators mark nothing, and `xl_app()` says it works inside Excel only. As with the package console, Excel uses new packages after a restart. `exit()` closes the window.
+
 ### 7. ASF.xlam (optional)
 
-With [`ASF.xlam`](Add-ins.html) loaded too, the ASF tab gets a Python group, ASF scripts of your library can call Python, and **Why this error?** shows Python's error and traceback:
+With [`ASF.xlam`](Add-ins.html) loaded too, the ASF tab gets two Python groups, ASF scripts of your library can call Python, and **Why this error?** shows Python's error and traceback.
+
+**Python**
 
 | Button | What it does |
 |---|---|
-| **Python folder** | Opens the Python folder, made first when it is missing |
+| **Run Python script** | Pick a `.py` file: it runs in Excel's Python as `__main__`, with its folder on the import path, and what it prints is shown (in Notepad when it's long). Like a macro, it may use Excel through `xl_app()` |
+| **Python macros** | Lists the `@xl_macro` functions of the Python folder and runs the one you pick, asking for its arguments (up to 5, typed separated by commas) |
 | **Reload Python** | Imports the Python folder again and registers its functions, then calculates the workbooks in full |
+
+**Python setup**
+
+| Button | What it does |
+|---|---|
+| **Python settings** | Shows and changes the three settings: which Python (the add-in's own, or a venv or install you pick), the Python folder, and `PythonAccess`. Restart Excel after changing the first two |
 | **Python packages** | Opens the package console |
+| **Python console** | Opens the add-in's Python at its `>>>` prompt, in a console window apart from Excel (below) |
+| **Python folder** | Opens the Python folder, made first when it is missing |
+| **About Python** | The loaded add-in file, the Python it runs, the settings, what the Python folder gave at start-up, and the log, which it offers to open. The first place to look when something doesn't work |
 
 ### Updating and removing
 
@@ -228,10 +264,14 @@ Python can't be sandboxed: `modules` lets library scripts do anything Python can
 
 ## From VBA
 
-Commands run with `Application.Run`:
+Commands run with `Application.Run`, the Python folder's and the add-in's own:
 
 ```vb
 Debug.Print Application.Run("tidy", "Sheet1")
+Debug.Print Application.Run("AsfPyRunScript", "C:\work\report.py")   ' what the script printed
+Debug.Print Application.Run("AsfPyMacros")       ' a line per @xl_macro: name, arguments it needs, description
+Application.Run "AsfPyReload"                    ' the Python folder again
+Application.Run "AsfPyPackages"                  ' the package console
 ```
 
 For `py`, declare the add-in's function and ask for a root object: level 1 has `py.call`, level 2 also `py.module`.
@@ -266,7 +306,7 @@ The add-in reads its settings when Excel loads it, from `HKEY_CURRENT_USER\Softw
 | `PythonVenv` | empty: the Python the add-in carries. Otherwise, another Python to use (below) |
 | `PythonAccess` | `off`: read by `ASF.xlam`, for ASF scripts (above) |
 
-With `ASF.xlam` loaded, set them from the Immediate window:
+With `ASF.xlam` loaded, **Python settings** on the ASF tab shows and changes them. Or set them from the Immediate window:
 
 ```vb
 Application.Run "ASF.xlam!ASFSettings.ChangeSetting", "PythonFolder", "D:\work\python"
