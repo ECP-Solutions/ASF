@@ -139,10 +139,12 @@ button.pill:hover { border-color: var(--accent); color: var(--text); }
 .choice { display: block; padding: 4px 0; }
 .choice input { margin: 0 8px 0 0; vertical-align: -2px; }
 .facts { border-collapse: collapse; width: 100%; }
-.facts th { text-align: left; font-weight: 600; color: var(--muted); padding: 3px 14px 3px 0; white-space: nowrap; vertical-align: top; width: 1%; }
-.facts td { padding: 3px 8px 3px 0; word-break: break-all; }
-.facts td.b { width: 1%; }
-.facts button { padding: 1px 10px; font-size: 12px; }
+.facts th { text-align: left; font-weight: 600; color: var(--muted); padding: 5px 16px 5px 0; white-space: nowrap; vertical-align: baseline; width: 1%; }
+.facts td { padding: 5px 10px 5px 0; vertical-align: baseline; overflow-wrap: anywhere; }
+.facts td.path { font-family: var(--mono); font-size: 12px; }
+.facts td.b { width: 1%; padding-right: 0; text-align: right; white-space: nowrap; overflow-wrap: normal; }
+.facts tr + tr th, .facts tr + tr td { border-top: 1px solid var(--line); }
+.facts button { padding: 2px 12px; font-size: 12px; white-space: nowrap; min-width: 64px; }
 .foot { height: 24px; display: flex; justify-content: space-between; align-items: center; padding: 0 12px; background: var(--accent); color: #fff; font-size: 12px; }
 @media (prefers-color-scheme: dark) { .foot { background: #23402f; } }
 .modal { border: 1px solid var(--line); border-radius: 10px; padding: 0; background: var(--bg); color: var(--text);
