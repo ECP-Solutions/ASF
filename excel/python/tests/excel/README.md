@@ -28,12 +28,15 @@ Excel itself can't run in CI, so this folder holds the checks that run in Excel,
 
 ## Steps
 
-1. **The add-in.** If an earlier run set another Python (`AsfPySetup`, the setting `PythonVenv`), run `AsfPySetup` and leave its first box empty: the checklist then checks the add-in's own Python, and its `Python:` row says which one ran. Check Excel's bitness under File > Account > About Excel. Copy `asfpy64.xll` (64-bit Excel) or `asfpy32.xll` (32-bit Excel) to a folder of your own. In the file's Properties, tick **Unblock** if Windows shows it: Excel refuses add-ins downloaded from the internet. Then File > Options > Add-ins > Manage: Excel Add-ins > Go > Browse, and pick it. The first load unpacks the add-in's Python (about 40 MB).
-2. **Packages.** In the Immediate window (Alt+F11, then Ctrl+G), `Application.Run "AsfPyPackages"` opens a console window with pip (**Python packages** on the ASF tab does the same). Type `install numpy pandas pywin32`, wait for "pip exited with 0", press Enter on an empty line, and restart Excel.
-3. **The Python folder.** Copy `checks.py` to `%APPDATA%\ASF\python` (create the folder), and only it: remove `spike.py` and `zz_slots.py` if earlier runs left them there. `zz_slots.py` is the fake host's (1,000 more functions to register at each load and reload: a slower checklist). Take the file itself: on GitHub, use **Download raw file**. A page saved with the browser's "Save as" is HTML, not Python. The name must be exactly `checks.py`: browsers sometimes save it as `checks (1).py` or `checks.py.txt`. When Excel loads the add-in, an alert says so if the folder gave no functions; the first rows of the checklist say why.
-4. **`ASF.xlam`** (optional), built from this branch: `powershell -ExecutionPolicy Bypass -File excel/tools/build.ps1 -TemporaryTrustAccess` (see `excel/README.md`), loaded next to the `.xll`. The checklist then writes three scripts to the library folder, sets `PythonAccess` to `off`, `call` and `modules` in turn, and puts the setting and the folder back as they were. Without `ASF.xlam` it skips these rows.
-5. **Test.** Import `AsfPyChecks.bas` into a new workbook (Alt+F11, File > Import File) and run `AsfPyTest`. A new workbook shows each check, `ok` or `FAIL`, and the timings. Its second sheet holds the formulas. For the thread-safe rows, keep multi-threaded calculation on (File > Options > Advanced > Formulas).
-6. **Close Excel** with that workbook open (numpy loaded). Excel should close without an error or a hang. Then open Excel again: the add-in loads by itself.
+The full guide for testers, with downloads, clean-up of earlier runs and fixes for the usual problems, is [Beta testing](../../../../docs/Beta%20testing.md) in the documentation. In short:
+
+1. **Clean up an earlier test.** Untick old `asfpy*.xll` entries, clear `PythonVenv` (Immediate window: `On Error Resume Next: DeleteSetting "ASF", "AddIn", "PythonVenv"`), close Excel, empty `%APPDATA%\ASF\python` (no `spike.py`, no `zz_slots.py`), delete old copies of the `.xll`.
+2. **Download** `asfpy64.xll` or `asfpy32.xll` (Excel's bitness: File > Account > About Excel), `checks.py` and `AsfPyChecks.bas` as raw files, with exactly those names.
+3. **Put them in place.** Unblock the `.xll` (Properties) and keep it in a folder of your own; `checks.py` alone in `%APPDATA%\ASF\python`. `ASF.xlam` is optional: with it, the checklist also checks ASF scripts with Python.
+4. **Load the add-in:** File > Options > Add-ins > Manage: Excel Add-ins > Go > Browse. The first load unpacks the add-in's Python into `%LOCALAPPDATA%\ASF\runtime`.
+5. **Packages:** `Application.Run "AsfPyPackages"` in the Immediate window, then `install numpy pandas pywin32`, Enter on an empty line, and restart Excel.
+6. **Run:** import `AsfPyChecks.bas` into a blank workbook and run `AsfPyTest`, multi-threaded calculation on. The first rows must show `imported checks.py`, `Python: the add-in's own ... yes` and `pip ... installed`.
+7. **Close Excel** with the result open (numpy loaded): no error, no hang. Then open Excel again: the add-in loads by itself.
 
 To check another Python instead (a venv, or a python.org install of Excel's bitness, 3.11 or later), run `AsfPySetup` and give its folder; leave the folder empty to go back to the add-in's own Python. Packages then go into that Python, with its own pip.
 

@@ -25,6 +25,8 @@ It is a separate add-in from [`ASF.xlam`](Add-ins.html), which keeps working wit
 
 ## Installation
 
+Testing a beta? Follow [Beta testing](Beta%20testing.html) instead: it starts with cleaning up earlier test runs.
+
 You need Excel 2016 or later, or Microsoft 365, for Windows. Excel for Mac, the web and iPad can't load `.xll` add-ins.
 
 ### 1. Find Excel's bitness
