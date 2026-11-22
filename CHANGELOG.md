@@ -2,6 +2,11 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [Unreleased]
+
+- **Added**
+    - **Examples: Python in Excel** (`examples/python-in-excel`) — modules for the Python folder and a workbook that uses them: statistics with numpy (z-scores, outliers, trend, seasonal forecast, moving average, histogram), tables with pandas (describe, group totals, pivot, query, join, top rows, correlation, a table kept as a handle), finance (loan schedule, growth rate, an asynchronous Monte Carlo simulation), text (names, accents, fuzzy matching), macros through `xl_app()` (summarize the selection, import a CSV, fit the columns), scripts for **Run Python script**, and an ASF script calling Python. `tools/check.py` runs every function through the add-in's `boot.py`, also in CI.
+
 ## [v4.1.1] - 2026-11-22
 https://github.com/ECP-Solutions/ASF/releases/tag/v4.1.1
 

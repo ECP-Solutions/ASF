@@ -152,6 +152,9 @@ With [`ASF.xlam`](Add-ins.html) loaded too, the ASF tab gets two Python groups, 
 
 ## Writing functions
 
+[examples/python-in-excel](https://github.com/ECP-Solutions/ASF/tree/main/examples/python-in-excel) has worked examples to copy into the Python folder, with a workbook that uses them: statistics with numpy, tables with pandas, finance, text, macros, scripts, and an ASF script calling Python.
+
+
 Every `.py` file of the Python folder is imported when Excel loads the add-in. Decorators from the `asfpy` module mark what Excel gets:
 
 ```python

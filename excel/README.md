@@ -190,6 +190,9 @@ Python starts once per Excel: after changing the settings or the add-in, restart
 
 ### The Python folder's functions
 
+[examples/python-in-excel](../examples/python-in-excel/README.md) has worked examples with a workbook: numpy, pandas, finance, text, macros and scripts.
+
+
 The modules of the Python folder mark what Excel gets:
 
 ```python
