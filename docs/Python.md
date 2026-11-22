@@ -148,7 +148,7 @@ def scale(values: list, factor: float):
 | `@xl_macro` | A command: `Application.Run "name", arguments...` runs it and gives back its result. It runs on Excel's main thread, and only commands may use `xl_app()`, Excel's `Application` (needs the package `pywin32` or `comtypes`). Option: `name=` |
 | `@export` | A function `PY_CALL` and ASF scripts may call, as `"module.function"`, without making it a worksheet function. They may call `@xl_func` and `@xl_macro` functions the same way |
 
-A function takes at most 32 arguments; the add-in registers up to 1,000 functions.
+A function takes at most 32 arguments; the add-in registers up to 2,000 functions.
 
 ### Arguments
 

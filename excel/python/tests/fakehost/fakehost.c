@@ -14,7 +14,7 @@
 #include <fcntl.h>
 #include "../../xll/xloper.h"
 
-#define NSLOTS 1000   /* as in asfpy.c */
+#define NSLOTS 2000   /* as in asfpy.c */
 #define NBUILTIN 3    /* PY_CALL and the commands AsfPyReload and AsfPyPackages */
 #define SETTINGS_KEY L"Software\\VB and VBA Program Settings\\ASF\\AddIn"
 
@@ -557,23 +557,25 @@ int wmain(int argc, wchar_t **argv)
 
     /* --- the pool: the last slot, and slots of 0 to 3 arguments (the 32-bit stubs pop them) */
     {
-        Reg *last = reg_of_proc(L"asfpy_f0999");
+        Reg *last = reg_of_proc(L"asfpy_f1999");
         int k = last ? _wtoi(last->name + 5) : 0, n = k % 4;
         wchar_t want[32];
-        check(last && wcsncmp(last->name, L"slot_", 5) == 0, L"the last slot, asfpy_f0999, holds a slot_ function",
+        check(last && wcsncmp(last->name, L"slot_", 5) == 0, L"the last slot, asfpy_f1999, holds a slot_ function",
               last ? last->name : L"nothing");
         for (i = 0; i < n; i++) a[i] = num(1);
-        swprintf(want, 32, L"%d", k * 1000 + n);
+        swprintf(want, 32, L"%d", k * 100 + n);   /* below 10^6: %g writes it whole */
         if (last) call_check(last->name, n, p, want);
     }
     call_check(L"slot_0000", 0, p, L"0");
     a[0] = num(5);
-    call_check(L"slot_0001", 1, p, L"1005");
+    call_check(L"slot_0001", 1, p, L"105");
     a[0] = num(1); a[1] = num(2);
-    call_check(L"slot_0502", 2, p, L"502003");
+    call_check(L"slot_0502", 2, p, L"50203");
     a[0] = num(1); a[1] = num(2); a[2] = num(3);
-    call_check(L"slot_0951", 3, p, L"951006");
-    check(reg_of(L"slot_0999") == NULL, L"slot_0999, beyond the pool, not registered", reg_of(L"slot_0999") ? L"registered" : L"not registered");
+    call_check(L"slot_0951", 3, p, L"95106");
+    a[0] = num(1); a[1] = num(2); a[2] = num(3);
+    call_check(L"slot_1503", 3, p, L"150306");
+    check(reg_of(L"slot_1999") == NULL, L"slot_1999, beyond the pool, not registered", reg_of(L"slot_1999") ? L"registered" : L"not registered");
 
     call_check(L"check_version", 0, p, L"Python 3.");
     a[0] = num(2); a[1] = num(3.5);

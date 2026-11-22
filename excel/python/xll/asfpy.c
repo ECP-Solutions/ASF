@@ -25,7 +25,7 @@
 #include "runtime.h"
 #endif
 
-#define NSLOTS    1000       /* asfpy_f0000 to asfpy_f0999, as build.py generates them */
+#define NSLOTS    2000       /* asfpy_f0000 to asfpy_f1999, as build.py generates them */
 #define MAX_ARGS  32
 #define SETTINGS_KEY L"Software\\VB and VBA Program Settings\\ASF\\AddIn"
 #define ADDIN_NAME L"ASF Python"
