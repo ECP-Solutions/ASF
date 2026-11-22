@@ -97,6 +97,20 @@ pip downloads from PyPI. Behind a company proxy or offline, pip takes the usual 
 
 Windows locks the files of a package that Excel has loaded: close Excel before you upgrade or remove such a package, and run the console from a new Excel without using Python (or with the add-in unticked).
 
+### The Python console
+
+**Python console** on the ASF tab (or `Application.Run "AsfPyConsole"`) opens a console window with the add-in's Python at its `>>>` prompt. It runs apart from Excel, so nothing typed there can break Excel's Python. Use it to manage packages and try them:
+
+```python
+>>> pip("install pandas")          # pip for this Python: install, list, show, uninstall -y ...
+>>> pip("list")
+>>> import pandas; pandas.__version__   # the version Excel will load after a restart
+>>> import stats                   # a module of your Python folder, before Excel loads it
+>>> stats.zscore([1, 2, 3])
+```
+
+The Python folder is on the import path, and `from asfpy import xl_func` works there: the decorators mark nothing, and `xl_app()` says it works inside Excel only. As with the package console, Excel uses new packages after a restart. `exit()` closes the window.
+
 ### 7. ASF.xlam (optional)
 
 With [`ASF.xlam`](Add-ins.html) loaded too, the ASF tab gets two Python groups, ASF scripts of your library can call Python, and **Why this error?** shows Python's error and traceback.
@@ -115,6 +129,7 @@ With [`ASF.xlam`](Add-ins.html) loaded too, the ASF tab gets two Python groups, 
 |---|---|
 | **Python settings** | Shows and changes the three settings: which Python (the add-in's own, or a venv or install you pick), the Python folder, and `PythonAccess`. Restart Excel after changing the first two |
 | **Python packages** | Opens the package console |
+| **Python console** | Opens the add-in's Python at its `>>>` prompt, in a console window apart from Excel (below) |
 | **Python folder** | Opens the Python folder, made first when it is missing |
 | **About Python** | The loaded add-in file, the Python it runs, the settings, what the Python folder gave at start-up, and the log, which it offers to open. The first place to look when something doesn't work |
 

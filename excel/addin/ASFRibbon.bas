@@ -125,6 +125,11 @@ Public Sub OnPythonMacros(control As Object)
     ASFPythonSetup.Macros
 End Sub
 
+' Python console: the Python add-in's Python at its prompt, in a console window (ASFPythonSetup)
+Public Sub OnPythonConsole(control As Object)
+    ASFPythonSetup.Console
+End Sub
+
 ' Python settings: which Python, the Python folder, PythonAccess
 Public Sub OnPythonSettings(control As Object)
     ASFPythonSetup.Settings

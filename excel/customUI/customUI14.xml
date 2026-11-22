@@ -48,6 +48,10 @@
                   screentip="Install Python packages"
                   supertip="Opens a console window with pip for the Python of the Python add-in, such as install numpy. Excel uses new packages after a restart."
                   onAction="ASFRibbon.OnPythonPackages"/>
+          <button id="asfPythonConsole" label="Python console" size="large" imageMso="ViewCode"
+                  screentip="The add-in's Python at its prompt"
+                  supertip="A console window with the Python of the Python add-in, apart from Excel: pip(&quot;install numpy&quot;) manages the packages, and the modules of the Python folder import, to try a package or a function before Excel loads it."
+                  onAction="ASFRibbon.OnPythonConsole"/>
           <button id="asfPythonFolder" label="Python folder" size="large" imageMso="FileOpen"
                   screentip="Open the Python folder"
                   supertip="The folder of the Python modules whose functions the Python add-in (asfpy64.xll or asfpy32.xll) registers and PY_CALL calls."

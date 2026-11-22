@@ -148,7 +148,7 @@ With `appAccess: true` and `args: selection`, `$1` is the `Range` itself, so the
 | **Why this error?** | Calculates the active cell again and shows why its `ASF_RUN` or `ASF_CALL` gave `#VALUE!`. With the Python add-in, also the Python error of a `PY_CALL` or Python function |
 | **Reset engine** | Drops the engine of the worksheet functions and their compiled scripts; the next formula reads the settings again |
 | **Run Python script**, **Python macros**, **Reload Python** | The Python group, for the Python add-in: see [Python](Python.html#7-asfxlam-optional) |
-| **Python settings**, **Python packages**, **Python folder**, **About Python** | The Python setup group: which Python, its packages, the folder of your modules, and what runs |
+| **Python settings**, **Python packages**, **Python console**, **Python folder**, **About Python** | The Python setup group: which Python, its packages, its prompt, the folder of your modules, and what runs |
 | **Help** | Opens the add-in's README on GitHub |
 
 ---

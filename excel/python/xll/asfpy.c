@@ -103,7 +103,8 @@ static int g_started;             /* 1: Python runs; -1: it failed to start */
 static wchar_t g_start_error[1024];
 static wchar_t g_home[MAX_PATH];  /* kept: Py_SetPythonHome holds the pointer */
 static wchar_t g_log[MAX_PATH];
-static wchar_t g_exe[MAX_PATH];   /* the python.exe of the Python, for pip */
+static wchar_t g_exe[MAX_PATH];   /* the python.exe of the Python, for pip and the console */
+static wchar_t g_folder[MAX_PATH];   /* the Python folder, for the console */
 
 /* --- the log, %TEMP%\asfpy.log ---------------------------------------------------------------- */
 
@@ -668,10 +669,10 @@ static void register_functions(void)
     excel12(xlFree, NULL, 1, op);
 }
 
-/* PY_CALL and the commands AsfPyReload, AsfPyPackages, AsfPyRunScript and AsfPyMacros: the
-   add-in's own, registered once Python runs */
+/* PY_CALL and the commands AsfPyReload, AsfPyPackages, AsfPyConsole, AsfPyRunScript and
+   AsfPyMacros: the add-in's own, registered once Python runs */
 #define PYCALL_ARGS 29          /* PY_CALL(name, 29 arguments): 30 in all, below Excel's 255 */
-static double g_pycall_id, g_reload_id, g_packages_id, g_script_id, g_macros_id;
+static double g_pycall_id, g_reload_id, g_packages_id, g_script_id, g_macros_id, g_console_id;
 
 static void register_builtins(void)
 {
@@ -695,6 +696,8 @@ static void register_builtins(void)
                                 L"Runs a .py file in Excel's Python and gives back what it printed.", 0, NULL);
     g_macros_id = register_proc(&dll, L"asfpy_macros", L"Q", L"AsfPyMacros", L"", 2,
                                 L"Lists the commands (@xl_macro) of the Python folder.", 0, NULL);
+    g_console_id = register_proc(&dll, L"asfpy_console", L"J", L"AsfPyConsole", L"", 2,
+                                 L"Opens a console window with the add-in's Python at its prompt.", 0, NULL);
     excel12(xlFree, NULL, 1, op);
 }
 
@@ -810,6 +813,7 @@ static void start_python(void)
         return;
     }
     wcscpy(g_exe, exe);
+    wcscpy(g_folder, folder);
     if (!python_dll(g_home, dll)) {
         start_failed(L"no python3XX.dll in %ls", g_home);
         return;
@@ -1269,30 +1273,32 @@ EXPORT int WINAPI asfpy_reload(void)
     return 1;
 }
 
-/* The command AsfPyPackages (VBA: Application.Run "AsfPyPackages"; ASF's ribbon: Python packages):
-   pip for the Python of the add-in, in a console window of its own (packages.py), so downloads
-   never block Excel. */
-EXPORT int WINAPI asfpy_packages(void)
+/* A console window of its own with the add-in's python.exe, apart from Excel: script (packages.py,
+   console.py) written to %TEMP%\\name, run with options before it and arg after it */
+static int open_console(const char *script_text, const wchar_t *name, const wchar_t *options, const wchar_t *arg)
 {
-    wchar_t script[MAX_PATH], cmd[3 * MAX_PATH], msg[1200];
+    wchar_t script[MAX_PATH], cmd[4 * MAX_PATH], msg[1200], folder[MAX_PATH];
     STARTUPINFOW si;
     PROCESS_INFORMATION pi;
     HANDLE f;
-    DWORD put, k = GetTempPathW(MAX_PATH - 24, script);
+    DWORD put, k = GetTempPathW(MAX_PATH - 32, script);
     memset(&si, 0, sizeof si);
     si.cb = sizeof si;
     if (!g_exe[0] || GetFileAttributesW(g_exe) == INVALID_FILE_ATTRIBUTES) {
-        swprintf(msg, 1200, L"ASF Python: no python.exe for pip (%ls). Details: %ls", g_exe[0] ? g_exe : g_start_error, g_log);
+        swprintf(msg, 1200, L"ASF Python: no python.exe for the console (%ls). Details: %ls", g_exe[0] ? g_exe : g_start_error, g_log);
         alert(msg);
         return 0;
     }
     if (!k) return 0;
-    wcscat(script, L"asfpy-packages.py");
+    wcscat(script, name);
     f = CreateFileW(script, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (f == INVALID_HANDLE_VALUE) return 0;
-    WriteFile(f, PACKAGES_PY, (DWORD)strlen(PACKAGES_PY), &put, NULL);
+    WriteFile(f, script_text, (DWORD)strlen(script_text), &put, NULL);
     CloseHandle(f);
-    swprintf(cmd, 3 * MAX_PATH, L"\"%ls\" -I \"%ls\"", g_exe, script);
+    wcsncpy(folder, arg, MAX_PATH - 1);
+    folder[MAX_PATH - 1] = 0;
+    for (k = (DWORD)wcslen(folder); k > 3 && folder[k - 1] == L'\\'; k--) folder[k - 1] = 0;  /* \" would escape the quote */
+    swprintf(cmd, 4 * MAX_PATH, L"\"%ls\" %ls \"%ls\" \"%ls\"", g_exe, options, script, folder);
     if (!CreateProcessW(g_exe, cmd, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi)) {
         note(L"%ls didn't start (error %lu)", cmd, GetLastError());
         return 0;
@@ -1300,6 +1306,22 @@ EXPORT int WINAPI asfpy_packages(void)
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
     return 1;
+}
+
+/* The command AsfPyPackages (VBA: Application.Run "AsfPyPackages"; ASF's ribbon: Python packages):
+   pip for the Python of the add-in, in a console window of its own (packages.py), so downloads
+   never block Excel. */
+EXPORT int WINAPI asfpy_packages(void)
+{
+    return open_console(PACKAGES_PY, L"asfpy-packages.py", L"-I", L"");
+}
+
+/* The command AsfPyConsole (ASF's ribbon: Python console): the add-in's Python at its prompt, in a
+   console window of its own (console.py, then -i), with pip("...") and the Python folder importable.
+   A process of its own: what it does can't break Excel's Python. */
+EXPORT int WINAPI asfpy_console(void)
+{
+    return open_console(CONSOLE_PY, L"asfpy-console.py", L"-I -i", g_folder);
 }
 
 /* A text from boot.py (run_script, macro_list): a new reference or NULL; #NAME? before Python runs */
@@ -1374,6 +1396,7 @@ EXPORT int WINAPI xlAutoClose(void)
     unregister_id(&g_packages_id);
     unregister_id(&g_script_id);
     unregister_id(&g_macros_id);
+    unregister_id(&g_console_id);
     if (n) note(L"unregistered %d functions", n);
     return 1;
 }

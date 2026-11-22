@@ -107,6 +107,7 @@ The worksheet functions keep one engine and its compiled scripts for the whole s
 | **Reload Python** | The Python add-in imports its folder again and registers its functions again, then the workbooks are calculated in full |
 | **Python settings** | Which Python the add-in runs (its own, or a venv or install), the Python folder, and `PythonAccess`, each shown and changed in turn |
 | **Python packages** | A console window with pip for the Python add-in's Python (`install numpy`); Excel uses new packages after a restart |
+| **Python console** | The Python add-in's Python at its `>>>` prompt, in a console window apart from Excel (`AsfPyConsole`): `pip("install pandas")`, `import pandas`, and the Python folder's modules to try |
 | **Python folder** | Opens the Python add-in's folder of modules, made first when it is missing |
 | **About Python** | The loaded add-in file, its Python, the settings, the Python folder's start-up and the log |
 | **Help** | Opens this page |
