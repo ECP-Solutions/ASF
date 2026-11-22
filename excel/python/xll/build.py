@@ -6,7 +6,8 @@ Without an argument it takes MinGW-w64 when x86_64-w64-mingw32-gcc is on the PAT
 tools of Visual Studio (found with vswhere). MinGW needs x86_64-w64-mingw32-gcc and
 i686-w64-mingw32-gcc (Debian/Ubuntu: gcc-mingw-w64). Writes the generated sources (boot_py.h, the
 slots, asfpy.def) and the add-ins to excel/python/xll/build/, then lists each add-in's exports
-and imports.
+and imports. The two add-ins there are kept in git (.gitignore): commit them after each build, with
+the copies in excel/python/tests/excel.
 
 Each add-in carries a Python of its bitness: the CPython that runtime.json pins, python.org's
 build as published on nuget.org, with the packages runtime.json pins (wheels from PyPI, installed

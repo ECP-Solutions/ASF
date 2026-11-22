@@ -63,4 +63,4 @@ Runs in Excel, newest last. Until the add-in carried its own Python, the checkli
 
 ## The add-ins in this folder
 
-`asfpy64.xll` and `asfpy32.xll` here are MinGW-w64 builds (`python excel/python/xll/build.py mingw`), carrying CPython 3.14.10 (`xll/runtime.json`). The fake host passes with both (`../fakehost/README.md`). The builds that passed the checklist above in Excel were MSVC builds; `python excel/python/xll/build.py msvc` on Windows makes those, with the same Python.
+`asfpy64.xll` and `asfpy32.xll` here are MinGW-w64 builds (`python excel/python/xll/build.py mingw`), carrying CPython 3.14.10 and its packages (`xll/runtime.json`), the same files as the latest build kept in `excel/python/xll/build/`. The fake host passes with both (`../fakehost/README.md`). The builds that passed the checklist above in Excel were MSVC builds; `python excel/python/xll/build.py msvc` on Windows makes those, with the same Python.
