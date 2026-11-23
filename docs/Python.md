@@ -392,6 +392,7 @@ When Python can't start, Excel shows the reason when it loads the add-in. `%TEMP
 | "another add-in has already loaded python3XX.dll" | Excel runs one Python per process. Another Python add-in (PyXLL, xlOil, xlwings in-process) is loaded: untick it |
 | "another copy of this add-in already runs Python" | You loaded a second copy of the `.xll`: restart Excel and keep one |
 | `ImportError` in the log | The package isn't installed in the add-in's Python: see [Packages](#6-packages) |
+| After Excel closed, `EXCEL.EXE` stays in Task Manager, and the next Excel has no ASF tab | A program still holds the closed Excel. Python studio of v4.1.2 did, while its window was open: close the studio's window (the hidden Excel then ends within a few seconds), or end `EXCEL.EXE` in Task Manager. Since v4.1.3 the studio holds Excel only while it runs a command there |
 
 **Security.** The add-in runs the Python files of your Python folder with your permissions, as any program you install does. Only put files you trust there, and only install packages you trust. Python never imports from the folder of the workbook you opened, nor from the environment variables `PYTHONPATH` and `PYTHONSTARTUP`.
 

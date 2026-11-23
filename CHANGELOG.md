@@ -2,6 +2,11 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [Unreleased]
+
+- **Fixed**
+    - **Python studio: a hidden Excel after closing Excel** — the studio held Excel's `Application` from the moment it opened until it closed, so Excel closed by its user stayed alive in the background, hidden, while the studio's window was open, and the next Excel then started without the ASF tab until the hidden one was ended in Task Manager. The studio now takes Excel for each command it runs there (Run in Excel, a macro, Reload) and releases it, with the objects of Excel the command made, before it answers. When Excel closes the Python add-in, Python also collects the cycles that could still hold objects of Excel.
+
 ## [v4.1.2] - 2026-11-22
 https://github.com/ECP-Solutions/ASF/releases/tag/v4.1.2
 

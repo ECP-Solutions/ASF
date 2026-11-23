@@ -1962,6 +1962,12 @@ EXPORT int WINAPI xlAutoClose(void)
     unregister_id(&g_studio_id);
     unregister_id(&g_update_id);
     tips_off();
+    if (g_started == 1) {         /* Excel's objects held in Python's cycles go: they would keep Excel alive */
+        PyGILState_STATE gil = P.PyGILState_Ensure();
+        PyObject *r = boot_call("closing", 0);
+        if (r) P.Py_DecRef(r);
+        P.PyGILState_Release(gil);
+    }
     if (n) note(L"unregistered %d functions", n);
     return 1;
 }

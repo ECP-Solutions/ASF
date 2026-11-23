@@ -254,6 +254,38 @@ class Studio(unittest.TestCase):
             r = self.post('excel/macro-in-excel', {'name': 'unknown'})[1]
             self.assertEqual((r['error'], r['result'][:6]), (True, '#NAME?'))
 
+    def test_excel_is_held_only_during_a_call(self):
+        """A program that holds Excel keeps Excel's process alive, hidden, after the user closes it,
+        and that hidden Excel keeps the next one from loading its add-ins."""
+        import types
+        import weakref
+        made = []
+
+        class App:
+            Version = '16.0'
+
+            def __init__(self):
+                self.me = self                        # a cycle, as COM wrappers can make
+                made.append(weakref.ref(self))
+        pythoncom = types.ModuleType('pythoncom')
+        pythoncom.CoInitialize = lambda: None
+        client = types.ModuleType('win32com.client')
+        client.GetActiveObject = lambda progid: App()
+        win32com = types.ModuleType('win32com')
+        win32com.client = client
+        saved = excel._thread
+        excel._thread = None
+        with mock.patch.dict(sys.modules, {'pythoncom': pythoncom, 'win32com': win32com, 'win32com.client': client}):
+            try:
+                self.assertEqual(excel.call(lambda app: app.Version), '16.0')
+                self.assertEqual(excel.call(lambda app: app.Version), '16.0')
+                self.assertEqual(len(made), 2)                       # one each call
+                self.assertEqual([r() for r in made], [None, None])  # and none kept
+            finally:
+                excel._calls.put((None, None))
+                excel._thread.join(5)
+                excel._thread = saved
+
     def test_excel_out_of_reach_is_an_answer_not_a_crash(self):
         if os.name == 'nt':
             self.skipTest('Excel may run here')

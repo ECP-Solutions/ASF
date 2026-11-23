@@ -1,5 +1,10 @@
 """Excel, reached from the studio's process through COM (pywin32): the add-in's commands run in
-Excel's own Python. One thread owns COM; calls wait for Excel when it is busy."""
+Excel's own Python. One thread owns COM; calls wait for Excel when it is busy.
+
+Excel is held only during a call. A program that holds Excel's Application keeps Excel's process
+alive, hidden, after the user closes it; and that hidden Excel then keeps the next Excel from
+loading its add-ins (the ASF tab, the Python add-in) until it is killed."""
+import gc
 import queue
 import threading
 import time
@@ -17,37 +22,51 @@ class ExcelError(ValueError):
     """Excel answered, with an error: a macro it doesn't know, or one that failed in VBA."""
 
 
+def _attempt(fn, get_app):
+    """fn(Excel's Application), the Application released before this returns: (result, error,
+    whether to try again)."""
+    app = None
+    try:
+        app = get_app()
+        return fn(app), None, False
+    except Exception as exc:               # pywintypes.com_error and the like
+        code = getattr(exc, 'hresult', None) or (exc.args[0] if exc.args and isinstance(exc.args[0], int) else None)
+        if code in BUSY:
+            return None, None, True        # Excel is editing a cell or showing a dialog
+        if code == -2147352567:            # DISP_E_EXCEPTION: Excel's own answer
+            info = exc.args[2] if len(exc.args) > 2 and isinstance(exc.args[2], tuple) else ()
+            return None, ExcelError((info[2] if len(info) > 2 and info[2] else str(exc)).strip()), False
+        return None, NotReachable('Excel isn\'t reachable: %s' % (exc,)), False
+    finally:
+        del app
+        gc.collect()                       # and the wrappers of Excel's objects fn made, in cycles too
+
+
 def _worker():
     try:
         import pythoncom
         import win32com.client
         pythoncom.CoInitialize()
+        get_app = lambda: win32com.client.GetActiveObject('Excel.Application')    # noqa: E731
     except ImportError:
-        win32com = None
-    app = None
+        get_app = None
     while True:
         fn, done = _calls.get()
-        if win32com is None:
+        if fn is None:                     # stop (the tests)
+            return
+        if get_app is None:
             done(None, NotReachable('Excel is reachable on Windows only, with pywin32'))
             continue
         for attempt in range(40):
-            try:
-                if app is None:
-                    app = win32com.client.GetActiveObject('Excel.Application')
-                done(fn(app), None)
-                break
-            except Exception as exc:           # pywintypes.com_error and the like
-                code = getattr(exc, 'hresult', None) or (exc.args[0] if exc.args and isinstance(exc.args[0], int) else None)
-                if code in BUSY and attempt < 39:
-                    time.sleep(0.25)          # Excel is editing a cell or showing a dialog
-                    continue
-                if code == -2147352567:        # DISP_E_EXCEPTION: Excel's own answer
-                    info = exc.args[2] if len(exc.args) > 2 and isinstance(exc.args[2], tuple) else ()
-                    done(None, ExcelError((info[2] if len(info) > 2 and info[2] else str(exc)).strip()))
-                    break
-                app = None
-                done(None, NotReachable('Excel isn\'t reachable: %s' % (exc,)))
-                break
+            result, error, again = _attempt(fn, get_app)
+            if again and attempt < 39:
+                time.sleep(0.25)
+                continue
+            if again:
+                error = NotReachable('Excel is busy: a cell is being edited or a dialog is open')
+            done(result, error)
+            break
+        del result
 
 
 def call(fn, timeout=600):

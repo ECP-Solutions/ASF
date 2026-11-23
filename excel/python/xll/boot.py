@@ -4,6 +4,7 @@
 # needs no type checks of its own. It imports no Windows module: tests/unit/test_boot.py runs it on any OS.
 import datetime
 import decimal
+import gc
 import importlib
 import importlib.util
 import inspect
@@ -310,6 +311,13 @@ def _plain_text(value):
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
     return str(value)
+
+
+def closing():
+    """xlAutoClose (Excel closes, or the add-in is unticked): the wrappers of Excel's objects that
+    Python still holds in reference cycles go, so they can't keep Excel's process alive."""
+    gc.collect()
+    return (TAG_EMPTY, None)
 
 
 def last_traceback():
