@@ -320,6 +320,9 @@ Public Sub RunTests(Optional ByVal category As String, Optional ByVal testName A
     If StartTest("operators",                 "operators_on_arrays_and_objects") Then operators_on_arrays_and_objects: EndTest
     If StartTest("operators",                 "typeof_operand") Then typeof_operand: EndTest
     If StartTest("objects",                   "missing_property_is_undefined") Then missing_property_is_undefined: EndTest
+    If StartTest("objects",                   "object_bracket_reads") Then object_bracket_reads: EndTest
+    If StartTest("objects",                   "object_with_many_keys") Then object_with_many_keys: EndTest
+    If StartTest("objects",                   "object_keys_hashed") Then object_keys_hashed: EndTest
     If StartTest("templates",                 "template_braces_quotes_backticks") Then template_braces_quotes_backticks: EndTest
     If StartTest("arrays",                    "join_default_separator") Then join_default_separator: EndTest
     If StartTest("syntax",                    "brackets_in_strings_and_comments") Then brackets_in_strings_and_comments: EndTest
@@ -4977,6 +4980,80 @@ TestFail:
     AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
     Resume TestExit
 End Sub
+Private Sub object_bracket_reads()
+    ' obj[k] reads what obj.k and obj[k] = v use: the key as text; undefined when missing
+    On Error GoTo TestFail
+    actual = CStr(GetResult("let o = {a: 5}; let k = 'a'; o['b'] = 2; o[k + 'c'] = 3; " & _
+                            "return `${o['a']} ${o[k]} ${o['b']} ${o.ac} ${o['a' + 'c']} ${typeof o['nope']}`;"))
+    expected = "5 5 2 3 3 undefined"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("let o = {n: {m: 4}}; o['n']['m'] += 1; o['c'] = 0; o['c'] = o['c'] + 1; " & _
+                            "let s = 0; for (let i = 1, i <= 3, i += 1) { o[i] = i * 10; }; return `${o.n.m} ${o['c']} ${o[2]} ${o['3']}`;"))
+    expected = "5 1 20 30"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+End Sub
+
+Private Sub object_with_many_keys()
+    ' an object used as a dictionary: its keys in the order they came, found, replaced and deleted
+    ' alike below and above the size where the object starts to index its keys
+    On Error GoTo TestFail
+    actual = CStr(GetResult("let o = {}; for (let i = 1, i <= 300, i += 1) { o['k' + i] = i; }; " & _
+                            "let s = 0; for (let i = 1, i <= 300, i += 1) { s = s + o['k' + i]; }; " & _
+                            "return `${o.size()} ${s} ${o.k1} ${o.k150} ${o['k300']} ${typeof o.k301} ${o.keys()[1]} ${o.keys()[300]}`;"))
+    expected = "300 45150 1 150 300 undefined k1 k300"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("let o = {}; for (let i = 1, i <= 100, i += 1) { o['k' + i] = i; }; " & _
+                            "for (let i = 1, i <= 100, i += 2) { o.delete('k' + i); }; o.k2 = 'two'; o['k101'] = 101; " & _
+                            "let n = 0; o.forEach(fun(v, k) { n = n + 1; }); " & _
+                            "return `${o.size()} ${n} ${o.k2} ${typeof o.k1} ${o.k100} ${o.k101} ${o.keys()[1]} ${o.keys()[51]}`;"))
+    expected = "51 51 two undefined 100 101 k2 k101"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("let o = {}; for (let i = 1, i <= 40, i += 1) { o['k' + i] = i; }; " & _
+                            "let c = {...o}; c.k40 = 0; let m = o.map(fun(v) { return v * 2; }); " & _
+                            "let f = o.filter(fun(v) { return v > 38; }); " & _
+                            "return `${c.size()} ${c.k39} ${c.k40} ${o.k40} ${m.k40} ${f.keys().join(',')} ${o.values()[40]} ${o.entries()[2][1]}`;"))
+    expected = "40 39 0 40 80 k39,k40 40 k2"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+End Sub
+
+Private Sub object_keys_hashed()
+    ' a big object hashes its keys: names the program gives (o.name, o.f()) and keys made while it
+    ' runs (o[k]) must meet; long keys that differ only in their middle share a hash; keys
+    ' beyond ASCII; a clone; deleting below the size that keeps the table
+    On Error GoTo TestFail
+    actual = CStr(GetResult("let o = {}; for (let i = 1, i <= 30, i += 1) { o['m' + i] = i; }; " & _
+                            "o.twice = fun(x) { return x * 2; }; o['thrice'] = fun(x) { return x * 3; }; o.m30 = 300; " & _
+                            "return `${o.twice(4)} ${o.thrice(2)} ${o['twice'](5)} ${o['m30']} ${o.m29}`;"))
+    expected = "8 6 10 300 29"
+    AssertEqual expected, actual
+    actual = CStr(GetResult("let o = {}; let p = 'a_long_prefix_of_the_key_'; let q = '_and_a_long_suffix_too'; " & _
+                            "for (let i = 10, i <= 49, i += 1) { o[p + i + q] = i; }; let s = 0; " & _
+                            "for (let i = 10, i <= 49, i += 1) { s = s + o[p + i + q]; }; " & _
+                            "return `${o.size()} ${s} ${o[p + 33 + q]} ${typeof o[p + 50 + q]}`;"))
+    expected = "40 1180 33 undefined"
+    AssertEqual expected, actual
+    Dim u As String, zh As String, eur As String
+    u = ChrW(252): zh = ChrW(20013) & ChrW(25991): eur = ChrW(8364)
+    actual = CStr(GetResult("let o = {}; for (let i = 1, i <= 20, i += 1) { o['k' + i] = i; }; " & _
+                            "o['" & u & "'] = 'u'; o['" & zh & "'] = 'zh'; o['" & eur & "'] = 'eur'; let c = o.clone(); c.k20 = 0; " & _
+                            "for (let i = 1, i <= 18, i += 1) { o.delete('k' + i); }; " & _
+                            "return `${o['" & u & "']} ${o['" & zh & "']} ${o['" & eur & "']} ${c.size()} ${c.k1} ${c.k20} ${o.k20} ${o.size()} ${o.k19} ${typeof o.k1}`;"))
+    expected = "u zh eur 23 1 0 20 5 19 undefined"
+    AssertEqual expected, actual
+TestExit:
+    Exit Sub
+TestFail:
+    AssertFail "Test raised an error: #" & err.Number & " - " & err.Description
+End Sub
+
 Private Sub missing_property_is_undefined()
     ' a property an object does not have is undefined, also for the host that receives it
     Dim eng As New ASF

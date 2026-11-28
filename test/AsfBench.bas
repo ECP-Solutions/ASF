@@ -41,6 +41,13 @@ Public Sub RunAsfBenchmarks()
     Bench "Classes", _
           "class P { constructor(x) { this.x = x; } add(d) { this.x = this.x + d; return this.x; } }; " & _
           "let p = new P(0); for (let i = 1, i <= 300, i += 1) { p.add(i); }; return(p.x);", "45150"
+    ' an object used as a dictionary: from 16 keys on, ASF_Map keeps a hash table
+    Bench "Object as dictionary (1,000 keys)", _
+          "let o = {}; for (let i = 1, i <= 1000, i += 1) { o['k' + i] = i; }; let s = 0; " & _
+          "for (let i = 1, i <= 1000, i += 1) { s = s + o['k' + i]; }; return(s);", "500500"
+    Bench "Object methods (1,000 keys)", _
+          "let o = {}; for (let i = 1, i <= 1000, i += 1) { o['k' + i] = i; }; let s = 0; " & _
+          "o.forEach(fun(v) { s = s + v; }); return(s + o.filter(fun(v) { return v > 990; }).size() + o.values().length);", "501510"
     Debug.Print "=== ASF benchmarks done ==="
 End Sub
 

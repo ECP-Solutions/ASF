@@ -687,18 +687,23 @@ Private Function EvalNamedBuiltin(ByVal fname As String, evaluated As Variant, B
         End If
 
         If typeName(feTmpVal) = "ASF_Map" Then
-            Dim foreachKeys2 As Collection: Set foreachKeys2 = feTmpVal.keys()
-            Dim fk2 As Variant
+            ' the keys as they were when the walk began; one the callback deleted is skipped
+            Dim fe2Map As ASF_Map: Set fe2Map = feTmpVal
+            Dim foreachKeys2 As Variant: foreachKeys2 = fe2Map.KeysCopy()
+            Dim fk2 As Long, fe2Count As Long, fe2Hint As Long, fe2Val As Variant
             Dim args_obj2() As Variant
             Dim tmpRes_obj2 As Variant
-
-            For Each fk2 In foreachKeys2
+            fe2Count = fe2Map.Count
+            For fk2 = 0 To fe2Count - 1
+                fe2Hint = fk2
+                If Not fe2Map.GetHinted(CStr(foreachKeys2(fk2)), fe2Hint, fe2Val) Then GoTo NextForeach2Key
                 ReDim args_obj2(1 To 3)
-                vAssignment args_obj2(1), feTmpVal.GetValue(CStr(fk2))
-                vAssignment args_obj2(2), CStr(fk2)
+                vAssignment args_obj2(1), fe2Val
+                vAssignment args_obj2(2), CStr(foreachKeys2(fk2))
                 vAssignment tmpMapObj, cbFn
                 If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_obj2(3), feTmpVal
                 vAssignment tmpRes_obj2, CallClosure(tmpMapObj, args_obj2, feTmpVal)
+NextForeach2Key:
             Next fk2
         Else
             Dim lb2 As Long: lb2 = LBound(feTmpVal)
@@ -3116,16 +3121,16 @@ End Function
 
 Private Function MapKeysMethod(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' Return array of object keys
-    Dim keysCol As Collection: Set keysCol = baseValLocal.keys()
+    Dim keysMap As ASF_Map: Set keysMap = baseValLocal
     Dim keysArr() As Variant
     Dim optBase_keys As Long: optBase_keys = 1
-    If keysCol.Count = 0 Then
+    If keysMap.Count = 0 Then
         ReDim keysArr(optBase_keys To optBase_keys)
     Else
-        ReDim keysArr(optBase_keys To optBase_keys + keysCol.Count - 1)
+        ReDim keysArr(optBase_keys To optBase_keys + keysMap.Count - 1)
         Dim ki As Long
-        For ki = 1 To keysCol.Count
-            keysArr(optBase_keys + ki - 1) = keysCol(ki)
+        For ki = 1 To keysMap.Count
+            keysArr(optBase_keys + ki - 1) = keysMap.key(ki)
         Next ki
     End If
     tmpResult = keysArr
@@ -3138,16 +3143,16 @@ End Function
 
 Private Function MapValues(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' Return array of object values
-    Dim itemsCol As Collection: Set itemsCol = baseValLocal.items()
+    Dim valsMap As ASF_Map: Set valsMap = baseValLocal
     Dim valsArr() As Variant
     Dim optBase_vals As Long: optBase_vals = 1
-    If itemsCol.Count = 0 Then
+    If valsMap.Count = 0 Then
         ReDim valsArr(optBase_vals To optBase_vals)
     Else
-        ReDim valsArr(optBase_vals To optBase_vals + itemsCol.Count - 1)
+        ReDim valsArr(optBase_vals To optBase_vals + valsMap.Count - 1)
         Dim vi As Long
-        For vi = 1 To itemsCol.Count
-            vAssignment valsArr(optBase_vals + vi - 1), itemsCol(vi)
+        For vi = 1 To valsMap.Count
+            vAssignment valsArr(optBase_vals + vi - 1), valsMap.ValueAt(vi)
         Next vi
     End If
     tmpResult = valsArr
@@ -3160,20 +3165,19 @@ End Function
 
 Private Function MapEntries(evaluated As Variant, ByRef propN As String, ByRef baseValLocal As Variant, ByRef origBaseVal As Variant, ByRef tmpResult As Variant) As Boolean
     ' Return array of [key, value] pairs
-    Dim entriesKeys As Collection: Set entriesKeys = baseValLocal.keys()
-    Dim entriesItems As Collection: Set entriesItems = baseValLocal.items()
+    Dim entriesMap As ASF_Map: Set entriesMap = baseValLocal
     Dim entriesArr() As Variant
     Dim optBase_ent As Long: optBase_ent = 1
-    If entriesKeys.Count = 0 Then
+    If entriesMap.Count = 0 Then
         ReDim entriesArr(optBase_ent To optBase_ent)
     Else
-        ReDim entriesArr(optBase_ent To optBase_ent + entriesKeys.Count - 1)
+        ReDim entriesArr(optBase_ent To optBase_ent + entriesMap.Count - 1)
         Dim ei As Long
-        For ei = 1 To entriesKeys.Count
+        For ei = 1 To entriesMap.Count
             Dim pairArr() As Variant
             ReDim pairArr(0 To 1)
-            pairArr(0) = entriesKeys(ei)
-            vAssignment pairArr(1), entriesItems(ei)
+            pairArr(0) = entriesMap.key(ei)
+            vAssignment pairArr(1), entriesMap.ValueAt(ei)
             entriesArr(optBase_ent + ei - 1) = pairArr
         Next ei
     End If
@@ -3236,10 +3240,10 @@ Private Function MapMerge(evaluated As Variant, ByRef propN As String, ByRef bas
     Else
         Dim mergeObj As Variant: vAssignment mergeObj, evaluated(1)
         If typeName(mergeObj) = "ASF_Map" Then
-            Dim mergeKeys As Collection: Set mergeKeys = mergeObj.keys()
-            Dim mk As Variant
-            For Each mk In mergeKeys
-                baseValLocal.SetValue CStr(mk), mergeObj.GetValue(CStr(mk))
+            Dim mergeMap As ASF_Map: Set mergeMap = mergeObj
+            Dim mk As Long
+            For mk = 1 To mergeMap.Count
+                baseValLocal.SetValue mergeMap.key(mk), mergeMap.ValueAt(mk)
             Next mk
         End If
         vAssignment tmpResult, baseValLocal
@@ -3265,17 +3269,23 @@ Private Function MapForeach(evaluated As Variant, ByRef propN As String, ByRef b
         GoTo exitfun
     End If
 
-    Dim foreachKeys As Collection: Set foreachKeys = baseValLocal.keys()
-    Dim fk As Variant
+    ' the keys as they were when the walk began; one the callback deleted is skipped
+    Dim feMap As ASF_Map: Set feMap = baseValLocal
+    Dim foreachKeys As Variant: foreachKeys = feMap.KeysCopy()
+    Dim fk As Long, feCount As Long, feHint As Long, feVal As Variant
     Dim args_obj() As Variant
     Dim tmpRes_obj As Variant
-    For Each fk In foreachKeys
+    feCount = feMap.Count
+    For fk = 0 To feCount - 1
+        feHint = fk
+        If Not feMap.GetHinted(CStr(foreachKeys(fk)), feHint, feVal) Then GoTo NextForeachKey
         ReDim args_obj(1 To 3)
-        vAssignment args_obj(1), baseValLocal.GetValue(CStr(fk))
-        vAssignment args_obj(2), CStr(fk)
+        vAssignment args_obj(1), feVal
+        vAssignment args_obj(2), CStr(foreachKeys(fk))
         vAssignment tmpMapObj, cb_obj
         If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_obj(3), baseValLocal
         vAssignment tmpRes_obj, CallClosure(tmpMapObj, args_obj, baseValLocal)
+NextForeachKey:
     Next fk
 
     vAssignment tmpResult, baseValLocal
@@ -3301,18 +3311,23 @@ Private Function MapMap(evaluated As Variant, ByRef propN As String, ByRef baseV
     End If
 
     Dim newMap As New ASF_Map
-    Dim mapKeys As Collection: Set mapKeys = baseValLocal.keys()
-    Dim mapk As Variant
+    Dim mmMap As ASF_Map: Set mmMap = baseValLocal
+    Dim mapKeys As Variant: mapKeys = mmMap.KeysCopy()
+    Dim mapk As Long, mmCount As Long, mmHint As Long, mmVal As Variant
     Dim args_map() As Variant
-    For Each mapk In mapKeys
+    mmCount = mmMap.Count
+    For mapk = 0 To mmCount - 1
+        mmHint = mapk
+        If Not mmMap.GetHinted(CStr(mapKeys(mapk)), mmHint, mmVal) Then GoTo NextMapKey
         ReDim args_map(1 To 3)
-        vAssignment args_map(1), baseValLocal.GetValue(CStr(mapk))
-        vAssignment args_map(2), CStr(mapk)
+        vAssignment args_map(1), mmVal
+        vAssignment args_map(2), CStr(mapKeys(mapk))
         vAssignment tmpMapObj, cb_map
         If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_map(3), baseValLocal
         Dim mapRes As Variant
         vAssignment mapRes, CallClosure(tmpMapObj, args_map, baseValLocal)
-        newMap.SetValue CStr(mapk), mapRes
+        newMap.SetValue CStr(mapKeys(mapk)), mapRes
+NextMapKey:
     Next mapk
 
     vAssignment tmpResult, newMap
@@ -3338,20 +3353,25 @@ Private Function MapFilter(evaluated As Variant, ByRef propN As String, ByRef ba
     End If
 
     Dim filteredMap As New ASF_Map
-    Dim filterKeys As Collection: Set filterKeys = baseValLocal.keys()
-    Dim filterk As Variant
+    Dim ftMap As ASF_Map: Set ftMap = baseValLocal
+    Dim filterKeys As Variant: filterKeys = ftMap.KeysCopy()
+    Dim filterk As Long, ftCount As Long, ftHint As Long, ftVal As Variant
     Dim args_filter() As Variant
     Dim filterRes As Variant
-    For Each filterk In filterKeys
+    ftCount = ftMap.Count
+    For filterk = 0 To ftCount - 1
+        ftHint = filterk
+        If Not ftMap.GetHinted(CStr(filterKeys(filterk)), ftHint, ftVal) Then GoTo NextFilterKey
         ReDim args_filter(1 To 3)
-        vAssignment args_filter(1), baseValLocal.GetValue(CStr(filterk))
-        vAssignment args_filter(2), CStr(filterk)
+        vAssignment args_filter(1), ftVal
+        vAssignment args_filter(2), CStr(filterKeys(filterk))
         vAssignment tmpMapObj, cb_filter
         If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_filter(3), baseValLocal
         vAssignment filterRes, CallClosure(tmpMapObj, args_filter, baseValLocal)
         If IsTruthy(filterRes) Then
-            filteredMap.SetValue CStr(filterk), baseValLocal.GetValue(CStr(filterk))
+            If ftMap.GetHinted(CStr(filterKeys(filterk)), ftHint, ftVal) Then filteredMap.SetValue CStr(filterKeys(filterk)), ftVal
         End If
+NextFilterKey:
     Next filterk
 
     vAssignment tmpResult, filteredMap
@@ -3376,13 +3396,17 @@ Private Function MapSome(evaluated As Variant, ByRef propN As String, ByRef base
         GoTo exitfun
     End If
 
-    Dim someKeys As Collection: Set someKeys = baseValLocal.keys()
-    Dim somek As Variant
+    Dim smMap As ASF_Map: Set smMap = baseValLocal
+    Dim someKeys As Variant: someKeys = smMap.KeysCopy()
+    Dim somek As Long, smCount As Long, smHint As Long, smVal As Variant
     Dim args_some() As Variant
-    For Each somek In someKeys
+    smCount = smMap.Count
+    For somek = 0 To smCount - 1
+        smHint = somek
+        If Not smMap.GetHinted(CStr(someKeys(somek)), smHint, smVal) Then GoTo NextSomeKey
         ReDim args_some(1 To 3)
-        vAssignment args_some(1), baseValLocal.GetValue(CStr(somek))
-        vAssignment args_some(2), CStr(somek)
+        vAssignment args_some(1), smVal
+        vAssignment args_some(2), CStr(someKeys(somek))
         vAssignment tmpMapObj, cb_some_obj
         If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_some(3), baseValLocal
         Dim someRes As Variant
@@ -3391,6 +3415,7 @@ Private Function MapSome(evaluated As Variant, ByRef propN As String, ByRef base
             tmpResult = True
             GoTo exitfun
         End If
+NextSomeKey:
     Next somek
 
     tmpResult = False
@@ -3415,13 +3440,17 @@ Private Function MapEvery(evaluated As Variant, ByRef propN As String, ByRef bas
         GoTo exitfun
     End If
 
-    Dim everyKeys As Collection: Set everyKeys = baseValLocal.keys()
-    Dim everyk As Variant
+    Dim evMap As ASF_Map: Set evMap = baseValLocal
+    Dim everyKeys As Variant: everyKeys = evMap.KeysCopy()
+    Dim everyk As Long, evCount As Long, evHint As Long, evVal As Variant
     Dim args_every() As Variant
-    For Each everyk In everyKeys
+    evCount = evMap.Count
+    For everyk = 0 To evCount - 1
+        evHint = everyk
+        If Not evMap.GetHinted(CStr(everyKeys(everyk)), evHint, evVal) Then GoTo NextEveryKey
         ReDim args_every(1 To 3)
-        vAssignment args_every(1), baseValLocal.GetValue(CStr(everyk))
-        vAssignment args_every(2), CStr(everyk)
+        vAssignment args_every(1), evVal
+        vAssignment args_every(2), CStr(everyKeys(everyk))
         vAssignment tmpMapObj, cb_every_obj
         If VM_.ParamCount(tmpMapObj) >= 3 Then vAssignment args_every(3), baseValLocal
         Dim everyRes As Variant
@@ -3430,6 +3459,7 @@ Private Function MapEvery(evaluated As Variant, ByRef propN As String, ByRef bas
             tmpResult = False
             GoTo exitfun
         End If
+NextEveryKey:
     Next everyk
 
     tmpResult = True
@@ -4221,13 +4251,13 @@ Private Function DeepEqual(a As Variant, b As Variant) As Boolean
     If IsObject(a) And IsObject(b) Then
         If typeName(a) = "ASF_Map" And typeName(b) = "ASF_Map" Then
             ' compare keys count and values
-            Dim keysA As Collection: Set keysA = a.keys()
-            Dim keysB As Collection: Set keysB = b.keys()
-            If keysA.Count <> keysB.Count Then GoTo notEqual
-            Dim k As Variant
-            For Each k In keysA
-                If Not b.Exists(CStr(k)) Then GoTo notEqual
-                If Not DeepEqual(a.GetValue(CStr(k)), b.GetValue(CStr(k))) Then GoTo notEqual
+            Dim mapA As ASF_Map, mapB As ASF_Map: Set mapA = a: Set mapB = b
+            If mapA.Count <> mapB.Count Then GoTo notEqual
+            Dim k As Long, hintB As Long, valB As Variant
+            For k = 1 To mapA.Count
+                hintB = k - 1
+                If Not mapB.GetHinted(mapA.key(k), hintB, valB) Then GoTo notEqual
+                If Not DeepEqual(mapA.ValueAt(k), valB) Then GoTo notEqual
             Next k
             DeepEqual = True
             Exit Function

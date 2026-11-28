@@ -1,8 +1,8 @@
-' ASF_Map for LibreOffice Basic: same public members as src/ASF_Map.cls.
-' The VBA class keeps keys and values in a user-defined type whose array fields it
-' resizes; LibreOffice cannot ReDim a field of a Type, so this one uses plain arrays.
-' Keep it in step with src/ASF_Map.cls. Clone is named LOCloneMap here because
-' LibreOffice will not call a method named Clone; tools/build.py renames the callers.
+' ASF_Map of the ASF 3 engine (src/old/ASF_Map_OLD.cls) for LibreOffice Basic, which the
+' version benchmarks run (run_tests.py versionbench). That class keeps keys and values in a
+' user-defined type whose array fields it resizes; LibreOffice cannot ReDim a field of a Type, so
+' this one uses plain arrays. Clone is named LOCloneMap here because LibreOffice will not call a
+' method named Clone; tools/build.py renames the callers. The current src/ASF_Map.cls runs as it is.
 Option Explicit
 Private kCap As Long, kIdx As Long
 Private kSt() As String

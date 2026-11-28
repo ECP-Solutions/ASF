@@ -1299,8 +1299,15 @@ print(calculator.multiply(4, 7));  // 28
 let key = 'status';
 let obj = {};
 obj[key] = 'active';
-print(obj.status);  // 'active'
+print(obj.status);      // 'active'
+print(obj[key]);        // 'active'
+print(obj['st' + 'atus']); // 'active'
+print(obj['nope']);     // undefined
 ```
+
+An object works as a dictionary: `obj[key]` reads and writes a key made while the script runs, and
+objects with many keys find each one in a step or two (from 16 keys on, an object keeps a hash
+table).
 
 ## Object Member Methods
 

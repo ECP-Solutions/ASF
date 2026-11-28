@@ -2,6 +2,16 @@
 
 All notable changes for ASF. This file combines the release notes from the project's releases.
 
+## [Unreleased]
+
+- **Fixed**
+    - **Objects: `obj[key]` reads** — reading an object with brackets and a text key (`o['a']`, `o[k]`) gave nothing: the VM turned the key into a number before it looked at the object. It now reads the key as text, as `obj.key` and `obj[key] = v` use it, with one lookup; a missing key is undefined. Numeric keys (`o[1]`) work as before.
+
+- **Changed**
+    - **Objects: faster with many keys** — an object (`ASF_Map`) searched its keys one by one, so an object used as a dictionary cost the square of its size to build or read: 4,000 keys took 14 s to build in LibreOffice, 27 s with a `forEach`. From 16 keys on, an object now also keeps a hash table, and its methods (`keys`, `values`, `entries`, `forEach`, `map`, `filter`, `some`, `every`, `merge`, spread, equality) walk it by position instead of searching for each key again: the same 4,000 keys take 2.7 s and 3.8 s, and `forEach`, `filter` and `values` over 1,000 keys take 1.4 s instead of 3.6 s. Small objects keep their search key by key and the inline cache of property reads. Each key's hash is computed once and kept, so the table grows without hashing the keys again; the compiler hashes the keys a program names (`o.total`, `o.add()`), and the VM hands that hash to the object (`ASF_Compiler.ConstantHashes`, `ASF_Map.GetHashed` and `SetHashed`). After [cristianbuse/VBA-FastDictionary](https://github.com/cristianbuse/VBA-FastDictionary)'s design, in plain VBA: no memory APIs, so it runs alike on Windows, Mac and LibreOffice.
+    - **LibreOffice: one `ASF_Map`** — the LibreOffice edition ran a hand-written copy of `ASF_Map`, since LibreOffice can't resize an array inside a `Type`. `ASF_Map` now keeps plain arrays, and the LibreOffice edition runs `src/ASF_Map.cls` itself, so every test runs the code Excel runs; the copy stays for ASF 3's version benchmarks only. `GetValue` is a `Function` rather than a `Property Get`, which LibreOffice got wrong.
+    - **Benchmarks** — `test/AsfBench.bas` gets two workloads with an object of 1,000 keys.
+
 ## [v4.1.2] - 2026-11-22
 https://github.com/ECP-Solutions/ASF/releases/tag/v4.1.2
 

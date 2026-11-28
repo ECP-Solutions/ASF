@@ -81,6 +81,18 @@ Method names become numbers at compile time; the VM picks the implementation by 
 `VarType` and the method number. Property reads on objects keep a per-instruction cache of the last
 position of the key and check it with one comparison before searching.
 
+An object (`ASF_Map`) keeps its keys in the order they came. A small one is searched key by key,
+the fastest way for a handful of keys. From 16 keys on, it also keeps a hash table (open
+addressing, at most half full), so an object used as a dictionary finds a key in a step or two
+whatever its size, where building one used to cost the square of its size. Each key's hash is
+computed once and kept: the table grows without hashing the keys again, and a lookup compares
+hashes, whole numbers, before it compares the texts. The keys a program names (`o.total`,
+`o.add(...)`) are hashed once by the compiler, with the constants (`ConstantHashes`), and the VM
+hands the hash to the object with the key. The methods of objects walk them by position, one step
+per key; those that call back into the script walk a copy of the keys, since the callback may add
+or delete keys, and try each key at its position first. The class is plain VBA, without arrays in
+a `Type` or memory APIs, so the LibreOffice edition runs it as it is.
+
 ### 5. Start-up
 
 The global scope is a slot template copied in one assignment; `Math` and the built-ins are created

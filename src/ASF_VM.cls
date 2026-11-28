@@ -26,6 +26,7 @@ Private trace_ As Boolean               ' EnableCallTrace: calls, returns and er
 Private op_() As Long, oa_() As Long, ob_() As Long
 Private k_() As Variant
 Private hint_() As Long                 ' GETPROP's inline cache: where the key was last found
+Private hk_() As Long                   ' constant -> its key hash (ASF_Compiler.ConstantHashes)
 Private fnEntry_() As Long, fnNParams_() As Long, fnNLocals_() As Long, fnMaxStack_() As Long
 Private fnCellStart_() As Long, fnCellCount_() As Long, cellSlot_() As Long
 Private fnCapStart_() As Long, fnCapCount_() As Long, capKind_() As Long, capIdx_() As Long
@@ -226,7 +227,7 @@ End Sub
 
 Private Sub LoadCode()
     op_ = BC_.Ops(): oa_ = BC_.ArgsA(): ob_ = BC_.ArgsB()
-    k_ = BC_.Constants()
+    k_ = BC_.Constants(): hk_ = BC_.ConstantHashes()
     fnEntry_ = BC_.FunctionEntries(): fnNParams_ = BC_.FunctionParams()
     fnNLocals_ = BC_.FunctionLocals(): fnMaxStack_ = BC_.FunctionStacks()
     fnCellStart_ = BC_.FunctionCellStarts(): fnCellCount_ = BC_.FunctionCellCounts(): cellSlot_ = BC_.CellSlots()
@@ -719,12 +720,12 @@ X59: ' SETIDXR value, container, index -> container
     rv = Empty
     pc = pc + 1: GoTo Dispatch
 X60: ' GETPROP a: key
-    SetItem rv, PropertyValue(stk_(sp), k_(oa_(pc)), hint_(pc))
+    SetItem rv, PropertyValue(stk_(sp), k_(oa_(pc)), hint_(pc), hk_(oa_(pc)))
     If IsObject(rv) Then Set stk_(sp) = rv Else stk_(sp) = rv
     rv = Empty
     pc = pc + 1: GoTo Dispatch
 X61: ' SETPROPV value, object; a: key
-    SetProperty stk_(sp), k_(oa_(pc)), stk_(sp - 1)
+    SetProperty stk_(sp), k_(oa_(pc)), stk_(sp - 1), hk_(oa_(pc))
     stk_(sp) = Empty
     stk_(sp - 1) = Empty
     sp = sp - 2
@@ -977,7 +978,7 @@ MethodCall:
     If IsObject(stk_(sp - n)) Then
         If TypeOf stk_(sp - n) Is ASF_Map Then
             Set m = stk_(sp - n)
-            If m.TryGetValue(CStr(k_(oa_(pc))), rv) Then
+            If m.GetHashed(CStr(k_(oa_(pc))), hk_(oa_(pc)), hint_(pc), rv) Then
                 If ClosureCode(rv, fn, newEnv) Then
                     rv = Empty
                     hasThis = True
@@ -1342,7 +1343,7 @@ Private Function ImportValues(ByVal info As ASF_Map) As Variant
     If info.Exists("namespaceImport") Then
         Dim ns As ASF_Map: Set ns = New ASF_Map
         For i = 1 To exportsMap.Count
-            ns.SetValue exportsMap.key(i), exportsMap.GetValue(exportsMap.key(i))
+            ns.SetValue exportsMap.key(i), exportsMap.ValueAt(i)
         Next i
         Set out(n) = ns
         n = n + 1
@@ -1435,7 +1436,7 @@ End Sub
 Private Sub RegisterPrototypes(ByVal exportsMap As ASF_Map)
     Dim i As Long, v As Variant, desc As ASF_Map, closure As Variant
     For i = 1 To exportsMap.Count
-        SetItem v, exportsMap.GetValue(exportsMap.key(i))
+        SetItem v, exportsMap.ValueAt(i)
         If IsObject(v) Then
             If TypeOf v Is ASF_Map Then
                 Set desc = v
@@ -1457,7 +1458,7 @@ Private Function NewClass(ByVal template As ASF_Map) As ASF_Map
     Dim klass As ASF_Map: Set klass = New ASF_Map
     Dim i As Long
     For i = 1 To template.Count
-        klass.SetValue template.key(i), template.GetValue(template.key(i))
+        klass.SetValue template.key(i), template.ValueAt(i)
     Next i
     Set NewClass = klass
 End Function
@@ -1972,9 +1973,9 @@ Private Function IterList(ByRef v As Variant, ByVal keys As Long) As Variant
         Next i
     ElseIf IsMapValue(v) Then
         Dim m As ASF_Map: Set m = v
-        For Each k In m.keys()
-            If keys = 1 Then items.Add k Else items.Add m.GetValue(CStr(k))
-        Next k
+        For i = 1 To m.Count
+            If keys = 1 Then items.Add m.key(i) Else items.Add m.ValueAt(i)
+        Next i
     End If
     Dim arr() As Variant
     If items.Count = 0 Then
@@ -2051,9 +2052,9 @@ Private Function NewObject(ByVal first As Long, ByVal n As Long) As ASF_Map
             SetItem src, stk_(first + 2 * i + 1)
             If IsMapValue(src) Then
                 Dim sm As ASF_Map: Set sm = src
-                For Each k In sm.keys()
-                    m.SetValue CStr(k), sm.GetValue(CStr(k))
-                Next k
+                For j = 1 To sm.Count
+                    m.SetValue sm.key(j), sm.ValueAt(j)
+                Next j
             ElseIf IsArray(src) Then
                 For j = LBound(src) To UBound(src)
                     m.SetValue CStr(j - LBound(src) + 1), src(j)
@@ -2073,14 +2074,20 @@ End Function
 
 ' c[k]: indexes from 1, objects by key
 Private Function IndexValue(ByRef c As Variant, ByRef k As Variant) As Variant
+    If IsMapValue(c) Then
+        ' an object by its key as text, as obj.key and obj[k] = v use it; undefined when missing
+        Dim m As ASF_Map: Set m = c
+        Dim v As Variant
+        If m.TryGetValue(CStr(k), v) Then
+            If IsObject(v) Then Set IndexValue = v Else IndexValue = v
+        End If
+        Exit Function
+    End If
     Dim pos As Long: pos = CLng(k)
     If pos < 1 Then Err.Raise vbObjectError + 5001, "VM.EvalIndexNode", "Invalid index (must >= base)"
     If IsArray(c) Then
         If LBound(c) + pos - 1 > UBound(c) Then Err.Raise vbObjectError + 5005, "VM.EvalIndexNode", "Index out of bounds"
         If IsObject(c(LBound(c) + pos - 1)) Then Set IndexValue = c(LBound(c) + pos - 1) Else IndexValue = c(LBound(c) + pos - 1)
-    ElseIf IsMapValue(c) Then
-        Dim m As ASF_Map: Set m = c
-        If IsObject(m.GetValue(CStr(pos))) Then Set IndexValue = m.GetValue(CStr(pos)) Else IndexValue = m.GetValue(CStr(pos))
     Else
         Err.Raise vbObjectError + 5006, "VM.EvalIndexNode", "Cannot index non-array/non-map"
     End If
@@ -2126,13 +2133,13 @@ Private Function WithIndex(ByRef c As Variant, ByRef k As Variant, ByRef v As Va
     WithIndex = arr
 End Function
 
-' obj.key; hint is the instruction's cache
+' obj.key; hint is the instruction's cache, hash the key's (ASF_Compiler.ConstantHashes)
 ' undefined.x and null.x are errors, as in JavaScript
 Private Sub NoMembers(ByRef v As Variant, ByVal key As String)
     Err.Raise vbObjectError + 5102, "ASF", "Cannot read properties of " & IIf(IsNull(v), "null", "undefined") & " (reading '" & key & "')"
 End Sub
 
-Private Function PropertyValue(ByRef obj As Variant, ByVal key As String, ByRef hint As Long) As Variant
+Private Function PropertyValue(ByRef obj As Variant, ByVal key As String, ByRef hint As Long, ByVal hash As Long) As Variant
     If Not IsObject(obj) Then
         If IsEmpty(obj) Or IsNull(obj) Then NoMembers obj, key
     End If
@@ -2140,7 +2147,7 @@ Private Function PropertyValue(ByRef obj As Variant, ByVal key As String, ByRef 
         If TypeOf obj Is ASF_Map Then
             Dim m As ASF_Map: Set m = obj
             Dim v As Variant
-            If m.GetHinted(key, hint, v) Then
+            If m.GetHashed(key, hash, hint, v) Then
                 If IsObject(v) Then Set PropertyValue = v Else PropertyValue = v
                 Exit Function
             End If
@@ -2162,10 +2169,10 @@ Private Function PropertyValue(ByRef obj As Variant, ByVal key As String, ByRef 
     If IsObject(r) Then Set PropertyValue = r Else PropertyValue = r
 End Function
 
-Private Sub SetProperty(ByRef obj As Variant, ByVal key As String, ByRef v As Variant)
+Private Sub SetProperty(ByRef obj As Variant, ByVal key As String, ByRef v As Variant, ByVal hash As Long)
     If IsMapValue(obj) Then
         Dim m As ASF_Map: Set m = obj
-        m.SetValue key, v
+        m.SetHashed key, hash, v
     Else
         RT_.SetMemberOf obj, key, v
     End If

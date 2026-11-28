@@ -21,8 +21,10 @@ LIB_NAME = "ASF"
 VERSION = "4.1.2"
 EXTENSION_ID = "com.ecp-solutions.asf"
 
-# classes replaced by libreoffice/overrides/<name>.bas
-OVERRIDES = ("ASF_Map",)
+# classes replaced by libreoffice/overrides/<name>.bas: none since ASF_Map keeps no arrays in a
+# Type; the old engine's ASF_Map (src/old, for versionbench) still has its LibreOffice version
+OVERRIDES = ()
+OLD_OVERRIDES = ("ASF_Map",)
 # VBA Expressions classes: the LibreOffice edition uses the official port instead,
 # the VBAExpressionsLib library of the VBA Expressions extension
 VBA_EXPRESSIONS = ("VBAexpressions", "VBAexpressionsScope", "UDFunctions", "VBAcallBack")
@@ -872,7 +874,7 @@ def old_library_modules(repo=ROOT):
     mods = []
     for path in paths:
         name = os.path.splitext(os.path.basename(path))[0][:-len("_OLD")]
-        if name in OVERRIDES:
+        if name in OLD_OVERRIDES:
             body = default_returns(load(os.path.join(LO_DIR, "overrides", name + ".bas")))
         else:
             body = asf_passes(name, generic(plain(path)))

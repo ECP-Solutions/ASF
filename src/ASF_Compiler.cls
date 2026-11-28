@@ -179,6 +179,8 @@ Private dPendingGlobals_ As Variant
 Private directFn_ As Boolean
 Private dl_() As Long, adj_() As Long, pendingAdj_ As Long
 Private kOp_() As Long                  ' constant -> the instruction that added it
+Private kHash_() As Long                ' constant -> a string's ASF_Map.HashOf: the VM looks objects up with it
+Private hasher_ As ASF_Map
 Private tplOp_ As Long                  ' the PUSHK of a template without ${...}
 Private tplParts_ As ASF_Map
 Private idxTemps_ As ASF_Map            ' the hidden variables of the indexes of the target being written
@@ -188,7 +190,8 @@ Private dNamed_ As Long                 ' the fun declarations of the source
 Private Sub Class_Initialize()
     ReDim op_(1 To 256): ReDim a_(1 To 256): ReDim b_(1 To 256)
     ReDim dl_(1 To 256): ReDim adj_(1 To 256)
-    ReDim k_(1 To 64): ReDim kOp_(1 To 64)
+    ReDim k_(1 To 64): ReDim kOp_(1 To 64): ReDim kHash_(1 To 64)
+    Set hasher_ = New ASF_Map
     ReDim tt_(1 To 256): ReDim tv_(1 To 256)
     ReDim blockC_(1 To 256)
     Set tplParts_ = New ASF_Map
@@ -228,6 +231,10 @@ Public Function ArgsB() As Variant
 End Function
 Public Function Constants() As Variant
     Constants = k_
+End Function
+' ASF_Map.HashOf of each string constant (0 for the others): the keys of GETPROP, SETPROPV and CALLM
+Public Function ConstantHashes() As Variant
+    ConstantHashes = kHash_
 End Function
 Public Function FunctionEntries() As Variant
     FunctionEntries = fnEntry_
@@ -593,9 +600,10 @@ End Function
 ' An object in the constant table (a declaration the VM makes values of)
 Private Function ObjectConstant(ByVal obj As Object) As Long
     nK_ = nK_ + 1
-    If nK_ > UBound(k_) Then ReDim Preserve k_(1 To 2 * nK_): ReDim Preserve kOp_(1 To 2 * nK_)
+    If nK_ > UBound(k_) Then ReDim Preserve k_(1 To 2 * nK_): ReDim Preserve kOp_(1 To 2 * nK_): ReDim Preserve kHash_(1 To 2 * nK_)
     Set k_(nK_) = obj
     kOp_(nK_) = nOp_ + 1
+    kHash_(nK_) = 0
     ObjectConstant = nK_
 End Function
 
@@ -613,9 +621,11 @@ Private Function Constant(ByRef v As Variant) As Long
         Exit Function
     End If
     nK_ = nK_ + 1
-    If nK_ > UBound(k_) Then ReDim Preserve k_(1 To 2 * nK_): ReDim Preserve kOp_(1 To 2 * nK_)
+    If nK_ > UBound(k_) Then ReDim Preserve k_(1 To 2 * nK_): ReDim Preserve kOp_(1 To 2 * nK_): ReDim Preserve kHash_(1 To 2 * nK_)
     k_(nK_) = v
     kOp_(nK_) = nOp_ + 1
+    ' a name the program gives a property: its hash once here, not on each lookup
+    If VarType(v) = vbString Then kHash_(nK_) = hasher_.HashOf(CStr(v)) Else kHash_(nK_) = 0
     kMap_.SetValue key, nK_
     Constant = nK_
 End Function
@@ -864,6 +874,7 @@ Private Sub RestoreConstants(ByVal saveK As Long)
     Dim i As Long
     For i = saveK + 1 To nK_
         k_(i) = Empty
+        kHash_(i) = 0
     Next i
     nK_ = saveK
     Set kMap_ = New ASF_Map
@@ -2191,6 +2202,7 @@ Private Sub DDropPush()
     If k = nK_ And kOp_(k) = nOp_ Then
         kMap_.Remove ConstKey(k_(nK_))
         k_(nK_) = Empty
+        kHash_(nK_) = 0
         nK_ = nK_ - 1
     End If
     nOp_ = nOp_ - 1
